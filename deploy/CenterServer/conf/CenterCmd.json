@@ -1,0 +1,21 @@
+{
+	"dbip":	"192.168.18.78",
+	"dbport":	3307,
+	"dbuser":	"root",
+	"dbpwd":	"123456",
+	"dbname":	"db_analysis2_center",
+	"dbcharacterset":	"utf8",
+	"deleteofflinenode_timeinterval":	86400,
+	"nodeloadlog_timeinterval":	60,
+	"nodeloadlog_overdue":	5184000,
+	"nodeloadstatistics_timeinterval":	302,
+	"nodeloadstatistics_overdue":	5184001,
+	"nodeloadcheck_timeinterval":	86400,
+	"serverdataloadstatuslog_overdue":	5184000,
+	"serverdataloadstatuslogcheck_timeinterval":	60,
+	"center_servers":	 [{
+        "center_inner_host":    "192.168.18.78",
+        "center_inner_port":    17000
+    }],
+	"node_recently_time":	31
+}

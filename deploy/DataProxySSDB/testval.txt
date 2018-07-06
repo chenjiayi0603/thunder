@@ -1,0 +1,2 @@
+{"index":{"_index":"db_trace","_type":"tb_trace","_id":"16595602247603398622023345039"}} 
+{"appkey":"2329d8a13d77a40ab2fd5278036fbc98","device_id":"a16418be6581552caa7110000000001","ip":"183.222.33.247","platform":"js","ref":"https://zhugeio.com","session_id":"110000000001","time":1526608578000,"type":"trace","user_id":"110000000001","utm_campaign":"tryfree","utm_content":"A","utm_medium":"SNS","utm_source":"pengyouquan","utm_term":"datadriven","gmid":189415,"date":"2018-06-14"}

@@ -1,0 +1,3 @@
+#需要编译的服务器(只需要指定逻辑服务)，核心代码放置在/app/StarshipLib/code/core
+ACCESS_TARGETS = 
+ORTHER_TARGETS = DataProxySSDB
