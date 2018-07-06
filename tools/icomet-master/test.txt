@@ -1,0 +1,70 @@
+https://github.com/ideawu/icomet
+
+Compile and Run
+Compile:
+
+wget --no-check-certificate https://github.com/ideawu/icomet/archive/master.zip
+unzip master.zip
+cd icomet-master/
+make
+Start icomet server
+
+./icomet-server icomet.conf
+# or run as daemon
+./icomet-server -d icomet.conf
+# stop
+./icomet-server icomet.conf -s stop
+Make a test via curl:
+
+curl -v "http://127.0.0.1:8100/sub?cname=12&seq=1"
+# open another terminal
+curl -v "http://127.0.0.1:8000/push?cname=12&content=hi"
+
+
+
+curl -v "http://127.0.0.1:8100/sub?cname=12&seq=1"
+2018-07-06 09:59:37.752 [DEBUG] server.cpp(46): new channel: 12
+2018-07-06 09:59:37.752 [DEBUG] subscriber.cpp(46): 127.0.0.1:1418 sub 12, seq: 1, subs: 1
+
+curl -v "http://127.0.0.1:8000/push?cname=12&content=hi"
+2018-07-06 09:58:58.313 [DEBUG] server.cpp(46): new channel: 12
+2018-07-06 09:58:58.313 [DEBUG] server.cpp(251): auto sign channel on pub, cname:12, t:493480bb1aafb1cd59e1e4a80b5a07a5, expires:30
+2018-07-06 09:58:58.313 [DEBUG] server.cpp(269): 127.0.0.1:61852 pub 12, seq: 1, subs: 0, content: hi
+
+bulk test:
+开启日志
+./siegePush.sh 100 1000 
+/usr/bin/siege -c 100 -r 1000 'http://127.0.0.1:8000/push?cname=12&content=hi'
+      done.
+
+Transactions:                 100000 hits
+Availability:                 100.00 %
+Elapsed time:                   3.64 secs
+Data transferred:               1.34 MB
+Response time:                  0.00 secs
+Transaction rate:           27472.53 trans/sec
+Throughput:                     0.37 MB/sec
+Concurrency:                   99.65
+Successful transactions:      100000
+Failed transactions:               0
+Longest transaction:            0.02
+Shortest transaction:           0.00
+
+
+关闭日志
+./siegePush.sh 100 1000 
+/usr/bin/siege -c 100 -r 1000 'http://127.0.0.1:8000/push?cname=12&content=hi'
+      done.
+
+Transactions:                 100000 hits
+Availability:                 100.00 %
+Elapsed time:                   2.38 secs
+Data transferred:               1.34 MB
+Response time:                  0.00 secs
+Transaction rate:           42016.80 trans/sec
+Throughput:                     0.56 MB/sec
+Concurrency:                   99.24
+Successful transactions:      100000
+Failed transactions:               0
+Longest transaction:            0.01
+Shortest transaction:           0.00
