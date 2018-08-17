@@ -1165,35 +1165,35 @@ bool NodeSession::InsertNodeLogToDB()
 
         worker
      * */
-    char szSql[3096];
-    NodesLogMapIT it = m_mapNodesLog.begin();
-    NodesLogMapIT itEnd = m_mapNodesLog.end();
-    for (; it != itEnd; ++it)
-    {
-        NodeLogInfo& nodeLog = it->second;
-        snprintf(szSql, sizeof(szSql) - 1,
-                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,"
-                        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
-                        "'%s')",
-                        NODE_LOAD_LOG_TABLE, nodeLog.nodeId,
-                        nodeLog.nodeType.c_str(), nodeLog.nodeInnerPort,
-                        nodeLog.nodeInnerIp.c_str(), nodeLog.nodeAccessPort,
-                        nodeLog.nodeAccessIp.c_str(), nodeLog.workerNum,
-                        m_currentTime,
-                        nodeLog.GetAverageLoad(),nodeLog.maxLoad,nodeLog.GetAverageConnect(),nodeLog.maxConnect,
-                        nodeLog.GetAverageClient(),nodeLog.maxClient, nodeLog.GetAverageRecvNum(), nodeLog.maxRecvNum,
-                        nodeLog.GetAverageSendNum(),nodeLog.maxSendNum,nodeLog.GetAverageRecvByte(), nodeLog.maxRecvByte,
-                        nodeLog.GetAverageSendByte(),nodeLog.maxSendByte,
-                        nodeLog.worker.c_str());
-        oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
-		pstep->SetTask(szSql,loss::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
-		{
-			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-			return (false);
-		}
-        nodeLog.cleanLoad();
-    }
+//    char szSql[3096];
+//    NodesLogMapIT it = m_mapNodesLog.begin();
+//    NodesLogMapIT itEnd = m_mapNodesLog.end();
+//    for (; it != itEnd; ++it)
+//    {
+//        NodeLogInfo& nodeLog = it->second;
+//        snprintf(szSql, sizeof(szSql) - 1,
+//                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,"
+//                        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+//                        "'%s')",
+//                        NODE_LOAD_LOG_TABLE, nodeLog.nodeId,
+//                        nodeLog.nodeType.c_str(), nodeLog.nodeInnerPort,
+//                        nodeLog.nodeInnerIp.c_str(), nodeLog.nodeAccessPort,
+//                        nodeLog.nodeAccessIp.c_str(), nodeLog.workerNum,
+//                        m_currentTime,
+//                        nodeLog.GetAverageLoad(),nodeLog.maxLoad,nodeLog.GetAverageConnect(),nodeLog.maxConnect,
+//                        nodeLog.GetAverageClient(),nodeLog.maxClient, nodeLog.GetAverageRecvNum(), nodeLog.maxRecvNum,
+//                        nodeLog.GetAverageSendNum(),nodeLog.maxSendNum,nodeLog.GetAverageRecvByte(), nodeLog.maxRecvByte,
+//                        nodeLog.GetAverageSendByte(),nodeLog.maxSendByte,
+//                        nodeLog.worker.c_str());
+//        oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
+//		pstep->SetTask(szSql,loss::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+//		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+//		{
+//			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+//			return (false);
+//		}
+//        nodeLog.cleanLoad();
+//    }
     return (true);
 }
 //节点统计操作
@@ -1244,30 +1244,30 @@ bool NodeSession::InsertNodeStatisticsToDB()
         totalrecvbyte
         totalsendbyte
      * */
-    char szSql[256];
-    NodesStatisticsMapIT it = m_mapNodesStatistics.begin();
-    NodesStatisticsMapIT itEnd = m_mapNodesStatistics.end();
-    for (; it != itEnd; ++it)
-    {
-        NodesStaisticsInfo& nodeInfo = it->second;
-        snprintf(szSql, sizeof(szSql) - 1,
-                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,%d,%d,%d,%d,%d,%d,%d)",
-                        NODE_LOAD_STATISTICS_TABLE, nodeInfo.nodeId,
-                        nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
-                        nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
-                        nodeInfo.nodeAccessIp.c_str(), nodeInfo.workerNum,
-                        m_currentTime, nodeInfo.load, nodeInfo.client,
-                        nodeInfo.connect, nodeInfo.recvNum, nodeInfo.sendNum,
-                        nodeInfo.recvByte, nodeInfo.sendByte);
-        oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
-		pstep->SetTask(szSql,loss::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
-		{
-			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-			return (false);
-		}
-        nodeInfo.clearLoad();
-    }
+//    char szSql[256];
+//    NodesStatisticsMapIT it = m_mapNodesStatistics.begin();
+//    NodesStatisticsMapIT itEnd = m_mapNodesStatistics.end();
+//    for (; it != itEnd; ++it)
+//    {
+//        NodesStaisticsInfo& nodeInfo = it->second;
+//        snprintf(szSql, sizeof(szSql) - 1,
+//                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,%d,%d,%d,%d,%d,%d,%d)",
+//                        NODE_LOAD_STATISTICS_TABLE, nodeInfo.nodeId,
+//                        nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
+//                        nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
+//                        nodeInfo.nodeAccessIp.c_str(), nodeInfo.workerNum,
+//                        m_currentTime, nodeInfo.load, nodeInfo.client,
+//                        nodeInfo.connect, nodeInfo.recvNum, nodeInfo.sendNum,
+//                        nodeInfo.recvByte, nodeInfo.sendByte);
+//        oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
+//		pstep->SetTask(szSql,loss::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+//		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+//		{
+//			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+//			return (false);
+//		}
+//        nodeInfo.clearLoad();
+//    }
     return (true);
 }
 bool NodeSession::CheckNodeload()
@@ -1283,30 +1283,30 @@ bool NodeSession::CheckNodeload()
 }
 bool NodeSession::ClearOverdueOfflineNodeLogToDB()
 {
-    oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(loss::eSqlTaskOper_exec,"delete from %s WHERE active_time <= %llu",
-            NODE_LOAD_LOG_TABLE,
-            (uint64)(m_currentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!oss::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
-    LOG4_DEBUG( "ClearOverdueOfflineNodeLogToDB ok");
+//    oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
+//	pstep->SetTask(loss::eSqlTaskOper_exec,"delete from %s WHERE active_time <= %llu",
+//            NODE_LOAD_LOG_TABLE,
+//            (uint64)(m_currentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+//	if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+//	{
+//		LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+//		return (false);
+//	}
+//    LOG4_DEBUG( "ClearOverdueOfflineNodeLogToDB ok");
     return (true);
 }
 bool NodeSession::ClearOverdueOfflineNodeStatisticsToDB()
 {
-    oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(loss::eSqlTaskOper_exec,"delete from %s WHERE currenttime <= %llu",
-            NODE_LOAD_STATISTICS_TABLE,
-            (uint64)(m_currentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!oss::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s oss::MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
-    LOG4_DEBUG( "ClearOverdueOfflineNodeStatisticsToDB ok");
+//    oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
+//	pstep->SetTask(loss::eSqlTaskOper_exec,"delete from %s WHERE currenttime <= %llu",
+//            NODE_LOAD_STATISTICS_TABLE,
+//            (uint64)(m_currentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+//	if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+//	{
+//		LOG4_WARN("%s oss::MysqlStep::Launch failed",__FUNCTION__);
+//		return (false);
+//	}
+//    LOG4_DEBUG( "ClearOverdueOfflineNodeStatisticsToDB ok");
     return (true);
 }
 
