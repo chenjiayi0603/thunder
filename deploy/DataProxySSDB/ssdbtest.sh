@@ -11,7 +11,7 @@ ssdb_port=7000
 es_ip=192.168.18.78
 es_port=9200
 
-bin=/app/analysis2/db/redis/bin/redis-cli
+bin=/app/thunder/db/redis/bin/redis-cli
 INT_MAX=2147483647 
 
 . ${ROBOT_HOME}/scripts/analysis_script_func.sh
