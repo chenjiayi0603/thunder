@@ -1,0 +1,7 @@
+cryptopp-CRYPTOPP_5_6_2.tar.gz
+make libcryptopp.so
+vim GNUmakefile
+CXXFLAGS = -DNDEBUG -g -O2 -Wno-error -Wno-narrowing
+# -O3 fails to link on Cygwin GCC version 4.5.3
+# -fPIC is supported. Please report any breakage of -fPIC as a bug.
+CXXFLAGS += -fPIC
