@@ -838,9 +838,19 @@ int CmdDbOper::AsyncQuery(const oss::tagMsgShell& stMsgShell,const MsgHead& oInM
 					pStageParam->m_uiSectionFrom,pStageParam->m_uiSectionTo,pStageParam->m_uiHash,pStageParam->m_uiDivisor);
 			return true;
 		};
+    	auto mysqlSelectFailCallback = [](oss::StepState* state)
+        {
+    	    STAGE_TEST_PARAM_LOG_RETURN_NULL(QueryMysqlParam,state,"mysqlSelectFailCallback");
+            oss::MysqlStep* pMysqlState = (oss::MysqlStep*)state;
+            pStageParam->pCmdDbOper->AsyncQueryCallback(pStageParam->oQuery,
+                    pMysqlState->m_pMysqlResSet,pMysqlState->m_pMysqlResSet->GetErrno(),pStageParam->strSql,
+                    pStageParam->stMsgShell,pStageParam->oInMsgHead,
+                    pStageParam->m_uiSectionFrom,pStageParam->m_uiSectionTo,pStageParam->m_uiHash,pStageParam->m_uiDivisor);
+        };
     	oss::MysqlStep* pstep = new oss::MysqlStep(pDbi->GetDbConf().m_stDbConnInfo);
 		pstep->SetTask(strSql,loss::eSqlTaskOper_select);//第一个任务
 		pstep->AddStateFunc(mysqlSelectCallback);
+		pstep->SetFailFunc(mysqlSelectFailCallback);
 		pstep->SetData(new QueryMysqlParam(this,oQuery,strSql,stMsgShell,oInMsgHead,
 				m_uiSectionFrom,m_uiSectionTo,m_uiHash,m_uiDivisor));
 		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
@@ -861,9 +871,19 @@ int CmdDbOper::AsyncQuery(const oss::tagMsgShell& stMsgShell,const MsgHead& oInM
 					pStageParam->m_uiSectionFrom,pStageParam->m_uiSectionTo,pStageParam->m_uiHash,pStageParam->m_uiDivisor);
 			return true;
 		};
+    	auto mysqlExecFailCallback = [](oss::StepState* state)
+        {
+    	    STAGE_TEST_PARAM_LOG_RETURN_NULL(QueryMysqlParam,state,"mysqlExecFailCallback");
+            oss::MysqlStep* pMysqlState = (oss::MysqlStep*)state;
+            pStageParam->pCmdDbOper->AsyncQueryCallback(pStageParam->oQuery,
+                    pMysqlState->m_pMysqlResSet,pMysqlState->m_pMysqlResSet->GetErrno(),pStageParam->strSql,
+                    pStageParam->stMsgShell,pStageParam->oInMsgHead,
+                    pStageParam->m_uiSectionFrom,pStageParam->m_uiSectionTo,pStageParam->m_uiHash,pStageParam->m_uiDivisor);
+        };
     	oss::MysqlStep* pstep = new oss::MysqlStep(pDbi->GetDbConf().m_stDbConnInfo);
 		pstep->SetTask(strSql,loss::eSqlTaskOper_exec);//第一个任务
 		pstep->AddStateFunc(mysqlExecCallback);
+		pstep->SetFailFunc(mysqlExecFailCallback);
 		pstep->SetData(new QueryMysqlParam(this,oQuery,strSql,stMsgShell,oInMsgHead,
 				m_uiSectionFrom,m_uiSectionTo,m_uiHash,m_uiDivisor));
 		if (!oss::MysqlStep::Launch(GetLabor(),pstep))
