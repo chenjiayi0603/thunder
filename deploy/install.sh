@@ -4,7 +4,7 @@ RUN_PATH=`pwd`
 cd ${RUN_PATH}
 lib3_path=/app/analysis/analysisServer/deploy/3lib
 
-SRC_IP=18.68
+SRC_IP=18.78
 #不填则自动识别目标物理地址为本物理机地址
 DST_IP=
 
@@ -26,7 +26,7 @@ function check_config()
 function change_config()
 {
 	#FreeBSD/OpenBSD
-	test -z "${DST_IP}" && DST_IP=`ifconfig|grep -E 'inet.[0-9]'|grep -v '192.'|awk '{print $2}'|awk 'NR==1{print}'`
+	test -z "${DST_IP}" && DST_IP=`ifconfig|grep -E 'inet.[0-9]'|grep '192.'|awk '{print $2}'|awk 'NR==1{print}'`
 	#linux
 	test -z "${DST_IP}" && DST_IP=`ifconfig |grep "inet addr" |grep "192."|grep -o "addr:[0-9.]\{1,\}"|cut -d: -f2|awk 'NR==1{print}'`
 	test -z "${DST_IP}" && echo "failed to get DST_IP" && exit 0
