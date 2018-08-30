@@ -10,6 +10,8 @@ pqxx::result query()
   pqxx::result r = txn.exec("SELECT name, salary FROM company");
   for (auto row: r)
     std::cout
+	  << row.size() << " "
+	  << row[0] << " "
       // Address column by name.  Use c_str() to get C-style string.
       << row["name"].c_str()
       << " makes "
