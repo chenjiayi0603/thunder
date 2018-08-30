@@ -28,6 +28,7 @@ enum E_DB_TYPE                              // 数据库类型
     MYSQL_DB = 1,                           // MySQL数据库
     ORACLE_DB = 2,                          // ORACLE数据库
     SQL_SERVER_DB = 3,                      // SQL Server数据库
+	POSTGRESQL_DB = 4, 						// postgresql数据库
     DATA_AGENT = 9,                         // 数据代理（非真正意义上的DB）
 };
 
