@@ -4,17 +4,17 @@
  *		Port-specific prototypes for Linux
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/port/dynloader/linux.h,v 1.28 2009/01/01 17:23:46 momjian Exp $
+ * src/backend/port/dynloader/linux.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef PORT_PROTOS_H
 #define PORT_PROTOS_H
 
-#include "utils/dynamic_loader.h"
+#include "utils/dynamic_loader.h"	/* pgrminclude ignore */
 #ifdef HAVE_DLOPEN
 #include <dlfcn.h>
 #endif
@@ -39,6 +39,6 @@
 #define pg_dlsym		dlsym
 #define pg_dlclose		dlclose
 #define pg_dlerror		dlerror
-#endif   /* HAVE_DLOPEN */
+#endif							/* HAVE_DLOPEN */
 
-#endif   /* PORT_PROTOS_H */
+#endif							/* PORT_PROTOS_H */

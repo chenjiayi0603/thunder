@@ -10,10 +10,10 @@
  * guarantee that there can only be one matching row for a key combination.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/catcache.h,v 1.73 2010/02/26 02:01:29 momjian Exp $
+ * src/include/utils/catcache.h
  *
  *-------------------------------------------------------------------------
  */
@@ -22,7 +22,7 @@
 
 #include "access/htup.h"
 #include "access/skey.h"
-#include "lib/dllist.h"
+#include "lib/ilist.h"
 #include "utils/relcache.h"
 
 /*
@@ -37,7 +37,7 @@
 typedef struct catcache
 {
 	int			id;				/* cache identifier --- see syscache.h */
-	struct catcache *cc_next;	/* link to next catcache */
+	slist_node	cc_next;		/* list link */
 	const char *cc_relname;		/* name of relation the tuples come from */
 	Oid			cc_reloid;		/* OID of relation the tuples come from */
 	Oid			cc_indexoid;	/* OID of index matching cache keys */
@@ -46,12 +46,18 @@ typedef struct catcache
 	int			cc_ntup;		/* # of tuples currently in this cache */
 	int			cc_nbuckets;	/* # of hash buckets in this cache */
 	int			cc_nkeys;		/* # of keys (1..CATCACHE_MAXKEYS) */
-	int			cc_key[CATCACHE_MAXKEYS];		/* AttrNumber of each key */
+	int			cc_key[CATCACHE_MAXKEYS];	/* AttrNumber of each key */
 	PGFunction	cc_hashfunc[CATCACHE_MAXKEYS];	/* hash function for each key */
-	ScanKeyData cc_skey[CATCACHE_MAXKEYS];		/* precomputed key info for
-												 * heap scans */
+	ScanKeyData cc_skey[CATCACHE_MAXKEYS];	/* precomputed key info for heap
+											 * scans */
 	bool		cc_isname[CATCACHE_MAXKEYS];	/* flag "name" key columns */
-	Dllist		cc_lists;		/* list of CatCList structs */
+	dlist_head	cc_lists;		/* list of CatCList structs */
+	dlist_head *cc_bucket;		/* hash buckets */
+
+	/*
+	 * Keep these at the end, so that compiling catcache.c with CATCACHE_STATS
+	 * doesn't break ABI for other modules
+	 */
 #ifdef CATCACHE_STATS
 	long		cc_searches;	/* total # searches against this cache */
 	long		cc_hits;		/* # of matches against existing entry */
@@ -66,8 +72,7 @@ typedef struct catcache
 	long		cc_lsearches;	/* total # list-searches */
 	long		cc_lhits;		/* # of matches against existing lists */
 #endif
-	Dllist		cc_bucket[1];	/* hash buckets --- VARIABLE LENGTH ARRAY */
-} CatCache;						/* VARIABLE LENGTH STRUCT */
+} CatCache;
 
 
 typedef struct catctup
@@ -77,14 +82,14 @@ typedef struct catctup
 	CatCache   *my_cache;		/* link to owning catcache */
 
 	/*
-	 * Each tuple in a cache is a member of a Dllist that stores the elements
-	 * of its hash bucket.	We keep each Dllist in LRU order to speed repeated
+	 * Each tuple in a cache is a member of a dlist that stores the elements
+	 * of its hash bucket.  We keep each dlist in LRU order to speed repeated
 	 * lookups.
 	 */
-	Dlelem		cache_elem;		/* list member of per-bucket list */
+	dlist_node	cache_elem;		/* list member of per-bucket list */
 
 	/*
-	 * The tuple may also be a member of at most one CatCList.	(If a single
+	 * The tuple may also be a member of at most one CatCList.  (If a single
 	 * catcache is list-searched with varying numbers of keys, we may have to
 	 * make multiple entries for the same tuple because of this restriction.
 	 * Currently, that's not expected to be common, so we accept the potential
@@ -101,7 +106,7 @@ typedef struct catctup
 	 *
 	 * A negative cache entry is an assertion that there is no tuple matching
 	 * a particular key.  This is just as useful as a normal entry so far as
-	 * avoiding catalog searches is concerned.	Management of positive and
+	 * avoiding catalog searches is concerned.  Management of positive and
 	 * negative entries is identical.
 	 */
 	int			refcount;		/* number of active references */
@@ -120,7 +125,7 @@ typedef struct catclist
 
 	/*
 	 * A CatCList describes the result of a partial search, ie, a search using
-	 * only the first K key columns of an N-key cache.	We form the keys used
+	 * only the first K key columns of an N-key cache.  We form the keys used
 	 * into a tuple (with other attributes NULL) to represent the stored key
 	 * set.  The CatCList object contains links to cache entries for all the
 	 * table rows satisfying the partial key.  (Note: none of these will be
@@ -139,7 +144,7 @@ typedef struct catclist
 	 * might not be true during bootstrap or recovery operations. (namespace.c
 	 * is able to save some cycles when it is true.)
 	 */
-	Dlelem		cache_elem;		/* list member of per-catcache list */
+	dlist_node	cache_elem;		/* list member of per-catcache list */
 	int			refcount;		/* number of active references */
 	bool		dead;			/* dead but not yet removed? */
 	bool		ordered;		/* members listed in index order? */
@@ -147,13 +152,13 @@ typedef struct catclist
 	uint32		hash_value;		/* hash value for lookup keys */
 	HeapTupleData tuple;		/* header for tuple holding keys */
 	int			n_members;		/* number of member tuples */
-	CatCTup    *members[1];		/* members --- VARIABLE LENGTH ARRAY */
-} CatCList;						/* VARIABLE LENGTH STRUCT */
+	CatCTup    *members[FLEXIBLE_ARRAY_MEMBER]; /* members */
+} CatCList;
 
 
 typedef struct catcacheheader
 {
-	CatCache   *ch_caches;		/* head of list of CatCache structs */
+	slist_head	ch_caches;		/* head of list of CatCache structs */
 	int			ch_ntup;		/* # of tuples in all caches */
 } CatCacheHeader;
 
@@ -162,7 +167,6 @@ typedef struct catcacheheader
 extern PGDLLIMPORT MemoryContext CacheMemoryContext;
 
 extern void CreateCacheMemoryContext(void);
-extern void AtEOXact_CatCache(bool isCommit);
 
 extern CatCache *InitCatCache(int id, Oid reloid, Oid indexoid,
 			 int nkeys, const int *key,
@@ -174,6 +178,10 @@ extern HeapTuple SearchCatCache(CatCache *cache,
 			   Datum v3, Datum v4);
 extern void ReleaseCatCache(HeapTuple tuple);
 
+extern uint32 GetCatCacheHashValue(CatCache *cache,
+					 Datum v1, Datum v2,
+					 Datum v3, Datum v4);
+
 extern CatCList *SearchCatCacheList(CatCache *cache, int nkeys,
 				   Datum v1, Datum v2,
 				   Datum v3, Datum v4);
@@ -181,13 +189,13 @@ extern void ReleaseCatCacheList(CatCList *list);
 
 extern void ResetCatalogCaches(void);
 extern void CatalogCacheFlushCatalog(Oid catId);
-extern void CatalogCacheIdInvalidate(int cacheId, uint32 hashValue,
-						 ItemPointer pointer);
+extern void CatCacheInvalidate(CatCache *cache, uint32 hashValue);
 extern void PrepareToInvalidateCacheTuple(Relation relation,
 							  HeapTuple tuple,
-						   void (*function) (int, uint32, ItemPointer, Oid));
+							  HeapTuple newtuple,
+							  void (*function) (int, uint32, Oid));
 
-extern void PrintCatCacheLeakWarning(HeapTuple tuple, const char *resOwnerName);
-extern void PrintCatCacheListLeakWarning(CatCList *list, const char *resOwnerName);
+extern void PrintCatCacheLeakWarning(HeapTuple tuple);
+extern void PrintCatCacheListLeakWarning(CatCList *list);
 
-#endif   /* CATCACHE_H */
+#endif							/* CATCACHE_H */

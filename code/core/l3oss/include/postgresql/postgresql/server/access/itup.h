@@ -4,10 +4,10 @@
  *	  POSTGRES index tuple definitions.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/itup.h,v 1.52 2009/08/01 19:59:41 tgl Exp $
+ * src/include/access/itup.h
  *
  *-------------------------------------------------------------------------
  */
@@ -22,7 +22,7 @@
 /*
  * Index tuple header structure
  *
- * All index tuples start with IndexTupleData.	If the HasNulls bit is set,
+ * All index tuples start with IndexTupleData.  If the HasNulls bit is set,
  * this is followed by an IndexAttributeBitMapData.  The index attribute
  * values follow, beginning at a MAXALIGN boundary.
  *
@@ -37,7 +37,7 @@ typedef struct IndexTupleData
 	ItemPointerData t_tid;		/* reference TID to heap tuple */
 
 	/* ---------------
-	 * t_info is layed out in the following fashion:
+	 * t_info is laid out in the following fashion:
 	 *
 	 * 15th (high) bit: has nulls
 	 * 14th bit: has var-width attributes
@@ -55,15 +55,15 @@ typedef IndexTupleData *IndexTuple;
 typedef struct IndexAttributeBitMapData
 {
 	bits8		bits[(INDEX_MAX_KEYS + 8 - 1) / 8];
-} IndexAttributeBitMapData;
+}			IndexAttributeBitMapData;
 
-typedef IndexAttributeBitMapData *IndexAttributeBitMap;
+typedef IndexAttributeBitMapData * IndexAttributeBitMap;
 
 /*
  * t_info manipulation macros
  */
 #define INDEX_SIZE_MASK 0x1FFF
-/* bit 0x2000 is not used at present */
+/* bit 0x2000 is reserved for index-AM specific usage */
 #define INDEX_VAR_MASK	0x4000
 #define INDEX_NULL_MASK 0x8000
 
@@ -110,18 +110,18 @@ typedef IndexAttributeBitMapData *IndexAttributeBitMap;
 			+ (tupleDesc)->attrs[(attnum)-1]->attcacheoff) \
 		) \
 		: \
-			nocache_index_getattr((tup), (attnum), (tupleDesc), (isnull)) \
+			nocache_index_getattr((tup), (attnum), (tupleDesc)) \
 	) \
 	: \
 	( \
 		(att_isnull((attnum)-1, (char *)(tup) + sizeof(IndexTupleData))) ? \
 		( \
 			*(isnull) = true, \
-			(Datum)0 \
+			(Datum)NULL \
 		) \
 		: \
 		( \
-			nocache_index_getattr((tup), (attnum), (tupleDesc), (isnull)) \
+			nocache_index_getattr((tup), (attnum), (tupleDesc)) \
 		) \
 	) \
 )
@@ -133,8 +133,9 @@ typedef IndexAttributeBitMapData *IndexAttributeBitMap;
  * IndexTupleData struct.  We arrive at the divisor because each tuple
  * must be maxaligned, and it must have an associated item pointer.
  */
+#define MinIndexTupleSize MAXALIGN(sizeof(IndexTupleData) + 1)
 #define MaxIndexTuplesPerPage	\
-	((int) ((BLCKSZ - offsetof(PageHeaderData, pd_linp)) / \
+	((int) ((BLCKSZ - SizeOfPageHeaderData) / \
 			(MAXALIGN(sizeof(IndexTupleData) + 1) + sizeof(ItemIdData))))
 
 
@@ -142,9 +143,9 @@ typedef IndexAttributeBitMapData *IndexAttributeBitMap;
 extern IndexTuple index_form_tuple(TupleDesc tupleDescriptor,
 				 Datum *values, bool *isnull);
 extern Datum nocache_index_getattr(IndexTuple tup, int attnum,
-					  TupleDesc tupleDesc, bool *isnull);
+					  TupleDesc tupleDesc);
 extern void index_deform_tuple(IndexTuple tup, TupleDesc tupleDescriptor,
-				 Datum *values, bool *isnull);
+				   Datum *values, bool *isnull);
 extern IndexTuple CopyIndexTuple(IndexTuple source);
 
-#endif   /* ITUP_H */
+#endif							/* ITUP_H */

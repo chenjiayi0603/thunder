@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_index.h,v 1.45 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_index.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -28,34 +28,36 @@
  */
 #define IndexRelationId  2610
 
-CATALOG(pg_index,2610) BKI_WITHOUT_OIDS
+CATALOG(pg_index,2610) BKI_WITHOUT_OIDS BKI_SCHEMA_MACRO
 {
 	Oid			indexrelid;		/* OID of the index */
 	Oid			indrelid;		/* OID of the relation it indexes */
-	int2		indnatts;		/* number of columns in index */
+	int16		indnatts;		/* number of columns in index */
 	bool		indisunique;	/* is this a unique index? */
 	bool		indisprimary;	/* is this index for primary key? */
+	bool		indisexclusion; /* is this index for exclusion constraint? */
+	bool		indimmediate;	/* is uniqueness enforced immediately? */
 	bool		indisclustered; /* is this the index last clustered by? */
 	bool		indisvalid;		/* is this index valid for use by queries? */
 	bool		indcheckxmin;	/* must we wait for xmin to be old? */
 	bool		indisready;		/* is this index ready for inserts? */
+	bool		indislive;		/* is this index alive at all? */
+	bool		indisreplident; /* is this index the identity for replication? */
 
-	/* VARIABLE LENGTH FIELDS: */
+	/* variable-length fields start here, but we allow direct access to indkey */
 	int2vector	indkey;			/* column numbers of indexed cols, or 0 */
+
+#ifdef CATALOG_VARLEN
+	oidvector	indcollation;	/* collation identifiers */
 	oidvector	indclass;		/* opclass identifiers */
 	int2vector	indoption;		/* per-column flags (AM-specific meanings) */
-	text		indexprs;		/* expression trees for index attributes that
+	pg_node_tree indexprs;		/* expression trees for index attributes that
 								 * are not simple column references; one for
 								 * each zero entry in indkey[] */
-	text		indpred;		/* expression tree for predicate, if a partial
+	pg_node_tree indpred;		/* expression tree for predicate, if a partial
 								 * index; else NULL */
+#endif
 } FormData_pg_index;
-
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(indexrelid REFERENCES pg_class(oid));
-FOREIGN_KEY(indrelid REFERENCES pg_class(oid));
-/*   alter table pg_index add vector_fk indclass on pg_opclass(oid); */
 
 /* ----------------
  *		Form_pg_index corresponds to a pointer to a tuple with
@@ -68,21 +70,26 @@ typedef FormData_pg_index *Form_pg_index;
  *		compiler constants for pg_index
  * ----------------
  */
-#define Natts_pg_index					14
+#define Natts_pg_index					19
 #define Anum_pg_index_indexrelid		1
 #define Anum_pg_index_indrelid			2
 #define Anum_pg_index_indnatts			3
 #define Anum_pg_index_indisunique		4
 #define Anum_pg_index_indisprimary		5
-#define Anum_pg_index_indisclustered	6
-#define Anum_pg_index_indisvalid		7
-#define Anum_pg_index_indcheckxmin		8
-#define Anum_pg_index_indisready		9
-#define Anum_pg_index_indkey			10
-#define Anum_pg_index_indclass			11
-#define Anum_pg_index_indoption			12
-#define Anum_pg_index_indexprs			13
-#define Anum_pg_index_indpred			14
+#define Anum_pg_index_indisexclusion	6
+#define Anum_pg_index_indimmediate		7
+#define Anum_pg_index_indisclustered	8
+#define Anum_pg_index_indisvalid		9
+#define Anum_pg_index_indcheckxmin		10
+#define Anum_pg_index_indisready		11
+#define Anum_pg_index_indislive			12
+#define Anum_pg_index_indisreplident	13
+#define Anum_pg_index_indkey			14
+#define Anum_pg_index_indcollation		15
+#define Anum_pg_index_indclass			16
+#define Anum_pg_index_indoption			17
+#define Anum_pg_index_indexprs			18
+#define Anum_pg_index_indpred			19
 
 /*
  * Index AMs that support ordered scans must support these two indoption
@@ -95,9 +102,10 @@ typedef FormData_pg_index *Form_pg_index;
 /*
  * Use of these macros is recommended over direct examination of the state
  * flag columns where possible; this allows source code compatibility with
- * 9.2 and up.
+ * the hacky representation used in 9.2.
  */
 #define IndexIsValid(indexForm) ((indexForm)->indisvalid)
 #define IndexIsReady(indexForm) ((indexForm)->indisready)
+#define IndexIsLive(indexForm)	((indexForm)->indislive)
 
-#endif   /* PG_INDEX_H */
+#endif							/* PG_INDEX_H */

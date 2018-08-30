@@ -4,10 +4,10 @@
  *	  POSTGRES tuple descriptor definitions.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/tupdesc.h,v 1.53 2008/01/01 19:45:56 momjian Exp $
+ * src/include/access/tupdesc.h
  *
  *-------------------------------------------------------------------------
  */
@@ -29,6 +29,8 @@ typedef struct constrCheck
 {
 	char	   *ccname;
 	char	   *ccbin;			/* nodeToString representation of expr */
+	bool		ccvalid;
+	bool		ccnoinherit;	/* this is a non-inheritable constraint */
 } ConstrCheck;
 
 /* This structure contains constraints of a tuple */
@@ -53,7 +55,7 @@ typedef struct tupleConstr
  * TupleDesc; with the exception that tdhasoid indicates if OID is present.
  *
  * If the tupdesc is known to correspond to a named rowtype (such as a table's
- * rowtype) then tdtypeid identifies that type and tdtypmod is -1.	Otherwise
+ * rowtype) then tdtypeid identifies that type and tdtypmod is -1.  Otherwise
  * tdtypeid is RECORDOID, and tdtypmod can be either -1 for a fully anonymous
  * row type, or a value >= 0 to allow the rowtype to be looked up in the
  * typcache.c type cache.
@@ -76,23 +78,11 @@ typedef struct tupleDesc
 	int32		tdtypmod;		/* typmod for tuple type */
 	bool		tdhasoid;		/* tuple has oid attribute in its header */
 	int			tdrefcount;		/* reference count, or -1 if not counting */
-}	*TupleDesc;
+}		   *TupleDesc;
 
-/*
- * When dispatching a planned statement from QD to QEs, we need to be able
- * to transmit TupleDescs. TupleDesc doesn't have the Node header, so for
- * convenience of the read and out functions, we wrap them in TupleDescNode
- * structs, which do.
- *
- * These are never serialized on disk, only in the read/outfast protocol,
- * as part of PlannedStmts.
- */
-typedef struct tupleDescNode
-{
-	NodeTag		type;
-	int			natts;
-	TupleDesc	tuple;
-} TupleDescNode;
+
+/* Accessor for the i'th attribute of tupdesc. */
+#define TupleDescAttr(tupdesc, i) ((tupdesc)->attrs[(i)])
 
 extern TupleDesc CreateTemplateTupleDesc(int natts, bool hasoid);
 
@@ -102,6 +92,9 @@ extern TupleDesc CreateTupleDesc(int natts, bool hasoid,
 extern TupleDesc CreateTupleDescCopy(TupleDesc tupdesc);
 
 extern TupleDesc CreateTupleDescCopyConstr(TupleDesc tupdesc);
+
+extern void TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
+				   TupleDesc src, AttrNumber srcAttno);
 
 extern void FreeTupleDesc(TupleDesc tupdesc);
 
@@ -120,7 +113,7 @@ extern void DecrTupleDescRefCount(TupleDesc tupdesc);
 			DecrTupleDescRefCount(tupdesc); \
 	} while (0)
 
-extern bool equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2, bool strict);
+extern bool equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2);
 
 extern void TupleDescInitEntry(TupleDesc desc,
 				   AttrNumber attributeNumber,
@@ -129,8 +122,19 @@ extern void TupleDescInitEntry(TupleDesc desc,
 				   int32 typmod,
 				   int attdim);
 
+extern void TupleDescInitBuiltinEntry(TupleDesc desc,
+						  AttrNumber attributeNumber,
+						  const char *attributeName,
+						  Oid oidtypeid,
+						  int32 typmod,
+						  int attdim);
+
+extern void TupleDescInitEntryCollation(TupleDesc desc,
+							AttrNumber attributeNumber,
+							Oid collationid);
+
 extern TupleDesc BuildDescForRelation(List *schema);
 
-extern TupleDesc BuildDescFromLists(List *names, List *types, List *typmods);
+extern TupleDesc BuildDescFromLists(List *names, List *types, List *typmods, List *collations);
 
-#endif   /* TUPDESC_H */
+#endif							/* TUPDESC_H */

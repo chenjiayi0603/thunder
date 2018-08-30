@@ -2,14 +2,15 @@
  *
  * funcapi.h
  *	  Definitions for functions which return composite type and/or sets
+ *	  or work on VARIADIC inputs.
  *
  * This file must be included by all Postgres modules that either define
  * or call FUNCAPI-callable functions or macros.
  *
  *
- * Copyright (c) 2002-2009, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/funcapi.h,v 1.29 2009/06/11 14:49:08 momjian Exp $
+ * src/include/funcapi.h
  *
  *-------------------------------------------------------------------------
  */
@@ -62,7 +63,7 @@ typedef struct FuncCallContext
 	 * call_cntr is initialized to 0 for you by SRF_FIRSTCALL_INIT(), and
 	 * incremented for you every time SRF_RETURN_NEXT() is called.
 	 */
-	uint32		call_cntr;
+	uint64		call_cntr;
 
 	/*
 	 * OPTIONAL maximum number of calls
@@ -71,7 +72,7 @@ typedef struct FuncCallContext
 	 * not set, you must provide alternative means to know when the function
 	 * is done.
 	 */
-	uint32		max_calls;
+	uint64		max_calls;
 
 	/*
 	 * OPTIONAL pointer to result slot
@@ -129,7 +130,7 @@ typedef struct FuncCallContext
  *		Given a function's call info record, determine the kind of datatype
  *		it is supposed to return.  If resultTypeId isn't NULL, *resultTypeId
  *		receives the actual datatype OID (this is mainly useful for scalar
- *		result types).	If resultTupleDesc isn't NULL, *resultTupleDesc
+ *		result types).  If resultTupleDesc isn't NULL, *resultTupleDesc
  *		receives a pointer to a TupleDesc when the result is of a composite
  *		type, or NULL when it's a scalar result or the rowtype could not be
  *		determined.  NB: the tupledesc should be copied if it is to be
@@ -164,8 +165,6 @@ extern TypeFuncClass get_expr_result_type(Node *expr,
 extern TypeFuncClass get_func_result_type(Oid functionId,
 					 Oid *resultTypeId,
 					 TupleDesc *resultTupleDesc);
-extern void  assign_func_result_transient_type(Oid functionId);
-
 
 extern bool resolve_polymorphic_argtypes(int numargs, Oid *argtypes,
 							 char *argmodes,
@@ -175,6 +174,10 @@ extern int get_func_arg_info(HeapTuple procTup,
 				  Oid **p_argtypes, char ***p_argnames,
 				  char **p_argmodes);
 
+extern int get_func_input_arg_names(Datum proargnames, Datum proargmodes,
+						 char ***arg_names);
+
+extern int	get_func_trftypes(HeapTuple procTup, Oid **p_trftypes);
 extern char *get_func_result_name(Oid functionId);
 
 extern TupleDesc build_function_result_tupdesc_d(Datum proallargtypes,
@@ -199,6 +202,8 @@ extern TupleDesc build_function_result_tupdesc_t(HeapTuple procTuple);
  * HeapTuple BuildTupleFromCStrings(AttInMetadata *attinmeta, char **values) -
  *		build a HeapTuple given user data in C string form. values is an array
  *		of C strings, one for each attribute of the return tuple.
+ * Datum HeapTupleHeaderGetDatum(HeapTupleHeader tuple) - convert a
+ *		HeapTupleHeader to a Datum.
  *
  * Macro declarations:
  * HeapTupleGetDatum(HeapTuple tuple) - convert a HeapTuple to a Datum.
@@ -215,9 +220,9 @@ extern TupleDesc build_function_result_tupdesc_t(HeapTuple procTuple);
  *----------
  */
 
-#define HeapTupleGetDatum(_tuple)		PointerGetDatum((_tuple)->t_data)
+#define HeapTupleGetDatum(tuple)		HeapTupleHeaderGetDatum((tuple)->t_data)
 /* obsolete version of above */
-#define TupleGetDatum(_slot, _tuple)	PointerGetDatum((_tuple)->t_data)
+#define TupleGetDatum(_slot, _tuple)	HeapTupleGetDatum(_tuple)
 
 extern TupleDesc RelationNameGetTupleDesc(const char *relname);
 extern TupleDesc TypeGetTupleDesc(Oid typeoid, List *colaliases);
@@ -226,6 +231,7 @@ extern TupleDesc TypeGetTupleDesc(Oid typeoid, List *colaliases);
 extern TupleDesc BlessTupleDesc(TupleDesc tupdesc);
 extern AttInMetadata *TupleDescGetAttInMetadata(TupleDesc tupdesc);
 extern HeapTuple BuildTupleFromCStrings(AttInMetadata *attinmeta, char **values);
+extern Datum HeapTupleHeaderGetDatum(HeapTupleHeader tuple);
 extern TupleTableSlot *TupleDescGetSlot(TupleDesc tupdesc);
 
 
@@ -292,6 +298,15 @@ extern void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx);
 		PG_RETURN_DATUM(_result); \
 	} while (0)
 
+#define SRF_RETURN_NEXT_NULL(_funcctx) \
+	do { \
+		ReturnSetInfo	   *rsi; \
+		(_funcctx)->call_cntr++; \
+		rsi = (ReturnSetInfo *) fcinfo->resultinfo; \
+		rsi->isDone = ExprMultipleResult; \
+		PG_RETURN_NULL(); \
+	} while (0)
+
 #define  SRF_RETURN_DONE(_funcctx) \
 	do { \
 		ReturnSetInfo	   *rsi; \
@@ -301,4 +316,26 @@ extern void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx);
 		PG_RETURN_NULL(); \
 	} while (0)
 
-#endif   /* FUNCAPI_H */
+/*----------
+ *	Support to ease writing of functions dealing with VARIADIC inputs
+ *----------
+ *
+ * This function extracts a set of argument values, types and NULL markers
+ * for a given input function. This returns a set of data:
+ * - **values includes the set of Datum values extracted.
+ * - **types the data type OID for each element.
+ * - **nulls tracks if an element is NULL.
+ *
+ * variadic_start indicates the argument number where the VARIADIC argument
+ * starts.
+ * convert_unknown set to true will enforce the conversion of arguments
+ * with unknown data type to text.
+ *
+ * The return result is the number of elements stored, or -1 in the case of
+ * "VARIADIC NULL".
+ */
+extern int extract_variadic_args(FunctionCallInfo fcinfo, int variadic_start,
+								 bool convert_unknown, Datum **values,
+								 Oid **types, bool **nulls);
+
+#endif							/* FUNCAPI_H */

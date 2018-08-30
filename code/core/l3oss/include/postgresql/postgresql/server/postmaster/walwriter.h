@@ -3,9 +3,9 @@
  * walwriter.h
  *	  Exports from postmaster/walwriter.c.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/postmaster/walwriter.h,v 1.2 2008/01/01 19:45:58 momjian Exp $
+ * src/include/postmaster/walwriter.h
  *
  *-------------------------------------------------------------------------
  */
@@ -14,7 +14,8 @@
 
 /* GUC options */
 extern int	WalWriterDelay;
+extern int	WalWriterFlushAfter;
 
-extern void WalWriterMain(void);
+extern void WalWriterMain(void) pg_attribute_noreturn();
 
-#endif   /* _WALWRITER_H */
+#endif							/* _WALWRITER_H */

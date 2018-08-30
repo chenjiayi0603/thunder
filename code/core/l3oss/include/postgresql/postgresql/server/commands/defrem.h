@@ -4,153 +4,164 @@
  *	  POSTGRES define and remove utility definitions.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/defrem.h,v 1.88.2.1 2010/07/03 13:53:38 rhaas Exp $
+ * src/include/commands/defrem.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef DEFREM_H
 #define DEFREM_H
 
+#include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
+#include "utils/array.h"
 
-struct HTAB;  /* utils/hsearch.h */
+/* commands/dropcmds.c */
+extern void RemoveObjects(DropStmt *stmt);
 
 /* commands/indexcmds.c */
-extern void DefineIndex(RangeVar *heapRelation,
-			char *indexRelationName,
+extern ObjectAddress DefineIndex(Oid relationId,
+			IndexStmt *stmt,
 			Oid indexRelationId,
-			char *accessMethodName,
-			char *tableSpaceName,
-			List *attributeList,
-			Expr *predicate,
-			List *options,
-			bool unique,
-			bool primary,
-			bool isconstraint,
 			bool is_alter_table,
 			bool check_rights,
+			bool check_not_in_use,
 			bool skip_build,
-			bool quiet,
-			bool concurrent,
-			IndexStmt *stmt /* MPP */);
-extern void RemoveIndex(RangeVar *relation, DropBehavior behavior);
-extern void ReindexIndex(ReindexStmt *stmt);
-extern void ReindexTable(ReindexStmt *stmt);
-extern void ReindexDatabase(ReindexStmt *stmt);
+			bool quiet);
+extern Oid	ReindexIndex(RangeVar *indexRelation, int options);
+extern Oid	ReindexTable(RangeVar *relation, int options);
+extern void ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind,
+					  int options);
 extern char *makeObjectName(const char *name1, const char *name2,
 			   const char *label);
 extern char *ChooseRelationName(const char *name1, const char *name2,
-								const char *label, Oid namespaceName);
-extern char *ChooseRelationNameWithCache(const char *name1, const char *name2,
-								const char *label, Oid namespaceName, 
-								struct HTAB *cache);
+				   const char *label, Oid namespaceid);
+extern bool CheckIndexCompatible(Oid oldId,
+					 char *accessMethodName,
+					 List *attributeList,
+					 List *exclusionOpNames);
 extern Oid	GetDefaultOpClass(Oid type_id, Oid am_id);
+extern Oid ResolveOpClass(List *opclass, Oid attrType,
+			   char *accessMethodName, Oid accessMethodId);
 
 /* commands/functioncmds.c */
-extern void CreateFunction(CreateFunctionStmt *stmt, const char *queryString);
-extern void RemoveFunction(RemoveFuncStmt *stmt);
+extern ObjectAddress CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt);
 extern void RemoveFunctionById(Oid funcOid);
 extern void SetFunctionReturnType(Oid funcOid, Oid newRetType);
 extern void SetFunctionArgType(Oid funcOid, int argIndex, Oid newArgType);
-extern void RenameFunction(List *name, List *argtypes, const char *newname);
-extern void AlterFunctionOwner(List *name, List *argtypes, Oid newOwnerId);
-extern void AlterFunctionOwner_oid(Oid procOid, Oid newOwnerId);
-extern void AlterFunction(AlterFunctionStmt *stmt);
-extern void CreateCast(CreateCastStmt *stmt);
-extern void DropCast(DropCastStmt *stmt);
+extern ObjectAddress AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt);
+extern ObjectAddress CreateCast(CreateCastStmt *stmt);
 extern void DropCastById(Oid castOid);
+extern ObjectAddress CreateTransform(CreateTransformStmt *stmt);
+extern void DropTransformById(Oid transformOid);
+extern void IsThereFunctionInNamespace(const char *proname, int pronargs,
+						   oidvector *proargtypes, Oid nspOid);
 extern void ExecuteDoStmt(DoStmt *stmt);
-extern Oid  get_cast_oid(Oid sourcetypeid, Oid targettypeid, bool missing_ok);
-extern void AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
-					   const char *newschema);
-extern Oid	AlterFunctionNamespace_oid(Oid procOid, Oid nspOid);
+extern Oid	get_cast_oid(Oid sourcetypeid, Oid targettypeid, bool missing_ok);
+extern Oid	get_transform_oid(Oid type_id, Oid lang_id, bool missing_ok);
+extern void interpret_function_parameter_list(ParseState *pstate,
+								  List *parameters,
+								  Oid languageOid,
+								  bool is_aggregate,
+								  oidvector **parameterTypes,
+								  ArrayType **allParameterTypes,
+								  ArrayType **parameterModes,
+								  ArrayType **parameterNames,
+								  List **parameterDefaults,
+								  Oid *variadicArgType,
+								  Oid *requiredResultType);
 
 /* commands/operatorcmds.c */
-extern void DefineOperator(List *names, List *parameters);
-extern void RemoveOperator(RemoveFuncStmt *stmt);
+extern ObjectAddress DefineOperator(List *names, List *parameters);
 extern void RemoveOperatorById(Oid operOid);
-extern void AlterOperatorOwner(List *name, TypeName *typeName1,
-				   TypeName *typename2, Oid newOwnerId);
-extern void AlterOperatorOwner_oid(Oid operOid, Oid newOwnerId);
-extern void AlterOperatorNamespace(List *names, List *argtypes, const char *newschema);
-extern Oid	AlterOperatorNamespace_oid(Oid operOid, Oid newNspOid);
+extern ObjectAddress AlterOperator(AlterOperatorStmt *stmt);
+
+/* commands/statscmds.c */
+extern ObjectAddress CreateStatistics(CreateStatsStmt *stmt);
+extern void RemoveStatisticsById(Oid statsOid);
+extern void UpdateStatisticsForTypeChange(Oid statsOid,
+							  Oid relationOid, int attnum,
+							  Oid oldColumnType, Oid newColumnType);
 
 /* commands/aggregatecmds.c */
-extern void DefineAggregate(List *name, List *args, bool oldstyle,
-							List *parameters, bool ordered);
-extern void RemoveAggregate(RemoveFuncStmt *stmt);
-extern void RenameAggregate(List *name, List *args, const char *newname);
-extern void AlterAggregateOwner(List *name, List *args, Oid newOwnerId);
+extern ObjectAddress DefineAggregate(ParseState *pstate, List *name, List *args, bool oldstyle,
+				List *parameters);
+
 /* commands/opclasscmds.c */
-extern void DefineOpClass(CreateOpClassStmt *stmt);
-extern void DefineOpFamily(CreateOpFamilyStmt *stmt);
-extern void AlterOpFamily(AlterOpFamilyStmt *stmt);
-extern void RemoveOpClass(RemoveOpClassStmt *stmt);
-extern void RemoveOpFamily(RemoveOpFamilyStmt *stmt);
+extern ObjectAddress DefineOpClass(CreateOpClassStmt *stmt);
+extern ObjectAddress DefineOpFamily(CreateOpFamilyStmt *stmt);
+extern Oid	AlterOpFamily(AlterOpFamilyStmt *stmt);
 extern void RemoveOpClassById(Oid opclassOid);
 extern void RemoveOpFamilyById(Oid opfamilyOid);
 extern void RemoveAmOpEntryById(Oid entryOid);
 extern void RemoveAmProcEntryById(Oid entryOid);
-extern void RenameOpClass(List *name, const char *access_method, const char *newname);
-extern void RenameOpFamily(List *name, const char *access_method, const char *newname);
-extern void AlterOpClassOwner(List *name, const char *access_method, Oid newOwnerId);
-extern void AlterOpClassOwner_oid(Oid opclassOid, Oid newOwnerId);
-extern void AlterOpClassNamespace(List *name, char *access_method, const char *newschema);
-extern Oid	AlterOpClassNamespace_oid(Oid opclassOid, Oid newNspOid);
-extern void AlterOpFamilyOwner(List *name, const char *access_method, Oid newOwnerId);
-extern void AlterOpFamilyOwner_oid(Oid opfamilyOid, Oid newOwnerId);
-extern void AlterOpFamilyNamespace(List *name, char *access_method, const char *newschema);
-extern Oid	AlterOpFamilyNamespace_oid(Oid opfamilyOid, Oid newNspOid);
-extern Oid  get_am_oid(const char *amname, bool missing_ok);
-extern Oid  get_opclass_oid(Oid amID, List *opclassname, bool missing_ok);
-extern Oid  get_opfamily_oid(Oid amID, List *opfamilyname, bool missing_ok);
+extern void IsThereOpClassInNamespace(const char *opcname, Oid opcmethod,
+						  Oid opcnamespace);
+extern void IsThereOpFamilyInNamespace(const char *opfname, Oid opfmethod,
+						   Oid opfnamespace);
+extern Oid	get_opclass_oid(Oid amID, List *opclassname, bool missing_ok);
+extern Oid	get_opfamily_oid(Oid amID, List *opfamilyname, bool missing_ok);
 
 /* commands/tsearchcmds.c */
-extern void DefineTSParser(List *names, List *parameters);
-extern void RenameTSParser(List *oldname, const char *newname);
-extern void RemoveTSParser(List *names, DropBehavior behavior,
-			   bool missing_ok);
+extern ObjectAddress DefineTSParser(List *names, List *parameters);
 extern void RemoveTSParserById(Oid prsId);
 
-extern void DefineTSDictionary(List *names, List *parameters);
-extern void RenameTSDictionary(List *oldname, const char *newname);
-extern void RemoveTSDictionary(List *names, DropBehavior behavior,
-				   bool missing_ok);
+extern ObjectAddress DefineTSDictionary(List *names, List *parameters);
 extern void RemoveTSDictionaryById(Oid dictId);
-extern void AlterTSDictionary(AlterTSDictionaryStmt *stmt);
-extern void AlterTSDictionaryOwner(List *name, Oid newOwnerId);
+extern ObjectAddress AlterTSDictionary(AlterTSDictionaryStmt *stmt);
 
-extern void DefineTSTemplate(List *names, List *parameters);
-extern void RenameTSTemplate(List *oldname, const char *newname);
-extern void RemoveTSTemplate(List *names, DropBehavior behavior,
-				 bool missing_ok);
+extern ObjectAddress DefineTSTemplate(List *names, List *parameters);
 extern void RemoveTSTemplateById(Oid tmplId);
 
-extern void DefineTSConfiguration(List *names, List *parameters);
-extern void RenameTSConfiguration(List *oldname, const char *newname);
-extern void RemoveTSConfiguration(List *names, DropBehavior behavior,
-					  bool missing_ok);
+extern ObjectAddress DefineTSConfiguration(List *names, List *parameters,
+					  ObjectAddress *copied);
 extern void RemoveTSConfigurationById(Oid cfgId);
-extern void AlterTSConfiguration(AlterTSConfigurationStmt *stmt);
-extern void AlterTSConfigurationOwner(List *name, Oid newOwnerId);
+extern ObjectAddress AlterTSConfiguration(AlterTSConfigurationStmt *stmt);
 
 extern text *serialize_deflist(List *deflist);
 extern List *deserialize_deflist(Datum txt);
 
-/* support routines in commands/define.c */
+/* commands/foreigncmds.c */
+extern ObjectAddress AlterForeignServerOwner(const char *name, Oid newOwnerId);
+extern void AlterForeignServerOwner_oid(Oid, Oid newOwnerId);
+extern ObjectAddress AlterForeignDataWrapperOwner(const char *name, Oid newOwnerId);
+extern void AlterForeignDataWrapperOwner_oid(Oid fwdId, Oid newOwnerId);
+extern ObjectAddress CreateForeignDataWrapper(CreateFdwStmt *stmt);
+extern ObjectAddress AlterForeignDataWrapper(AlterFdwStmt *stmt);
+extern void RemoveForeignDataWrapperById(Oid fdwId);
+extern ObjectAddress CreateForeignServer(CreateForeignServerStmt *stmt);
+extern ObjectAddress AlterForeignServer(AlterForeignServerStmt *stmt);
+extern void RemoveForeignServerById(Oid srvId);
+extern ObjectAddress CreateUserMapping(CreateUserMappingStmt *stmt);
+extern ObjectAddress AlterUserMapping(AlterUserMappingStmt *stmt);
+extern Oid	RemoveUserMapping(DropUserMappingStmt *stmt);
+extern void RemoveUserMappingById(Oid umId);
+extern void CreateForeignTable(CreateForeignTableStmt *stmt, Oid relid);
+extern void ImportForeignSchema(ImportForeignSchemaStmt *stmt);
+extern Datum transformGenericOptions(Oid catalogId,
+						Datum oldOptions,
+						List *options,
+						Oid fdwvalidator);
 
-extern char *case_translate_language_name(const char *input);
+/* commands/amcmds.c */
+extern ObjectAddress CreateAccessMethod(CreateAmStmt *stmt);
+extern void RemoveAccessMethodById(Oid amOid);
+extern Oid	get_index_am_oid(const char *amname, bool missing_ok);
+extern Oid	get_am_oid(const char *amname, bool missing_ok);
+extern char *get_am_name(Oid amOid);
+
+/* support routines in commands/define.c */
 
 extern char *defGetString(DefElem *def);
 extern double defGetNumeric(DefElem *def);
 extern bool defGetBoolean(DefElem *def);
+extern int32 defGetInt32(DefElem *def);
 extern int64 defGetInt64(DefElem *def);
 extern List *defGetQualifiedName(DefElem *def);
 extern TypeName *defGetTypeName(DefElem *def);
 extern int	defGetTypeLength(DefElem *def);
-extern DefElem *defWithOids(bool value);
+extern List *defGetStringList(DefElem *def);
 
-#endif   /* DEFREM_H */
+#endif							/* DEFREM_H */

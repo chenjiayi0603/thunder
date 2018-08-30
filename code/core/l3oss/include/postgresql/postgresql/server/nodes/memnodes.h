@@ -4,12 +4,10 @@
  *	  POSTGRES memory context node definitions.
  *
  *
- * Portions Copyright (c) 2007-2008, Greenplum inc
- * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/memnodes.h,v 1.34 2008/01/01 19:45:58 momjian Exp $
+ * src/include/nodes/memnodes.h
  *
  *-------------------------------------------------------------------------
  */
@@ -17,6 +15,24 @@
 #define MEMNODES_H
 
 #include "nodes/nodes.h"
+
+/*
+ * MemoryContextCounters
+ *		Summarization state for MemoryContextStats collection.
+ *
+ * The set of counters in this struct is biased towards AllocSet; if we ever
+ * add any context types that are based on fundamentally different approaches,
+ * we might need more or different counters here.  A possible API spec then
+ * would be to print only nonzero counters, but for now we just summarize in
+ * the format historically used by AllocSet.
+ */
+typedef struct MemoryContextCounters
+{
+	Size		nblocks;		/* Total number of malloc blocks */
+	Size		freechunks;		/* Total number of free chunks */
+	Size		totalspace;		/* Total bytes requested from malloc */
+	Size		freespace;		/* The unused portion of totalspace */
+} MemoryContextCounters;
 
 /*
  * MemoryContext
@@ -46,8 +62,8 @@ typedef struct MemoryContextMethods
 	void		(*delete_context) (MemoryContext context);
 	Size		(*get_chunk_space) (MemoryContext context, void *pointer);
 	bool		(*is_empty) (MemoryContext context);
-	void		(*stats) (MemoryContext context, uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
-	void		(*release_accounting)(MemoryContext context);
+	void		(*stats) (MemoryContext context, int level, bool print,
+						  MemoryContextCounters *totals);
 #ifdef MEMORY_CONTEXT_CHECKING
 	void		(*check) (MemoryContext context);
 #endif
@@ -57,20 +73,16 @@ typedef struct MemoryContextMethods
 typedef struct MemoryContextData
 {
 	NodeTag		type;			/* identifies exact kind of context */
-	MemoryContextMethods methods;		/* virtual function table */
+	/* these two fields are placed here to minimize alignment wastage: */
+	bool		isReset;		/* T = no space alloced since last reset */
+	bool		allowInCritSection; /* allow palloc in critical section */
+	MemoryContextMethods *methods;	/* virtual function table */
 	MemoryContext parent;		/* NULL if no parent (toplevel context) */
 	MemoryContext firstchild;	/* head of linked list of children */
+	MemoryContext prevchild;	/* previous child of same parent */
 	MemoryContext nextchild;	/* next child of same parent */
 	char	   *name;			/* context name (just for debugging) */
-    /* CDB: Lifetime cumulative stats for this context and all descendants */
-    uint64      allBytesAlloc;  /* bytes allocated from lower level mem mgr */
-    uint64      allBytesFreed;  /* bytes returned to lower level mem mgr */
-    Size        maxBytesHeld;   /* high-water mark for total bytes held */
-    Size        localMinHeld;   /* low-water mark since last increase in hwm */
-#ifdef CDB_PALLOC_CALLER_ID
-    const char *callerFile;     /* __FILE__ of most recent caller */
-    int         callerLine;     /* __LINE__ of most recent caller */
-#endif
+	MemoryContextCallback *reset_cbs;	/* list of reset/delete callbacks */
 } MemoryContextData;
 
 /* utils/palloc.h contains typedef struct MemoryContextData *MemoryContext */
@@ -84,6 +96,6 @@ typedef struct MemoryContextData
  */
 #define MemoryContextIsValid(context) \
 	((context) != NULL && \
-	 (IsA((context), AllocSetContext)))
+	 (IsA((context), AllocSetContext) || IsA((context), SlabContext)))
 
-#endif   /* MEMNODES_H */
+#endif							/* MEMNODES_H */

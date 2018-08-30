@@ -4,10 +4,10 @@
  *	  POSTGRES disk item pointer definitions.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/itemptr.h,v 1.32 2009/01/01 17:24:01 momjian Exp $
+ * src/include/storage/itemptr.h
  *
  *-------------------------------------------------------------------------
  */
@@ -29,10 +29,9 @@
  * tuple header on disk, it's very important not to waste space with
  * structure padding bytes.  The struct is designed to be six bytes long
  * (it contains three int16 fields) but a few compilers will pad it to
- * eight bytes unless coerced.	We apply appropriate persuasion where
- * possible, and to cope with unpersuadable compilers, we try to use
- * "SizeOfIptrData" rather than "sizeof(ItemPointerData)" when computing
- * on-disk sizes.
+ * eight bytes unless coerced.  We apply appropriate persuasion where
+ * possible.  If your compiler can't be made to play along, you'll waste
+ * lots of space.
  */
 typedef struct ItemPointerData
 {
@@ -40,13 +39,12 @@ typedef struct ItemPointerData
 	OffsetNumber ip_posid;
 }
 
-#ifdef __arm__
-__attribute__((packed))			/* Appropriate whack upside the head for ARM */
+/* If compiler understands packed and aligned pragmas, use those */
+#if defined(pg_attribute_packed) && defined(pg_attribute_aligned)
+pg_attribute_packed()
+pg_attribute_aligned(2)
 #endif
 ItemPointerData;
-
-#define SizeOfIptrData	\
-	(offsetof(ItemPointerData, ip_posid) + sizeof(OffsetNumber))
 
 typedef ItemPointerData *ItemPointer;
 
@@ -63,23 +61,41 @@ typedef ItemPointerData *ItemPointer;
 	((bool) (PointerIsValid(pointer) && ((pointer)->ip_posid != 0)))
 
 /*
- * ItemPointerGetBlockNumber
+ * ItemPointerGetBlockNumberNoCheck
  *		Returns the block number of a disk item pointer.
  */
-#define ItemPointerGetBlockNumber(pointer) \
+#define ItemPointerGetBlockNumberNoCheck(pointer) \
 ( \
-	AssertMacro(ItemPointerIsValid(pointer)), \
 	BlockIdGetBlockNumber(&(pointer)->ip_blkid) \
 )
 
 /*
- * ItemPointerGetOffsetNumber
+ * ItemPointerGetBlockNumber
+ *		As above, but verifies that the item pointer looks valid.
+ */
+#define ItemPointerGetBlockNumber(pointer) \
+( \
+	AssertMacro(ItemPointerIsValid(pointer)), \
+	ItemPointerGetBlockNumberNoCheck(pointer) \
+)
+
+/*
+ * ItemPointerGetOffsetNumberNoCheck
  *		Returns the offset number of a disk item pointer.
+ */
+#define ItemPointerGetOffsetNumberNoCheck(pointer) \
+( \
+	(pointer)->ip_posid \
+)
+
+/*
+ * ItemPointerGetOffsetNumber
+ *		As above, but verifies that the item pointer looks valid.
  */
 #define ItemPointerGetOffsetNumber(pointer) \
 ( \
 	AssertMacro(ItemPointerIsValid(pointer)), \
-	(pointer)->ip_posid \
+	ItemPointerGetOffsetNumberNoCheck(pointer) \
 )
 
 /*
@@ -116,6 +132,9 @@ typedef ItemPointerData *ItemPointer;
 /*
  * ItemPointerCopy
  *		Copies the contents of one disk item pointer to another.
+ *
+ * Should there ever be padding in an ItemPointer this would need to be handled
+ * differently as it's used as hash key.
  */
 #define ItemPointerCopy(fromPointer, toPointer) \
 ( \
@@ -142,7 +161,5 @@ typedef ItemPointerData *ItemPointer;
 
 extern bool ItemPointerEquals(ItemPointer pointer1, ItemPointer pointer2);
 extern int32 ItemPointerCompare(ItemPointer arg1, ItemPointer arg2);
-extern char *ItemPointerToString(ItemPointer tid);
-extern char *ItemPointerToString2(ItemPointer tid);
 
-#endif   /* ITEMPTR_H */
+#endif							/* ITEMPTR_H */

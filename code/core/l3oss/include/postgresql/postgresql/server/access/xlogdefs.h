@@ -1,13 +1,13 @@
 /*
  * xlogdefs.h
  *
- * Postgres transaction log manager record pointer and
+ * Postgres write-ahead log manager record pointer and
  * timeline number definitions
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/xlogdefs.h,v 1.19 2008/01/01 19:45:56 momjian Exp $
+ * src/include/access/xlogdefs.h
  */
 #ifndef XLOG_DEFS_H
 #define XLOG_DEFS_H
@@ -17,60 +17,21 @@
 /*
  * Pointer to a location in the XLOG.  These pointers are 64 bits wide,
  * because we don't want them ever to overflow.
- *
- * NOTE: xrecoff == 0 is used to indicate an invalid pointer.  This is OK
- * because we use page headers in the XLOG, so no XLOG record can start
- * right at the beginning of a file.
- *
- * NOTE: the "log file number" is somewhat misnamed, since the actual files
- * making up the XLOG are much smaller than 4Gb.  Each actual file is an
- * XLogSegSize-byte "segment" of a logical log file having the indicated
- * xlogid.	The log file number and segment number together identify a
- * physical XLOG file.	Segment number and offset within the physical file
- * are computed from xrecoff div and mod XLogSegSize.
  */
-typedef struct XLogRecPtr
-{
-	uint32		xlogid;			/* log file #, 0 based */
-	uint32		xrecoff;		/* byte offset of location in log file */
-} XLogRecPtr;
-
-#define XLogRecPtrIsInvalid(r)	((r).xrecoff == 0)
-
+typedef uint64 XLogRecPtr;
 
 /*
- * Macros for comparing XLogRecPtrs
- *
- * Beware of passing expressions with side-effects to these macros,
- * since the arguments may be evaluated multiple times.
+ * Zero is used indicate an invalid pointer. Bootstrap skips the first possible
+ * WAL segment, initializing the first WAL page at XLOG_SEG_SIZE, so no XLOG
+ * record can begin at zero.
  */
-#define XLByteLT(a, b)		\
-			((a).xlogid < (b).xlogid || \
-			 ((a).xlogid == (b).xlogid && (a).xrecoff < (b).xrecoff))
-
-#define XLByteLE(a, b)		\
-			((a).xlogid < (b).xlogid || \
-			 ((a).xlogid == (b).xlogid && (a).xrecoff <= (b).xrecoff))
-
-#define XLByteEQ(a, b)		\
-			((a).xlogid == (b).xlogid && (a).xrecoff == (b).xrecoff)
-
+#define InvalidXLogRecPtr	0
+#define XLogRecPtrIsInvalid(r)	((r) == InvalidXLogRecPtr)
 
 /*
- * Macro for advancing a record pointer by the specified number of bytes.
+ * XLogSegNo - physical log file sequence number.
  */
-#define XLByteAdvance(recptr, nbytes)						\
-	do {													\
-		if (recptr.xrecoff + nbytes >= XLogFileSize)		\
-		{													\
-			recptr.xlogid += 1;								\
-			recptr.xrecoff									\
-				= recptr.xrecoff + nbytes - XLogFileSize;	\
-		}													\
-		else												\
-			recptr.xrecoff += nbytes;						\
-	} while (0)
-
+typedef uint64 XLogSegNo;
 
 /*
  * TimeLineID (TLI) - identifies different database histories to prevent
@@ -84,14 +45,19 @@ typedef struct XLogRecPtr
 typedef uint32 TimeLineID;
 
 /*
+ * Replication origin id - this is located in this file to avoid having to
+ * include origin.h in a bunch of xlog related places.
+ */
+typedef uint16 RepOriginId;
+
+/*
  *	Because O_DIRECT bypasses the kernel buffers, and because we never
- *	read those buffers except during crash recovery, it is a win to use
- *	it in all cases where we sync on each write().	We could allow O_DIRECT
- *	with fsync(), but because skipping the kernel buffer forces writes out
- *	quickly, it seems best just to use it for O_SYNC.  It is hard to imagine
- *	how fsync() could be a win for O_DIRECT compared to O_SYNC and O_DIRECT.
- *	Also, O_DIRECT is never enough to force data to the drives, it merely
- *	tries to bypass the kernel cache, so we still need O_SYNC or fsync().
+ *	read those buffers except during crash recovery or if wal_level != minimal,
+ *	it is a win to use it in all cases where we sync on each write().  We could
+ *	allow O_DIRECT with fsync(), but it is unclear if fsync() could process
+ *	writes not buffered in the kernel.  Also, O_DIRECT is never enough to force
+ *	data to the drives, it merely tries to bypass the kernel cache, so we still
+ *	need O_SYNC/O_DSYNC.
  */
 #ifdef O_DIRECT
 #define PG_O_DIRECT				O_DIRECT
@@ -102,56 +68,35 @@ typedef uint32 TimeLineID;
 /*
  * This chunk of hackery attempts to determine which file sync methods
  * are available on the current platform, and to choose an appropriate
- * default method.	We assume that fsync() is always available, and that
+ * default method.  We assume that fsync() is always available, and that
  * configure determined whether fdatasync() is.
  */
 #if defined(O_SYNC)
-#define BARE_OPEN_SYNC_FLAG		O_SYNC
+#define OPEN_SYNC_FLAG		O_SYNC
 #elif defined(O_FSYNC)
-#define BARE_OPEN_SYNC_FLAG		O_FSYNC
-#endif
-#ifdef BARE_OPEN_SYNC_FLAG
-#define OPEN_SYNC_FLAG			(BARE_OPEN_SYNC_FLAG | PG_O_DIRECT)
+#define OPEN_SYNC_FLAG		O_FSYNC
 #endif
 
 #if defined(O_DSYNC)
 #if defined(OPEN_SYNC_FLAG)
 /* O_DSYNC is distinct? */
-#if O_DSYNC != BARE_OPEN_SYNC_FLAG
-#define OPEN_DATASYNC_FLAG		(O_DSYNC | PG_O_DIRECT)
+#if O_DSYNC != OPEN_SYNC_FLAG
+#define OPEN_DATASYNC_FLAG		O_DSYNC
 #endif
 #else							/* !defined(OPEN_SYNC_FLAG) */
 /* Win32 only has O_DSYNC */
-#define OPEN_DATASYNC_FLAG		(O_DSYNC | PG_O_DIRECT)
+#define OPEN_DATASYNC_FLAG		O_DSYNC
 #endif
 #endif
 
 #if defined(PLATFORM_DEFAULT_SYNC_METHOD)
-#define DEFAULT_SYNC_METHOD_STR	PLATFORM_DEFAULT_SYNC_METHOD_STR
 #define DEFAULT_SYNC_METHOD		PLATFORM_DEFAULT_SYNC_METHOD
-#define DEFAULT_SYNC_FLAGBIT	PLATFORM_DEFAULT_SYNC_FLAGBIT
 #elif defined(OPEN_DATASYNC_FLAG)
-#define DEFAULT_SYNC_METHOD_STR "open_datasync"
-#define DEFAULT_SYNC_METHOD		SYNC_METHOD_OPEN
-#define DEFAULT_SYNC_FLAGBIT	OPEN_DATASYNC_FLAG
+#define DEFAULT_SYNC_METHOD		SYNC_METHOD_OPEN_DSYNC
 #elif defined(HAVE_FDATASYNC)
-#define DEFAULT_SYNC_METHOD_STR "fdatasync"
 #define DEFAULT_SYNC_METHOD		SYNC_METHOD_FDATASYNC
-#define DEFAULT_SYNC_FLAGBIT	0
 #else
-#define DEFAULT_SYNC_METHOD_STR "fsync"
 #define DEFAULT_SYNC_METHOD		SYNC_METHOD_FSYNC
-#define DEFAULT_SYNC_FLAGBIT	0
 #endif
 
-/*
- * Limitation of buffer-alignment for direct IO depends on OS and filesystem,
- * but XLOG_BLCKSZ is assumed to be enough for it.
- */
-#ifdef O_DIRECT
-#define ALIGNOF_XLOG_BUFFER		XLOG_BLCKSZ
-#else
-#define ALIGNOF_XLOG_BUFFER		ALIGNOF_BUFFER
-#endif
-
-#endif   /* XLOG_DEFS_H */
+#endif							/* XLOG_DEFS_H */

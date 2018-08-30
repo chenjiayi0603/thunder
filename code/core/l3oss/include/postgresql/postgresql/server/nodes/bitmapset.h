@@ -11,14 +11,19 @@
  * bms_is_empty() in preference to testing for NULL.)
  *
  *
- * Copyright (c) 2003-2009, PostgreSQL Global Development Group
+ * Copyright (c) 2003-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/nodes/bitmapset.h,v 1.10 2008/01/01 19:45:58 momjian Exp $
+ * src/include/nodes/bitmapset.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef BITMAPSET_H
 #define BITMAPSET_H
+
+/*
+ * Forward decl to save including pg_list.h
+ */
+struct List;
 
 /*
  * Data representation
@@ -28,14 +33,22 @@
 #define BITS_PER_BITMAPWORD 32
 typedef uint32 bitmapword;		/* must be an unsigned type */
 typedef int32 signedbitmapword; /* must be the matching signed type */
-#define BITS_PER_BITMAPWORD_LOG2    5
 
 typedef struct Bitmapset
 {
 	int			nwords;			/* number of words in array */
-	bitmapword	words[1];		/* really [nwords] */
-} Bitmapset;					/* VARIABLE LENGTH STRUCT */
+	bitmapword	words[FLEXIBLE_ARRAY_MEMBER];	/* really [nwords] */
+} Bitmapset;
 
+
+/* result of bms_subset_compare */
+typedef enum
+{
+	BMS_EQUAL,					/* sets are equal */
+	BMS_SUBSET1,				/* first set is a subset of the second */
+	BMS_SUBSET2,				/* second set is a subset of the first */
+	BMS_DIFFERENT				/* neither set is a subset of the other */
+} BMS_Comparison;
 
 /* result of bms_membership */
 typedef enum
@@ -52,7 +65,6 @@ typedef enum
 
 extern Bitmapset *bms_copy(const Bitmapset *a);
 extern bool bms_equal(const Bitmapset *a, const Bitmapset *b);
-extern int bms_compare(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_make_singleton(int x);
 extern void bms_free(Bitmapset *a);
 
@@ -60,10 +72,13 @@ extern Bitmapset *bms_union(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_intersect(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_difference(const Bitmapset *a, const Bitmapset *b);
 extern bool bms_is_subset(const Bitmapset *a, const Bitmapset *b);
+extern BMS_Comparison bms_subset_compare(const Bitmapset *a, const Bitmapset *b);
 extern bool bms_is_member(int x, const Bitmapset *a);
 extern bool bms_overlap(const Bitmapset *a, const Bitmapset *b);
+extern bool bms_overlap_list(const Bitmapset *a, const struct List *b);
 extern bool bms_nonempty_difference(const Bitmapset *a, const Bitmapset *b);
 extern int	bms_singleton_member(const Bitmapset *a);
+extern bool bms_get_singleton_member(const Bitmapset *a, int *member);
 extern int	bms_num_members(const Bitmapset *a);
 
 /* optimized tests when we don't need to know exact membership count: */
@@ -80,30 +95,10 @@ extern Bitmapset *bms_del_members(Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_join(Bitmapset *a, Bitmapset *b);
 
 /* support for iterating through the integer elements of a set: */
-extern int  bms_first_from(const Bitmapset *a, int x);
-
-#define bms_foreach(_member, _set)              \
-    for ((_member) = bms_first_from((_set), 0); \
-         (_member) >= 0;                        \
-         (_member) = bms_first_from((_set), (_member)+1))
-
-/* return first member and delete it from the set */
 extern int	bms_first_member(Bitmapset *a);
+extern int	bms_next_member(const Bitmapset *a, int prevbit);
 
 /* support for hashtables using Bitmapsets as keys: */
 extern uint32 bms_hash_value(const Bitmapset *a);
 
-/* 
- * returns true iff the bitmap is sufficently large that
- * it stores the bit for member x
- */
-extern bool bms_covers_member(const Bitmapset *a, int x);
-
-/* 
- * Extend the bitmap a to have at least wc number of words.
- * If wc is smaller than the bitmap a, the bitmap a
- * is returned
- */
-extern Bitmapset *bms_resize(Bitmapset *a, int wc);
-
-#endif   /* BITMAPSET_H */
+#endif							/* BITMAPSET_H */

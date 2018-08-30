@@ -4,39 +4,50 @@
  *	  Interface to hba.c
  *
  *
- * $PostgreSQL: pgsql/src/include/libpq/hba.h,v 1.62 2010/04/19 19:02:18 sriggs Exp $
+ * src/include/libpq/hba.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef HBA_H
 #define HBA_H
 
+#include "libpq/pqcomm.h"	/* pgrminclude ignore */	/* needed for NetBSD */
 #include "nodes/pg_list.h"
-#include "libpq/pqcomm.h"
+#include "regex/regex.h"
 
 
+/*
+ * The following enum represents the authentication methods that
+ * are supported by PostgreSQL.
+ *
+ * Note: keep this in sync with the UserAuthName array in hba.c.
+ */
 typedef enum UserAuth
 {
 	uaReject,
-	uaImplicitReject,
-	uaKrb5,
+	uaImplicitReject,			/* Not a user-visible option */
 	uaTrust,
 	uaIdent,
 	uaPassword,
 	uaMD5,
+	uaSCRAM,
 	uaGSS,
 	uaSSPI,
 	uaPAM,
+	uaBSD,
 	uaLDAP,
 	uaCert,
-	uaRADIUS
+	uaRADIUS,
+	uaPeer
+#define USER_AUTH_LAST uaPeer	/* Must be last value of this enum */
 } UserAuth;
 
 typedef enum IPCompareMethod
 {
 	ipCmpMask,
 	ipCmpSameHost,
-	ipCmpSameNet
+	ipCmpSameNet,
+	ipCmpAll
 } IPCompareMethod;
 
 typedef enum ConnType
@@ -47,19 +58,22 @@ typedef enum ConnType
 	ctHostNoSSL
 } ConnType;
 
-typedef struct
+typedef struct HbaLine
 {
 	int			linenumber;
+	char	   *rawline;
 	ConnType	conntype;
-	char	   *database;
-	char	   *role;
+	List	   *databases;
+	List	   *roles;
 	struct sockaddr_storage addr;
 	struct sockaddr_storage mask;
 	IPCompareMethod ip_cmp_method;
+	char	   *hostname;
 	UserAuth	auth_method;
 
 	char	   *usermap;
 	char	   *pamservice;
+	bool		pam_use_hostname;
 	bool		ldaptls;
 	char	   *ldapserver;
 	int			ldapport;
@@ -67,35 +81,43 @@ typedef struct
 	char	   *ldapbindpasswd;
 	char	   *ldapsearchattribute;
 	char	   *ldapbasedn;
+	int			ldapscope;
 	char	   *ldapprefix;
 	char	   *ldapsuffix;
 	bool		clientcert;
-	char	   *krb_server_hostname;
 	char	   *krb_realm;
 	bool		include_realm;
-	char	   *radiusserver;
-	char	   *radiussecret;
-	char	   *radiusidentifier;
-	int			radiusport;
+	bool		compat_realm;
+	bool		upn_username;
+	List	   *radiusservers;
+	char	   *radiusservers_s;
+	List	   *radiussecrets;
+	char	   *radiussecrets_s;
+	List	   *radiusidentifiers;
+	char	   *radiusidentifiers_s;
+	List	   *radiusports;
+	char	   *radiusports_s;
 } HbaLine;
+
+typedef struct IdentLine
+{
+	int			linenumber;
+
+	char	   *usermap;
+	char	   *ident_user;
+	char	   *pg_role;
+	regex_t		re;
+} IdentLine;
 
 /* kluge to avoid including libpq/libpq-be.h here */
 typedef struct Port hbaPort;
 
-extern List **get_role_line(const char *role);
-extern List *get_role_intervals(const char *role);
 extern bool load_hba(void);
-extern void load_ident(void);
-extern void load_role(void);
-extern void load_role_interval(void);
-extern void force_load_role(void);
-extern int	hba_getauthmethod(hbaPort *port);
-extern bool read_pg_database_line(FILE *fp, char *dbname, Oid *dboid,
-					  Oid *dbtablespace, TransactionId *dbfrozenxid);
+extern bool load_ident(void);
+extern void hba_getauthmethod(hbaPort *port);
 extern int check_usermap(const char *usermap_name,
 			  const char *pg_role, const char *auth_user,
 			  bool case_sensitive);
-extern bool check_same_host_or_net(SockAddr *raddr, IPCompareMethod method);
 extern bool pg_isblank(const char c);
 
-#endif   /* HBA_H */
+#endif							/* HBA_H */

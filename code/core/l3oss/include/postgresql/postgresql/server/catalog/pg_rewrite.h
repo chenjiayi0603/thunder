@@ -8,13 +8,13 @@
  * --- ie, rule names are only unique among the rules of a given table.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_rewrite.h,v 1.29 2008/01/01 19:45:57 momjian Exp $
+ * src/include/catalog/pg_rewrite.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -25,7 +25,7 @@
 #include "catalog/genbki.h"
 
 /* ----------------
- *		pg_rewrite definition.	cpp turns this into
+ *		pg_rewrite definition.  cpp turns this into
  *		typedef struct FormData_pg_rewrite
  * ----------------
  */
@@ -35,18 +35,15 @@ CATALOG(pg_rewrite,2618)
 {
 	NameData	rulename;
 	Oid			ev_class;
-	int2		ev_attr;
 	char		ev_type;
 	char		ev_enabled;
 	bool		is_instead;
 
-	/* NB: remaining fields must be accessed via heap_getattr */
-	text		ev_qual;
-	text		ev_action;
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	pg_node_tree ev_qual;
+	pg_node_tree ev_action;
+#endif
 } FormData_pg_rewrite;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(ev_class REFERENCES pg_attribute(attrelid));
 
 /* ----------------
  *		Form_pg_rewrite corresponds to a pointer to a tuple with
@@ -59,14 +56,13 @@ typedef FormData_pg_rewrite *Form_pg_rewrite;
  *		compiler constants for pg_rewrite
  * ----------------
  */
-#define Natts_pg_rewrite				8
+#define Natts_pg_rewrite				7
 #define Anum_pg_rewrite_rulename		1
 #define Anum_pg_rewrite_ev_class		2
-#define Anum_pg_rewrite_ev_attr			3
-#define Anum_pg_rewrite_ev_type			4
-#define Anum_pg_rewrite_ev_enabled		5
-#define Anum_pg_rewrite_is_instead		6
-#define Anum_pg_rewrite_ev_qual			7
-#define Anum_pg_rewrite_ev_action		8
+#define Anum_pg_rewrite_ev_type			3
+#define Anum_pg_rewrite_ev_enabled		4
+#define Anum_pg_rewrite_is_instead		5
+#define Anum_pg_rewrite_ev_qual			6
+#define Anum_pg_rewrite_ev_action		7
 
-#endif   /* PG_REWRITE_H */
+#endif							/* PG_REWRITE_H */

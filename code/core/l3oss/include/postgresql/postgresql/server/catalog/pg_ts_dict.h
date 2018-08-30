@@ -4,13 +4,13 @@
  *	definition of dictionaries for tsearch
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_ts_dict.h,v 1.3 2008/01/01 19:45:57 momjian Exp $
+ * src/include/catalog/pg_ts_dict.h
  *
  * NOTES
- *		the genbki.sh script reads this file and generates .bki
+ *		the genbki.pl script reads this file and generates .bki
  *		information from the DATA() statements.
  *
  *		XXX do NOT break up DATA() statements into multiple lines!
@@ -21,15 +21,10 @@
 #ifndef PG_TS_DICT_H
 #define PG_TS_DICT_H
 
-/* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
+#include "catalog/genbki.h"
 
 /* ----------------
- *		pg_ts_dict definition.	cpp turns this into
+ *		pg_ts_dict definition.  cpp turns this into
  *		typedef struct FormData_pg_ts_dict
  * ----------------
  */
@@ -41,13 +36,11 @@ CATALOG(pg_ts_dict,3600)
 	Oid			dictnamespace;	/* name space */
 	Oid			dictowner;		/* owner */
 	Oid			dicttemplate;	/* dictionary's template */
-	text		dictinitoption; /* options passed to dict_init() */
-} FormData_pg_ts_dict;
 
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(dictnamespace REFERENCES pg_namespace(oid));
-FOREIGN_KEY(dictowner REFERENCES pg_authid(oid));
-FOREIGN_KEY(dicttemplate REFERENCES pg_ts_template(oid));
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	text		dictinitoption; /* options passed to dict_init() */
+#endif
+} FormData_pg_ts_dict;
 
 typedef FormData_pg_ts_dict *Form_pg_ts_dict;
 
@@ -70,4 +63,4 @@ typedef FormData_pg_ts_dict *Form_pg_ts_dict;
 DATA(insert OID = 3765 ( "simple" PGNSP PGUID 3727 _null_));
 DESCR("simple dictionary: just lower case and check for stopword");
 
-#endif   /* PG_TS_DICT_H */
+#endif							/* PG_TS_DICT_H */

@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_inherits.h,v 1.24 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_inherits.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -32,12 +32,8 @@ CATALOG(pg_inherits,2611) BKI_WITHOUT_OIDS
 {
 	Oid			inhrelid;
 	Oid			inhparent;
-	int4		inhseqno;
+	int32		inhseqno;
 } FormData_pg_inherits;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(inhrelid REFERENCES pg_class(oid));
-FOREIGN_KEY(inhparent REFERENCES pg_class(oid));
 
 /* ----------------
  *		Form_pg_inherits corresponds to a pointer to a tuple with
@@ -55,4 +51,9 @@ typedef FormData_pg_inherits *Form_pg_inherits;
 #define Anum_pg_inherits_inhparent		2
 #define Anum_pg_inherits_inhseqno		3
 
-#endif   /* PG_INHERITS_H */
+/* ----------------
+ *		pg_inherits has no initial contents
+ * ----------------
+ */
+
+#endif							/* PG_INHERITS_H */

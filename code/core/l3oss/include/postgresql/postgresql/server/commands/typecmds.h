@@ -4,49 +4,54 @@
  *	  prototypes for typecmds.c.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/typecmds.h,v 1.22 2008/01/01 19:45:57 momjian Exp $
+ * src/include/commands/typecmds.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef TYPECMDS_H
 #define TYPECMDS_H
 
+#include "access/htup.h"
 #include "catalog/dependency.h"
 #include "nodes/parsenodes.h"
 
 
 #define DEFAULT_TYPDELIM		','
 
-extern void DefineType(List *names, List *parameters);
-extern void RemoveType(List *names, DropBehavior behavior, bool missing_ok);
+extern ObjectAddress DefineType(ParseState *pstate, List *names, List *parameters);
 extern void RemoveTypeById(Oid typeOid);
-extern void DefineDomain(CreateDomainStmt *stmt);
-extern void RemoveDomain(List *names, DropBehavior behavior, bool missing_ok);
-extern void DefineEnum(CreateEnumStmt *stmt);
-extern Oid	DefineCompositeType(const RangeVar *typevar, List *coldeflist);
-extern Oid	AssignTypeArrayOid(Oid namespace, const char *arrayname);
+extern ObjectAddress DefineDomain(CreateDomainStmt *stmt);
+extern ObjectAddress DefineEnum(CreateEnumStmt *stmt);
+extern ObjectAddress DefineRange(CreateRangeStmt *stmt);
+extern ObjectAddress AlterEnum(AlterEnumStmt *stmt, bool isTopLevel);
+extern ObjectAddress DefineCompositeType(RangeVar *typevar, List *coldeflist);
+extern Oid	AssignTypeArrayOid(void);
 
-extern void AlterDomainDefault(List *names, Node *defaultRaw);
-extern void AlterDomainNotNull(List *names, bool notNull);
-extern void AlterDomainAddConstraint(List *names, Node *constr);
-extern void AlterDomainDropConstraint(List *names, const char *constrName,
-						  DropBehavior behavior);
+extern ObjectAddress AlterDomainDefault(List *names, Node *defaultRaw);
+extern ObjectAddress AlterDomainNotNull(List *names, bool notNull);
+extern ObjectAddress AlterDomainAddConstraint(List *names, Node *constr,
+						 ObjectAddress *constrAddr);
+extern ObjectAddress AlterDomainValidateConstraint(List *names, char *constrName);
+extern ObjectAddress AlterDomainDropConstraint(List *names, const char *constrName,
+						  DropBehavior behavior, bool missing_ok);
 
-extern List *GetDomainConstraints(Oid typeOid);
+extern void checkDomainOwner(HeapTuple tup);
 
-extern void AlterTypeOwner(List *names, Oid newOwnerId);
-extern void AlterTypeOwnerInternal(Oid typeOid, Oid newOwnerId,
-					   bool hasDependEntry);
-extern void AlterTypeNamespace(List *names, const char *newschema);
-extern Oid  AlterTypeNamespace_oid(Oid typeOid, Oid nspOid, ObjectAddresses *objsMoved);
-extern Oid  AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
-									   bool isImplicitArray,
-									   bool errorOnTableType,
-									   ObjectAddresses *objsMoved);
-extern void AlterType(AlterTypeStmt *stmt);
-extern void AlterType(AlterTypeStmt *stmt);
+extern ObjectAddress RenameType(RenameStmt *stmt);
 
-#endif   /* TYPECMDS_H */
+extern ObjectAddress AlterTypeOwner(List *names, Oid newOwnerId, ObjectType objecttype);
+extern void AlterTypeOwner_oid(Oid typeOid, Oid newOwnerId, bool hasDependEntry);
+extern void AlterTypeOwnerInternal(Oid typeOid, Oid newOwnerId);
+
+extern ObjectAddress AlterTypeNamespace(List *names, const char *newschema,
+				   ObjectType objecttype, Oid *oldschema);
+extern Oid	AlterTypeNamespace_oid(Oid typeOid, Oid nspOid, ObjectAddresses *objsMoved);
+extern Oid AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
+						   bool isImplicitArray,
+						   bool errorOnTableType,
+						   ObjectAddresses *objsMoved);
+
+#endif							/* TYPECMDS_H */

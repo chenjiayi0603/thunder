@@ -3,10 +3,10 @@
  * cluster.h
  *	  header file for postgres cluster command stuff
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/cluster.h,v 1.34 2008/01/01 19:45:57 momjian Exp $
+ * src/include/commands/cluster.h
  *
  *-------------------------------------------------------------------------
  */
@@ -14,18 +14,26 @@
 #define CLUSTER_H
 
 #include "nodes/parsenodes.h"
-#include "utils/rel.h"
+#include "storage/lock.h"
+#include "utils/relcache.h"
 
 
 extern void cluster(ClusterStmt *stmt, bool isTopLevel);
-
+extern void cluster_rel(Oid tableOid, Oid indexOid, bool recheck,
+			bool verbose);
 extern void check_index_is_clusterable(Relation OldHeap, Oid indexOid,
-						   bool recheck);
-extern void mark_index_clustered(Relation rel, Oid indexOid);
-extern Oid make_new_heap(Oid OIDOldHeap, const char *NewName,
-			  Oid NewTableSpace,
-			  bool createAoBlockDirectory);
-extern void swap_relation_files(Oid r1, Oid r2, TransactionId frozenXid,
-								bool swap_stats);
+						   bool recheck, LOCKMODE lockmode);
+extern void mark_index_clustered(Relation rel, Oid indexOid, bool is_internal);
 
-#endif   /* CLUSTER_H */
+extern Oid make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, char relpersistence,
+			  LOCKMODE lockmode);
+extern void finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
+				 bool is_system_catalog,
+				 bool swap_toast_by_content,
+				 bool check_constraints,
+				 bool is_internal,
+				 TransactionId frozenXid,
+				 MultiXactId minMulti,
+				 char newrelpersistence);
+
+#endif							/* CLUSTER_H */

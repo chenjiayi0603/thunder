@@ -4,12 +4,10 @@
  *	  POSTGRES lock manager definitions.
  *
  *
- * Portions Copyright (c) 2006-2008, Greenplum inc
- * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/lmgr.h,v 1.60.2.1 2008/03/04 19:54:13 tgl Exp $
+ * src/include/storage/lmgr.h
  *
  *-------------------------------------------------------------------------
  */
@@ -22,6 +20,20 @@
 #include "utils/rel.h"
 
 
+/* XactLockTableWait operations */
+typedef enum XLTW_Oper
+{
+	XLTW_None,
+	XLTW_Update,
+	XLTW_Delete,
+	XLTW_Lock,
+	XLTW_LockUpdated,
+	XLTW_InsertIndex,
+	XLTW_InsertIndexUnique,
+	XLTW_FetchUpdated,
+	XLTW_RecheckExclusionConstr
+} XLTW_Oper;
+
 extern void RelationInitLockInfo(Relation relation);
 
 /* Lock a relation */
@@ -31,10 +43,9 @@ extern void UnlockRelationId(LockRelId *relid, LOCKMODE lockmode);
 extern void UnlockRelationOid(Oid relid, LOCKMODE lockmode);
 
 extern void LockRelation(Relation relation, LOCKMODE lockmode);
-extern LockAcquireResult LockRelationNoWait(Relation relation, LOCKMODE lockmode);
-
 extern bool ConditionalLockRelation(Relation relation, LOCKMODE lockmode);
 extern void UnlockRelation(Relation relation, LOCKMODE lockmode);
+extern bool LockHasWaitersRelation(Relation relation, LOCKMODE lockmode);
 
 extern void LockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
 extern void UnlockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
@@ -42,16 +53,9 @@ extern void UnlockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
 /* Lock a relation for extension */
 extern void LockRelationForExtension(Relation relation, LOCKMODE lockmode);
 extern void UnlockRelationForExtension(Relation relation, LOCKMODE lockmode);
-extern void LockRelationForResyncExtension(RelFileNode *relFileNode, LOCKMODE lockmode);
-extern void UnlockRelationForResyncExtension(RelFileNode *relFileNode, LOCKMODE lockmode);
-
-/* Lock a relation for resynchronize */
-extern void LockRelationForResynchronize(RelFileNode *relFileNode, LOCKMODE lockmode);
-extern void UnlockRelationForResynchronize(RelFileNode *relFileNode, LOCKMODE lockmode);
-
-/* Lock a relation for Append-Only segment files. */
-extern LockAcquireResult LockRelationAppendOnlySegmentFile(RelFileNode *relFileNode, int32 segno, LOCKMODE lockmode, bool dontWait);
-extern void UnlockRelationAppendOnlySegmentFile(RelFileNode *relFileNode, int32 segno, LOCKMODE lockmode);
+extern bool ConditionalLockRelationForExtension(Relation relation,
+									LOCKMODE lockmode);
+extern int	RelationExtensionLockWaiterCount(Relation relation);
 
 /* Lock a page (currently only used within indexes) */
 extern void LockPage(Relation relation, BlockNumber blkno, LOCKMODE lockmode);
@@ -67,13 +71,18 @@ extern void UnlockTuple(Relation relation, ItemPointer tid, LOCKMODE lockmode);
 /* Lock an XID (used to wait for a transaction to finish) */
 extern void XactLockTableInsert(TransactionId xid);
 extern void XactLockTableDelete(TransactionId xid);
-extern void XactLockTableWait(TransactionId xid);
+extern void XactLockTableWait(TransactionId xid, Relation rel,
+				  ItemPointer ctid, XLTW_Oper oper);
 extern bool ConditionalXactLockTableWait(TransactionId xid);
 
-/* Lock a VXID (used to wait for a transaction to finish) */
-extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);
-extern void VirtualXactLockTableWait(VirtualTransactionId vxid);
-extern bool ConditionalVirtualXactLockTableWait(VirtualTransactionId vxid);
+/* Lock VXIDs, specified by conflicting locktags */
+extern void WaitForLockers(LOCKTAG heaplocktag, LOCKMODE lockmode);
+extern void WaitForLockersMultiple(List *locktags, LOCKMODE lockmode);
+
+/* Lock an XID for tuple insertion (used to wait for an insertion to finish) */
+extern uint32 SpeculativeInsertionLockAcquire(TransactionId xid);
+extern void SpeculativeInsertionLockRelease(TransactionId xid);
+extern void SpeculativeInsertionWait(TransactionId xid, uint32 token);
 
 /* Lock a general object (other than a relation) of the current database */
 extern void LockDatabaseObject(Oid classid, Oid objid, uint16 objsubid,
@@ -87,10 +96,14 @@ extern void LockSharedObject(Oid classid, Oid objid, uint16 objsubid,
 extern void UnlockSharedObject(Oid classid, Oid objid, uint16 objsubid,
 				   LOCKMODE lockmode);
 
+extern void LockSharedObjectForSession(Oid classid, Oid objid, uint16 objsubid,
+						   LOCKMODE lockmode);
+extern void UnlockSharedObjectForSession(Oid classid, Oid objid, uint16 objsubid,
+							 LOCKMODE lockmode);
+
 /* Describe a locktag for error messages */
 extern void DescribeLockTag(StringInfo buf, const LOCKTAG *tag);
 
-/* Knowledge about which locktags describe temp objects */
-extern bool LockTagIsTemp(const LOCKTAG *tag);
+extern const char *GetLockNameFromTagType(uint16 locktag_type);
 
-#endif   /* LMGR_H */
+#endif							/* LMGR_H */

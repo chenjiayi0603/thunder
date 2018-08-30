@@ -5,12 +5,12 @@
  *	  along with the relation's initial contents.
  *
  *
- * Copyright (c) 2006-2008, PostgreSQL Global Development Group
+ * Copyright (c) 2006-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_enum.h,v 1.3 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_enum.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *	  XXX do NOT break up DATA() statements into multiple lines!
@@ -25,13 +25,6 @@
 #include "nodes/pg_list.h"
 
 /* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
-
-/* ----------------
  *		pg_enum definition.  cpp turns this into
  *		typedef struct FormData_pg_enum
  * ----------------
@@ -41,11 +34,9 @@
 CATALOG(pg_enum,3501)
 {
 	Oid			enumtypid;		/* OID of owning enum type */
+	float4		enumsortorder;	/* sort position of this enum value */
 	NameData	enumlabel;		/* text representation of enum value */
 } FormData_pg_enum;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(enumtypid REFERENCES pg_type(oid));
 
 /* ----------------
  *		Form_pg_enum corresponds to a pointer to a tuple with
@@ -58,9 +49,10 @@ typedef FormData_pg_enum *Form_pg_enum;
  *		compiler constants for pg_enum
  * ----------------
  */
-#define Natts_pg_enum					2
+#define Natts_pg_enum					3
 #define Anum_pg_enum_enumtypid			1
-#define Anum_pg_enum_enumlabel			2
+#define Anum_pg_enum_enumsortorder		2
+#define Anum_pg_enum_enumlabel			3
 
 /* ----------------
  *		pg_enum has no initial contents
@@ -70,8 +62,12 @@ typedef FormData_pg_enum *Form_pg_enum;
 /*
  * prototypes for functions in pg_enum.c
  */
-extern void EnumValuesCreate(Oid enumTypeOid, List *vals,
-				 Oid binary_upgrade_next_pg_enum_oid);
+extern void EnumValuesCreate(Oid enumTypeOid, List *vals);
 extern void EnumValuesDelete(Oid enumTypeOid);
+extern void AddEnumLabel(Oid enumTypeOid, const char *newVal,
+			 const char *neighbor, bool newValIsAfter,
+			 bool skipIfExists);
+extern void RenameEnumLabel(Oid enumTypeOid,
+				const char *oldVal, const char *newVal);
 
-#endif   /* PG_ENUM_H */
+#endif							/* PG_ENUM_H */

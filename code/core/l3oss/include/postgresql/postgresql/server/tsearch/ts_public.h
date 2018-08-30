@@ -4,9 +4,9 @@
  *	  Public interface to various tsearch modules, such as
  *	  parsers and dictionaries.
  *
- * Copyright (c) 1998-2008, PostgreSQL Global Development Group
+ * Copyright (c) 1998-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_public.h,v 1.8.2.1 2009/01/15 17:06:03 teodor Exp $
+ * src/include/tsearch/ts_public.h
  *
  *-------------------------------------------------------------------------
  */
@@ -42,6 +42,7 @@ typedef struct
 				unused:3,
 				type:8,
 				len:16;
+	WordEntryPos pos;
 	char	   *word;
 	QueryOperand *item;
 } HeadlineWordEntry;
@@ -49,12 +50,15 @@ typedef struct
 typedef struct
 {
 	HeadlineWordEntry *words;
-	int4		lenwords;
-	int4		curwords;
+	int32		lenwords;
+	int32		curwords;
+	int32		vectorpos;		/* positions a-la tsvector */
 	char	   *startsel;
 	char	   *stopsel;
-	int2		startsellen;
-	int2		stopsellen;
+	char	   *fragdelim;
+	int16		startsellen;
+	int16		stopsellen;
+	int16		fragdelimlen;
 } HeadlineParsedText;
 
 /*
@@ -83,21 +87,34 @@ extern bool searchstoplist(StopList *s, char *key);
 /* return struct for any lexize function */
 typedef struct
 {
-	/*
-	 * number of variant of split word , for example Word 'fotballklubber'
-	 * (norwegian) has two varian to split: ( fotball, klubb ) and ( fot,
-	 * ball, klubb ). So, dictionary should return: nvariant lexeme 1 fotball
-	 * 1	  klubb 2	   fot 2	  ball 2	  klubb
+	/*----------
+	 * Number of current variant of split word.  For example the Norwegian
+	 * word 'fotballklubber' has two variants to split: ( fotball, klubb )
+	 * and ( fot, ball, klubb ). So, dictionary should return:
+	 *
+	 * nvariant    lexeme
+	 *	   1	   fotball
+	 *	   1	   klubb
+	 *	   2	   fot
+	 *	   2	   ball
+	 *	   2	   klubb
+	 *
+	 * In general, a TSLexeme will be considered to belong to the same split
+	 * variant as the previous one if they have the same nvariant value.
+	 * The exact values don't matter, only changes from one lexeme to next.
+	 *----------
 	 */
 	uint16		nvariant;
 
-	uint16		flags;
+	uint16		flags;			/* See flag bits below */
 
-	/* C-string */
-	char	   *lexeme;
+	char	   *lexeme;			/* C string */
 } TSLexeme;
 
+/* Flag bits that can appear in TSLexeme.flags */
 #define TSL_ADDPOS		0x01
+#define TSL_PREFIX		0x02
+#define TSL_FILTER		0x04
 
 /*
  * Struct for supporting complex dictionaries like thesaurus.
@@ -108,8 +125,8 @@ typedef struct
 	bool		isend;			/* in: marks for lexize_info about text end is
 								 * reached */
 	bool		getnext;		/* out: dict wants next lexeme */
-	void	   *private;		/* internal dict state between calls with
+	void	   *private_state;	/* internal dict state between calls with
 								 * getnext == true */
 } DictSubState;
 
-#endif   /* _PG_TS_PUBLIC_H_ */
+#endif							/* _PG_TS_PUBLIC_H_ */

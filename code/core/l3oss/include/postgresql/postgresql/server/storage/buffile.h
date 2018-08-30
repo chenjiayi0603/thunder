@@ -15,12 +15,10 @@
  * but currently we have no need for oversize temp files without buffered
  * access.
  *
- * Portions Copyright (c) 2007-2008, Greenplum inc
- * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/buffile.h,v 1.23 2008/01/01 19:45:58 momjian Exp $
+ * src/include/storage/buffile.h
  *
  *-------------------------------------------------------------------------
  */
@@ -36,21 +34,12 @@ typedef struct BufFile BufFile;
  * prototypes for functions in buffile.c
  */
 
-extern BufFile *BufFileCreateFile(const char *filePrefix, bool delOnClose, bool interXact);
-extern BufFile *BufFileOpenFile(const char * fileName, bool create, bool delOnClose, bool interXact);
-extern BufFile *BufFileCreateTemp(const char *filePrefix, bool interXact);
-extern BufFile *BufFileCreateTemp_ReaderWriter(const char *fileName, bool isWriter,
-							   bool interXact);
+extern BufFile *BufFileCreateTemp(bool interXact);
 extern void BufFileClose(BufFile *file);
-
-extern Size BufFileRead(BufFile *file, void *ptr, Size size);
-extern Size BufFileWrite(BufFile *file, const void *ptr, Size size);
-
-extern int BufFileSeek(BufFile *file, int fileno, off_t offset, int whence);
+extern size_t BufFileRead(BufFile *file, void *ptr, size_t size);
+extern size_t BufFileWrite(BufFile *file, void *ptr, size_t size);
+extern int	BufFileSeek(BufFile *file, int fileno, off_t offset, int whence);
 extern void BufFileTell(BufFile *file, int *fileno, off_t *offset);
-extern int	BufFileSeekBlock(BufFile *file, int64 blknum);
-extern void BufFileFlush(BufFile *file);
-extern int64 BufFileGetSize(BufFile *buffile);
-extern void BufFileSetWorkfile(BufFile *buffile);
+extern int	BufFileSeekBlock(BufFile *file, long blknum);
 
-#endif   /* BUFFILE_H */
+#endif							/* BUFFILE_H */

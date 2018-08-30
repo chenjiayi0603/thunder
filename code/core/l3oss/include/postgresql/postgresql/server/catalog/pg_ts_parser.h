@@ -4,13 +4,13 @@
  *	definition of parsers for tsearch
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_ts_parser.h,v 1.3 2008/01/01 19:45:57 momjian Exp $
+ * src/include/catalog/pg_ts_parser.h
  *
  * NOTES
- *		the genbki.sh script reads this file and generates .bki
+ *		the genbki.pl script reads this file and generates .bki
  *		information from the DATA() statements.
  *
  *		XXX do NOT break up DATA() statements into multiple lines!
@@ -21,12 +21,7 @@
 #ifndef PG_TS_PARSER_H
 #define PG_TS_PARSER_H
 
-/* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
+#include "catalog/genbki.h"
 
 /* ----------------
  *		pg_ts_parser definition.  cpp turns this into
@@ -45,13 +40,6 @@ CATALOG(pg_ts_parser,3601)
 	regproc		prsheadline;	/* return data for headline creation */
 	regproc		prslextype;		/* return descriptions of lexeme's types */
 } FormData_pg_ts_parser;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(prsnamespace REFERENCES pg_namespace(oid));
-FOREIGN_KEY(prsstart REFERENCES pg_proc(oid));
-FOREIGN_KEY(prsend REFERENCES pg_proc(oid));
-FOREIGN_KEY(prsheadline REFERENCES pg_proc(oid));
-FOREIGN_KEY(prslextype REFERENCES pg_proc(oid));
 
 typedef FormData_pg_ts_parser *Form_pg_ts_parser;
 
@@ -76,4 +64,4 @@ typedef FormData_pg_ts_parser *Form_pg_ts_parser;
 DATA(insert OID = 3722 ( "default" PGNSP prsd_start prsd_nexttoken prsd_end prsd_headline prsd_lextype ));
 DESCR("default word parser");
 
-#endif   /* PG_TS_PARSER_H */
+#endif							/* PG_TS_PARSER_H */

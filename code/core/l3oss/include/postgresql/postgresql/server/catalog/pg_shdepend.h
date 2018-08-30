@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_shdepend.h,v 1.6 2008/01/01 19:45:57 momjian Exp $
+ * src/include/catalog/pg_shdepend.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -27,21 +27,24 @@
  * ----------------
  */
 #define SharedDependRelationId	1214
+
 CATALOG(pg_shdepend,1214) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 {
 	/*
 	 * Identification of the dependent (referencing) object.
 	 *
-	 * These fields are all zeroes for a DEPENDENCY_PIN entry.	Also, dbid can
+	 * These fields are all zeroes for a DEPENDENCY_PIN entry.  Also, dbid can
 	 * be zero to denote a shared object.
 	 */
 	Oid			dbid;			/* OID of database containing object */
 	Oid			classid;		/* OID of table containing object */
 	Oid			objid;			/* OID of object itself */
+	int32		objsubid;		/* column number, or 0 if not used */
 
 	/*
 	 * Identification of the independent (referenced) object.  This is always
-	 * a shared object, so we need no database ID field.
+	 * a shared object, so we need no database ID field.  We don't bother with
+	 * a sub-object ID either.
 	 */
 	Oid			refclassid;		/* OID of table containing object */
 	Oid			refobjid;		/* OID of object itself */
@@ -52,11 +55,6 @@ CATALOG(pg_shdepend,1214) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 	 */
 	char		deptype;		/* see codes in dependency.h */
 } FormData_pg_shdepend;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(dbid REFERENCES pg_database(oid));
-FOREIGN_KEY(classid REFERENCES pg_class(oid));
-FOREIGN_KEY(refclassid REFERENCES pg_class(oid));
 
 /* ----------------
  *		Form_pg_shdepend corresponds to a pointer to a row with
@@ -69,13 +67,14 @@ typedef FormData_pg_shdepend *Form_pg_shdepend;
  *		compiler constants for pg_shdepend
  * ----------------
  */
-#define Natts_pg_shdepend			6
+#define Natts_pg_shdepend			7
 #define Anum_pg_shdepend_dbid		1
 #define Anum_pg_shdepend_classid	2
 #define Anum_pg_shdepend_objid		3
-#define Anum_pg_shdepend_refclassid 4
-#define Anum_pg_shdepend_refobjid	5
-#define Anum_pg_shdepend_deptype	6
+#define Anum_pg_shdepend_objsubid	4
+#define Anum_pg_shdepend_refclassid 5
+#define Anum_pg_shdepend_refobjid	6
+#define Anum_pg_shdepend_deptype	7
 
 
 /*
@@ -88,4 +87,4 @@ typedef FormData_pg_shdepend *Form_pg_shdepend;
  * are explicitly stored in pg_shdepend.
  */
 
-#endif   /* PG_SHDEPEND_H */
+#endif							/* PG_SHDEPEND_H */

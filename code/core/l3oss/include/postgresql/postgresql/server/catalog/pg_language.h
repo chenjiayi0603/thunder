@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_language.h,v 1.32 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_language.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -36,14 +36,12 @@ CATALOG(pg_language,2612)
 	bool		lanpltrusted;	/* PL is trusted */
 	Oid			lanplcallfoid;	/* Call handler for PL */
 	Oid			laninline;		/* Optional anonymous-block handler function */
-	Oid			lanvalidator;	/* optional validation function */
-	aclitem		lanacl[1];		/* Access privileges */
-} FormData_pg_language;
+	Oid			lanvalidator;	/* Optional validation function */
 
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(lanplcallfoid REFERENCES pg_proc(oid));
-FOREIGN_KEY(lanvalidator REFERENCES pg_proc(oid));
-FOREIGN_KEY(lanowner REFERENCES pg_authid(oid));
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	aclitem		lanacl[1];		/* Access privileges */
+#endif
+} FormData_pg_language;
 
 /* ----------------
  *		Form_pg_language corresponds to a pointer to a tuple with
@@ -71,14 +69,14 @@ typedef FormData_pg_language *Form_pg_language;
  * ----------------
  */
 
-DATA(insert OID = 12 ( "internal" PGUID f f 0 0 2246 _null_ ));
+DATA(insert OID = 12 ( "internal"	PGUID f f 0 0 2246 _null_ ));
 DESCR("built-in functions");
 #define INTERNALlanguageId 12
-DATA(insert OID = 13 ( "c" PGUID f f 0 0 2247 _null_ ));
+DATA(insert OID = 13 ( "c"			PGUID f f 0 0 2247 _null_ ));
 DESCR("dynamically-loaded C functions");
 #define ClanguageId 13
-DATA(insert OID = 14 ( "sql" PGUID f t 0 0 2248 _null_ ));
+DATA(insert OID = 14 ( "sql"		PGUID f t 0 0 2248 _null_ ));
 DESCR("SQL-language functions");
 #define SQLlanguageId 14
 
-#endif   /* PG_LANGUAGE_H */
+#endif							/* PG_LANGUAGE_H */

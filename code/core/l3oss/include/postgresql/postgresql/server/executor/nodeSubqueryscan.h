@@ -4,10 +4,10 @@
  *
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/executor/nodeSubqueryscan.h,v 1.15 2008/01/01 19:45:57 momjian Exp $
+ * src/include/executor/nodeSubqueryscan.h
  *
  *-------------------------------------------------------------------------
  */
@@ -16,16 +16,8 @@
 
 #include "nodes/execnodes.h"
 
-extern int	ExecCountSlotsSubqueryScan(SubqueryScan *node);
 extern SubqueryScanState *ExecInitSubqueryScan(SubqueryScan *node, EState *estate, int eflags);
-extern TupleTableSlot *ExecSubqueryScan(SubqueryScanState *node);
 extern void ExecEndSubqueryScan(SubqueryScanState *node);
-extern void ExecSubqueryReScan(SubqueryScanState *node, ExprContext *exprCtxt);
+extern void ExecReScanSubqueryScan(SubqueryScanState *node);
 
-static inline gpmon_packet_t * GpmonPktFromSubqueryScanState(SubqueryScanState *node)
-{
-	return &node->ss.ps.gpmon_pkt;
-}
-
-
-#endif   /* NODESUBQUERYSCAN_H */
+#endif							/* NODESUBQUERYSCAN_H */

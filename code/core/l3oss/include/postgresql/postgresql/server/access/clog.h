@@ -3,15 +3,16 @@
  *
  * PostgreSQL transaction-commit-log manager
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/clog.h,v 1.21 2008/01/01 19:45:56 momjian Exp $
+ * src/include/access/clog.h
  */
 #ifndef CLOG_H
 #define CLOG_H
 
-#include "access/xlog.h"
+#include "access/xlogreader.h"
+#include "lib/stringinfo.h"
 
 /*
  * Possible transaction statuses --- note that all-zeroes is the initial
@@ -27,35 +28,34 @@ typedef int XidStatus;
 #define TRANSACTION_STATUS_ABORTED			0x02
 #define TRANSACTION_STATUS_SUB_COMMITTED	0x03
 
+typedef struct xl_clog_truncate
+{
+	int			pageno;
+	TransactionId oldestXact;
+	Oid			oldestXactDb;
+} xl_clog_truncate;
 
-/* Number of SLRU buffers to use for clog */
-#define NUM_CLOG_BUFFERS	8
-
-
-extern void TransactionIdSetStatus(TransactionId xid, XidStatus status, XLogRecPtr lsn);
+extern void TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+						   TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
-extern XidStatus InRecoveryTransactionIdGetStatus(TransactionId xid, bool *valid);
 
-extern char *XidStatus_Name(XidStatus status);
-
+extern Size CLOGShmemBuffers(void);
 extern Size CLOGShmemSize(void);
 extern void CLOGShmemInit(void);
 extern void BootStrapCLOG(void);
 extern void StartupCLOG(void);
+extern void TrimCLOG(void);
 extern void ShutdownCLOG(void);
 extern void CheckPointCLOG(void);
 extern void ExtendCLOG(TransactionId newestXact);
-extern void TruncateCLOG(TransactionId oldestXact);
-extern bool CLOGScanForPrevStatus(
-	TransactionId	*indexXid,
-	XidStatus		*status);
-extern bool CLOGTransactionIsOld(TransactionId xid);
+extern void TruncateCLOG(TransactionId oldestXact, Oid oldestxid_datoid);
 
 /* XLOG stuff */
 #define CLOG_ZEROPAGE		0x00
 #define CLOG_TRUNCATE		0x10
 
-extern void clog_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
-extern void clog_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record);
+extern void clog_redo(XLogReaderState *record);
+extern void clog_desc(StringInfo buf, XLogReaderState *record);
+extern const char *clog_identify(uint8 info);
 
-#endif   /* CLOG_H */
+#endif							/* CLOG_H */

@@ -4,18 +4,16 @@
  *	  Tuple macros used by both index tuples and heap tuples.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/tupmacs.h,v 1.35 2008/01/01 19:45:56 momjian Exp $
+ * src/include/access/tupmacs.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef TUPMACS_H
 #define TUPMACS_H
 
-#include "catalog/pg_magic_oid.h"
-#include "catalog/pg_type.h"
 
 /*
  * check to see if the ATT'th bit of an array of 8-bit bytes is set.
@@ -41,6 +39,8 @@
 /*
  * Same, but work from byval/len parameters rather than Form_pg_attribute.
  */
+#if SIZEOF_DATUM == 8
+
 #define fetch_att(T,attbyval,attlen) \
 ( \
 	(attbyval) ? \
@@ -66,10 +66,33 @@
 	: \
 	PointerGetDatum((char *) (T)) \
 )
+#else							/* SIZEOF_DATUM != 8 */
+
+#define fetch_att(T,attbyval,attlen) \
+( \
+	(attbyval) ? \
+	( \
+		(attlen) == (int) sizeof(int32) ? \
+			Int32GetDatum(*((int32 *)(T))) \
+		: \
+		( \
+			(attlen) == (int) sizeof(int16) ? \
+				Int16GetDatum(*((int16 *)(T))) \
+			: \
+			( \
+				AssertMacro((attlen) == 1), \
+				CharGetDatum(*((char *)(T))) \
+			) \
+		) \
+	) \
+	: \
+	PointerGetDatum((char *) (T)) \
+)
+#endif							/* SIZEOF_DATUM == 8 */
 
 /*
  * att_align_datum aligns the given offset as needed for a datum of alignment
- * requirement attalign and typlen attlen.	attdatum is the Datum variable
+ * requirement attalign and typlen attlen.  attdatum is the Datum variable
  * we intend to pack into a tuple (it's only accessed if we are dealing with
  * a varlena type).  Note that this assumes the Datum will be stored as-is;
  * callers that are intending to convert non-short varlena datums to short
@@ -77,7 +100,8 @@
  */
 #define att_align_datum(cur_offset, attalign, attlen, attdatum) \
 ( \
-	((attlen) == -1 && VARATT_IS_SHORT(DatumGetPointer(attdatum))) ? (long) (cur_offset) : \
+	((attlen) == -1 && VARATT_IS_SHORT(DatumGetPointer(attdatum))) ? \
+	(uintptr_t) (cur_offset) : \
 	att_align_nominal(cur_offset, attalign) \
 )
 
@@ -87,17 +111,18 @@
  * pointer; when accessing a varlena field we have to "peek" to see if we
  * are looking at a pad byte or the first byte of a 1-byte-header datum.
  * (A zero byte must be either a pad byte, or the first byte of a correctly
- * aligned 4-byte length word; in either case we can align safely.	A non-zero
+ * aligned 4-byte length word; in either case we can align safely.  A non-zero
  * byte must be either a 1-byte length word, or the first byte of a correctly
  * aligned 4-byte length word; in either case we need not align.)
  *
  * Note: some callers pass a "char *" pointer for cur_offset.  This is
- * a bit of a hack but works OK on all known platforms.  It ought to be
- * cleaned up someday, though.
+ * a bit of a hack but should work all right as long as uintptr_t is the
+ * correct width.
  */
 #define att_align_pointer(cur_offset, attalign, attlen, attptr) \
 ( \
-	((attlen) == -1 && VARATT_NOT_PAD_BYTE(attptr)) ? (long) (cur_offset) : \
+	((attlen) == -1 && VARATT_NOT_PAD_BYTE(attptr)) ? \
+	(uintptr_t) (cur_offset) : \
 	att_align_nominal(cur_offset, attalign) \
 )
 
@@ -119,7 +144,7 @@
 #define att_align_nominal(cur_offset, attalign) \
 ( \
 	((attalign) == 'i') ? INTALIGN(cur_offset) : \
-	 (((attalign) == 'c') ? ((intptr_t)(cur_offset)) : \
+	 (((attalign) == 'c') ? (uintptr_t) (cur_offset) : \
 	  (((attalign) == 'd') ? DOUBLEALIGN(cur_offset) : \
 	   ( \
 			AssertMacro((attalign) == 's'), \
@@ -168,6 +193,8 @@
  * distinguish by-val and by-ref cases anyway, and so a do-it-all macro
  * wouldn't be convenient.
  */
+#if SIZEOF_DATUM == 8
+
 #define store_att_byval(T,newdatum,attlen) \
 	do { \
 		switch (attlen) \
@@ -190,30 +217,27 @@
 				break; \
 		} \
 	} while (0)
+#else							/* SIZEOF_DATUM != 8 */
 
-/* Proper align with zero padding */
-static inline char * att_align_zero(char *data, char alignchar)
-{
-    size_t  misalignment = (size_t)att_align_nominal(1, alignchar) - 1;
+#define store_att_byval(T,newdatum,attlen) \
+	do { \
+		switch (attlen) \
+		{ \
+			case sizeof(char): \
+				*(char *) (T) = DatumGetChar(newdatum); \
+				break; \
+			case sizeof(int16): \
+				*(int16 *) (T) = DatumGetInt16(newdatum); \
+				break; \
+			case sizeof(int32): \
+				*(int32 *) (T) = DatumGetInt32(newdatum); \
+				break; \
+			default: \
+				elog(ERROR, "unsupported byval length: %d", \
+					 (int) (attlen)); \
+				break; \
+		} \
+	} while (0)
+#endif							/* SIZEOF_DATUM == 8 */
 
-    while ((size_t)data & misalignment)
-		*(data++) = 0;
-
-	return data;
-}
-
-/*
- * Determine if a datum of type oid can be stored in short varlena format.
- * The caller must've checked that it's a pass-by-reference type.
- */
-static inline bool
-value_type_could_short(Pointer ptr, Oid typid)
-{
-	return !VARATT_IS_EXTERNAL(ptr) &&
-		(VARATT_IS_SHORT(ptr) ||
-		 (VARATT_CAN_MAKE_SHORT(ptr) &&
-		  typid != INT2VECTOROID &&
-		  typid != OIDVECTOROID &&
-		  typid < FirstNormalObjectId));
-}
 #endif

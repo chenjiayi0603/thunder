@@ -3,7 +3,7 @@
  * generic-gcc.h
  *	  Atomic operations, implemented using gcc (or compatible) intrinsics.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * NOTES:
@@ -25,14 +25,9 @@
 #endif
 
 /*
- * icc provides all the same intrinsics but doesn't understand gcc's inline asm
+ * An empty asm block should be a sufficient compiler barrier.
  */
-#if defined(__INTEL_COMPILER)
-/* NB: Yes, __memory_barrier() is actually just a compiler barrier */
-#define pg_compiler_barrier_impl()	__memory_barrier()
-#else
 #define pg_compiler_barrier_impl()	__asm__ __volatile__("" ::: "memory")
-#endif
 
 /*
  * If we're on GCC 4.1.0 or higher, we should be able to get a memory barrier
@@ -57,6 +52,7 @@
 #		define pg_write_barrier_impl()		__atomic_thread_fence(__ATOMIC_RELEASE)
 #endif
 
+
 #ifdef HAVE_ATOMICS
 
 /* generic gcc based atomic flag implementation */
@@ -66,12 +62,15 @@
 #define PG_HAVE_ATOMIC_FLAG_SUPPORT
 typedef struct pg_atomic_flag
 {
-	/* some platforms only have a 8 bit wide TAS */
-#ifdef HAVE_GCC__SYNC_CHAR_TAS
-	volatile char value;
-#else
-	/* but an int works on more platforms */
+	/*
+	 * If we have a choice, use int-width TAS, because that is more efficient
+	 * and/or more reliably implemented on most non-Intel platforms.  (Note
+	 * that this code isn't used on x86[_64]; see arch-x86.h for that.)
+	 */
+#ifdef HAVE_GCC__SYNC_INT32_TAS
 	volatile int value;
+#else
+	volatile char value;
 #endif
 } pg_atomic_flag;
 
@@ -102,11 +101,6 @@ typedef struct pg_atomic_uint64
 } pg_atomic_uint64;
 
 #endif /* defined(HAVE_GCC__ATOMIC_INT64_CAS) || defined(HAVE_GCC__SYNC_INT64_CAS) */
-
-/*
- * Implementation follows. Inlined or directly included from atomics.c
- */
-#if defined(PG_USE_INLINE) || defined(ATOMICS_INCLUDE_DEFINITIONS)
 
 #ifdef PG_HAVE_ATOMIC_FLAG_SUPPORT
 
@@ -230,7 +224,5 @@ pg_atomic_fetch_add_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 #endif
 
 #endif /* !defined(PG_DISABLE_64_BIT_ATOMICS) */
-
-#endif /* defined(PG_USE_INLINE) || defined(ATOMICS_INCLUDE_DEFINITIONS) */
 
 #endif /* defined(HAVE_ATOMICS) */

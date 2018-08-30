@@ -5,11 +5,9 @@
  *
  * See src/backend/utils/misc/README for design notes.
  *
- * Portions Copyright (c) 2006-2008, Greenplum inc
- * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  *
- *	  $PostgreSQL: pgsql/src/include/utils/guc_tables.h,v 1.38.2.2 2009/12/09 21:58:17 tgl Exp $
+ *	  src/include/utils/guc_tables.h
  *
  *-------------------------------------------------------------------------
  */
@@ -26,22 +24,31 @@ enum config_type
 	PGC_BOOL,
 	PGC_INT,
 	PGC_REAL,
-	PGC_STRING
+	PGC_STRING,
+	PGC_ENUM
 };
 
-union config_var_value
+union config_var_val
 {
 	bool		boolval;
 	int			intval;
 	double		realval;
 	char	   *stringval;
+	int			enumval;
 };
 
 /*
+ * The actual value of a GUC variable can include a malloc'd opaque struct
+ * "extra", which is created by its check_hook and used by its assign_hook.
+ */
+typedef struct config_var_value
+{
+	union config_var_val val;
+	void	   *extra;
+} config_var_value;
+
+/*
  * Groupings to help organize all the run-time options for display
- *
- * Note: When you modify this, you need to modify config_group_names[]
- *       as well, which is located in guc.c.
  */
 enum config_group
 {
@@ -50,74 +57,49 @@ enum config_group
 	CONN_AUTH,
 	CONN_AUTH_SETTINGS,
 	CONN_AUTH_SECURITY,
-
-	EXTERNAL_TABLES,                    /*CDB*/
-	APPENDONLY_TABLES,                  /*CDB*/
 	RESOURCES,
 	RESOURCES_MEM,
-	RESOURCES_FSM,
-
+	RESOURCES_DISK,
 	RESOURCES_KERNEL,
-	RESOURCES_MGM,
+	RESOURCES_VACUUM_DELAY,
+	RESOURCES_BGWRITER,
+	RESOURCES_ASYNCHRONOUS,
 	WAL,
 	WAL_SETTINGS,
 	WAL_CHECKPOINTS,
-	WAL_REPLICATION,
-
+	WAL_ARCHIVING,
+	REPLICATION,
+	REPLICATION_SENDING,
+	REPLICATION_MASTER,
+	REPLICATION_STANDBY,
+	REPLICATION_SUBSCRIBERS,
 	QUERY_TUNING,
 	QUERY_TUNING_METHOD,
 	QUERY_TUNING_COST,
+	QUERY_TUNING_GEQO,
 	QUERY_TUNING_OTHER,
-
 	LOGGING,
 	LOGGING_WHERE,
 	LOGGING_WHEN,
 	LOGGING_WHAT,
+	PROCESS_TITLE,
 	STATS,
-
-    STATS_ANALYZE,                      /*CDB*/
 	STATS_MONITORING,
 	STATS_COLLECTOR,
 	AUTOVACUUM,
 	CLIENT_CONN,
-
 	CLIENT_CONN_STATEMENT,
 	CLIENT_CONN_LOCALE,
+	CLIENT_CONN_PRELOAD,
 	CLIENT_CONN_OTHER,
 	LOCK_MANAGEMENT,
 	COMPAT_OPTIONS,
-
 	COMPAT_OPTIONS_PREVIOUS,
 	COMPAT_OPTIONS_CLIENT,
-    COMPAT_OPTIONS_IGNORED,             /*CDB*/
-    GP_ARRAY_CONFIGURATION,            /*CDB*/
-    GP_ARRAY_TUNING,                   /*CDB*/
-
-    GP_WORKER_IDENTITY,                /*CDB*/
-	GP_ERROR_HANDLING,				   /*CDB*/
+	ERROR_HANDLING_OPTIONS,
 	PRESET_OPTIONS,
 	CUSTOM_OPTIONS,
-	DEVELOPER_OPTIONS,
-
-	/*
-	 * GPDB: deprecated GUCs. In this group, the GUCs are still functioning,
-	 * but we don't recommend customers to use them. They may be defunct in
-	 * the future release.
-	 */
-	DEPRECATED_OPTIONS,
-
-	/*
-	 * GPDB: defunct GUCs. In this group, the GUCs are defunct. The GUCs are still
-	 * there, but attempting to change their values will not have any effects.
-	 */
-	DEFUNCT_OPTIONS,
-
-
-
-
-
-
-	___CONFIG_GROUP_COUNT /* sentinel to indicate end of enumeration */
+	DEVELOPER_OPTIONS
 };
 
 /*
@@ -139,9 +121,11 @@ typedef struct guc_stack
 	int			nest_level;		/* nesting depth at which we made entry */
 	GucStackState state;		/* see enum above */
 	GucSource	source;			/* source of the prior value */
-	union config_var_value prior;		/* previous value of variable */
-	union config_var_value masked;		/* SET value in a GUC_SET_LOCAL entry */
 	/* masked value's source must be PGC_S_SESSION, so no need to store it */
+	GucContext	scontext;		/* context that set the prior value */
+	GucContext	masked_scontext;	/* context that set the masked value */
+	config_var_value prior;		/* previous value of variable */
+	config_var_value masked;	/* SET value in a GUC_SET_LOCAL entry */
 } GucStack;
 
 /*
@@ -150,6 +134,11 @@ typedef struct guc_stack
  * The short description should be less than 80 chars in length. Some
  * applications may use the long description as well, and will append
  * it to the short description. (separated by a newline or '. ')
+ *
+ * Note that sourcefile/sourceline are kept here, and not pushed into stacked
+ * values, although in principle they belong with some stacked value if the
+ * active value is session- or transaction-local.  This is to avoid bloating
+ * stack entries.  We know they are only relevant when source == PGC_S_FILE.
  */
 struct config_generic
 {
@@ -159,56 +148,29 @@ struct config_generic
 	enum config_group group;	/* to help organize variables by function */
 	const char *short_desc;		/* short desc. of this variable's purpose */
 	const char *long_desc;		/* long desc. of this variable's purpose */
-	int			flags;			/* flag bits, see below */
+	int			flags;			/* flag bits, see guc.h */
 	/* variable fields, initialized at runtime: */
 	enum config_type vartype;	/* type of variable (set only at startup) */
 	int			status;			/* status bits, see below */
-	GucSource	reset_source;	/* source of the reset_value */
 	GucSource	source;			/* source of the current actual value */
+	GucSource	reset_source;	/* source of the reset_value */
+	GucContext	scontext;		/* context that set the current value */
+	GucContext	reset_scontext; /* context that set the reset value */
 	GucStack   *stack;			/* stacked prior values */
+	void	   *extra;			/* "extra" pointer for current actual value */
+	char	   *sourcefile;		/* file current setting is from (NULL if not
+								 * set in config file) */
+	int			sourceline;		/* line in source file */
 };
 
-/* bit values in flags field */
-#define GUC_LIST_INPUT			0x0001	/* input can be list format */
-#define GUC_LIST_QUOTE			0x0002	/* double-quote list elements */
-#define GUC_NO_SHOW_ALL			0x0004	/* exclude from SHOW ALL */
-#define GUC_NO_RESET_ALL		0x0008	/* exclude from RESET ALL */
-#define GUC_REPORT				0x0010	/* auto-report changes to client */
-#define GUC_NOT_IN_SAMPLE		0x0020	/* not in postgresql.conf.sample */
-#define GUC_DISALLOW_IN_FILE	0x0040	/* can't set in postgresql.conf */
-#define GUC_CUSTOM_PLACEHOLDER	0x0080	/* placeholder for custom variable */
-#define GUC_SUPERUSER_ONLY		0x0100	/* show only to superusers */
-#define GUC_IS_NAME				0x0200	/* limit string to NAMEDATALEN-1 */
-
-#define GUC_UNIT_KB				0x0400	/* value is in kilobytes */
-#define GUC_UNIT_BLOCKS			0x0800	/* value is in blocks */
-#define GUC_UNIT_XBLOCKS		0x0C00	/* value is in xlog blocks */
-#define GUC_UNIT_MEMORY			0x0C00	/* mask for KB, BLOCKS, XBLOCKS */
-
-#define GUC_UNIT_MS				0x1000	/* value is in milliseconds */
-#define GUC_UNIT_S				0x2000	/* value is in seconds */
-#define GUC_UNIT_MIN			0x4000	/* value is in minutes */
-#define GUC_UNIT_TIME			0x7000	/* mask for MS, S, MIN */
-
-#define GUC_NOT_WHILE_SEC_REST	0x8000	/* can't set if security restricted */
-
-#define GUC_GPDB_ADDOPT        0x10000  /* Send by cdbgang */
-
-#define GUC_DISALLOW_USER_SET  0x20000 /* Do not allow this GUC to be set by the user */
-
 /* bit values in status field */
-#define GUC_IS_IN_FILE		0x0001		/* found it in config file */
+#define GUC_IS_IN_FILE		0x0001	/* found it in config file */
 /*
  * Caution: the GUC_IS_IN_FILE bit is transient state for ProcessConfigFile.
  * Do not assume that its value represents useful information elsewhere.
  */
+#define GUC_PENDING_RESTART 0x0002
 
-/* upper limit for GUC variables measured in kilobytes of memory */
-#if SIZEOF_SIZE_T > 4
-#define MAX_KILOBYTES	INT_MAX
-#else
-#define MAX_KILOBYTES	(INT_MAX / 1024)
-#endif
 
 /* GUC records for specific variable types */
 
@@ -218,10 +180,12 @@ struct config_bool
 	/* constant fields, must be set correctly in initial value: */
 	bool	   *variable;
 	bool		boot_val;
+	GucBoolCheckHook check_hook;
 	GucBoolAssignHook assign_hook;
 	GucShowHook show_hook;
 	/* variable fields, initialized at runtime: */
 	bool		reset_val;
+	void	   *reset_extra;
 };
 
 struct config_int
@@ -232,10 +196,12 @@ struct config_int
 	int			boot_val;
 	int			min;
 	int			max;
+	GucIntCheckHook check_hook;
 	GucIntAssignHook assign_hook;
 	GucShowHook show_hook;
 	/* variable fields, initialized at runtime: */
 	int			reset_val;
+	void	   *reset_extra;
 };
 
 struct config_real
@@ -246,10 +212,12 @@ struct config_real
 	double		boot_val;
 	double		min;
 	double		max;
+	GucRealCheckHook check_hook;
 	GucRealAssignHook assign_hook;
 	GucShowHook show_hook;
 	/* variable fields, initialized at runtime: */
 	double		reset_val;
+	void	   *reset_extra;
 };
 
 struct config_string
@@ -258,10 +226,27 @@ struct config_string
 	/* constant fields, must be set correctly in initial value: */
 	char	  **variable;
 	const char *boot_val;
+	GucStringCheckHook check_hook;
 	GucStringAssignHook assign_hook;
 	GucShowHook show_hook;
 	/* variable fields, initialized at runtime: */
 	char	   *reset_val;
+	void	   *reset_extra;
+};
+
+struct config_enum
+{
+	struct config_generic gen;
+	/* constant fields, must be set correctly in initial value: */
+	int		   *variable;
+	int			boot_val;
+	const struct config_enum_entry *options;
+	GucEnumCheckHook check_hook;
+	GucEnumAssignHook assign_hook;
+	GucShowHook show_hook;
+	/* variable fields, initialized at runtime: */
+	int			reset_val;
+	void	   *reset_extra;
 };
 
 /* constant tables corresponding to enums above and in guc.h */
@@ -272,19 +257,12 @@ extern const char *const GucSource_Names[];
 
 /* get the current set of variables */
 extern struct config_generic **get_guc_variables(void);
-extern int get_num_guc_variables(void);
 
 extern void build_guc_variables(void);
 
-extern bool parse_int(const char *value, int *result, int flags, const char **hintmsg);
+/* search in enum options */
+extern const char *config_enum_lookup_by_value(struct config_enum *record, int val);
+extern bool config_enum_lookup_by_name(struct config_enum *record,
+						   const char *value, int *retval);
 
-/* guc_gp.c needs this from guc.c */
-const char *assign_msglvl(int *var, const char *newval, bool doit, GucSource source);
-
-/* guc_gp.c exports these for guc.c */
-extern struct config_bool ConfigureNamesBool_gp[];
-extern struct config_int ConfigureNamesInt_gp[];
-extern struct config_real ConfigureNamesReal_gp[];
-extern struct config_string ConfigureNamesString_gp[];
-
-#endif   /* GUC_TABLES_H */
+#endif							/* GUC_TABLES_H */

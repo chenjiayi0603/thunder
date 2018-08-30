@@ -4,10 +4,10 @@
  *
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/rewrite/rewriteSupport.h,v 1.30 2008/01/01 19:45:58 momjian Exp $
+ * src/include/rewrite/rewriteSupport.h
  *
  *-------------------------------------------------------------------------
  */
@@ -17,10 +17,10 @@
 /* The ON SELECT rule of a view is always named this: */
 #define ViewSelectRuleName	"_RETURN"
 
-extern void SetRelationRuleStatus(Oid relationId, bool relHasRules,
-					  bool relIsBecomingView);
+extern bool IsDefinedRewriteRule(Oid owningRel, const char *ruleName);
 
-extern Oid  get_rewrite_oid(Oid relid, const char *rulename, bool missing_ok);
-extern Oid  get_rewrite_oid_without_relid(const char *rulename, Oid *relid);
+extern void SetRelationRuleStatus(Oid relationId, bool relHasRules);
 
-#endif   /* REWRITESUPPORT_H */
+extern Oid	get_rewrite_oid(Oid relid, const char *rulename, bool missing_ok);
+
+#endif							/* REWRITESUPPORT_H */

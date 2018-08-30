@@ -4,10 +4,10 @@
  *	  routines for signaling the postmaster from its child processes
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/pmsignal.h,v 1.25 2009/06/11 14:49:12 momjian Exp $
+ * src/include/storage/pmsignal.h
  *
  *-------------------------------------------------------------------------
  */
@@ -23,28 +23,14 @@
 typedef enum
 {
 	PMSIGNAL_RECOVERY_STARTED,	/* recovery has started */
-	PMSIGNAL_RECOVERY_CONSISTENT,		/* recovery has reached consistent
-										 * state */
-	PMSIGNAL_PASSWORD_CHANGE,	/* pg_auth file has changed */
+	PMSIGNAL_BEGIN_HOT_STANDBY, /* begin Hot Standby */
 	PMSIGNAL_WAKEN_ARCHIVER,	/* send a NOTIFY signal to xlog archiver */
 	PMSIGNAL_ROTATE_LOGFILE,	/* send SIGUSR1 to syslogger to rotate logfile */
 	PMSIGNAL_START_AUTOVAC_LAUNCHER,	/* start an autovacuum launcher */
-	PMSIGNAL_START_AUTOVAC_WORKER,		/* start an autovacuum worker */
-
+	PMSIGNAL_START_AUTOVAC_WORKER,	/* start an autovacuum worker */
+	PMSIGNAL_BACKGROUND_WORKER_CHANGE,	/* background worker state change */
 	PMSIGNAL_START_WALRECEIVER, /* start a walreceiver */
-
-	PMSIGNAL_FILEREP_STATE_CHANGE,	      /* filerep is reporting state change */ 
-
-	PMSIGNAL_PRIMARY_MIRROR_TRANSITION_RECEIVED, /* a primary mirror transition has been received by a backend */
-	PMSIGNAL_PRIMARY_MIRROR_ALL_BACKENDS_SHUTDOWN, /* filerep has shut down all backends */
-
-	/* a filerep subprocess crashed in a way that requires postmaster reset */
-    PMSIGNAL_POSTMASTER_RESET_FILEREP,
-
-    /* peer segment requested postmaster reset */
-    PMSIGNAL_POSTMASTER_RESET_BY_PEER,
-
-	PMSIGNAL_SEGCONFIG_CHANGE,	/* segment configuration hs changed */
+	PMSIGNAL_ADVANCE_STATE_MACHINE, /* advance postmaster's state machine */
 
 	NUM_PMSIGNALS				/* Must be last value of enum! */
 } PMSignalReason;
@@ -63,9 +49,8 @@ extern int	AssignPostmasterChildSlot(void);
 extern bool ReleasePostmasterChildSlot(int slot);
 extern bool IsPostmasterChildWalSender(int slot);
 extern void MarkPostmasterChildActive(void);
-extern void MarkPostmasterChildWalSender(void);
 extern void MarkPostmasterChildInactive(void);
-extern bool PostmasterIsAlive(bool amDirectChild);
-extern bool ParentProcIsAlive(void);
+extern void MarkPostmasterChildWalSender(void);
+extern bool PostmasterIsAlive(void);
 
-#endif   /* PMSIGNAL_H */
+#endif							/* PMSIGNAL_H */

@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_class.h,v 1.104 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_class.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -19,15 +19,7 @@
 #ifndef PG_CLASS_H
 #define PG_CLASS_H
 
-
 #include "catalog/genbki.h"
-
-/* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
 
 /* ----------------
  *		pg_class definition.  cpp turns this into
@@ -35,64 +27,65 @@
  * ----------------
  */
 #define RelationRelationId	1259
+#define RelationRelation_Rowtype_Id  83
 
-CATALOG(pg_class,1259) BKI_BOOTSTRAP
+CATALOG(pg_class,1259) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83) BKI_SCHEMA_MACRO
 {
 	NameData	relname;		/* class name */
 	Oid			relnamespace;	/* OID of namespace containing this class */
-	Oid			reltype;		/* OID of associated entry in pg_type */
+	Oid			reltype;		/* OID of entry in pg_type for table's
+								 * implicit row type */
+	Oid			reloftype;		/* OID of entry in pg_type for underlying
+								 * composite type */
 	Oid			relowner;		/* class owner */
 	Oid			relam;			/* index access method; 0 if not an index */
 	Oid			relfilenode;	/* identifier of physical storage file */
+
+	/* relfilenode == 0 means it is a "mapped" relation, see relmapper.c */
 	Oid			reltablespace;	/* identifier of table space for relation */
-	int4		relpages;		/* # of blocks (not always up-to-date) */
+	int32		relpages;		/* # of blocks (not always up-to-date) */
 	float4		reltuples;		/* # of tuples (not always up-to-date) */
+	int32		relallvisible;	/* # of all-visible blocks (not always
+								 * up-to-date) */
 	Oid			reltoastrelid;	/* OID of toast table; 0 if none */
-	Oid			reltoastidxid;	/* if toast table, OID of chunk_id index */
 	bool		relhasindex;	/* T if has (or has had) any indexes */
 	bool		relisshared;	/* T if shared across databases */
+	char		relpersistence; /* see RELPERSISTENCE_xxx constants below */
 	char		relkind;		/* see RELKIND_xxx constants below */
-	char		relstorage;		/* see RELSTORAGE_xxx constants below */
-	int2		relnatts;		/* number of user attributes */
+	int16		relnatts;		/* number of user attributes */
 
 	/*
 	 * Class pg_attribute must contain exactly "relnatts" user attributes
 	 * (with attnums ranging from 1 to relnatts) for this class.  It may also
 	 * contain entries with negative attnums for system attributes.
 	 */
-	int2		relchecks;		/* # of CHECK constraints for class */
-	int2		reltriggers;	/* # of TRIGGERs */
-	int2		relukeys;		/* # of Unique keys (not used) */
-	int2		relfkeys;		/* # of FOREIGN KEYs (not used) */
-	int2		relrefs;		/* # of references to this rel (not used) */
+	int16		relchecks;		/* # of CHECK constraints for class */
 	bool		relhasoids;		/* T if we generate OIDs for rows of rel */
-	bool		relhaspkey;		/* has PRIMARY KEY index */
-	bool		relhasrules;	/* has associated rules */
-	bool		relhassubclass; /* has derived classes */
+	bool		relhaspkey;		/* has (or has had) PRIMARY KEY index */
+	bool		relhasrules;	/* has (or has had) any rules */
+	bool		relhastriggers; /* has (or has had) any TRIGGERs */
+	bool		relhassubclass; /* has (or has had) derived classes */
+	bool		relrowsecurity; /* row security is enabled or not */
+	bool		relforcerowsecurity;	/* row security forced for owners or
+										 * not */
+	bool		relispopulated; /* matview currently holds query results */
+	char		relreplident;	/* see REPLICA_IDENTITY_xxx constants  */
+	bool		relispartition; /* is relation a partition? */
 	TransactionId relfrozenxid; /* all Xids < this are frozen in this rel */
+	TransactionId relminmxid;	/* all multixacts in this rel are >= this.
+								 * this is really a MultiXactId */
 
-	/*
-	 * VARIABLE LENGTH FIELDS start here.  These fields may be NULL, too.
-	 *
-	 * NOTE: these fields are not present in a relcache entry's rd_rel field.
-	 */
-
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	/* NOTE: These fields are not present in a relcache entry's rd_rel field. */
 	aclitem		relacl[1];		/* access permissions */
 	text		reloptions[1];	/* access-method-specific options */
+	pg_node_tree relpartbound;	/* partition bound node tree */
+#endif
 } FormData_pg_class;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(relnamespace REFERENCES pg_namespace(oid));
-FOREIGN_KEY(reltype REFERENCES pg_type(oid));
-FOREIGN_KEY(relowner REFERENCES pg_authid(oid));
-FOREIGN_KEY(relam REFERENCES pg_am(oid));
-FOREIGN_KEY(reltablespace REFERENCES pg_tablespace(oid));
-FOREIGN_KEY(reltoastrelid REFERENCES pg_class(oid));
-FOREIGN_KEY(reltoastidxid REFERENCES pg_class(oid));
 
 /* Size of fixed part of pg_class tuples, not counting var-length fields */
 #define CLASS_TUPLE_SIZE \
-	 (offsetof(FormData_pg_class,relfrozenxid) + sizeof(TransactionId))
+	 (offsetof(FormData_pg_class,relminmxid) + sizeof(TransactionId))
 
 /* ----------------
  *		Form_pg_class corresponds to a pointer to a tuple with
@@ -106,35 +99,40 @@ typedef FormData_pg_class *Form_pg_class;
  * ----------------
  */
 
-#define Natts_pg_class					28
-#define Anum_pg_class_relname			1
-#define Anum_pg_class_relnamespace		2
-#define Anum_pg_class_reltype			3
-#define Anum_pg_class_relowner			4
-#define Anum_pg_class_relam				5
-#define Anum_pg_class_relfilenode		6
-#define Anum_pg_class_reltablespace		7
-#define Anum_pg_class_relpages			8
-#define Anum_pg_class_reltuples			9
-#define Anum_pg_class_reltoastrelid		10
-#define Anum_pg_class_reltoastidxid		11
-#define Anum_pg_class_relhasindex		12
-#define Anum_pg_class_relisshared		13
-#define Anum_pg_class_relkind			14
-#define Anum_pg_class_relstorage		15
-#define Anum_pg_class_relnatts			16
-#define Anum_pg_class_relchecks			17
-#define Anum_pg_class_reltriggers		18
-#define Anum_pg_class_relukeys			19
-#define Anum_pg_class_relfkeys			20
-#define Anum_pg_class_relrefs			21
-#define Anum_pg_class_relhasoids		22
-#define Anum_pg_class_relhaspkey		23
-#define Anum_pg_class_relhasrules		24
-#define Anum_pg_class_relhassubclass	25
-#define Anum_pg_class_relfrozenxid		26
-#define Anum_pg_class_relacl			27
-#define Anum_pg_class_reloptions		28
+#define Natts_pg_class						33
+#define Anum_pg_class_relname				1
+#define Anum_pg_class_relnamespace			2
+#define Anum_pg_class_reltype				3
+#define Anum_pg_class_reloftype				4
+#define Anum_pg_class_relowner				5
+#define Anum_pg_class_relam					6
+#define Anum_pg_class_relfilenode			7
+#define Anum_pg_class_reltablespace			8
+#define Anum_pg_class_relpages				9
+#define Anum_pg_class_reltuples				10
+#define Anum_pg_class_relallvisible			11
+#define Anum_pg_class_reltoastrelid			12
+#define Anum_pg_class_relhasindex			13
+#define Anum_pg_class_relisshared			14
+#define Anum_pg_class_relpersistence		15
+#define Anum_pg_class_relkind				16
+#define Anum_pg_class_relnatts				17
+#define Anum_pg_class_relchecks				18
+#define Anum_pg_class_relhasoids			19
+#define Anum_pg_class_relhaspkey			20
+#define Anum_pg_class_relhasrules			21
+#define Anum_pg_class_relhastriggers		22
+#define Anum_pg_class_relhassubclass		23
+#define Anum_pg_class_relrowsecurity		24
+#define Anum_pg_class_relforcerowsecurity	25
+#define Anum_pg_class_relispopulated		26
+#define Anum_pg_class_relreplident			27
+#define Anum_pg_class_relispartition		28
+#define Anum_pg_class_relfrozenxid			29
+#define Anum_pg_class_relminmxid			30
+#define Anum_pg_class_relacl				31
+#define Anum_pg_class_reloptions			32
+#define Anum_pg_class_relpartbound			33
 
 /* ----------------
  *		initial contents of pg_class
@@ -145,79 +143,45 @@ typedef FormData_pg_class *Form_pg_class;
  * ----------------
  */
 
-/* Note: "3" in the relfrozenxid column stands for FirstNormalTransactionId */
-DATA(insert OID = 1247 (  pg_type		PGNSP 71 PGUID 0 1247 0 0 0 0 0 f f r h 26 0 0 0 0 0 t f f f 3 _null_ _null_ ));
-DESCR("");
-DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 PGUID 0 1249 0 0 0 0 0 f f r h 17 0 0 0 0 0 f f f f 3 _null_ _null_ ));
-DESCR("");
-DATA(insert OID = 1255 (  pg_proc		PGNSP 81 PGUID 0 1255 0 0 0 0 0 f f r h 26 0 0 0 0 0 t f f f 3 _null_ _null_ ));
-DESCR("");
-DATA(insert OID = 1259 (  pg_class		PGNSP 83 PGUID 0 1259 0 0 0 0 0 f f r h 28 0 0 0 0 0 t f f f 3 _null_ _null_ ));
-DESCR("");
-
-/* abstract tuple types */
-DATA(insert OID = 3250    ( nb_classification PGNSP 3251 PGUID 0 3250 0 0 0 0 0 f f c v 3 0 0 0 0 0 f f f f 0 _null_ _null_ ));
-
-
 /*
- * pg_class table values for FormData_pg_class.
+ * Note: "3" in the relfrozenxid column stands for FirstNormalTransactionId;
+ * similarly, "1" in relminmxid stands for FirstMultiXactId
  */
-#define Class_pg_class \
-  {"pg_class"}, PG_CATALOG_NAMESPACE, PG_CLASS_RELTYPE_OID, BOOTSTRAP_SUPERUSERID, 0, \
-               RelationRelationId, GLOBALTABLESPACE_OID, \
-               0, 0, 0, 0, false, false, RELKIND_RELATION, RELSTORAGE_HEAP, Natts_pg_class, \
-               0, 0, 0, 0, 0, true, false, false, false, FirstNormalTransactionId, {0}, {{{'\0','\0','\0','\0'},{'\0'}}}
+DATA(insert OID = 1247 (  pg_type		PGNSP 71 0 PGUID 0 0 0 0 0 0 0 f f p r 30 0 t f f f f f f t n f 3 1 _null_ _null_ _null_));
+DESCR("");
+DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 0 PGUID 0 0 0 0 0 0 0 f f p r 22 0 f f f f f f f t n f 3 1 _null_ _null_ _null_));
+DESCR("");
+DATA(insert OID = 1255 (  pg_proc		PGNSP 81 0 PGUID 0 0 0 0 0 0 0 f f p r 29 0 t f f f f f f t n f 3 1 _null_ _null_ _null_));
+DESCR("");
+DATA(insert OID = 1259 (  pg_class		PGNSP 83 0 PGUID 0 0 0 0 0 0 0 f f p r 33 0 t f f f f f f t n f 3 1 _null_ _null_ _null_));
+DESCR("");
 
 
+#define		  RELKIND_RELATION		  'r'	/* ordinary table */
+#define		  RELKIND_INDEX			  'i'	/* secondary index */
+#define		  RELKIND_SEQUENCE		  'S'	/* sequence object */
+#define		  RELKIND_TOASTVALUE	  't'	/* for out-of-line values */
+#define		  RELKIND_VIEW			  'v'	/* view */
+#define		  RELKIND_MATVIEW		  'm'	/* materialized view */
+#define		  RELKIND_COMPOSITE_TYPE  'c'	/* composite type */
+#define		  RELKIND_FOREIGN_TABLE   'f'	/* foreign table */
+#define		  RELKIND_PARTITIONED_TABLE 'p' /* partitioned table */
 
-#define		  RELKIND_INDEX			  'i'		/* secondary index */
-#define		  RELKIND_RELATION		  'r'		/* ordinary cataloged heap */
-#define		  RELKIND_SEQUENCE		  'S'		/* SEQUENCE relation */
-#define		  RELKIND_UNCATALOGED	  'u'		/* temporary heap */
-#define		  RELKIND_TOASTVALUE	  't'		/* moved off huge values */
-#define		  RELKIND_AOSEGMENTS	  'o'		/* AO segment files and eof's */
-#define		  RELKIND_AOBLOCKDIR	  'b'		/* AO block directory */
-#define		  RELKIND_AOVISIMAP		  'm'		/* AO visibility map */
-#define		  RELKIND_VIEW			  'v'		/* view */
-#define		  RELKIND_COMPOSITE_TYPE  'c'		/* composite type */
+#define		  RELPERSISTENCE_PERMANENT	'p' /* regular table */
+#define		  RELPERSISTENCE_UNLOGGED	'u' /* unlogged permanent table */
+#define		  RELPERSISTENCE_TEMP		't' /* temporary table */
 
+/* default selection for replica identity (primary key or nothing) */
+#define		  REPLICA_IDENTITY_DEFAULT	'd'
+/* no replica identity is logged for this relation */
+#define		  REPLICA_IDENTITY_NOTHING	'n'
+/* all columns are logged as replica identity */
+#define		  REPLICA_IDENTITY_FULL		'f'
 /*
- * relstorage describes how a relkind is physically stored in the database.
- *
- * RELSTORAGE_HEAP    - stored on disk using heap storage.
- * RELSTORAGE_AOROWS  - stored on disk using append only storage.
- * RELSTORAGE_AOCOLS  - stored on dist using append only column storage.
- * RELSTORAGE_VIRTUAL - has virtual storage, meaning, relation has no
- *						data directly stored forit  (right now this
- *						relates to views and comp types).
- * RELSTORAGE_EXTERNAL-	stored externally using external tables.
- * RELSTORAGE_FOREIGN - stored in another server.  
+ * an explicitly chosen candidate key's columns are used as replica identity.
+ * Note this will still be set if the index has been dropped; in that case it
+ * has the same meaning as 'd'.
  */
-#define		  RELSTORAGE_HEAP	'h'
-#define		  RELSTORAGE_AOROWS	'a'
-#define 	  RELSTORAGE_AOCOLS	'c'
-#define		  RELSTORAGE_PARQUET 'p'
-#define		  RELSTORAGE_VIRTUAL	'v'
-#define		  RELSTORAGE_EXTERNAL 'x'
-#define		  RELSTORAGE_FOREIGN 'f'
+#define		  REPLICA_IDENTITY_INDEX	'i'
 
-static inline bool relstorage_is_buffer_pool(char c)
-{
-	return (c == RELSTORAGE_HEAP);
-}
-
-static inline bool relstorage_is_ao(char c)
-{
-	return (c == RELSTORAGE_AOROWS || c == RELSTORAGE_AOCOLS);
-}
-
-static inline bool relstorage_is_external(char c)
-{
-	return (c == RELSTORAGE_EXTERNAL);
-}
-
-static inline bool relstorage_is_foreign(char c)
-{
-	return (c == RELSTORAGE_FOREIGN);
-}
-#endif   /* PG_CLASS_H */
+#endif							/* PG_CLASS_H */

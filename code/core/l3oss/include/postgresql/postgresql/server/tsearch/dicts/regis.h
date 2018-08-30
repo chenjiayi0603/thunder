@@ -2,11 +2,11 @@
  *
  * regis.h
  *
- * Declarations for for fast regex subset, used by ISpell
+ * Declarations for fast regex subset, used by ISpell
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/dicts/regis.h,v 1.5 2008/01/21 02:46:11 tgl Exp $
+ * src/include/tsearch/dicts/regis.h
  *
  *-------------------------------------------------------------------------
  */
@@ -21,7 +21,7 @@ typedef struct RegisNode
 				len:16,
 				unused:14;
 	struct RegisNode *next;
-	unsigned char data[1];
+	unsigned char data[FLEXIBLE_ARRAY_MEMBER];
 } RegisNode;
 
 #define  RNHDRSZ	(offsetof(RegisNode,data))

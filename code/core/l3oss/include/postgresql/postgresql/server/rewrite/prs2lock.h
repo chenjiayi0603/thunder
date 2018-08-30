@@ -3,10 +3,10 @@
  * prs2lock.h
  *	  data structures for POSTGRES Rule System II (rewrite rules only)
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/rewrite/prs2lock.h,v 1.24 2008/01/01 19:45:58 momjian Exp $
+ * src/include/rewrite/prs2lock.h
  *
  *-------------------------------------------------------------------------
  */
@@ -18,14 +18,13 @@
 
 /*
  * RewriteRule -
- *	  holds a info for a rewrite rule
+ *	  holds an info for a rewrite rule
  *
  */
 typedef struct RewriteRule
 {
 	Oid			ruleId;
 	CmdType		event;
-	AttrNumber	attrno;
 	Node	   *qual;
 	List	   *actions;
 	char		enabled;
@@ -44,4 +43,4 @@ typedef struct RuleLock
 	RewriteRule **rules;
 } RuleLock;
 
-#endif   /* REWRITE_H */
+#endif							/* REWRITE_H */

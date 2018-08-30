@@ -4,10 +4,10 @@
  *		handle operator things for parser
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/parser/parse_oper.h,v 1.42 2008/01/01 19:45:58 momjian Exp $
+ * src/include/parser/parse_oper.h
  *
  *-------------------------------------------------------------------------
  */
@@ -15,6 +15,7 @@
 #define PARSE_OPER_H
 
 #include "access/htup.h"
+#include "nodes/parsenodes.h"
 #include "parser/parse_node.h"
 
 
@@ -24,9 +25,7 @@ typedef HeapTuple Operator;
 extern Oid LookupOperName(ParseState *pstate, List *opername,
 			   Oid oprleft, Oid oprright,
 			   bool noError, int location);
-extern Oid LookupOperNameTypeNames(ParseState *pstate, List *opername,
-						TypeName *oprleft, TypeName *oprright,
-						bool noError, int location);
+extern Oid	LookupOperWithArgs(ObjectWithArgs *oper, bool noError);
 
 /* Routines to find operators matching a name and given input types */
 /* NB: the selected operator may require coercion of the input types! */
@@ -45,17 +44,14 @@ extern Operator compatible_oper(ParseState *pstate, List *op,
 
 /* currently no need for compatible_left_oper/compatible_right_oper */
 
-/* Routines for identifying "=", "<", ">" operators for a type */
-extern Operator equality_oper(Oid argtype, bool noError);
-extern Operator ordering_oper(Oid argtype, bool noError);
-extern Operator reverse_ordering_oper(Oid argtype, bool noError);
+/* Routines for identifying "<", "=", ">" operators for a type */
+extern void get_sort_group_operators(Oid argtype,
+						 bool needLT, bool needEQ, bool needGT,
+						 Oid *ltOpr, Oid *eqOpr, Oid *gtOpr,
+						 bool *isHashable);
 
 /* Convenience routines for common calls on the above */
 extern Oid	compatible_oper_opid(List *op, Oid arg1, Oid arg2, bool noError);
-extern Oid	equality_oper_funcid(Oid argtype);
-extern Oid	equality_oper_opid(Oid argtype);
-extern Oid	ordering_oper_opid(Oid argtype);
-extern Oid	reverse_ordering_oper_opid(Oid argtype);
 
 /* Extract operator OID or underlying-function OID from an Operator tuple */
 extern Oid	oprid(Operator op);
@@ -63,9 +59,9 @@ extern Oid	oprfuncid(Operator op);
 
 /* Build expression tree for an operator invocation */
 extern Expr *make_op(ParseState *pstate, List *opname,
-		Node *ltree, Node *rtree, int location);
+		Node *ltree, Node *rtree, Node *last_srf, int location);
 extern Expr *make_scalar_array_op(ParseState *pstate, List *opname,
 					 bool useOr,
 					 Node *ltree, Node *rtree, int location);
 
-#endif   /* PARSE_OPER_H */
+#endif							/* PARSE_OPER_H */

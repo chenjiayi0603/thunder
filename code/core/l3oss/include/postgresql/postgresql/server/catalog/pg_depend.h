@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_depend.h,v 1.9 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_depend.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -37,14 +37,14 @@ CATALOG(pg_depend,2608) BKI_WITHOUT_OIDS
 	 */
 	Oid			classid;		/* OID of table containing object */
 	Oid			objid;			/* OID of object itself */
-	int4		objsubid;		/* column number, or 0 if not used */
+	int32		objsubid;		/* column number, or 0 if not used */
 
 	/*
 	 * Identification of the independent (referenced) object.
 	 */
 	Oid			refclassid;		/* OID of table containing object */
 	Oid			refobjid;		/* OID of object itself */
-	int4		refobjsubid;	/* column number, or 0 if not used */
+	int32		refobjsubid;	/* column number, or 0 if not used */
 
 	/*
 	 * Precise semantics of the relationship are specified by the deptype
@@ -52,10 +52,6 @@ CATALOG(pg_depend,2608) BKI_WITHOUT_OIDS
 	 */
 	char		deptype;		/* see codes in dependency.h */
 } FormData_pg_depend;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(classid REFERENCES pg_class(oid));
-FOREIGN_KEY(refclassid REFERENCES pg_class(oid));
 
 /* ----------------
  *		Form_pg_depend corresponds to a pointer to a row with
@@ -91,4 +87,4 @@ typedef FormData_pg_depend *Form_pg_depend;
  * convenient to find from the contents of other catalogs.
  */
 
-#endif   /* PG_DEPEND_H */
+#endif							/* PG_DEPEND_H */

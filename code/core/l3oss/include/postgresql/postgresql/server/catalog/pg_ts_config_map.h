@@ -4,13 +4,13 @@
  *	definition of token mappings for configurations of tsearch
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_ts_config_map.h,v 1.3 2008/01/01 19:45:57 momjian Exp $
+ * src/include/catalog/pg_ts_config_map.h
  *
  * NOTES
- *		the genbki.sh script reads this file and generates .bki
+ *		the genbki.pl script reads this file and generates .bki
  *		information from the DATA() statements.
  *
  *		XXX do NOT break up DATA() statements into multiple lines!
@@ -21,12 +21,7 @@
 #ifndef PG_TS_CONFIG_MAP_H
 #define PG_TS_CONFIG_MAP_H
 
-/* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
+#include "catalog/genbki.h"
 
 /* ----------------
  *		pg_ts_config_map definition.  cpp turns this into
@@ -38,14 +33,10 @@
 CATALOG(pg_ts_config_map,3603) BKI_WITHOUT_OIDS
 {
 	Oid			mapcfg;			/* OID of configuration owning this entry */
-	int4		maptokentype;	/* token type from parser */
-	int4		mapseqno;		/* order in which to consult dictionaries */
+	int32		maptokentype;	/* token type from parser */
+	int32		mapseqno;		/* order in which to consult dictionaries */
 	Oid			mapdict;		/* dictionary to consult */
 } FormData_pg_ts_config_map;
-
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(mapcfg REFERENCES pg_ts_config(oid));
-FOREIGN_KEY(mapdict REFERENCES pg_ts_dict(oid));
 
 typedef FormData_pg_ts_config_map *Form_pg_ts_config_map;
 
@@ -84,4 +75,4 @@ DATA(insert ( 3748	20	1	3765 ));
 DATA(insert ( 3748	21	1	3765 ));
 DATA(insert ( 3748	22	1	3765 ));
 
-#endif   /* PG_TS_CONFIG_MAP_H */
+#endif							/* PG_TS_CONFIG_MAP_H */

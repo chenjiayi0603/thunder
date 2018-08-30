@@ -5,13 +5,13 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_attrdef.h,v 1.22 2008/01/01 19:45:56 momjian Exp $
+ * src/include/catalog/pg_attrdef.h
  *
  * NOTES
- *	  the genbki.sh script reads this file and generates .bki
+ *	  the genbki.pl script reads this file and generates .bki
  *	  information from the DATA() statements.
  *
  *-------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 #include "catalog/genbki.h"
 
 /* ----------------
- *		pg_attrdef definition.	cpp turns this into
+ *		pg_attrdef definition.  cpp turns this into
  *		typedef struct FormData_pg_attrdef
  * ----------------
  */
@@ -30,14 +30,14 @@
 
 CATALOG(pg_attrdef,2604)
 {
-	Oid			adrelid;
-	int2		adnum;
-	text		adbin;
-	text		adsrc;
-} FormData_pg_attrdef;
+	Oid			adrelid;		/* OID of table containing attribute */
+	int16		adnum;			/* attnum of attribute */
 
-/* GPDB added foreign key definitions for gpcheckcat. */
-FOREIGN_KEY(adrelid REFERENCES pg_attribute(attrelid));
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	pg_node_tree adbin;			/* nodeToString representation of default */
+	text		adsrc;			/* human-readable representation of default */
+#endif
+} FormData_pg_attrdef;
 
 /* ----------------
  *		Form_pg_attrdef corresponds to a pointer to a tuple with
@@ -56,4 +56,4 @@ typedef FormData_pg_attrdef *Form_pg_attrdef;
 #define Anum_pg_attrdef_adbin			3
 #define Anum_pg_attrdef_adsrc			4
 
-#endif   /* PG_ATTRDEF_H */
+#endif							/* PG_ATTRDEF_H */

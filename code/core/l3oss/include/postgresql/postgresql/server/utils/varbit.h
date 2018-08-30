@@ -5,10 +5,10 @@
  *
  * Code originally contributed by Adriaan Joubert.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/varbit.h,v 1.27 2008/01/01 19:45:59 momjian Exp $
+ * src/include/utils/varbit.h
  *
  *-------------------------------------------------------------------------
  */
@@ -26,7 +26,8 @@ typedef struct
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int32		bit_len;		/* number of valid bits */
-	bits8		bit_dat[1];		/* bit string, most sig. byte first */
+	bits8		bit_dat[FLEXIBLE_ARRAY_MEMBER]; /* bit string, most sig. byte
+												 * first */
 } VarBit;
 
 /*
@@ -64,43 +65,5 @@ typedef struct
 #define VARBITEND(PTR)		(((bits8 *) (PTR)) + VARSIZE(PTR))
 /* Mask that will cover exactly one byte, i.e. BITS_PER_BYTE bits */
 #define BITMASK 0xFF
-
-
-extern Datum bit_in(PG_FUNCTION_ARGS);
-extern Datum bit_out(PG_FUNCTION_ARGS);
-extern Datum bit_recv(PG_FUNCTION_ARGS);
-extern Datum bit_send(PG_FUNCTION_ARGS);
-extern Datum bittypmodin(PG_FUNCTION_ARGS);
-extern Datum bittypmodout(PG_FUNCTION_ARGS);
-extern Datum varbit_in(PG_FUNCTION_ARGS);
-extern Datum varbit_out(PG_FUNCTION_ARGS);
-extern Datum varbit_recv(PG_FUNCTION_ARGS);
-extern Datum varbit_send(PG_FUNCTION_ARGS);
-extern Datum varbittypmodin(PG_FUNCTION_ARGS);
-extern Datum varbittypmodout(PG_FUNCTION_ARGS);
-extern Datum bit(PG_FUNCTION_ARGS);
-extern Datum varbit(PG_FUNCTION_ARGS);
-extern Datum biteq(PG_FUNCTION_ARGS);
-extern Datum bitne(PG_FUNCTION_ARGS);
-extern Datum bitlt(PG_FUNCTION_ARGS);
-extern Datum bitle(PG_FUNCTION_ARGS);
-extern Datum bitgt(PG_FUNCTION_ARGS);
-extern Datum bitge(PG_FUNCTION_ARGS);
-extern Datum bitcmp(PG_FUNCTION_ARGS);
-extern Datum bitand(PG_FUNCTION_ARGS);
-extern Datum bitor(PG_FUNCTION_ARGS);
-extern Datum bitxor(PG_FUNCTION_ARGS);
-extern Datum bitnot(PG_FUNCTION_ARGS);
-extern Datum bitshiftleft(PG_FUNCTION_ARGS);
-extern Datum bitshiftright(PG_FUNCTION_ARGS);
-extern Datum bitcat(PG_FUNCTION_ARGS);
-extern Datum bitsubstr(PG_FUNCTION_ARGS);
-extern Datum bitlength(PG_FUNCTION_ARGS);
-extern Datum bitoctetlength(PG_FUNCTION_ARGS);
-extern Datum bitfromint4(PG_FUNCTION_ARGS);
-extern Datum bittoint4(PG_FUNCTION_ARGS);
-extern Datum bitfromint8(PG_FUNCTION_ARGS);
-extern Datum bittoint8(PG_FUNCTION_ARGS);
-extern Datum bitposition(PG_FUNCTION_ARGS);
 
 #endif

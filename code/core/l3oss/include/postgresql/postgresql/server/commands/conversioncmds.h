@@ -4,10 +4,10 @@
  *	  prototypes for conversioncmds.c.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/conversioncmds.h,v 1.16 2008/01/01 19:45:57 momjian Exp $
+ * src/include/commands/conversioncmds.h
  *
  *-------------------------------------------------------------------------
  */
@@ -15,15 +15,9 @@
 #ifndef CONVERSIONCMDS_H
 #define CONVERSIONCMDS_H
 
+#include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
 
-extern void CreateConversionCommand(CreateConversionStmt *parsetree);
-extern void DropConversionCommand(List *conversion_name,
-					  DropBehavior behavior, bool missing_ok);
-extern void RenameConversion(List *name, const char *newname);
-extern void AlterConversionOwner(List *name, Oid newOwnerId);
-extern void AlterConversionOwner_oid(Oid conversionOid, Oid newOwnerId);
-extern void AlterConversionNamespace(List *name, const char *newschema);
-extern Oid	AlterConversionNamespace_oid(Oid convOid, Oid newNspOid);
+extern ObjectAddress CreateConversionCommand(CreateConversionStmt *parsetree);
 
-#endif   /* CONVERSIONCMDS_H */
+#endif							/* CONVERSIONCMDS_H */
