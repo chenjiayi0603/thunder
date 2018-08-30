@@ -83,7 +83,7 @@ OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubs
 COMM_OBJS = $(patsubst %.cpp,%.o,$(COMM_CPP_SRCS)) $(patsubst %.c,%.o,$(COMM_C_SRCS)) $(patsubst %.cc,%.o,$(COMM_CC_SRCS))
 
 COMPILE_TARGETS = DataProxyServer libstarship.so
-CORE_TARGETS = DbAgentWrite DbAgentRead 
+CORE_TARGETS = DbAgentWrite DbAgentRead PgAgent
 
 all:$(COMPILE_TARGETS)
 	@for target in $(ORTHER_TARGETS);do cp -vf DataProxyServer $$target;install -v $$target ${DEPLOY_BIN} ;done
