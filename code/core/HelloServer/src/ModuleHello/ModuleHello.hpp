@@ -46,6 +46,10 @@ public:
                     const HttpMsg& oInHttpMsg);
 private:
     void Response(const oss::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode);
+
+    void QueryFromPostgres(const oss::tagMsgShell& stMsgShell,
+            const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
+
     //redis basic
     void SetValueFromRedis(const oss::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");
     void OnlySetValueFromRedis(const oss::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");

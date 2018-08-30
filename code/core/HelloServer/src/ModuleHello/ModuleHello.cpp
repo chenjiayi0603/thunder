@@ -72,7 +72,17 @@ bool ModuleHello::AnyMessage(
 	std::string strOption;
 	obj.Get("option",strOption);
 
-	if ("RedisearchAdd" == strOption)
+	if ("PgAgent" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		QueryFromPostgres(stMsgShell,oInHttpMsg,strVal,"PGAGENT");
+	}
+	else if ("RedisearchAdd" == strOption)
 	{
 		std::string strVal;
 		if (!obj.Get("val",strVal))
@@ -306,6 +316,52 @@ bool ModuleHello::AnyMessage(
 		Response(stMsgShell,oInHttpMsg,0);
 	}
     return(true);
+}
+
+void ModuleHello::QueryFromPostgres(const oss::tagMsgShell& stMsgShell,
+        const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+    struct DataStepCustom:public oss::DataStepParam
+    {
+        DataStepCustom(const std::string &node):nodeType(node){}
+        std::string nodeType;
+    };
+	auto callback = [] (const DataMem::MemRsp &oRsp,oss::Step* pStep)
+	{
+		oss::OssLabor* pLabor = pStep->GetLabor();
+		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SetValueFromRedis %s",oRsp.err_msg().c_str());
+		if (oRsp.err_no() == 0)
+		{
+			auto GetValueFromPostgres_callback = [] (const DataMem::MemRsp &oRsp,oss::Step* pStep)
+			{
+				LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis %s",oRsp.err_msg().c_str());
+				if (oRsp.err_no() == 0)
+				{
+					oss::DataStep* pDataStep = (oss::DataStep*)pStep;
+					LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback ok %s",oRsp.DebugString().c_str());
+					loss::CJsonObject oRsp;
+					oRsp.Add("code", 0);
+					oRsp.Add("msg", "ok");
+					pDataStep->SendBack(oRsp.ToString());
+				}
+			};
+			const std::string &node = ((DataStepCustom*) ((oss::DataStep*)pStep)->GetData())->nodeType;
+			oss::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::SELECT);
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"%s() GetValueFromPostgres_callback",__FUNCTION__);
+			if (!pLabor->SendToProxyCallBack(pStep,oDbOperator.MakeMemOperate(),GetValueFromPostgres_callback,node))
+			{
+				LOG4CPLUS_WARN_FMT(pStep->GetLogger(),"%s() SendToProxyCallBack failed",__FUNCTION__);
+			}
+		}
+	};
+	oss::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::UPDATE);
+	oDbOperator.AddDbField("",sValue);
+	oDbOperator.AddCondition(
+			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
+			"id",1);
+	LOG4_DEBUG("%s() SetValueFromRedis %s",__FUNCTION__,sValue.c_str());
+	SendToProxyCallBack(new oss::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),
+			oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 /*
