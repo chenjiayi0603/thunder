@@ -1,4 +1,20 @@
-[imdev@analysis78 dbsync]$ time ./mysql2pgsql -l tab_list.txt
+查看建表结构语句
+./mysql2pgsql -d
+ignore copy error count 0 each table
+
+-- Reference commands to create target tables : 
+---------------
+
+CREATE TABLE IF NOT EXISTS pg (id int4, name1 text, name2 text);
+
+CREATE TABLE IF NOT EXISTS sbtest1 (id int4, k int4, c text, pad text);
+
+---------------
+
+-- Number of tables: 2 
+
+开始迁移
+time ./mysql2pgsql -l tab_list.txt
 ignore copy error count 0 each table
 -- Adding table: sbtest1
 Starting data sync
