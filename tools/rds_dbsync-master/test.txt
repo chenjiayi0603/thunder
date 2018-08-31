@@ -1,3 +1,5 @@
+https://helpcdn.aliyun.com/document_detail/35459.html?spm=a2c4g.11186623.6.560.51ab6a4fLejhfj
+
 查看建表结构语句
 ./mysql2pgsql -d
 ignore copy error count 0 each table
