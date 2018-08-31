@@ -2269,6 +2269,7 @@ int NodeSession::RealRegNode(const oss::tagMsgShell& stMsgShell,
 bool NodeSession::ResponseNodeReg(const oss::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, int iRet,const NodeStatusInfo &regNodeStatus)
 {
+	LOG4_DEBUG("");
     MsgHead oOutMsgHead;
     MsgBody oOutMsgBody;
     oOutMsgHead.set_cmd(oss::CMD_RSP_NODE_REGISTER);//注册节点应答
@@ -2291,6 +2292,7 @@ bool NodeSession::ResponseNodeReg(const oss::tagMsgShell& stMsgShell,
 bool NodeSession::SendServerConfig(const oss::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus)
 {
+	LOG4_DEBUG("");
     const std::string& nodeType = regNodeStatus.nodeType;
     if (!nodeType.empty())//目前注册时自动下发的只检查服务器配置
     {
@@ -2517,6 +2519,7 @@ bool NodeSession::SendToNodeType(const std::string& strNodeType, const MsgHead& 
 //发送其他服务器给注册者
 int NodeSession::SendOthersNoticeToRegNode(const oss::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus)
 {
+	LOG4_DEBUG("");
     const std::string& strRegNodeType = regNodeStatus.nodeType;
     //发送其他服务器给注册者
     //发送格式{\"node_arry_reg\":[{\\"node_type\\":\"LOGIC\",\\"node_ip\\":\"192.168.18.22\",\\"node_port\\":40120,\\"worker_num\\":2}]}
@@ -2543,6 +2546,7 @@ int NodeSession::SendOthersNoticeToRegNode(const oss::tagMsgShell& stMsgShell,co
 //发送注册者给其它服务
 int NodeSession::SendNodeRegNoticeToOthers(const NodeStatusInfo &regNodeStatus)
 {
+	LOG4_DEBUG("");
     if(regNodeStatus.suspend)//正常状态的节点才把自己的路由发布出去
     {
         LOG4_DEBUG("regNodeStatus(%s,%s) is suspend",regNodeStatus.getNodeKey().c_str(),regNodeStatus.nodeType.c_str());

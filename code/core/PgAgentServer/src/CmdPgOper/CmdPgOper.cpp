@@ -402,7 +402,7 @@ int CmdPgOper::ConnectDb(const loss::CJsonObject& oInstanceConf, pqxx::connectio
 	}
 	strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbUser,oInstanceConf("user").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbUser));
     strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbPwd,oInstanceConf("password").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbPwd));
-    strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbName, "test",sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbName));
+    strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbName, "postgres",sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbName));
     strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbCharSet,oInstanceConf("charset").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbCharSet));
     stDbConfDetail.m_ucDbType = loss::POSTGRESQL_DB;
     stDbConfDetail.m_ucAccess = 1; //直连
@@ -413,7 +413,8 @@ int CmdPgOper::ConnectDb(const loss::CJsonObject& oInstanceConf, pqxx::connectio
                     stDbConfDetail.m_stDbConnInfo.m_szDbName, stDbConfDetail.m_stDbConnInfo.m_uiDbPort,
                     stDbConfDetail.m_stDbConnInfo.m_szDbCharSet);
     char connect[128];
-    snprintf(connect,sizeof(connect),"dbname=postgres hostaddr=%s user=%s password=%s port=%d",
+    snprintf(connect,sizeof(connect),"dbname=%s hostaddr=%s user=%s password=%s port=%d",
+    		stDbConfDetail.m_stDbConnInfo.m_szDbName,
     		stDbConfDetail.m_stDbConnInfo.m_szDbHost,
 			stDbConfDetail.m_stDbConnInfo.m_szDbUser,
 			stDbConfDetail.m_stDbConnInfo.m_szDbPwd,
@@ -453,7 +454,8 @@ int CmdPgOper::ConnectDb(const loss::tagDbConfDetail &stDbConfDetail, pqxx::conn
                     stDbConfDetail.m_stDbConnInfo.m_szDbName, stDbConfDetail.m_stDbConnInfo.m_uiDbPort,
                     stDbConfDetail.m_stDbConnInfo.m_szDbCharSet);
     char connect[128];
-	snprintf(connect,sizeof(connect),"dbname=postgres hostaddr=%s user=%s password=%s port=%d",
+	snprintf(connect,sizeof(connect),"dbname=%s hostaddr=%s user=%s password=%s port=%d",
+			stDbConfDetail.m_stDbConnInfo.m_szDbName,
 			stDbConfDetail.m_stDbConnInfo.m_szDbHost,
 			stDbConfDetail.m_stDbConnInfo.m_szDbUser,
 			stDbConfDetail.m_stDbConnInfo.m_szDbPwd,
@@ -673,12 +675,14 @@ std::string CmdPgOper::GetFullTableName(const std::string& strTableName, uint64 
     	int iTableNum = atoi(m_oDbConf["table"][strTableName]("table_num").c_str());
 		if (1 == iTableNum)
 		{
-			snprintf(szFullTableName, sizeof(szFullTableName), "%s.%s", strDbName.c_str(), strTableName.c_str());
+			//snprintf(szFullTableName, sizeof(szFullTableName), "%s.%s", strDbName.c_str(), strTableName.c_str());
+			snprintf(szFullTableName, sizeof(szFullTableName), "%s",strTableName.c_str());
 		}
 		else
 		{
 			uint32 uiTableIndex = uiFactor % iTableNum;
-			snprintf(szFullTableName, sizeof(szFullTableName), "%s.%s_%02d", strDbName.c_str(), strTableName.c_str(), uiTableIndex);
+			//snprintf(szFullTableName, sizeof(szFullTableName), "%s.%s_%02d", strDbName.c_str(), strTableName.c_str(), uiTableIndex);
+			snprintf(szFullTableName, sizeof(szFullTableName), "%s_%02d", strTableName.c_str(), uiTableIndex);
 			m_uiHash = uiTableIndex;
 			m_uiDivisor = iTableNum;
 		}
