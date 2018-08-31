@@ -1,0 +1,1 @@
+sbtest1 :select * from sbtest1
