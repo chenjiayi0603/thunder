@@ -114,7 +114,7 @@ static int redisLibeventAttach(redisAsyncContext *ac, struct event_base *base) {
 
 static int redisLibeventAttach_link(redisAsyncContext *ac, void *base)
 {
-	return redisLibeventAttach(ac, (struct event_base *)base);
+	redisLibeventAttach(ac, (struct event_base *)base);
 }
 
 static int redisClusterLibeventAttach(redisClusterAsyncContext *acc, struct event_base *base) {

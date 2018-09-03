@@ -67,8 +67,9 @@ typedef struct redisAsyncContext {
     char *errstr;
 
     /* Not used by hiredis */
-    void *data;
-    void *userData;
+    void *data;//在hiredis中被用来放置cluster_node
+    void *userData;//add by cjy，用来放置用户数据
+
     void (*dataHandler)(struct redisAsyncContext* ac);
 
     /* Event library data and hooks */

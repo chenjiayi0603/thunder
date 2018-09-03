@@ -1279,8 +1279,8 @@ cluster_update_route_by_addr(redisClusterContext *cc,
         goto error;
     }
 
-    if(cc->connect_timeout){
-        c = redisConnectWithTimeout(ip, port, *cc->connect_timeout);
+    if(cc->timeout){
+        c = redisConnectWithTimeout(ip, port, *cc->timeout);
     }else{
         c = redisConnect(ip, port);
     }
@@ -1294,20 +1294,11 @@ cluster_update_route_by_addr(redisClusterContext *cc,
         goto error;
     }
 
-    if (cc->timeout) {
-        redisSetTimeout(c, *cc->timeout);
-    }
-
     if(cc->flags & HIRCLUSTER_FLAG_ROUTE_USE_SLOTS){
         reply = redisCommand(c, REDIS_COMMAND_CLUSTER_SLOTS);
         if(reply == NULL){
-            if (c->err == REDIS_ERR_TIMEOUT) {
-                __redisClusterSetError(cc,c->err,
-                    "Command(cluster slots) reply error(socket timeout)");
-            } else {
-                __redisClusterSetError(cc,REDIS_ERR_OTHER,
-                    "Command(cluster slots) reply error(NULL).");
-            }
+            __redisClusterSetError(cc,REDIS_ERR_OTHER,
+                "Command(cluster slots) reply error(NULL).");
             goto error;
         }else if(reply->type != REDIS_REPLY_ARRAY){
             if(reply->type == REDIS_REPLY_ERROR){
@@ -1322,16 +1313,11 @@ cluster_update_route_by_addr(redisClusterContext *cc,
         }
 
         nodes = parse_cluster_slots(cc, reply, cc->flags);
-    } else {
+    }else{
         reply = redisCommand(c, REDIS_COMMAND_CLUSTER_NODES);
         if(reply == NULL){
-            if (c->err == REDIS_ERR_TIMEOUT) {
-                __redisClusterSetError(cc,c->err,
-                    "Command(cluster nodes) reply error(socket timeout)");
-            } else {
-                __redisClusterSetError(cc,REDIS_ERR_OTHER,
-                    "Command(cluster nodes) reply error(NULL).");
-            }
+            __redisClusterSetError(cc,REDIS_ERR_OTHER,
+                "Command(cluster nodes) reply error(NULL).");
             goto error;
         }else if(reply->type != REDIS_REPLY_STRING){
             if(reply->type == REDIS_REPLY_ERROR){
@@ -1526,9 +1512,9 @@ cluster_update_route_with_nodes_old(redisClusterContext *cc,
         goto error;
     }
 
-    if(cc->connect_timeout)
+    if(cc->timeout)
     {
-        c = redisConnectWithTimeout(ip, port, *cc->connect_timeout);
+        c = redisConnectWithTimeout(ip, port, *cc->timeout);
     }
     else
     {
@@ -2006,7 +1992,7 @@ int test_cluster_update_route(redisClusterContext *cc)
     return ret;
 }
 
-redisClusterContext *redisClusterContextInit(void) {
+static redisClusterContext *redisClusterContextInit(void) {
     redisClusterContext *cc;
 
     cc = calloc(1,sizeof(redisClusterContext));
@@ -2018,7 +2004,6 @@ redisClusterContext *redisClusterContextInit(void) {
     cc->ip = NULL;
     cc->port = 0;
     cc->flags = 0;
-    cc->connect_timeout = NULL;
     cc->timeout = NULL;
     cc->nodes = NULL;
     cc->slots = NULL;
@@ -2031,8 +2016,6 @@ redisClusterContext *redisClusterContextInit(void) {
     cc->route_version = 0LL;
 
     memset(cc->table, 0, REDIS_CLUSTER_SLOTS*sizeof(cluster_node *));
-
-    cc->flags |= REDIS_BLOCK;
     
     return cc;
 }
@@ -2046,11 +2029,6 @@ void redisClusterFree(redisClusterContext *cc) {
     {
         sdsfree(cc->ip);
         cc->ip = NULL;
-    }
-
-    if (cc->connect_timeout)
-    {
-        free(cc->connect_timeout);
     }
 
     if (cc->timeout)
@@ -2080,108 +2058,7 @@ void redisClusterFree(redisClusterContext *cc) {
     free(cc);
 }
 
-/* Connect to a Redis cluster. On error the field error in the returned
- * context will be set to the return value of the error function.
- * When no set of reply functions is given, the default set will be used. */
-static int _redisClusterConnect2(redisClusterContext *cc)
-{
-
-    if (cc->nodes == NULL || dictSize(cc->nodes) == 0)
-    {
-        __redisClusterSetError(cc,REDIS_ERR_OTHER,"servers address does not set up");
-        return REDIS_ERR;
-    }
-    
-    return cluster_update_route(cc);
-}
-
-/* Connect to a Redis cluster. On error the field error in the returned
- * context will be set to the return value of the error function.
- * When no set of reply functions is given, the default set will be used. */
-static redisClusterContext *_redisClusterConnect(redisClusterContext *cc, const char *addrs) {
-
-    int ret;
-    
-    ret = redisClusterSetOptionAddNodes(cc, addrs);
-    if (ret != REDIS_OK)
-    {
-        return cc;
-    }
-    
-    cluster_update_route(cc);
-
-    return cc;
-}
-
-redisClusterContext *redisClusterConnect(const char *addrs, int flags)
-{
-    redisClusterContext *cc;
-
-    cc = redisClusterContextInit();
-
-    if(cc == NULL)
-    {
-        return NULL;
-    }
-
-    cc->flags |= REDIS_BLOCK;
-    if(flags)
-    {
-        cc->flags |= flags;
-    }
-    
-    return _redisClusterConnect(cc, addrs);
-}
-
-redisClusterContext *redisClusterConnectWithTimeout(
-    const char *addrs, const struct timeval tv, int flags)
-{
-    redisClusterContext *cc;
-
-    cc = redisClusterContextInit();
-
-    if(cc == NULL)
-    {
-        return NULL;
-    }
-
-    cc->flags |= REDIS_BLOCK;
-    if(flags)
-    {
-        cc->flags |= flags;
-    }
-    
-    if (cc->connect_timeout == NULL)
-    {
-        cc->connect_timeout = malloc(sizeof(struct timeval));
-    }
-    
-    memcpy(cc->connect_timeout, &tv, sizeof(struct timeval));
-    
-    return _redisClusterConnect(cc, addrs);
-}
-
-redisClusterContext *redisClusterConnectNonBlock(const char *addrs, int flags) {
-
-    redisClusterContext *cc;
-
-    cc = redisClusterContextInit();
-
-    if(cc == NULL)
-    {
-        return NULL;
-    }
-
-    cc->flags &= ~REDIS_BLOCK;
-    if(flags)
-    {
-        cc->flags |= flags;
-    }
-    
-    return _redisClusterConnect(cc, addrs);
-}
-
-int redisClusterSetOptionAddNode(redisClusterContext *cc, const char *addr)
+static int redisClusterAddNode(redisClusterContext *cc, const char *addr)
 {
     dictEntry *node_entry;
     cluster_node *node;
@@ -2189,7 +2066,6 @@ int redisClusterSetOptionAddNode(redisClusterContext *cc, const char *addr)
     int ip_port_count = 0;
     sds ip;
     int port;
-    sds addr_sds = NULL;
     
     if(cc == NULL)
     {
@@ -2205,9 +2081,7 @@ int redisClusterSetOptionAddNode(redisClusterContext *cc, const char *addr)
         }
     }
 
-    addr_sds = sdsnew(addr);
-    node_entry = dictFind(cc->nodes, addr_sds);
-    sdsfree(addr_sds);
+    node_entry = dictFind(cc->nodes, addr);
     if(node_entry == NULL)
     {
         ip_port = sdssplitlen(addr, strlen(addr), 
@@ -2265,8 +2139,12 @@ int redisClusterSetOptionAddNode(redisClusterContext *cc, const char *addr)
     return REDIS_OK;
 }
 
-int redisClusterSetOptionAddNodes(redisClusterContext *cc, const char *addrs)
-{
+
+/* Connect to a Redis cluster. On error the field error in the returned
+ * context will be set to the return value of the error function.
+ * When no set of reply functions is given, the default set will be used. */
+static redisClusterContext *_redisClusterConnect(redisClusterContext *cc, const char *addrs) {
+
     int ret;
     sds *address = NULL;
     int address_count = 0;
@@ -2274,199 +2152,105 @@ int redisClusterSetOptionAddNodes(redisClusterContext *cc, const char *addrs)
 
     if(cc == NULL)
     {
-        return REDIS_ERR;
+        return NULL;
     }
+    
 
     address = sdssplitlen(addrs, strlen(addrs), CLUSTER_ADDRESS_SEPARATOR, 
         strlen(CLUSTER_ADDRESS_SEPARATOR), &address_count);
     if(address == NULL || address_count <= 0)
     {
         __redisClusterSetError(cc,REDIS_ERR_OTHER,"servers address is error(correct is like: 127.0.0.1:1234,127.0.0.2:5678)");
-        return REDIS_ERR;
+        return cc;
     }
 
     for(i = 0; i < address_count; i ++)
     {
-        ret = redisClusterSetOptionAddNode(cc, address[i]);
+        ret = redisClusterAddNode(cc, address[i]);
         if(ret != REDIS_OK)
         {
             sdsfreesplitres(address, address_count);
-            return REDIS_ERR;
+            return cc;
         }
     }
 
     sdsfreesplitres(address, address_count);
+    
+    cluster_update_route(cc);
 
-    return REDIS_OK;
+    return cc;
 }
 
-int redisClusterSetOptionConnectBlock(redisClusterContext *cc)
+redisClusterContext *redisClusterConnect(const char *addrs, int flags)
 {
+    redisClusterContext *cc;
+
+    cc = redisClusterContextInit();
 
     if(cc == NULL)
     {
-        return REDIS_ERR;
+        return NULL;
     }
 
     cc->flags |= REDIS_BLOCK;
-
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionConnectNonBlock(redisClusterContext *cc)
-{
-
-    if(cc == NULL)
+    if(flags)
     {
-        return REDIS_ERR;
-    }
-
-    cc->flags &= ~REDIS_BLOCK;
-
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionParseSlaves(redisClusterContext *cc)
-{
-
-    if(cc == NULL)
-    {
-        return REDIS_ERR;
-    }
-
-    cc->flags |= HIRCLUSTER_FLAG_ADD_SLAVE;
-
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionParseOpenSlots(redisClusterContext *cc)
-{
-
-    if(cc == NULL)
-    {
-        return REDIS_ERR;
-    }
-
-    cc->flags |= HIRCLUSTER_FLAG_ADD_OPENSLOT;
-
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionRouteUseSlots(redisClusterContext *cc)
-{
-
-    if(cc == NULL)
-    {
-        return REDIS_ERR;
-    }
-
-    cc->flags |= HIRCLUSTER_FLAG_ROUTE_USE_SLOTS;
-
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionConnectTimeout(redisClusterContext *cc, const struct timeval tv)
-{
-
-    if(cc == NULL)
-    {
-        return REDIS_ERR;
-    }
-
-    if (cc->connect_timeout == NULL)
-    {
-        cc->connect_timeout = malloc(sizeof(struct timeval));
+        cc->flags |= flags;
     }
     
-    memcpy(cc->connect_timeout, &tv, sizeof(struct timeval));
-
-    return REDIS_OK;
+    return _redisClusterConnect(cc, addrs);
 }
 
-int redisClusterSetOptionTimeout(redisClusterContext *cc, const struct timeval tv)
+redisClusterContext *redisClusterConnectWithTimeout(
+    const char *addrs, const struct timeval tv, int flags)
 {
+    redisClusterContext *cc;
+
+    cc = redisClusterContextInit();
 
     if(cc == NULL)
     {
-        return REDIS_ERR;
+        return NULL;
     }
 
+    cc->flags |= REDIS_BLOCK;
+    if(flags)
+    {
+        cc->flags |= flags;
+    }
+    
     if (cc->timeout == NULL)
     {
         cc->timeout = malloc(sizeof(struct timeval));
-        memcpy(cc->timeout, &tv, sizeof(struct timeval));
-    }
-    else if (cc->timeout->tv_sec != tv.tv_sec || cc->timeout->tv_usec != tv.tv_usec)
-    {
-        memcpy(cc->timeout, &tv, sizeof(struct timeval));
-
-        if (cc->nodes && dictSize(cc->nodes) > 0)
-        {
-            dictEntry *de;
-            dictIterator *di;
-            cluster_node *node;
-
-            di = dictGetIterator(cc->nodes);
-
-            while (de=dictNext(di))
-            {
-                node = dictGetEntryVal(de);
-                if (node->con && node->con->flags&REDIS_CONNECTED && node->con->err == 0)
-                {
-                    redisSetTimeout(node->con, tv);
-                }
-
-                if (node->slaves && listLength(node->slaves) > 0)
-                {
-                    cluster_node *slave;
-                    listIter *li;
-                    listNode *ln;
-                    
-                    li = listGetIterator(node->slaves, AL_START_HEAD);
-                    while (ln = listNext(li))
-                    {
-                        slave = listNodeValue(ln);
-                        if (slave->con && slave->con->flags&REDIS_CONNECTED && slave->con->err == 0)
-                        {
-                            redisSetTimeout(slave->con, tv);
-                        }
-                    }
-
-                    listReleaseIterator(li);
-                }
-            }
-
-            dictReleaseIterator(di);
-        }
     }
     
-    return REDIS_OK;
-}
-
-int redisClusterSetOptionMaxRedirect(redisClusterContext *cc, int max_redirect_count)
-{
-    if(cc == NULL || max_redirect_count <= 0)
-    {
-        return REDIS_ERR;
-    }
-
-    cc->max_redirect_count = max_redirect_count;
-
-    return REDIS_OK;
-}
-
-int redisClusterConnect2(redisClusterContext *cc)
-{
+    memcpy(cc->timeout, &tv, sizeof(struct timeval));
     
+    return _redisClusterConnect(cc, addrs);
+}
+
+redisClusterContext *redisClusterConnectNonBlock(const char *addrs, int flags) {
+
+    redisClusterContext *cc;
+
+    cc = redisClusterContextInit();
+
     if(cc == NULL)
     {
-        return REDIS_ERR;
+        return NULL;
+    }
+
+    cc->flags &= ~REDIS_BLOCK;
+    if(flags)
+    {
+        cc->flags |= flags;
     }
     
-    return _redisClusterConnect2(cc);
+    return _redisClusterConnect(cc, addrs);
 }
 
-redisContext *ctx_get_by_node(redisClusterContext *cc, cluster_node *node)
+redisContext *ctx_get_by_node(cluster_node *node, 
+    const struct timeval *timeout, int flags)
 {
     redisContext *c = NULL;
     if(node == NULL)
@@ -2480,10 +2264,6 @@ redisContext *ctx_get_by_node(redisClusterContext *cc, cluster_node *node)
         if(c->err)
         {
             redisReconnect(c);
-
-            if (cc->timeout && c->err == 0) {
-                redisSetTimeout(c, *cc->timeout);
-            }
         }
 
         return c;
@@ -2494,17 +2274,20 @@ redisContext *ctx_get_by_node(redisClusterContext *cc, cluster_node *node)
         return NULL;
     }
 
-    if(cc->connect_timeout)
+    if(flags & REDIS_BLOCK)
     {
-        c = redisConnectWithTimeout(node->host, node->port, *cc->connect_timeout);
+        if(timeout)
+        {
+            c = redisConnectWithTimeout(node->host, node->port, *timeout);
+        }
+        else
+        {
+            c = redisConnect(node->host, node->port);
+        }
     }
     else
     {
-        c = redisConnect(node->host, node->port);
-    }
-
-    if (cc->timeout && c != NULL && c->err == 0) {
-        redisSetTimeout(c, *cc->timeout);
+        c = redisConnectNonBlock(node->host, node->port);
     }
 
     node->con = c;
@@ -2619,7 +2402,7 @@ static cluster_node *node_get_witch_connected(redisClusterContext *cc)
             continue;
         }
         
-        c = ctx_get_by_node(cc, node);
+        c = ctx_get_by_node(node, cc->timeout, REDIS_BLOCK);
         if(c == NULL || c->err)
         {
             continue;
@@ -2735,7 +2518,7 @@ static char * cluster_config_get(redisClusterContext *cc,
         goto error;
     }
 
-    c = ctx_get_by_node(cc, node);
+    c = ctx_get_by_node(node, cc->timeout, cc->flags);
     
     reply = redisCommand(c, "config get %s", config_name);
     if(reply == NULL)
@@ -2827,7 +2610,7 @@ static int __redisClusterAppendCommand(redisClusterContext *cc,
         return REDIS_ERR;
     }
 
-    c = ctx_get_by_node(cc, node);
+    c = ctx_get_by_node(node, cc->timeout, cc->flags);
     if(c == NULL)
     {
         __redisClusterSetError(cc, REDIS_ERR_OTHER, "ctx get by node is null");
@@ -2867,7 +2650,7 @@ static int __redisClusterGetReply(redisClusterContext *cc, int slot_num, void **
         return REDIS_ERR;
     }
 
-    c = ctx_get_by_node(cc, node);
+    c = ctx_get_by_node(node, cc->timeout, cc->flags);
     if(c == NULL)
     {
         __redisClusterSetError(cc,REDIS_ERR_OOM,"Out of memory");
@@ -3013,7 +2796,7 @@ retry:
         return NULL;
     }
 
-    c = ctx_get_by_node(cc, node);
+    c = ctx_get_by_node(node, cc->timeout, cc->flags);
     if(c == NULL)
     {
         __redisClusterSetError(cc, REDIS_ERR_OTHER, "ctx get by node is null");
@@ -3036,7 +2819,7 @@ retry:
             return NULL;
         }
 
-        c = ctx_get_by_node(cc, node);
+        c = ctx_get_by_node(node, cc->timeout, cc->flags);
         if(c == NULL)
         {
             __redisClusterSetError(cc, REDIS_ERR_OTHER, "ctx get by node error");
@@ -3103,7 +2886,7 @@ ask_retry:
             freeReplyObject(reply);
             reply = NULL;
 
-            c = ctx_get_by_node(cc, node);
+            c = ctx_get_by_node(node, cc->timeout, cc->flags);
             if(c == NULL)
             {
                 __redisClusterSetError(cc, REDIS_ERR_OTHER, "ctx get by node error");
@@ -4007,7 +3790,7 @@ static int redisCLusterSendAll(redisClusterContext *cc)
             continue;
         }
         
-        c = ctx_get_by_node(cc, node);
+        c = ctx_get_by_node(node, cc->timeout, cc->flags);
         if(c == NULL)
         {
             continue;
@@ -4800,11 +4583,10 @@ int redisClusterAsyncFormattedCommand(redisClusterAsyncContext *acc,
     }
     else if(ac->err)
     {
-    	ac->userData = privdata;
         __redisClusterAsyncSetError(acc, ac->err, ac->errstr);
         goto error;
     }
-    ac->userData = privdata;
+
     cad = cluster_async_data_get();
     if(cad == NULL)
     {
