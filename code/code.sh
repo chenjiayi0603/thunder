@@ -59,7 +59,7 @@ if [ "$1"x == "all"x ]; then
     done
     echo "all line: $CODE_LINES_ALL"
 elif [ "$1"x == "frame"x ]; then 
-    arr=('loss','Starship') 
+    arr=('Util','Net') 
     filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do

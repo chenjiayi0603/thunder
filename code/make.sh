@@ -36,14 +36,7 @@ elif [ "$1"x == "all"x ];then
 	cd ${code_path} && ./logic_proto.sh all && ./logic_plugins.sh all
 elif [ "$1"x == "pre"x ];then
 	#准备工作
-	find ./ -maxdepth 3 -type f -name "*.sh"  |xargs -i chmod +x {}
-	#test ! -d ${code_lib3_path} && test -d ${lib3_path} && ln -s ${lib3_path} ${code_lib3_path} && echo "ln 3lib for code"
-	#test ! -d ${run_path}/bin && mkdir ${run_path}/bin
-	#test ! -d ${run_path}/lib && mkdir ${run_path}/lib
-	#test ! -d ${run_path}/plugins && mkdir ${run_path}/plugins
-	#cd ${run_path} 
-	#chmod +x ./install.sh && ./install.sh pre && echo "install.sh pre ok"
-	#chmod +x ../tools/bin/*
+	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
 else
 	echo "do nothings"
 fi

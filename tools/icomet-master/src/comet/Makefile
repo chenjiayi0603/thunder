@@ -6,7 +6,7 @@ CFLAGS += -I ../
 all: $(OBJS)
 	${CXX} -o ../../icomet-server $(CFLAGS) \
 		icomet-server.cpp $(OBJS) \
-		../util/libutil.a \
+		../util/libUtil.a \
 		$(LIBEVENT_PATH)/.libs/libevent.a \
 		$(CLIBS)
 
