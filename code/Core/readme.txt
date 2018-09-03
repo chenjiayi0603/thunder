@@ -5,8 +5,5 @@ core  核心代码为统一使用的库代码，包含核心的库和核心节�
 
 makefiles 为了方便逻辑节点，统一使用的逻辑节点的makefile文件模板
 
-HelloServer为测试节点
+Hello为测试节点
 
-
-第三方库版本
-cryptopp 5.62
