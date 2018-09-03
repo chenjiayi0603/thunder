@@ -37,7 +37,7 @@ package proto2_arena_unittest;
 option cc_enable_arenas = true;
 
 message NestedMessage {
-  int32 d = 1;
+  optional int32 d = 1;
 }
 
 message ArenaMessage {

@@ -13,6 +13,7 @@ extern "C" {
 #endif
 #include "hiredis_vip/async.h"
 #include "hiredis_vip/adapters/libev.h"
+#include "hiredis_vip/hircluster.h"
 #include "unix_util/process_helper.h"
 #include "unix_util/proctitle_helper.h"
 #ifdef __cplusplus
@@ -1924,11 +1925,10 @@ bool Worker::InitLogger(const util::CJsonObject& oJsonConf)
             iLogLevel = log4cplus::INFO_LOG_LEVEL;
         }
         log4cplus::initialize();
-        std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
         log4cplus::SharedAppenderPtr append(new log4cplus::RollingFileAppender(
                         strLogname, iMaxLogFileSize, iMaxLogFileNum));
         append->setName(strLogname);
-        append->setLayout(layout);
+        append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
         m_oLogger = log4cplus::Logger::getInstance(LOG4CPLUS_TEXT(strLogname));
         m_oLogger.setLogLevel(iLogLevel);
         m_oLogger.addAppender(append);
@@ -1937,7 +1937,7 @@ bool Worker::InitLogger(const util::CJsonObject& oJsonConf)
             log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(
                             strLoggingHost, iLoggingPort, ssServerName.str()));
             socket_append->setName(ssServerName.str());
-            socket_append->setLayout(layout);
+            socket_append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }

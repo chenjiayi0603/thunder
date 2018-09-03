@@ -31,86 +31,92 @@
 // Author: sven@google.com (Sven Mawson)
 //
 // Sample protos for testing.
+
+// Some of the older enums don't use CAPITALS_WITH_UNDERSCORES for testing.
+// LINT: LEGACY_NAMES
+
 syntax = "proto2";
 
 package google.protobuf.testing;
 
 // A book
 message Book {
-  string title = 1;
-  Author author = 2;
-  uint32 length = 3;
-  int64 published = 4;
-  bytes content = 5;
+  optional string title = 1;
+  optional Author author = 2;
+  optional uint32 length = 3;
+  optional int64 published = 4;
+  optional bytes content = 5;
 
-  group Data = 6 {
-    uint32 year = 7;
-    string copyright = 8;
+  optional group Data = 6 {
+    optional uint32 year = 7;
+    optional string copyright = 8;
   }
 
   message Label {
-    string key = 1;
-    string value = 2;
+    optional string key = 1;
+    optional string value = 2;
   }
 
-  Publisher publisher = 9;
+  optional Publisher publisher = 9;
   repeated Label labels = 10;
 
   enum Type {
     FICTION = 1;
     KIDS = 2;
     ACTION_AND_ADVENTURE = 3;
+    arts_and_photography = 4;
+    I18N_Tech = 5;
   }
-  Type type = 11;
+  optional Type type = 11;
 
   extensions 200 to 499;
 }
 
-// A publisher of a book, tests fields.
+// A publisher of a book, tests required fields.
 message Publisher {
-  string name = 1;
+  required string name = 1;
 }
 
 // An author of a book
 message Author {
-  uint64 id = 1 [json_name = "@id"];
-  string name = 2;
+  optional uint64 id = 1 [json_name = "@id"];
+  optional string name = 2;
   repeated string pseudonym = 3;
-  bool alive = 4;
+  optional bool alive = 4;
   repeated Author friend = 5;
 }
 
 // For testing resiliency of our protostream parser.
 // Field numbers of Author are reused for something else.
 message BadAuthor {
-  string id = 1;  // non-length-delimited to length-delimited.
+  optional string id = 1;  // non-length-delimited to length-delimited.
   repeated uint64 name = 2;  // string to repeated (both length-delimited).
-  string pseudonym = 3;  // Repeated to optional.
+  optional string pseudonym = 3;  // Repeated to optional.
   repeated bool alive = 4 [packed=true];  // Optional to repeated.
 }
 
 // All primitive types
 message Primitive {
   // 32 bit numbers:
-  fixed32 fix32 = 1;
-  uint32 u32 = 2;
-  int32 i32 = 3;
-  sfixed32 sf32 = 4;
-  sint32 s32 = 5;
+  optional fixed32 fix32 = 1;
+  optional uint32 u32 = 2;
+  optional int32 i32 = 3;
+  optional sfixed32 sf32 = 4;
+  optional sint32 s32 = 5;
 
   // 64 bit numbers:
-  fixed64 fix64 = 6;
-  uint64 u64 = 7;
-  int64 i64 = 8;
-  sfixed64 sf64 = 9;
-  sint64 s64 = 10;
+  optional fixed64 fix64 = 6;
+  optional uint64 u64 = 7;
+  optional int64 i64 = 8;
+  optional sfixed64 sf64 = 9;
+  optional sint64 s64 = 10;
 
   // The other stuff.
-  string str = 11;
-  bytes bytes = 12;
-  float float = 13;
-  double double = 14;
-  bool bool = 15;
+  optional string str = 11;
+  optional bytes bytes = 12;
+  optional float float = 13;
+  optional double double = 14;
+  optional bool bool = 15;
 
   // repeated 32 bit numbers:
   repeated fixed32 rep_fix32 = 16;
@@ -165,23 +171,32 @@ extend Book {
 // Test nested extensions.
 message NestedBook {
   extend Book {
-    NestedBook another_book = 301;
+    optional NestedBook another_book = 301;
   }
   // Recurse
-  Book book = 1;
+  optional Book book = 1;
 }
 
 // For testing resiliency of our protostream parser.
 // Field number of NestedBook is reused for something else.
 message BadNestedBook {
-  repeated uint32 book = 1 [packed=true];  // Packed to message.
+  repeated uint32 book = 1 [packed=true];  // Packed to optional message.
 }
 
 // A recursively defined message.
 message Cyclic {
-  int32 m_int = 1;
-  string m_str = 2;
-  Book m_book = 3;
+  optional int32 m_int = 1;
+  optional string m_str = 2;
+  optional Book m_book = 3;
   repeated Author m_author = 5;
-  Cyclic m_cyclic = 4;
+  optional Cyclic m_cyclic = 4;
+}
+
+// Test that two messages can have different fields mapped to the same JSON
+// name. See: https://github.com/google/protobuf/issues/1415
+message TestJsonName1 {
+  optional int32 one_value = 1 [json_name = "value"];
+}
+message TestJsonName2 {
+  optional int32 another_value = 1 [json_name = "value"];
 }

@@ -81,18 +81,6 @@
 #define LOG4CPLUS_HAVE_GETPID 1
 
 /* */
-#define LOG4CPLUS_HAVE_GETTIMEOFDAY 1
-
-/* Define to 1 if you have the `clock_gettime' function. */
-#define LOG4CPLUS_HAVE_CLOCK_GETTIME 1
-
-/* Define to 1 if you have the `nanosleep' function. */
-#define LOG4CPLUS_HAVE_NANOSLEEP 1
-
-/* Define to 1 if you have the `clock_nanosleep' function. */
-#define LOG4CPLUS_HAVE_CLOCK_NANOSLEEP 1
-
-/* */
 #define LOG4CPLUS_HAVE_GMTIME_R 1
 
 /* */
@@ -141,7 +129,7 @@
 #define LOG4CPLUS_HAVE_STAT 1
 
 /* Define if this is a single-threaded library. */
-#define LOG4CPLUS_SINGLE_THREADED 1
+/* #undef LOG4CPLUS_SINGLE_THREADED */
 
 /* */
 /* #undef LOG4CPLUS_USE_PTHREADS */
@@ -173,29 +161,13 @@
 #define LOG4CPLUS_DECLSPEC_PRIVATE __attribute__ ((visibility("hidden")))
 
 /* */
-/* #undef LOG4CPLUS_HAVE_TLS_SUPPORT */
+#define LOG4CPLUS_HAVE_TLS_SUPPORT 1
 
 /* */
-/* #undef LOG4CPLUS_THREAD_LOCAL_VAR */
+#define LOG4CPLUS_THREAD_LOCAL_VAR thread_local
 
 /* Defined if the host OS provides ENAMETOOLONG errno value. */
 #define LOG4CPLUS_HAVE_ENAMETOOLONG 1
-
-/* Defined if the compiler provides __sync_add_and_fetch(). */
-/* #undef LOG4CPLUS_HAVE___SYNC_ADD_AND_FETCH */
-
-/* Defined if the compiler provides __sync_sub_and_fetch(). */
-/* #undef LOG4CPLUS_HAVE___SYNC_SUB_AND_FETCH */
-
-/* Defined if the compiler provides C++11 <atomic> header and increment,
-   decrement operations. */
-/* #undef LOG4CPLUS_HAVE_CXX11_ATOMICS */
-
-/* */
-#define LOG4CPLUS_HAVE_C99_VARIADIC_MACROS 1
-
-/* */
-#define LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS 1
 
 /* */
 #define LOG4CPLUS_HAVE_VSNPRINTF 1
@@ -257,10 +229,20 @@
 /* Define to 1 if you have the `iconv_open' function. */
 /* #undef LOG4CPLUS_HAVE_ICONV_OPEN */
 
+/* Define to 1 if you have the `OutputDebugString' function. */
+/* #undef LOG4CPLUS_HAVE_OUTPUTDEBUGSTRING */
+
+/* Define to 1 if the system has the `constructor' function attribute
+   with priority */
+#define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY 1
+
 /* Define to 1 if the system has the `constructor' function attribute */
 #define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
 
 /* Define to 1 if the system has the `init_priority' variable attribute */
 #define LOG4CPLUS_HAVE_VAR_ATTRIBUTE_INIT_PRIORITY 1
+
+/* Defined to enable unit tests. */
+/* #undef LOG4CPLUS_WITH_UNIT_TESTS */
 
 #endif // LOG4CPLUS_CONFIG_DEFINES_HXX

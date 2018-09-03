@@ -77,7 +77,7 @@ message TestAllTypes {
   ForeignEnum                          optional_foreign_enum    = 22;
   // N.B.: proto2-enum-type fields not allowed, because their default values
   // might not be zero.
-  //protobuf_unittest.ForeignEnum          optional_proto2_enum     = 23;
+  //optional protobuf_unittest.ForeignEnum          optional_proto2_enum     = 23;
 
   string optional_string_piece = 24 [ctype=STRING_PIECE];
   string optional_cord = 25 [ctype=CORD];

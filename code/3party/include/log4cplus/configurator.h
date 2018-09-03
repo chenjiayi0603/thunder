@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2017 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -91,7 +91,7 @@ namespace log4cplus
             , fUTF32              = (3 << fEncodingShift)
 #endif
         };
-        
+
         // ctor and dtor
         PropertyConfigurator(const log4cplus::tstring& propertyFile,
             Hierarchy& h = Logger::getDefaultHierarchy(), unsigned flags = 0);
@@ -197,6 +197,11 @@ namespace log4cplus
          * "log4cplus.disableOverride" to <code>true</code> or any value other
          * than false. As in <pre>log4cplus.disableOverride=true </pre>
          *
+         * <h3>Global configuration</h3>
+         *
+         * Property <pre>log4cplus.threadPoolSize</pre> can be used to adjust
+         * size of log4cplus' internal thread pool.
+         *
          * <h3>Example</h3>
          *
          * An example configuration is given below.
@@ -230,7 +235,7 @@ namespace log4cplus
          * log4cplus.appender.A2.MaxFileSize=10MB
          * log4cplus.appender.A2.MaxBackupIndex=1
          * log4cplus.appender.A2.layout=log4cplus::TTCCLayout
-         * log4cplus.appender.A2.layout.ContextPrinting=enabled
+         * log4cplus.appender.A2.layout.ContextPrinting=true
          * log4cplus.appender.A2.layout.DateFormat=ISO8601
          *
          * # Root logger set to DEBUG using the A2 appender defined above.
@@ -287,7 +292,7 @@ namespace log4cplus
         void configureLogger(log4cplus::Logger logger, const log4cplus::tstring& config);
         void configureAppenders();
         void configureAdditivity();
-        
+
         virtual Logger getLogger(const log4cplus::tstring& name);
         virtual void addAppender(Logger &logger, log4cplus::SharedAppenderPtr& appender);
 
@@ -297,10 +302,10 @@ namespace log4cplus
       // Data
         Hierarchy& h;
         log4cplus::tstring propertyFilename;
-        log4cplus::helpers::Properties properties; 
+        log4cplus::helpers::Properties properties;
         AppenderMap appenders;
         unsigned flags;
-        
+
     private:
       // Disable copy
         PropertyConfigurator(const PropertyConfigurator&);
@@ -338,19 +343,19 @@ namespace log4cplus
 
         //! Property name for disable override.
         static log4cplus::tstring const DISABLE_OVERRIDE_KEY;
-        
+
     private:
       // Disable copy
         BasicConfigurator(const BasicConfigurator&);
         BasicConfigurator& operator=(BasicConfigurator&);
     };
-   
+
 
 #if !defined(LOG4CPLUS_SINGLE_THREADED)
     // Forward Declarations
     class ConfigurationWatchDogThread;
-    
-    
+
+
     class LOG4CPLUS_EXPORT ConfigureAndWatchThread {
     public:
       // ctor and dtor
@@ -362,7 +367,7 @@ namespace log4cplus
       // Disallow copying of instances of this class
        ConfigureAndWatchThread(const ConfigureAndWatchThread&);
        ConfigureAndWatchThread& operator=(const ConfigureAndWatchThread&);
-       
+
       // Data
        ConfigurationWatchDogThread * watchDogThread;
     };
@@ -371,4 +376,3 @@ namespace log4cplus
 } // end namespace log4cplus
 
 #endif // LOG4CPLUS_CONFIGURATOR_HEADER_
-

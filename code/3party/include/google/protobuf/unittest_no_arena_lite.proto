@@ -38,5 +38,5 @@ option optimize_for = LITE_RUNTIME;
 package protobuf_unittest_no_arena;
 
 message ForeignMessageLite {
-  int32 c = 1;
+  optional int32 c = 1;
 }

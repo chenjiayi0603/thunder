@@ -42,7 +42,7 @@ option java_package = "com.google.protobuf";
 import public "google/protobuf/unittest_import_public_lite.proto";
 
 message ImportMessageLite {
-  int32 d = 1;
+  optional int32 d = 1;
 }
 
 enum ImportEnumLite {

@@ -41,12 +41,12 @@ C_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.c))
 OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cc,%.o,$(CC_SRCS))
 
 LIBRARYS: $(OBJS)
-	ar -crv libUtil.a $(OBJS)
-	ranlib libUtil.a
+	#ar -crv libUtil.a $(OBJS)
+	#ranlib libUtil.a
 	$(CXX) -shared -Wl,-soname,libUtil.so -o libUtil.so $(OBJS) -lc -lrt -ldl $(LDFLAGS)
 	test -d ${DEPLOY_LIB} && install libUtil.so ${DEPLOY_LIB}
-	install -v libUtil.a $(UTIL_PATH)/lib/
-	install -v libUtil.so $(UTIL_PATH)/lib/
+	#install -v libUtil.a $(UTIL_PATH)/lib/
+	#install -v libUtil.so $(UTIL_PATH)/lib/
 
 %.o:%.cpp
 	$(CXX) $(INC) $(CXXFLAG) -c -o $@ $< 

@@ -48,5 +48,5 @@ message TestMessageSet {
 }
 
 message TestMessageSetWireFormatContainer {
-  TestMessageSet message_set = 1;
+  optional TestMessageSet message_set = 1;
 }

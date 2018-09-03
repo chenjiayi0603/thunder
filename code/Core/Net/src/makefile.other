@@ -61,6 +61,7 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -lprotobuf \
            -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -lev \
+           -L$(3PARTY_PATH)/lib -ljemalloc \
            -L$(3PARTY_PATH)/lib -lcares \
            -L$(3PARTY_PATH)/lib -lcurl \
            -L$(SYSTEM_LIB_PATH) -lpthread \

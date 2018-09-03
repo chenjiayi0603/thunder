@@ -49,7 +49,7 @@ function make_bins_libNet()
 	    echo "cd ${MAKE_PATH}/Net/src"
 	    cd ${MAKE_PATH}/Net/src
 	    make clean 
-	    make && find  ${MAKE_PATH}/Net/src -type f -name "*Server" | xargs -i cp -v {} ${RUN_PATH}/bin && \
+	    make # && find  ${MAKE_PATH}/Net/src -type f -name "*Server" | xargs -i cp -v {} ${RUN_PATH}/bin && \
 	    cp -v ${MAKE_PATH}/Net/src/${core_so} ${RUN_PATH}/lib 
 	    echo "${RUN_PATH}/bin"
 	    ls -l ${RUN_PATH}/bin 

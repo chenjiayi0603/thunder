@@ -42,14 +42,14 @@ package protobuf_unittest;
 option optimize_for = CODE_SIZE;
 
 message TestOptimizedForSize {
-  int32 i = 1;
-  ForeignMessage msg = 19;
+  optional int32 i = 1;
+  optional ForeignMessage msg = 19;
 
   extensions 1000 to max;
 
   extend TestOptimizedForSize {
-    int32 test_extension = 1234;
-    TestRequiredOptimizedForSize test_extension2 = 1235;
+    optional int32 test_extension = 1234;
+    optional TestRequiredOptimizedForSize test_extension2 = 1235;
   }
 
   oneof foo {
@@ -59,9 +59,9 @@ message TestOptimizedForSize {
 }
 
 message TestRequiredOptimizedForSize {
-  int32 x = 1;
+  required int32 x = 1;
 }
 
 message TestOptionalOptimizedForSize {
-  TestRequiredOptimizedForSize o = 1;
+  optional TestRequiredOptimizedForSize o = 1;
 }

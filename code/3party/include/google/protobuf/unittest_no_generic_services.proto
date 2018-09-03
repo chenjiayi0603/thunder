@@ -37,7 +37,7 @@ package google.protobuf.no_generic_services_test;
 // *_generic_services are false by default.
 
 message TestMessage {
-  int32 a = 1;
+  optional int32 a = 1;
   extensions 1000 to max;
 }
 
@@ -46,7 +46,7 @@ enum TestEnum {
 }
 
 extend TestMessage {
-  int32 test_extension = 1000;
+  optional int32 test_extension = 1000;
 }
 
 service TestService {

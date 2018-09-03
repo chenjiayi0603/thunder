@@ -45,21 +45,21 @@ option cc_enable_arenas = true;
 option optimize_for = SPEED;
 
 message TestMessageSetContainer {
-  proto2_wireformat_unittest.TestMessageSet message_set = 1;
+  optional proto2_wireformat_unittest.TestMessageSet message_set = 1;
 }
 
 message TestMessageSetExtension1 {
   extend proto2_wireformat_unittest.TestMessageSet {
-    TestMessageSetExtension1 message_set_extension = 1545008;
+    optional TestMessageSetExtension1 message_set_extension = 1545008;
   }
-  int32 i = 15;
+  optional int32 i = 15;
 }
 
 message TestMessageSetExtension2 {
   extend proto2_wireformat_unittest.TestMessageSet {
-    TestMessageSetExtension2 message_set_extension = 1547769;
+    optional TestMessageSetExtension2 message_set_extension = 1547769;
   }
-  string str = 25;
+  optional string str = 25;
 }
 
 // This message was used to generate
@@ -68,15 +68,15 @@ message TestMessageSetExtension2 {
 // extension.
 // message TestMessageSetUnknownExtension {
 //   extend TestMessageSet {
-//     TestMessageSetUnknownExtension message_set_extension = 56141421;
+//     optional TestMessageSetUnknownExtension message_set_extension = 56141421;
 //   }
-//   int64 a = 1;
+//   optional int64 a = 1;
 // }
 
 // MessageSet wire format is equivalent to this.
 message RawMessageSet {
   repeated group Item = 1 {
-    int32 type_id = 2;
-    bytes message = 3;
+    required int32 type_id = 2;
+    required bytes message = 3;
   }
 }

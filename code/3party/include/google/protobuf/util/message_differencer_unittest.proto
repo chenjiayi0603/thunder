@@ -40,31 +40,31 @@ package protobuf_unittest;
 option optimize_for = SPEED;
 
 message TestField {
-  int32 a = 3;
-  int32 b = 4;
-  int32 c = 1;
+  optional int32 a = 3;
+  optional int32 b = 4;
+  optional int32 c = 1;
   repeated int32 rc = 2;
-  TestField m = 5;
+  optional TestField m = 5;
 
   extend TestDiffMessage {
-    TestField tf = 100;
+    optional TestField tf = 100;
   }
 }
 
 message TestDiffMessage {
   repeated group Item = 1 {
-    int32  a  =  2;     // Test basic repeated field comparison.
-    string b  =  4;     // Test basic repeated field comparison.
+    optional int32  a  =  2;     // Test basic repeated field comparison.
+    optional string b  =  4;     // Test basic repeated field comparison.
     repeated int32  ra =  3;     // Test SetOfSet Comparison.
     repeated string rb =  5;     // Test TreatAsMap when key is repeated
-    TestField m  = 6;   // Test TreatAsMap when key is a message
+    optional TestField m  = 6;   // Test TreatAsMap when key is a message
     repeated TestField rm = 7;   // Test TreatAsMap when key is a repeated
                                  // message
   }
 
-  int32  v  = 13 [deprecated = true];
-  string w  = 14;
-  TestField m  = 15;
+  optional int32  v  = 13 [deprecated = true];
+  optional string w  = 14;
+  optional TestField m  = 15;
   repeated int32  rv = 11;       // Test for combinations
   repeated string rw = 10;       // Test for combinations
   repeated TestField rm = 12 [deprecated = true];    // Test for combinations
