@@ -184,7 +184,6 @@ void daemonize(const char* cmd)
 //                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
     }
 
-    // fork锛岀粓姝㈢埗杩涚▼
     if((pid = fork()) < 0)
     {
 //        m_pLog->WriteLog(ERROR, "%s error %d can't fork: %s", cmd,
@@ -195,7 +194,6 @@ void daemonize(const char* cmd)
         exit(0);
     }
 
-    // 璁剧疆绗竴瀛愯繘绋�
     setsid();
 
     sa.sa_handler = SIG_IGN;
@@ -207,7 +205,6 @@ void daemonize(const char* cmd)
 //                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
     }
 
-    // fork锛岀粓姝㈢涓�瀛愯繘绋�
     if ((pid = fork()) < 0)
     {
 //        m_pLog->WriteLog(ERROR, "%s error %d can't fork: %s", cmd,
@@ -220,17 +217,14 @@ void daemonize(const char* cmd)
 
     InstallSignal();
 
-//    // 灏嗗伐浣滅洰褰曡缃负鈥�/鈥�
 //    if (chdir("/") < 0)
 //    {
 //        m_pLog->WriteLog(ERROR, "%s error %d can't change directory to /: %s",
 //                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
 //    }
 
-    // 娓呴櫎鏂囦欢鎺╃爜
     umask(0);
 
-//    // 鍏抽棴鎵�鏈夋枃浠跺彞鏌�
 //    for (i=0; i<MAXFD; i++)
 //    {
 //    	close(i);
