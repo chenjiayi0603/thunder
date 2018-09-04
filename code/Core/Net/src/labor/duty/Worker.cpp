@@ -702,7 +702,7 @@ bool Worker::FdTransfer()
     int iAcceptFd = recv_fd_with_attr(m_iManagerDataFd, szIpAddr, 16, &iCodec);
     if (iAcceptFd <= 0)
     {
-        if (iAcceptFd == 0)
+        if (iAcceptFd == 0)//父进程关闭后，子进程收到的消息
         {
             LOG4_ERROR("recv_fd from m_iManagerDataFd %d len %d", m_iManagerDataFd, iAcceptFd);
             Destroy();
