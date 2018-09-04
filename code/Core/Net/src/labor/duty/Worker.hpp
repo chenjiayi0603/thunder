@@ -37,7 +37,7 @@
 #include "../../step/StepNode.hpp"
 #include "../../step/StepState.hpp"
 #include "../../step/MysqlStep.hpp"
-#include "../duty/Attribution.hpp"
+#include "Attribution.hpp"
 
 #include "protocol/msg.pb.h"
 #include "protocol/oss_sys.pb.h"
@@ -339,12 +339,12 @@ private:
     MysqlContextMap m_mapMysqlContext;       ///< mysql连接，key为identify(192.168.16.22:9988形式的IP+端口)
 	std::map<util::MysqlAsyncConn*, std::string> m_mapMysqlContextIdentify;    ///< mysql标识，与m_mapMysqlContext的key和value刚好对调
 
-	struct CustomSockaddr
+	struct tagSockaddr
     {
         unsigned long sockaddr;
         uint32 uiLastTime;
     };
-	std::map<std::string,CustomSockaddr> m_mapHosts;//dns host cache
+	std::map<std::string,tagSockaddr> m_mapHosts;//dns host cache
 };
 
 } /* namespace net */

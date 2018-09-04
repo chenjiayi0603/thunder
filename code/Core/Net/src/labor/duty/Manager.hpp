@@ -31,8 +31,8 @@
 
 #include "../../NetDefine.hpp"
 #include "../../NetError.hpp"
-#include "../duty/Attribution.hpp"
-#include "../duty/Worker.hpp"
+#include "Attribution.hpp"
+#include "Worker.hpp"
 #include "libev/ev.h"
 #include "log4cplus/logger.h"
 #include "log4cplus/fileappender.h"

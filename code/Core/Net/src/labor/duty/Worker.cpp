@@ -3753,13 +3753,13 @@ bool Worker::Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in 
             if (he != NULL)
             {
                 stAddr.sin_addr.s_addr = inet_addr(inet_ntoa(*(struct in_addr*)(he->h_addr)));
-                CustomSockaddr customSockaddr;
-                customSockaddr.sockaddr = stAddr.sin_addr.s_addr;
-                customSockaddr.uiLastTime = GetNowTime();
-                std::map<std::string,CustomSockaddr>::iterator iter = m_mapHosts.find(strHost);
+                tagSockaddr sockaddr;
+                sockaddr.sockaddr = stAddr.sin_addr.s_addr;
+                sockaddr.uiLastTime = GetNowTime();
+                std::map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
                 if (m_mapHosts.end() == iter)
                 {
-                    m_mapHosts.insert(std::make_pair(strHost,customSockaddr));
+                    m_mapHosts.insert(std::make_pair(strHost,sockaddr));
                 }
                 else
                 {
@@ -3775,17 +3775,17 @@ bool Worker::Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in 
         }
         else
         {
-            std::map<std::string,CustomSockaddr>::iterator iter = m_mapHosts.find(strHost);
+            std::map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
             if (iter == m_mapHosts.end())
             {
                 struct hostent *he = gethostbyname(strHost.c_str());
                 if (he != NULL)
                 {
                     stAddr.sin_addr.s_addr = inet_addr(inet_ntoa(*(struct in_addr*)(he->h_addr)));
-                    CustomSockaddr customSockaddr;
-                    customSockaddr.sockaddr = stAddr.sin_addr.s_addr;
-                    customSockaddr.uiLastTime = GetNowTime();
-                    m_mapHosts.insert(std::make_pair(strHost,customSockaddr));
+                    tagSockaddr sockaddr;
+                    sockaddr.sockaddr = stAddr.sin_addr.s_addr;
+                    sockaddr.uiLastTime = GetNowTime();
+                    m_mapHosts.insert(std::make_pair(strHost,sockaddr));
                 }
                 else
                 {

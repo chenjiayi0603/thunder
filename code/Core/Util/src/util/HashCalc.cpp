@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Project:  loss
+* Project:  Util
 * @file     HashCalc.cpp
 * @brief 
 * @author   cjy

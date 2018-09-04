@@ -16,7 +16,7 @@ extern "C" {
 #endif
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::ModuleShake();
+    net::Cmd* pCmd = new core::ModuleShake();
     return(pCmd);
 }
 #ifdef __cplusplus

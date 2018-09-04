@@ -14,7 +14,7 @@ extern "C" {
 #endif
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::ModuleLocateData();
+    net::Cmd* pCmd = new core::ModuleLocateData();
     return(pCmd);
 }
 #ifdef __cplusplus

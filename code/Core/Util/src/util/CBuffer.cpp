@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  loss
+ * Project:  Util
  * @file     CBuffer.cpp
  * @brief 
  * @author   bwarliao

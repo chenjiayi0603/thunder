@@ -22,7 +22,7 @@ extern "C" {
 #endif
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::ModuleHello();
+    net::Cmd* pCmd = new core::ModuleHello();
     return(pCmd);
 }
 #ifdef __cplusplus
@@ -1194,30 +1194,26 @@ void ModuleHello::TestRSA()
 void ModuleHello::TestCoroutinue()//用于分隔逻辑
 {
 	LOG4CPLUS_TRACE_FMT(GetLogger(), "TestCoroutinue");
-	struct CoroutineArg {
-		net::Labor* labor;
-		int n;
-	};
-
-	CoroutineArg arg1 = {GetLabor(), 0 };
-	CoroutineArg arg2 = {GetLabor(), 100 };
+	struct Param:public net::tagCoroutineArg { Param(int a,int b):m_a(a),m_b(b){} int m_a;int m_b;};
+	Param *arg1 = new Param(0,10);
+	Param *arg2 = new Param(100,110);
 	auto testcoroutinue = []  (void *ud) {
-		CoroutineArg* arg = (CoroutineArg*)ud;
-		int start = arg->n;
+		Param *arg = (Param*)ud;
+		int start = arg->m_a;
 		for (int i=0;i<3;i++)
 		{
-			LOG4CPLUS_TRACE_FMT(arg->labor->GetLogger(),"coroutine running(%d),arg n(%d) tid(%u)",
+			LOG4CPLUS_TRACE_FMT(arg->GetLogger(),"coroutine running(%d),arg n(%d) tid(%u)",
 					arg->labor->CoroutineRunning() , start + i,pthread_self());
 
-			arg->labor->CoroutineYield();
+			arg->CoroutineYield();
 		}
 	};
-	//两个协程对象
-	GetLabor()->CoroutineNew(testcoroutinue,&arg1);
-	GetLabor()->CoroutineNew(testcoroutinue,&arg2);
+	//两个协程任务，在两个任务之间切换
+	CoroutineNewWithArg(testcoroutinue,arg1);
+	CoroutineNewWithArg(testcoroutinue,arg2);
 
 	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine start! tid(%u) &arg1:%p",__FUNCTION__,pthread_self(),&arg1);
-	while (GetLabor()->CoroutineResume());//一直运行到执行完所有的协程
+	CoroutineResumeWithTimes();
 
 	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine end!tid(%u)",__FUNCTION__,pthread_self());
 }

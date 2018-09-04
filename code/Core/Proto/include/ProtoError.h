@@ -9,6 +9,7 @@
 ******************************************************************************/
 #ifndef SRC_ANALYSISERROR_H_
 #define SRC_ANALYSISERROR_H_
+#include "NetError.hpp"
 
 namespace core
 {

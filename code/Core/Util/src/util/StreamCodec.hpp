@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  loss
+ * Project:  Util
  * @file     StreamCoder.hpp
  * @brief 
  * @author   bwarliao

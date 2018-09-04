@@ -42,6 +42,36 @@ class RedisStep;
 class MysqlStep;
 class HttpStep;
 class Session;
+class Labor;
+
+
+struct tagCoroutineArg//自定义协程参数需要继承tagCoroutineArg
+{
+	Labor* labor;//不在本结构管理
+	bool CoroutineYield();
+	log4cplus::Logger GetLogger();
+};
+
+struct tagCoroutineSchedule
+{
+	tagCoroutineSchedule():schedule(NULL),coroutineRunIter(0){}
+	tagCoroutineSchedule(const tagCoroutineSchedule& coroutine)
+	{
+		schedule = coroutine.schedule;
+		coroutineIds = coroutine.coroutineIds;
+		coroutineRunIter = coroutine.coroutineRunIter;
+	}
+	const tagCoroutineSchedule& operator = (const tagCoroutineSchedule& coroutine)
+	{
+		schedule = coroutine.schedule;
+		coroutineIds = coroutine.coroutineIds;
+		coroutineRunIter = coroutine.coroutineRunIter;
+		return *this;
+	}
+	util::schedule* schedule;
+	std::set<int> coroutineIds;
+	std::set<int>::iterator coroutineRunIter;
+};
 
 //访问存储回调
 typedef void (*StorageCallbackSession)(const DataMem::MemRsp &oRsp,net::Session*pSession);
@@ -700,43 +730,27 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strErrShow 展示给用户的错误信息
      */
     virtual void ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,
-                    int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
-    {
-        ;
-    }
+                    int iErrno, const std::string& strErrMsg, const std::string& strErrShow){;}
+
+    bool CoroutineResumeWithTimes(int nMaxTimes=100);//每次最大执行协程次数.返回true 还有需要执行的协程，返回false没有还需要执行的协程
+    bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg);//arg在框架回收
+
+    //框架接口
     int CoroutineNew(util::coroutine_func func,void *ud);
 	bool CoroutineResume();//自定义调用策略,轮流执行规则
 	bool CoroutineResume(int coid);//唤醒指定协程
-	bool CoroutineYield();
 	int CoroutineStatus(int coid);
-	int CoroutineRunning();
-	uint32 CoroutineTaskSize();
 	bool IsCoroutineEnable();
+	uint32 CoroutineTaskSize();
+	bool CoroutineYield();//在协程函数中放弃协程的本次执行
+	int CoroutineRunning();
 private:
     std::string m_strNodeTypeTmp;
     std::string m_strHostForServerTmp;
     util::CJsonObject m_oCustomConfTmp;
-    struct CoroutineSchedule
-    {
-    	CoroutineSchedule():schedule(NULL),coroutineRunIter(0){}
-    	CoroutineSchedule(const CoroutineSchedule& coroutine)
-    	{
-    		schedule = coroutine.schedule;
-    		coroutineIds = coroutine.coroutineIds;
-    		coroutineRunIter = coroutine.coroutineRunIter;
-    	}
-    	const CoroutineSchedule& operator = (const CoroutineSchedule& coroutine)
-    	{
-    		schedule = coroutine.schedule;
-			coroutineIds = coroutine.coroutineIds;
-			coroutineRunIter = coroutine.coroutineRunIter;
-			return *this;
-    	}
-    	util::schedule* schedule;
-    	std::set<int> coroutineIds;
-    	std::set<int>::iterator coroutineRunIter;
-    };
-    CoroutineSchedule m_CoroutineSchedule;
+
+    tagCoroutineSchedule m_CoroutineSchedule;
+    std::map<int,tagCoroutineArg*> m_CoroutineScheduleArgs;
 };
 
 } /* namespace net */
