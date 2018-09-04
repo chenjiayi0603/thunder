@@ -2,7 +2,7 @@ ASYNC_SERVER_PATH=`dirname $0`
 cd ${ASYNC_SERVER_PATH}
 ASYNC_SERVER_PATH=`pwd`
 ASYNC_SERVER_PATH_LIB=/app/thunder/deploy/3lib
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ASYNC_SERVER_PATH_LIB}:/app/thunder/tools/bin
-chmod +x /app/thunder/tools/bin/protoc
-/app/thunder/tools/bin/protoc  --version 
-/app/thunder/tools/bin/protoc -I=. --cpp_out=. ./dataproxy.proto 
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ASYNC_SERVER_PATH_LIB}:/app/thunder/deploy/3lib
+chmod +x /app/thunder/deploy/3lib/protoc
+/app/thunder/deploy/3lib/protoc  --version 
+/app/thunder/deploy/3lib/protoc -I=. --cpp_out=. ./dataproxy.proto 

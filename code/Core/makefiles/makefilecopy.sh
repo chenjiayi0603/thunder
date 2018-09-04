@@ -45,7 +45,7 @@ if [ $# -lt 1 ]; then
 		else
 			echo "${nodetype} not exist"
 		fi
-	done < logic_plugins.conf 
+	done < plugins_logic.conf 
 else
 	echo "$# ${1}" 
 	nodetype=${1}
