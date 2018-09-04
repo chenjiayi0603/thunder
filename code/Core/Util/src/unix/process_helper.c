@@ -171,84 +171,49 @@ void InstallSignal()
 #endif
 }
 
-void daemonize(const char* cmd)
+int process_daemonize(const char *dir=NULL)
 {
-//    int i, fd0, fd1, fd2;
-    pid_t pid;
-    struct rlimit rl;
-    struct sigaction sa;
+	switch(fork()){
+		case -1:
+			return -1;
+		case 0:
+			break;
+		default:
+			exit(0);
+	}
+	if(setsid() == -1){
+		exit(0);
+	}
+	if(dir != NULL){
+		if(chdir(dir) == -1){
+			exit(0);
+		}
+	}
 
-    if (getrlimit(RLIMIT_NOFILE, &rl) < 0)
-    {
-//        m_pLog->WriteLog(ERROR, "%s: error %d can't get file limit: %s", cmd,
-//                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
-    }
+	if(close(STDIN_FILENO) == -1){
+		exit(0);
+	}
+	if(close(STDOUT_FILENO) == -1){
+		exit(0);
+	}
+	if(close(STDERR_FILENO) == -1){
+		exit(0);
+	}
 
-    if((pid = fork()) < 0)
-    {
-//        m_pLog->WriteLog(ERROR, "%s error %d can't fork: %s", cmd,
-//                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
-    }
-    else if (pid != 0)
-    {
-        exit(0);
-    }
-
-    setsid();
-
-    sa.sa_handler = SIG_IGN;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    if (sigaction(SIGHUP, &sa, NULL) < 0)
-    {
-//        m_pLog->WriteLog(ERROR, "%s error %d can't ignore SIGHUP: %s", cmd,
-//                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
-    }
-
-    if ((pid = fork()) < 0)
-    {
-//        m_pLog->WriteLog(ERROR, "%s error %d can't fork: %s", cmd,
-//                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
-    }
-    else if (pid != 0)
-    {
-        exit(0);
-    }
-
-    InstallSignal();
-
-//    if (chdir("/") < 0)
-//    {
-//        m_pLog->WriteLog(ERROR, "%s error %d can't change directory to /: %s",
-//                errno, strerror_r(errno, m_szErrBuffer, util::gc_uiMaxErrBufferLength));
-//    }
-
-    umask(0);
-
-//    for (i=0; i<MAXFD; i++)
-//    {
-//    	close(i);
-//    }
-
-    if (rl.rlim_max == RLIM_INFINITY)
-    {
-        rl.rlim_max = 1024;
-    }
-    /*
-    for (i = 0; i < rl.rlim_max; i++)
-        close(i);
-
-    fd0 = open("/dev/null", O_RDWR);
-    fd1 = dup(0);
-    fd2 = dup(0);
-
-    openlog(cmd, LOG_CONS, LOG_DAEMON);
-    if (fd0 != 0 || fd1 != 1 || fd2 != 2)
-    {
-        syslog(LOG_ERR, "unexpected file descriptors %d %d %d", fd0, fd1, fd2);
-        exit(1);
-    }
-    */
+	int fd = open("/dev/null", O_RDWR, 0);
+	if(fd == -1){
+		exit(0);
+	}
+	if(dup2(fd, STDIN_FILENO) == -1){
+		exit(0);
+	}
+	if(dup2(fd, STDOUT_FILENO) == -1){
+		exit(0);
+	}
+	if(dup2(fd, STDERR_FILENO) == -1){
+		exit(0);
+	}
+	return 0;
 }
 
 int x_sock_set_block(int sock, int on)

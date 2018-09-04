@@ -11,8 +11,8 @@
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
-#include "unix_util/proctitle_helper.h"
-#include "unix_util/process_helper.h"
+#include "unix/proctitle_helper.h"
+#include "unix/process_helper.h"
 #include "cmd/sys_cmd/CmdConnectWorker.hpp"
 #include "Manager.hpp"
 
@@ -149,7 +149,8 @@ Manager::Manager(const std::string& strConfFile)
     }
     m_pErrBuff = new char[gc_iErrBuffLen];
     ngx_setproctitle(m_oCurrentConf("server_name").c_str());
-    daemonize(m_oCurrentConf("server_name").c_str());
+    process_daemonize(m_strWorkPath.c_str());
+    InstallSignal();
     nPid = getpid();
     Init();
 #ifdef WORKER_OVERDUE

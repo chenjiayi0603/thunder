@@ -14,8 +14,8 @@ extern "C" {
 #include "hiredis_vip/async.h"
 #include "hiredis_vip/adapters/libev.h"
 #include "hiredis_vip/hircluster.h"
-#include "unix_util/process_helper.h"
-#include "unix_util/proctitle_helper.h"
+#include "unix/process_helper.h"
+#include "unix/proctitle_helper.h"
 #ifdef __cplusplus
 }
 #endif

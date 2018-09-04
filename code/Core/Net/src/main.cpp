@@ -8,7 +8,7 @@
 * Modify history:
 ******************************************************************************/
 
-#include "unix_util/proctitle_helper.h"
+#include "unix/proctitle_helper.h"
 #include "labor/duty/Manager.hpp"
 
 int main(int argc, char* argv[])

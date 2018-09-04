@@ -1,7 +1,6 @@
 /*
  * process_helper.h
  *
- *  Created on: 2014骞�7鏈�26鏃�
  *      Author: cjy
  */
 
@@ -30,9 +29,8 @@ extern "C" {
 
 //int send_fd(int fd, int fd_to_send);
 //int recv_fd(int fd, char *buffer, size_t size);
-//int daemonize();
 void InstallSignal();
-void daemonize(const char* cmd);
+int process_daemonize(const char *dir);
 int x_sock_set_block(int sock, int on);
 int send_fd(int sock_fd, int send_fd) ;
 int recv_fd(const int sock_fd);
