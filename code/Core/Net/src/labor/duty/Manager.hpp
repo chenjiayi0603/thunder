@@ -215,6 +215,8 @@ private:
     std::map<int32, Cmd*> m_mapCmd;
 
     std::vector<int> m_vecFreeWorkerIdx;            ///< 空闲进程编号
+
+    int nPid;
 };
 
 } /* namespace net */

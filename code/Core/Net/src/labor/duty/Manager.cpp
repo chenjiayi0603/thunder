@@ -134,7 +134,7 @@ Manager::Manager(const std::string& strConfFile)
       m_uiNodeId(0), m_iPortForServer(9988), m_iPortForClient(0), m_iGatewayIp(0), m_uiWorkerNum(10),
       m_eCodec(util::CODEC_PROTOBUF), m_dAddrStatInterval(60.0), m_iAddrPermitNum(10),
       m_iLogLevel(log4cplus::INFO_LOG_LEVEL), m_iWorkerBeat(11), m_iRefreshInterval(60), m_iLastRefreshCalc(0),
-      m_iS2SListenFd(-1), m_iC2SListenFd(-1), m_loop(NULL), m_pPeriodicTaskWatcher(NULL),m_iWaitToExitCounter(0)//, m_pCmdConnect(NULL)
+      m_iS2SListenFd(-1), m_iC2SListenFd(-1), m_loop(NULL), m_pPeriodicTaskWatcher(NULL),m_iWaitToExitCounter(0),nPid(0)//, m_pCmdConnect(NULL)
 {
     if (strConfFile == "")
     {
@@ -150,6 +150,7 @@ Manager::Manager(const std::string& strConfFile)
     m_pErrBuff = new char[gc_iErrBuffLen];
     ngx_setproctitle(m_oCurrentConf("server_name").c_str());
     daemonize(m_oCurrentConf("server_name").c_str());
+    nPid = getpid();
     Init();
 #ifdef WORKER_OVERDUE
     m_iWorkerBeat = WORKER_OVERDUE > ((gc_iBeatInterval << 1) + 1) ? WORKER_OVERDUE:((gc_iBeatInterval << 1) + 1);
@@ -761,7 +762,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }
-        LOG4_INFO("%s program begin, and work path %s. pid(%d)", oJsonConf("server_name").c_str(), m_strWorkPath.c_str(),getpid());
+        LOG4_INFO("%s program begin, and work path %s. pid(%d:%d)", oJsonConf("server_name").c_str(), m_strWorkPath.c_str(),nPid,getpid());
         m_bInitLogger = true;
         return(true);
     }
