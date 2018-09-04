@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
+#include <unistd.h>
 #include "unix_util/proctitle_helper.h"
 #include "unix_util/process_helper.h"
 #include "cmd/sys_cmd/CmdConnectWorker.hpp"
@@ -168,7 +169,7 @@ Manager::~Manager()
 
 bool Manager::ManagerTerminated(struct ev_signal* watcher)
 {
-    LOG4_WARN("%s terminated by signal %d!", m_oCurrentConf("server_name").c_str(), watcher->signum);
+    LOG4_WARN("%s terminated by signal %d!pid(%d)", m_oCurrentConf("server_name").c_str(), watcher->signum,getpid());
     ev_break (m_loop, EVBREAK_ALL);
     Destroy();
     exit(-1);
@@ -760,7 +761,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }
-        LOG4_INFO("%s program begin, and work path %s...", oJsonConf("server_name").c_str(), m_strWorkPath.c_str());
+        LOG4_INFO("%s program begin, and work path %s. pid(%d)", oJsonConf("server_name").c_str(), m_strWorkPath.c_str(),getpid());
         m_bInitLogger = true;
         return(true);
     }
@@ -1250,8 +1251,8 @@ bool Manager::Init()
         int iErrno = errno;
         exit(iErrno);
     }
-    LOG4_INFO("%s() listen on iPortForServer(%d) strHostForServer(%s)",
-        		__FUNCTION__,m_iPortForServer,m_strHostForServer.c_str());
+    LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s)",
+        		__FUNCTION__,getpid(),m_iPortForServer,m_strHostForServer.c_str());
     // 创建到Center的连接信息
     for (int i = 0; i < m_oCurrentConf["center"].GetArraySize(); ++i)
     {

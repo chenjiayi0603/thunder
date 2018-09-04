@@ -3,7 +3,7 @@
 #拷贝makefile模板到指定节点 ./makefilecopy.sh AccessServer
 #make_plugins_list.conf 
 
-makefiles=./core/makefiles
+makefiles=./Core/makefiles
 
 echo "copying makefile..."
 #复制makefile

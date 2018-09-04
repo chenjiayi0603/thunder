@@ -16,7 +16,7 @@ fi
 while read nodetype src_path dest_path  others
 do
     test ! -d  ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path}
-done < logic_plugins.conf
+done < plugins_logic.conf
 
 function print_so()
 {
@@ -25,7 +25,7 @@ function print_so()
     do 
         echo "${nodetype}:"
         find  ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i ls -l --color=tty {}
-    done < logic_plugins.conf 
+    done < plugins_logic.conf 
 }
 
 if [ $1 == "all" ];then
@@ -37,7 +37,7 @@ if [ $1 == "all" ];then
         cd ${MAKE_PATH}${src_path} &&\
         make clean && make && find ${MAKE_PATH}${src_path} -type f -name "*.so" | xargs -i cp -v {} ${RUN_PATH}${dest_path}
         cd ${MAKE_PATH}
-    done < logic_plugins.conf
+    done < plugins_logic.conf
     print_so
 elif [ $1 == "clean" ] ;then
     cd ${MAKE_PATH}
@@ -45,7 +45,7 @@ elif [ $1 == "clean" ] ;then
     do
         echo "find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}"
         find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}
-    done < logic_plugins.conf
+    done < plugins_logic.conf
 else
     cd ${MAKE_PATH}
     while read nodetype src_path dest_path others
@@ -57,7 +57,7 @@ else
         echo "${nodetype}:" &&\
         find  ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
         echo "done" && exit 0
-    done < logic_plugins.conf
+    done < plugins_logic.conf
     echo "nothings to make"
     echo "USAGE: $0 param1" 
     echo "please input param1:nodetype[${command}]"

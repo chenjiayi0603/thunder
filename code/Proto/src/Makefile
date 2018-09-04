@@ -12,9 +12,9 @@ SYSTEM_LIB_PATH:=/usr/lib64
 else
 SYSTEM_LIB_PATH:=/usr/lib
 endif
-3PARTY_PATH = ../../core/3party
+3PARTY_PATH = ../../Core/../3party
 PROTO_PATH = .
-STARSHIP_PATH = ../../core/Starship
+NET_PATH = ../../Core/Net
 
 VPATH = .
 
@@ -26,7 +26,7 @@ DIRS := $(SUB_DIRS)
 INC := $(INC) \
        -I $(PROTO_PATH) \
        -I $(PROTO_PATH)/src   \
-       -I $(STARSHIP_PATH)/src \
+       -I $(NET_PATH)/src \
        -I $(3PARTY_PATH)/include 
 
 

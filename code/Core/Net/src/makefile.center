@@ -26,12 +26,12 @@ endif
 3PARTY_PATH = ../../../3party
 UTIL_PATH = ../../Util
 
-STARSHIP_PATH = ..
+NET_PATH = ..
 
 DEPLOY_BIN = ../../../../deploy/bin/
 DEPLOY_LIB = ../../../../deploy/lib/
 
-VPATH = $(STARSHIP_PATH)/src
+VPATH = $(NET_PATH)/src
 SUB_DIRS := $(foreach dir, $(VPATH), $(shell find $(dir) -maxdepth 5 -type d))
 DIRS := $(SUB_DIRS)
 
@@ -41,7 +41,7 @@ INC := $(INC) \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(3PARTY_PATH)/include/libev \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
-       -I $(STARSHIP_PATH)/src 
+       -I $(NET_PATH)/src 
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
@@ -59,11 +59,11 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(SYSTEM_LIB_PATH) -lz -lc -ldl -lrt -lssl
 
 SUB_INCLUDE = cmd step session labor protocol
-COMM_PATH = $(STARSHIP_PATH)/src/cmd \
-            $(STARSHIP_PATH)/src/step \
-            $(STARSHIP_PATH)/src/session \
-            $(STARSHIP_PATH)/src/labor \
-            $(STARSHIP_PATH)/src/protocol
+COMM_PATH = $(NET_PATH)/src/cmd \
+            $(NET_PATH)/src/step \
+            $(NET_PATH)/src/session \
+            $(NET_PATH)/src/labor \
+            $(NET_PATH)/src/protocol
 CPP_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.cpp))
 CC_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.cc))
 C_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.c))

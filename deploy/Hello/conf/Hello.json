@@ -20,7 +20,7 @@
     },
     "io_timeout":300.0,
     "step_timeout":1.0,
-    "log_level":20000,
+    "log_level":0,
     "load_so_interval":60.0,
     "so":[
          {"cmd":20001, "so_path":"plugins/Hello/CmdHello.so", "entrance_symbol":"create","process_num":0, "load":false, "version":1}

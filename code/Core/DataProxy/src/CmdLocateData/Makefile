@@ -15,7 +15,7 @@ endif
 3PARTY_PATH = ../../../../3party
 UTIL_PATH = ../../../Util
 
-STARSHIP_PATH = ../../../Net
+NET_PATH = ../../../Net
 PLUGIN_PATH = ../..
 
 VPATH = . ..
@@ -26,14 +26,14 @@ DIRS := $(SUB_DIRS)
 
 INC := $(INC) \
        -I .. \
-       -I $(STARSHIP_PATH)/include \
-       -I $(STARSHIP_PATH)/src \
+       -I $(NET_PATH)/include \
+       -I $(NET_PATH)/src \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
        -I $(3PARTY_PATH)/include 
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(STARSHIP_PATH)/lib -lstarship \
+           -L$(NET_PATH)/lib -lstarship \
            -L$(UTIL_PATH)/lib -lUtil \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lprotobuf \
@@ -47,7 +47,7 @@ CC_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.cc))
 C_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.c))
 OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cc,%.o,$(CC_SRCS))
 
-SO_PATH = . #$(STARSHIP_PATH)/plugins
+SO_PATH = . #$(NET_PATH)/plugins
 STEP_PATH = .
 
 SO_PATH = . 

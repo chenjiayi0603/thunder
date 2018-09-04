@@ -20,17 +20,17 @@ endif
 UTIL_PATH = ../../../Util
 PROTO_PATH = ../../../Proto
 
-STARSHIP_PATH = ../../../Net
+NET_PATH = ../../../Net
 PLUGIN_PATH = ../..
 
 VPATH = . \
         .. \
         $(PLUGIN_PATH)/protocol \
-        $(STARSHIP_PATH)/src/cmd \
-        $(STARSHIP_PATH)/src/step \
-        $(STARSHIP_PATH)/src/session \
-        $(STARSHIP_PATH)/src/labor \
-        $(STARSHIP_PATH)/src/protocol 
+        $(NET_PATH)/src/cmd \
+        $(NET_PATH)/src/step \
+        $(NET_PATH)/src/session \
+        $(NET_PATH)/src/labor \
+        $(NET_PATH)/src/protocol 
 SUB_DIRS := $(VPATH)
 #SUB_DIRS := $(foreach dir, $(VPATH), $(shell find $(dir) -maxdepth 5 -type d))
 DIRS := $(SUB_DIRS)
@@ -42,7 +42,7 @@ INC := $(INC) \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
-       -I $(STARSHIP_PATH)/src 
+       -I $(NET_PATH)/src 
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
@@ -59,17 +59,17 @@ CC_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.cc))
 C_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.c))
 OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cc,%.o,$(CC_SRCS))
 
-SO_PATH = . #$(STARSHIP_PATH)/plugins
+SO_PATH = . #$(NET_PATH)/plugins
 STEP_PATH = .
 COMM_PATH = .. \
-            $(STARSHIP_PATH)/plugins/protocol \
+            $(NET_PATH)/plugins/protocol \
             $(PROTO_PATH) \
-            $(STARSHIP_PATH)/src/cmd \
-            $(STARSHIP_PATH)/src/step \
-            $(STARSHIP_PATH)/src/session \
-            $(STARSHIP_PATH)/src/labor \
-            $(STARSHIP_PATH)/src/protocol 
-            #$(STARSHIP_PATH)/src
+            $(NET_PATH)/src/cmd \
+            $(NET_PATH)/src/step \
+            $(NET_PATH)/src/session \
+            $(NET_PATH)/src/labor \
+            $(NET_PATH)/src/protocol 
+            #$(NET_PATH)/src
 
 SO_PATH = . 
 SO_DEP_PATH = $(SO_PATH) $(PLUGIN_PATH)/src
