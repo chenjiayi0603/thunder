@@ -1195,8 +1195,7 @@ void ModuleHello::TestCoroutinue()//用于分隔逻辑
 {
 	LOG4CPLUS_TRACE_FMT(GetLogger(), "TestCoroutinue");
 	struct Param:public net::tagCoroutineArg { Param(int a,int b):m_a(a),m_b(b){} int m_a;int m_b;};
-	Param *arg1 = new Param(0,10);
-	Param *arg2 = new Param(100,110);
+
 	auto testcoroutinue = []  (void *ud) {
 		Param *arg = (Param*)ud;
 		int start = arg->m_a;
@@ -1209,11 +1208,11 @@ void ModuleHello::TestCoroutinue()//用于分隔逻辑
 		}
 	};
 	//两个协程任务，在两个任务之间切换
-	CoroutineNewWithArg(testcoroutinue,arg1);
-	CoroutineNewWithArg(testcoroutinue,arg2);
+	CoroutineNewWithArg(testcoroutinue,new Param(0,10));
+	CoroutineNewWithArg(testcoroutinue,new Param(100,110));
 
-	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine start! tid(%u) &arg1:%p",__FUNCTION__,pthread_self(),&arg1);
-	CoroutineResumeWithTimes();
+	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
+	CoroutineResumeWithTimes(3);
 
 	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine end!tid(%u)",__FUNCTION__,pthread_self());
 }
