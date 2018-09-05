@@ -33,7 +33,7 @@ INC := $(INC) \
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(NET_PATH)/lib -lstarship \
+           -L$(NET_PATH)/lib -lNet \
            -L$(UTIL_PATH)/lib -lUtil \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lprotobuf \
