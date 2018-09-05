@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2001-2017 Tad E. Smith
+// Copyright 2001-2013 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,20 +61,20 @@ namespace log4cplus {
               * can be NULL.
               * @param line     Line number in file specified by
               *                 the <code>filename</code> parameter.
-              * @param function Name of function that is logging this event.
               */
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& message,
-                const char* filename, int line, const char * function = nullptr);
+                const char* filename, int line);
 
+            //! This constructor is deprecated in favor of the next one because
+            //! of the additional `thread2` parameter.
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& ndc,
                 MappedDiagnosticContextMap const & mdc,
                 const log4cplus::tstring& message,
                 const log4cplus::tstring& thread,
                 log4cplus::helpers::Time time, const log4cplus::tstring& file,
-                int line, const log4cplus::tstring & function
-                    = log4cplus::tstring ()) LOG4CPLUS_ATTRIBUTE_DEPRECATED;
+                int line) LOG4CPLUS_ATTRIBUTE_DEPRECATED;
 
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& ndc,
@@ -83,8 +83,7 @@ namespace log4cplus {
                 const log4cplus::tstring& thread,
                 const log4cplus::tstring& thread2,
                 log4cplus::helpers::Time time, const log4cplus::tstring& file,
-                int line, const log4cplus::tstring & function
-                    = log4cplus::tstring ());
+                int line);
 
             InternalLoggingEvent ();
 
@@ -95,8 +94,7 @@ namespace log4cplus {
 
             void setLoggingEvent (const log4cplus::tstring & logger,
                 LogLevel ll, const log4cplus::tstring & message,
-                const char * filename, int line,
-                const char * function = nullptr);
+                const char * filename, int line);
 
             void setFunction (char const * func);
             void setFunction (log4cplus::tstring const &);
@@ -115,7 +113,8 @@ namespace log4cplus {
            /** Returns a copy of this object.  Derived classes
              *  should override this method.
              */
-            virtual std::unique_ptr<InternalLoggingEvent> clone() const;
+            virtual std::auto_ptr<InternalLoggingEvent> clone() const;
+
 
 
           // public methods
@@ -180,7 +179,8 @@ namespace log4cplus {
             }
 
 
-            /** Time stamp when the event was created. */
+            /** The number of milliseconds elapsed from 1/1/1970 until
+             *  logging event was created. */
             const log4cplus::helpers::Time& getTimestamp() const
             {
                 return timestamp;

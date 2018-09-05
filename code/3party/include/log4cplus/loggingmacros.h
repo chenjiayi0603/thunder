@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2017 Tad E. Smith
+// Copyright 2003-2013 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@
 #if defined(_MSC_VER)
 #define LOG4CPLUS_SUPPRESS_DOWHILE_WARNING()  \
     __pragma (warning (push))                 \
-    __pragma (warning (disable:4127))
+    __pragma (warning (disable:4127))           
 
 #define LOG4CPLUS_RESTORE_DOWHILE_WARNING()   \
     __pragma (warning (pop))
@@ -98,12 +98,16 @@ macros_get_logger (Logger & logger)
 }
 
 
+#if defined (LOG4CPLUS_HAVE_RVALUE_REFS)
 inline
 Logger
 macros_get_logger (Logger && logger)
 {
     return std::move (logger);
 }
+
+#endif
+
 
 inline
 Logger
@@ -129,10 +133,6 @@ LOG4CPLUS_EXPORT log4cplus::helpers::snprintf_buf & get_macro_body_snprintf_buf 
 LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     log4cplus::LogLevel, log4cplus::tstring const &, char const *, int,
     char const *);
-LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
-    log4cplus::LogLevel, log4cplus::tchar const *, char const *, int,
-    char const *);
-
 
 
 } // namespace detail
@@ -140,31 +140,22 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
 } // namespace log4cplus
 
 
-#undef LOG4CPLUS_MACRO_FUNCTION
-#define LOG4CPLUS_MACRO_FUNCTION() nullptr
-#if ! defined (LOG4CPLUS_DISABLE_FUNCTION_MACRO)
+#if ! defined (LOG4CPLUS_DISABLE_FUNCTION_MACRO) \
+    && ! defined (LOG4CPLUS_MACRO_FUNCTION)
 #  if defined (LOG4CPLUS_HAVE_FUNCSIG_MACRO)
-#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __FUNCSIG__
 #  elif defined (LOG4CPLUS_HAVE_PRETTY_FUNCTION_MACRO)
-#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __PRETTY_FUNCTION__
 #  elif defined (LOG4CPLUS_HAVE_FUNCTION_MACRO)
-#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __FUNCTION__
 #  elif defined (LOG4CPLUS_HAVE_FUNC_SYMBOL)
-#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __func__
 #  endif
 #endif
 
-#undef LOG4CPLUS_MACRO_FILE
-#define LOG4CPLUS_MACRO_FILE() nullptr
-#if ! defined (LOG4CPLUS_DISABLE_FILE_MACRO)
-#  undef LOG4CPLUS_MACRO_FILE
-#  define LOG4CPLUS_MACRO_FILE() __FILE__
+#if ! defined (LOG4CPLUS_MACRO_FUNCTION)
+#  define LOG4CPLUS_MACRO_FUNCTION() 0
 #endif
-
 
 // Make TRACE and DEBUG log level unlikely and INFO, WARN, ERROR and
 // FATAL log level likely.
@@ -219,8 +210,7 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
             _log4cplus_buf << logEvent;                                 \
             log4cplus::detail::macro_forced_log (_l,                    \
                 log4cplus::logLevel, _log4cplus_buf.str(),              \
-                LOG4CPLUS_MACRO_FILE (), __LINE__,                      \
-                LOG4CPLUS_MACRO_FUNCTION ());                           \
+                __FILE__, __LINE__, LOG4CPLUS_MACRO_FUNCTION ());       \
         }                                                               \
     } while (0)                                                         \
     LOG4CPLUS_RESTORE_DOWHILE_WARNING()
@@ -235,12 +225,12 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
                 _l.isEnabledFor (log4cplus::logLevel), logLevel)) {     \
             log4cplus::detail::macro_forced_log (_l,                    \
                 log4cplus::logLevel, logEvent,                          \
-                LOG4CPLUS_MACRO_FILE (), __LINE__,                      \
-                LOG4CPLUS_MACRO_FUNCTION ());                           \
+                __FILE__, __LINE__, LOG4CPLUS_MACRO_FUNCTION ());       \
         }                                                               \
     } while(0)                                                          \
     LOG4CPLUS_RESTORE_DOWHILE_WARNING()
 
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_MACRO_FMT_BODY(logger, logLevel, ...)                 \
     LOG4CPLUS_SUPPRESS_DOWHILE_WARNING()                                \
     do {                                                                \
@@ -253,11 +243,31 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
                 = _snpbuf.print (__VA_ARGS__);                          \
             log4cplus::detail::macro_forced_log (_l,                    \
                 log4cplus::logLevel, _logEvent,                         \
-                LOG4CPLUS_MACRO_FILE (), __LINE__,                      \
-                LOG4CPLUS_MACRO_FUNCTION ());                           \
+                __FILE__, __LINE__, LOG4CPLUS_MACRO_FUNCTION ());       \
         }                                                               \
     } while(0)                                                          \
     LOG4CPLUS_RESTORE_DOWHILE_WARNING()
+
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_MACRO_FMT_BODY(logger, logLevel, logArgs...)          \
+    LOG4CPLUS_SUPPRESS_DOWHILE_WARNING()                                \
+    do {                                                                \
+        log4cplus::Logger const & _l                                    \
+            = log4cplus::detail::macros_get_logger (logger);            \
+        if (LOG4CPLUS_MACRO_LOGLEVEL_PRED (                             \
+                _l.isEnabledFor (log4cplus::logLevel), logLevel)) {     \
+            LOG4CPLUS_MACRO_INSTANTIATE_SNPRINTF_BUF (_snpbuf);         \
+            log4cplus::tchar const * _logEvent                          \
+                = _snpbuf.print (logArgs);                              \
+            log4cplus::detail::macro_forced_log (_l,                    \
+                log4cplus::logLevel, _logEvent,                         \
+                __FILE__, __LINE__, LOG4CPLUS_MACRO_FUNCTION ());       \
+        }                                                               \
+    } while(0)                                                          \
+    LOG4CPLUS_RESTORE_DOWHILE_WARNING()
+
+#endif
+
 
 /**
  * @def LOG4CPLUS_TRACE(logger, logEvent) This macro creates a
@@ -268,20 +278,29 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
 #if !defined(LOG4CPLUS_DISABLE_TRACE)
 #define LOG4CPLUS_TRACE_METHOD(logger, logEvent)                        \
     log4cplus::TraceLogger _log4cplus_trace_logger(logger, logEvent,    \
-        LOG4CPLUS_MACRO_FILE (), __LINE__,                              \
-        LOG4CPLUS_MACRO_FUNCTION ());
+                                                   __FILE__, __LINE__);
 #define LOG4CPLUS_TRACE(logger, logEvent)                               \
     LOG4CPLUS_MACRO_BODY (logger, logEvent, TRACE_LOG_LEVEL)
 #define LOG4CPLUS_TRACE_STR(logger, logEvent)                           \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, TRACE_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_TRACE_FMT(logger, ...)                                \
     LOG4CPLUS_MACRO_FMT_BODY (logger, TRACE_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_TRACE_FMT(logger, logArgs...)                         \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, TRACE_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_TRACE_METHOD(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_TRACE(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_TRACE_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_TRACE_FMT(logger, logFmt, ...) LOG4CPLUS_DOWHILE_NOTHING()
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_TRACE_FMT(logger, logFmt, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
+#endif
 
 #endif
 
@@ -295,13 +314,23 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     LOG4CPLUS_MACRO_BODY (logger, logEvent, DEBUG_LOG_LEVEL)
 #define LOG4CPLUS_DEBUG_STR(logger, logEvent)                           \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, DEBUG_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_DEBUG_FMT(logger, ...)                                \
     LOG4CPLUS_MACRO_FMT_BODY (logger, DEBUG_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_DEBUG_FMT(logger, logArgs...)                         \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, DEBUG_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_DEBUG(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_DEBUG_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_DEBUG_FMT(logger, ...) LOG4CPLUS_DOWHILE_NOTHING()
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_DEBUG_FMT(logger, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
+#endif
 
 #endif
 
@@ -315,13 +344,23 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     LOG4CPLUS_MACRO_BODY (logger, logEvent, INFO_LOG_LEVEL)
 #define LOG4CPLUS_INFO_STR(logger, logEvent)                            \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, INFO_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_INFO_FMT(logger, ...)                                 \
     LOG4CPLUS_MACRO_FMT_BODY (logger, INFO_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_INFO_FMT(logger, logArgs...)                          \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, INFO_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_INFO(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_INFO_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_INFO_FMT(logger, ...) LOG4CPLUS_DOWHILE_NOTHING()
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_INFO_FMT(logger, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
+#endif
 
 #endif
 
@@ -335,13 +374,23 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     LOG4CPLUS_MACRO_BODY (logger, logEvent, WARN_LOG_LEVEL)
 #define LOG4CPLUS_WARN_STR(logger, logEvent)                            \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, WARN_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_WARN_FMT(logger, ...)                                 \
     LOG4CPLUS_MACRO_FMT_BODY (logger, WARN_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_WARN_FMT(logger, logArgs...)                          \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, WARN_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_WARN(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_WARN_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_WARN_FMT(logger, ...) LOG4CPLUS_DOWHILE_NOTHING()
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_WARN_FMT(logger, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
+#endif
 
 #endif
 
@@ -355,13 +404,23 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     LOG4CPLUS_MACRO_BODY (logger, logEvent, ERROR_LOG_LEVEL)
 #define LOG4CPLUS_ERROR_STR(logger, logEvent)                           \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, ERROR_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_ERROR_FMT(logger, ...)                                \
     LOG4CPLUS_MACRO_FMT_BODY (logger, ERROR_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_ERROR_FMT(logger, logArgs...)                         \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, ERROR_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_ERROR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_ERROR_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_ERROR_FMT(logger, ...) LOG4CPLUS_DOWHILE_NOTHING()
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_ERROR_FMT(logger, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
+#endif
 
 #endif
 
@@ -375,31 +434,24 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     LOG4CPLUS_MACRO_BODY (logger, logEvent, FATAL_LOG_LEVEL)
 #define LOG4CPLUS_FATAL_STR(logger, logEvent)                           \
     LOG4CPLUS_MACRO_STR_BODY (logger, logEvent, FATAL_LOG_LEVEL)
+
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_FATAL_FMT(logger, ...)                                \
     LOG4CPLUS_MACRO_FMT_BODY (logger, FATAL_LOG_LEVEL, __VA_ARGS__)
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_FATAL_FMT(logger, logArgs...)                         \
+    LOG4CPLUS_MACRO_FMT_BODY(logger, FATAL_LOG_LEVEL, logArgs)
+#endif
 
 #else
 #define LOG4CPLUS_FATAL(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
 #define LOG4CPLUS_FATAL_STR(logger, logEvent) LOG4CPLUS_DOWHILE_NOTHING()
+#if defined (LOG4CPLUS_HAVE_C99_VARIADIC_MACROS)
 #define LOG4CPLUS_FATAL_FMT(logger, ...) LOG4CPLUS_DOWHILE_NOTHING()
-
+#elif defined (LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS)
+#define LOG4CPLUS_FATAL_FMT(logger, logArgs...) LOG4CPLUS_DOWHILE_NOTHING()
 #endif
 
-//! Helper macro for LOG4CPLUS_ASSERT() macro.
-#define LOG4CPLUS_ASSERT_STRINGIFY(X) #X
-
-//! If the condition given in second parameter evaluates false, this
-//! macro logs it using FATAL log level, including the condition's
-//! source text.
-#define LOG4CPLUS_ASSERT(logger, condition)                             \
-    LOG4CPLUS_SUPPRESS_DOWHILE_WARNING()                                \
-    do {                                                                \
-        if (LOG4CPLUS_UNLIKELY(! (condition)))                          \
-            LOG4CPLUS_FATAL_STR ((logger),                              \
-                LOG4CPLUS_TEXT ("failed condition: ")                   \
-                LOG4CPLUS_TEXT (LOG4CPLUS_ASSERT_STRINGIFY (condition))); \
-    } while (0)                                                         \
-    LOG4CPLUS_RESTORE_DOWHILE_WARNING()
-
+#endif
 
 #endif /* LOG4CPLUS_LOGGING_MACROS_HEADER_ */

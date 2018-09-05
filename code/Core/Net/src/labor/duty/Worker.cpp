@@ -260,7 +260,7 @@ void Worker::OnTerminated(struct ev_signal* watcher)
     delete watcher;
     Destroy();
     LOG4_FATAL("terminated by signal %d!", iSignum);
-    _exit(2);//exit(iSignum);
+    exit(iSignum);
 }
 
 bool Worker::CheckParent()
@@ -706,14 +706,14 @@ bool Worker::FdTransfer()
         {
             LOG4_ERROR("recv_fd from m_iManagerDataFd %d len %d", m_iManagerDataFd, iAcceptFd);
             Destroy();
-            _exit(2);//exit(2); // manager与worker通信fd已关闭，worker进程退出
+            exit(2); // manager与worker通信fd已关闭，worker进程退出
         }
         else //if (errno != EAGAIN)
         {
             LOG4_ERROR("recv_fd from m_iManagerDataFd %d error %d : %s", m_iManagerDataFd,
             		errno,strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
             Destroy();
-            _exit(2);//exit(2); // manager与worker通信fd已关闭，worker进程退出
+            exit(2); // manager与worker通信fd已关闭，worker进程退出
         }
     }
     else
@@ -1928,7 +1928,8 @@ bool Worker::InitLogger(const util::CJsonObject& oJsonConf)
         log4cplus::SharedAppenderPtr append(new log4cplus::RollingFileAppender(
                         strLogname, iMaxLogFileSize, iMaxLogFileNum));
         append->setName(strLogname);
-        append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
+        std::auto_ptr<log4cplus::Layout> log_ptr =  std::auto_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern));
+        append->setLayout(log_ptr);
         m_oLogger = log4cplus::Logger::getInstance(LOG4CPLUS_TEXT(strLogname));
         m_oLogger.setLogLevel(iLogLevel);
         m_oLogger.addAppender(append);
@@ -1937,7 +1938,7 @@ bool Worker::InitLogger(const util::CJsonObject& oJsonConf)
             log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(
                             strLoggingHost, iLoggingPort, ssServerName.str()));
             socket_append->setName(ssServerName.str());
-            socket_append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
+            socket_append->setLayout(log_ptr);
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }

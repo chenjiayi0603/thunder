@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2001-2017 Tad E. Smith
+// Copyright 2001-2013 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,7 +38,8 @@
 #include <log4cplus/thread/syncprims.h>
 #include <algorithm>
 #include <cassert>
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
+#if ! defined (LOG4CPLUS_SINGLE_THREADED) \
+    && defined (LOG4CPLUS_HAVE_CXX11_ATOMICS)
 #include <atomic>
 #endif
 
@@ -53,32 +54,26 @@ namespace log4cplus {
         class LOG4CPLUS_EXPORT SharedObject
         {
         public:
-            void addReference() const LOG4CPLUS_NOEXCEPT;
+            void addReference() const;
             void removeReference() const;
 
         protected:
           // Ctor
             SharedObject()
                 : access_mutex()
-                , count__(0)
+                , count(0)
             { }
 
             SharedObject(const SharedObject&)
                 : access_mutex()
-                , count__(0)
-            { }
-
-            SharedObject(SharedObject &&)
-                : access_mutex()
-                , count__(0)
+                , count(0)
             { }
 
           // Dtor
             virtual ~SharedObject();
 
           // Operators
-            SharedObject& operator=(const SharedObject&) LOG4CPLUS_NOEXCEPT { return *this; }
-            SharedObject& operator=(SharedObject &&) LOG4CPLUS_NOEXCEPT { return *this; }
+            SharedObject& operator=(const SharedObject&) { return *this; }
 
         public:
             thread::Mutex access_mutex;
@@ -86,10 +81,14 @@ namespace log4cplus {
         private:
 #if defined (LOG4CPLUS_SINGLE_THREADED)
             typedef unsigned count_type;
-#else
+#elif defined (LOG4CPLUS_HAVE_CXX11_ATOMICS)
             typedef std::atomic<unsigned> count_type;
+#elif defined (_WIN32) || defined (__CYGWIN__)
+            typedef long count_type;
+#else
+            typedef unsigned count_type;
 #endif
-            mutable count_type count__;
+            mutable count_type count;
         };
 
 
@@ -102,29 +101,31 @@ namespace log4cplus {
         public:
             // Ctor
             explicit
-            SharedObjectPtr(T* realPtr = 0) LOG4CPLUS_NOEXCEPT
+            SharedObjectPtr(T* realPtr = 0)
                 : pointee(realPtr)
             {
                 addref ();
             }
 
-            SharedObjectPtr(const SharedObjectPtr& rhs) LOG4CPLUS_NOEXCEPT
+            SharedObjectPtr(const SharedObjectPtr& rhs)
                 : pointee(rhs.pointee)
             {
                 addref ();
             }
 
-            SharedObjectPtr(SharedObjectPtr && rhs) LOG4CPLUS_NOEXCEPT
+#if defined (LOG4CPLUS_HAVE_RVALUE_REFS)
+            SharedObjectPtr(SharedObjectPtr && rhs)
                 : pointee (std::move (rhs.pointee))
             {
                 rhs.pointee = 0;
             }
 
-            SharedObjectPtr & operator = (SharedObjectPtr && rhs) LOG4CPLUS_NOEXCEPT
+            SharedObjectPtr & operator = (SharedObjectPtr && rhs)
             {
                 rhs.swap (*this);
                 return *this;
             }
+#endif
 
             // Dtor
             ~SharedObjectPtr()
@@ -134,10 +135,8 @@ namespace log4cplus {
             }
 
             // Operators
-            bool operator==(const SharedObjectPtr& rhs) const
-            { return (pointee == rhs.pointee); }
-            bool operator!=(const SharedObjectPtr& rhs) const
-            { return (pointee != rhs.pointee); }
+            bool operator==(const SharedObjectPtr& rhs) const { return (pointee == rhs.pointee); }
+            bool operator!=(const SharedObjectPtr& rhs) const { return (pointee != rhs.pointee); }
             bool operator==(const T* rhs) const { return (pointee == rhs); }
             bool operator!=(const T* rhs) const { return (pointee != rhs); }
             T* operator->() const {assert (pointee); return pointee; }
@@ -157,7 +156,7 @@ namespace log4cplus {
           // Methods
             T* get() const { return pointee; }
 
-            void swap (SharedObjectPtr & other) LOG4CPLUS_NOEXCEPT
+            void swap (SharedObjectPtr & other) throw ()
             {
                 std::swap (pointee, other.pointee);
             }
@@ -175,7 +174,7 @@ namespace log4cplus {
 
         private:
           // Methods
-            void addref() const LOG4CPLUS_NOEXCEPT
+            void addref() const
             {
                 if (pointee)
                     pointee->addReference();
@@ -184,24 +183,6 @@ namespace log4cplus {
           // Data
             T* pointee;
         };
-
-
-        //! Boost `intrusive_ptr` helpers.
-        //! @{
-        inline
-        void
-        intrusive_ptr_add_ref (SharedObject const * so)
-        {
-            so->addReference();
-        }
-
-        inline
-        void
-        intrusive_ptr_release (SharedObject const * so)
-        {
-            so->removeReference();
-        }
-        //! @}
 
     } // end namespace helpers
 } // end namespace log4cplus

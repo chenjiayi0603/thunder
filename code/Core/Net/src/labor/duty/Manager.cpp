@@ -174,7 +174,7 @@ bool Manager::OnManagerTerminated(struct ev_signal* watcher)
     LOG4_WARN("%s terminated by signal %d!pid(%d)", m_oCurrentConf("server_name").c_str(), watcher->signum,getpid());
     ev_break (m_loop, EVBREAK_ALL);
     Destroy();
-    _exit(2);//exit(-1);
+    exit(-1);
 }
 
 bool Manager::OnChildTerminated(struct ev_signal* watcher)
@@ -749,7 +749,8 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
         log4cplus::SharedAppenderPtr file_append(new log4cplus::RollingFileAppender(
                         strLogname, iMaxLogFileSize, iMaxLogFileNum));
         file_append->setName(strLogname);
-        file_append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
+        std::auto_ptr<log4cplus::Layout> log_ptr =  std::auto_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern));
+        file_append->setLayout(std::auto_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
         //log4cplus::Logger::getRoot().addAppender(file_append);
         m_oLogger = log4cplus::Logger::getInstance(strLogname);
         m_oLogger.setLogLevel(iLogLevel);
@@ -759,7 +760,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
             log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(
                             strLoggingHost, iLoggingPort, ssServerName.str()));
             socket_append->setName(ssServerName.str());
-            socket_append->setLayout(std::unique_ptr<log4cplus::Layout> (new log4cplus::PatternLayout(strParttern)));
+            socket_append->setLayout(log_ptr);
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }

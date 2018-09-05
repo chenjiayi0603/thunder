@@ -5,8 +5,22 @@
 
 #define LOG4CPLUS_CONFIG_H
 
-/* define if the compiler supports basic C++11 syntax */
-/* #undef HAVE_CXX11 */
+/* Defined if the compiler supports C99 style variadic macros with
+   __VA_ARGS__. */
+/* #undef HAS_C99_VARIADIC_MACROS */
+
+/* Defined if the compiler supports GNU style variadic macros. */
+/* #undef HAS_GNU_VARIADIC_MACROS */
+
+/* Define to 1 if you have the `clock_gettime' function. */
+#define HAVE_CLOCK_GETTIME 1
+
+/* Define to 1 if you have the `clock_nanosleep' function. */
+#define HAVE_CLOCK_NANOSLEEP 1
+
+/* Defined if the compiler provides C++11 <atomic> header and increment,
+   decrement operations. */
+#define HAVE_CXX11_ATOMICS 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
@@ -23,10 +37,6 @@
 /* Define to 1 if the system has the `constructor' function attribute */
 #define HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
 
-/* Define to 1 if the system has the `constructor_priority' function attribute
-   */
-#define HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY 1
-
 /* */
 #define HAVE_GETADDRINFO 1
 
@@ -35,6 +45,9 @@
 
 /* Define to 1 if you have the `getpid' function. */
 #define HAVE_GETPID 1
+
+/* Define to 1 if you have the `gettimeofday' function. */
+#define HAVE_GETTIMEOFDAY 1
 
 /* Define to 1 if you have the `gmtime_r' function. */
 #define HAVE_GMTIME_R 1
@@ -72,9 +85,6 @@
 /* Define to 1 if you have the `kernel32' library (-lkernel32). */
 /* #undef HAVE_LIBKERNEL32 */
 
-/* Define to 1 if you have the `oleaut32' library (-loleaut32). */
-/* #undef HAVE_LIBOLEAUT32 */
-
 /* Define to 1 if you have the `ws2_32' library (-lws2_32). */
 /* #undef HAVE_LIBWS2_32 */
 
@@ -93,14 +103,14 @@
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
 
+/* Define to 1 if you have the `nanosleep' function. */
+#define HAVE_NANOSLEEP 1
+
 /* Define to 1 if you have the `ntohl' function. */
 #define HAVE_NTOHL 1
 
 /* Define to 1 if you have the `ntohs' function. */
 #define HAVE_NTOHS 1
-
-/* Define to 1 if you have the `OutputDebugStringW' function. */
-/* #undef HAVE_OUTPUTDEBUGSTRINGW */
 
 /* Define to 1 if you have the `pipe' function. */
 #define HAVE_PIPE 1
@@ -116,9 +126,6 @@
 
 /* Have PTHREAD_PRIO_INHERIT. */
 #define HAVE_PTHREAD_PRIO_INHERIT 1
-
-/* If available, contains the Python version number currently in use. */
-/* #undef HAVE_PYTHON */
 
 /* Define to 1 if you have the `shutdown' function. */
 #define HAVE_SHUTDOWN 1
@@ -175,9 +182,6 @@
 /* Define to 1 if you have the `wcstombs' function. */
 #define HAVE_WCSTOMBS 1
 
-/* Define to 1 if you have the `_vsnprintf' function. */
-/* #undef HAVE__VSNPRINTF */
-
 /* Define to 1 if you have the `_vsnprintf_s' function. */
 /* #undef HAVE__VSNPRINTF_S */
 
@@ -196,6 +200,12 @@
 /* Defined if the compiler supports __PRETTY_FUNCTION__ macro. */
 /* #undef HAVE___PRETTY_FUNCTION___MACRO */
 
+/* Defined if the compiler provides __sync_add_and_fetch(). */
+#define HAVE___SYNC_ADD_AND_FETCH 1
+
+/* Defined if the compiler provides __sync_sub_and_fetch(). */
+#define HAVE___SYNC_SUB_AND_FETCH 1
+
 /* Defined for --enable-debugging builds. */
 /* #undef LOG4CPLUS_DEBUGGING */
 
@@ -213,6 +223,18 @@
 
 /* */
 #define LOG4CPLUS_HAVE_ARPA_INET_H 1
+
+/* */
+#define LOG4CPLUS_HAVE_C99_VARIADIC_MACROS 1
+
+/* */
+#define LOG4CPLUS_HAVE_CLOCK_GETTIME 1
+
+/* */
+#define LOG4CPLUS_HAVE_CLOCK_NANOSLEEP 1
+
+/* */
+#define LOG4CPLUS_HAVE_CXX11_ATOMICS 1
 
 /* */
 #define LOG4CPLUS_HAVE_ENAMETOOLONG 1
@@ -239,9 +261,6 @@
 #define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
 
 /* */
-#define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY 1
-
-/* */
 #define LOG4CPLUS_HAVE_FUNC_SYMBOL 1
 
 /* */
@@ -257,7 +276,13 @@
 #define LOG4CPLUS_HAVE_GETTID 1
 
 /* */
+#define LOG4CPLUS_HAVE_GETTIMEOFDAY 1
+
+/* */
 #define LOG4CPLUS_HAVE_GMTIME_R 1
+
+/* */
+#define LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS 1
 
 /* */
 #define LOG4CPLUS_HAVE_HTONL 1
@@ -293,6 +318,9 @@
 #define LOG4CPLUS_HAVE_MBSTOWCS 1
 
 /* */
+#define LOG4CPLUS_HAVE_NANOSLEEP 1
+
+/* */
 #define LOG4CPLUS_HAVE_NETDB_H 1
 
 /* */
@@ -306,9 +334,6 @@
 
 /* */
 #define LOG4CPLUS_HAVE_NTOHS 1
-
-/* */
-/* #undef LOG4CPLUS_HAVE_OUTPUTDEBUGSTRING */
 
 /* */
 #define LOG4CPLUS_HAVE_PIPE 1
@@ -401,9 +426,6 @@
 #define LOG4CPLUS_HAVE_WCSTOMBS 1
 
 /* */
-/* #undef LOG4CPLUS_HAVE__VSNPRINTF */
-
-/* */
 /* #undef LOG4CPLUS_HAVE__VSNPRINTF_S */
 
 /* */
@@ -411,6 +433,12 @@
 
 /* */
 /* #undef LOG4CPLUS_HAVE__VSNWPRINTF_S */
+
+/* */
+#define LOG4CPLUS_HAVE___SYNC_ADD_AND_FETCH 1
+
+/* */
+#define LOG4CPLUS_HAVE___SYNC_SUB_AND_FETCH 1
 
 /* Define if this is a single-threaded library. */
 /* #undef LOG4CPLUS_SINGLE_THREADED */
@@ -424,9 +452,6 @@
 /* Define when iconv() is available. */
 /* #undef LOG4CPLUS_WITH_ICONV */
 
-/* Defined to enable unit tests. */
-/* #undef LOG4CPLUS_WITH_UNIT_TESTS */
-
 /* Define for C99 compilers/standard libraries that support more than just the
    "C" locale. */
 /* #undef LOG4CPLUS_WORKING_C_LOCALE */
@@ -435,7 +460,8 @@
    locale. */
 /* #undef LOG4CPLUS_WORKING_LOCALE */
 
-/* Define to the sub-directory where libtool stores uninstalled libraries. */
+/* Define to the sub-directory in which libtool stores uninstalled libraries.
+   */
 #define LT_OBJDIR ".libs/"
 
 /* Define to the address where bug reports for this package should be sent. */
@@ -445,7 +471,7 @@
 #define PACKAGE_NAME "log4cplus"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "log4cplus 2.0.2"
+#define PACKAGE_STRING "log4cplus 1.1.3"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "log4cplus"
@@ -454,7 +480,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.0.2"
+#define PACKAGE_VERSION "1.1.3"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */

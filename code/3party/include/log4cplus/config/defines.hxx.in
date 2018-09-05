@@ -80,6 +80,18 @@
 #undef LOG4CPLUS_HAVE_GETPID
 
 /* */
+#undef LOG4CPLUS_HAVE_GETTIMEOFDAY
+
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef LOG4CPLUS_HAVE_CLOCK_GETTIME
+
+/* Define to 1 if you have the `nanosleep' function. */
+#undef LOG4CPLUS_HAVE_NANOSLEEP
+
+/* Define to 1 if you have the `clock_nanosleep' function. */
+#undef LOG4CPLUS_HAVE_CLOCK_NANOSLEEP
+
+/* */
 #undef LOG4CPLUS_HAVE_GMTIME_R
 
 /* */
@@ -168,6 +180,22 @@
 /* Defined if the host OS provides ENAMETOOLONG errno value. */
 #undef LOG4CPLUS_HAVE_ENAMETOOLONG
 
+/* Defined if the compiler provides __sync_add_and_fetch(). */
+#undef LOG4CPLUS_HAVE___SYNC_ADD_AND_FETCH
+
+/* Defined if the compiler provides __sync_sub_and_fetch(). */
+#undef LOG4CPLUS_HAVE___SYNC_SUB_AND_FETCH
+
+/* Defined if the compiler provides C++11 <atomic> header and increment,
+   decrement operations. */
+#undef LOG4CPLUS_HAVE_CXX11_ATOMICS
+
+/* */
+#undef LOG4CPLUS_HAVE_C99_VARIADIC_MACROS
+
+/* */
+#undef LOG4CPLUS_HAVE_GNU_VARIADIC_MACROS
+
 /* */
 #undef LOG4CPLUS_HAVE_VSNPRINTF
 
@@ -228,20 +256,10 @@
 /* Define to 1 if you have the `iconv_open' function. */
 #undef LOG4CPLUS_HAVE_ICONV_OPEN
 
-/* Define to 1 if you have the `OutputDebugString' function. */
-#undef LOG4CPLUS_HAVE_OUTPUTDEBUGSTRING
-
-/* Define to 1 if the system has the `constructor' function attribute
-   with priority */
-#undef LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY
-
 /* Define to 1 if the system has the `constructor' function attribute */
 #undef LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
 
 /* Define to 1 if the system has the `init_priority' variable attribute */
 #undef LOG4CPLUS_HAVE_VAR_ATTRIBUTE_INIT_PRIORITY
-
-/* Defined to enable unit tests. */
-#undef LOG4CPLUS_WITH_UNIT_TESTS
 
 #endif // LOG4CPLUS_CONFIG_DEFINES_HXX

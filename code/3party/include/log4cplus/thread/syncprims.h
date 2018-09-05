@@ -1,16 +1,16 @@
 // -*- C++ -*-
-//  Copyright (C) 2010-2017, Vaclav Haisman. All rights reserved.
-//
+//  Copyright (C) 2010-2013, Vaclav Haisman. All rights reserved.
+//  
 //  Redistribution and use in source and binary forms, with or without modifica-
 //  tion, are permitted provided that the following conditions are met:
-//
+//  
 //  1. Redistributions of  source code must  retain the above copyright  notice,
 //     this list of conditions and the following disclaimer.
-//
+//  
 //  2. Redistributions in binary form must reproduce the above copyright notice,
 //     this list of conditions and the following disclaimer in the documentation
 //     and/or other materials provided with the distribution.
-//
+//  
 //  THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
 //  INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
 //  FITNESS  FOR A PARTICULAR  PURPOSE ARE  DISCLAIMED.  IN NO  EVENT SHALL  THE
@@ -31,52 +31,73 @@
 #pragma once
 #endif
 
-#include <mutex>
-#include <condition_variable>
-
 
 namespace log4cplus { namespace thread {
 
 
-template <typename SyncPrim>
+template <typename SP>
 class SyncGuard
 {
 public:
     SyncGuard ();
-    SyncGuard (SyncPrim const &);
+    SyncGuard (SP const &);
     ~SyncGuard ();
-    SyncGuard (SyncGuard const &) = delete;
-    SyncGuard & operator = (SyncGuard const &) = delete;
-
 
     void lock ();
     void unlock ();
-    void attach (SyncPrim const &);
-    void attach_and_lock (SyncPrim const &);
+    void attach (SP const &);
+    void attach_and_lock (SP const &);
     void detach ();
 
 private:
-    SyncPrim const * sp;
+    SP const * sp;
+
+    SyncGuard (SyncGuard const &);
+    SyncGuard & operator = (SyncGuard const &);
+};
+
+
+class ManualResetEvent;
+
+
+class MutexImplBase
+{
+protected:
+    ~MutexImplBase ();
 };
 
 
 class LOG4CPLUS_EXPORT Mutex
 {
 public:
-    Mutex ();
+    enum Type
+    {
+        DEFAULT,
+        RECURSIVE
+    };
+
+    explicit Mutex (Type = RECURSIVE);
     ~Mutex ();
-    Mutex (Mutex const &) = delete;
-    Mutex & operator = (Mutex const &) = delete;
 
     void lock () const;
     void unlock () const;
 
 private:
-    LOG4CPLUS_THREADED (mutable std::recursive_mutex mtx;)
+    MutexImplBase * mtx;
+
+    Mutex (Mutex const &);
+    Mutex & operator = (Mutex &);
 };
 
 
 typedef SyncGuard<Mutex> MutexGuard;
+
+
+class SemaphoreImplBase
+{
+protected:
+    ~SemaphoreImplBase ();
+};
 
 
 class LOG4CPLUS_EXPORT Semaphore
@@ -84,32 +105,60 @@ class LOG4CPLUS_EXPORT Semaphore
 public:
     Semaphore (unsigned max, unsigned initial);
     ~Semaphore ();
-    Semaphore (Semaphore const &) = delete;
-    Semaphore & operator = (Semaphore const &) = delete;
 
     void lock () const;
     void unlock () const;
 
 private:
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    mutable std::mutex mtx;
-    mutable std::condition_variable cv;
-    mutable unsigned max;
-    mutable unsigned val;
-#endif
+    SemaphoreImplBase * sem;
+
+    Semaphore (Semaphore const &);
+    Semaphore & operator = (Semaphore const &);
 };
 
 
 typedef SyncGuard<Semaphore> SemaphoreGuard;
 
 
+class FairMutexImplBase
+{
+protected:
+    ~FairMutexImplBase ();
+};
+
+
+class LOG4CPLUS_EXPORT FairMutex
+{
+public:
+    FairMutex ();
+    ~FairMutex ();
+
+    void lock () const;
+    void unlock () const;
+
+private:
+    FairMutexImplBase * mtx;
+
+    FairMutex (FairMutex const &);
+    FairMutex & operator = (FairMutex &);
+};
+
+
+typedef SyncGuard<FairMutex> FairMutexGuard;
+
+
+class ManualResetEventImplBase
+{
+protected:
+    ~ManualResetEventImplBase ();
+};
+
+
 class LOG4CPLUS_EXPORT ManualResetEvent
 {
 public:
-    explicit ManualResetEvent (bool = false);
+    ManualResetEvent (bool = false);
     ~ManualResetEvent ();
-    ManualResetEvent (ManualResetEvent const &) = delete;
-    ManualResetEvent & operator = (ManualResetEvent const &) = delete;
 
     void signal () const;
     void wait () const;
@@ -117,12 +166,10 @@ public:
     void reset () const;
 
 private:
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    mutable std::mutex mtx;
-    mutable std::condition_variable cv;
-    mutable bool signaled;
-    mutable unsigned sigcount;
-#endif
+    ManualResetEventImplBase * ev;
+
+    ManualResetEvent (ManualResetEvent const &);
+    ManualResetEvent & operator = (ManualResetEvent const &);
 };
 
 
@@ -133,21 +180,21 @@ protected:
 };
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 class SyncGuardFunc
 {
 public:
-    SyncGuardFunc (SyncPrim const &);
+    SyncGuardFunc (SP const &);
     ~SyncGuardFunc ();
 
     void lock ();
     void unlock ();
-    void attach (SyncPrim const &);
+    void attach (SP const &);
     void detach ();
 
 private:
-    SyncPrim const * sp;
+    SP const * sp;
 
     SyncGuardFunc (SyncGuardFunc const &);
     SyncGuardFunc & operator = (SyncGuardFunc const &);
@@ -186,62 +233,62 @@ typedef SyncGuardFunc<SharedMutex, &SharedMutex::wrlock,
 //
 //
 
-template <typename SyncPrim>
+template <typename SP>
 inline
-SyncGuard<SyncPrim>::SyncGuard ()
+SyncGuard<SP>::SyncGuard ()
     : sp (0)
 { }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
-SyncGuard<SyncPrim>::SyncGuard (SyncPrim const & m)
+SyncGuard<SP>::SyncGuard (SP const & m)
     : sp (&m)
 {
     sp->lock ();
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
-SyncGuard<SyncPrim>::~SyncGuard ()
+SyncGuard<SP>::~SyncGuard ()
 {
     if (sp)
         sp->unlock ();
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
 void
-SyncGuard<SyncPrim>::lock ()
+SyncGuard<SP>::lock ()
 {
     sp->lock ();
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
 void
-SyncGuard<SyncPrim>::unlock ()
+SyncGuard<SP>::unlock ()
 {
     sp->unlock ();
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
 void
-SyncGuard<SyncPrim>::attach (SyncPrim const & m)
+SyncGuard<SP>::attach (SP const & m)
 {
     sp = &m;
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
 void
-SyncGuard<SyncPrim>::attach_and_lock (SyncPrim const & m)
+SyncGuard<SP>::attach_and_lock (SP const & m)
 {
     attach (m);
     try
@@ -256,10 +303,10 @@ SyncGuard<SyncPrim>::attach_and_lock (SyncPrim const & m)
 }
 
 
-template <typename SyncPrim>
+template <typename SP>
 inline
 void
-SyncGuard<SyncPrim>::detach ()
+SyncGuard<SP>::detach ()
 {
     sp = 0;
 }
@@ -269,67 +316,67 @@ SyncGuard<SyncPrim>::detach ()
 //
 //
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::SyncGuardFunc (SyncPrim const & m)
+SyncGuardFunc<SP, lock_func, unlock_func>::SyncGuardFunc (SP const & m)
     : sp (&m)
 {
     (sp->*lock_func) ();
 }
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::~SyncGuardFunc ()
+SyncGuardFunc<SP, lock_func, unlock_func>::~SyncGuardFunc ()
 {
     if (sp)
         (sp->*unlock_func) ();
 }
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
 void
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::lock ()
+SyncGuardFunc<SP, lock_func, unlock_func>::lock ()
 {
     (sp->*lock_func) ();
 }
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
 void
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::unlock ()
+SyncGuardFunc<SP, lock_func, unlock_func>::unlock ()
 {
     (sp->*unlock_func) ();
 }
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
 void
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::attach (SyncPrim const & m)
+SyncGuardFunc<SP, lock_func, unlock_func>::attach (SP const & m)
 {
     sp = &m;
 }
 
 
-template <typename SyncPrim, void (SyncPrim:: * lock_func) () const,
-    void (SyncPrim:: * unlock_func) () const>
+template <typename SP, void (SP:: * lock_func) () const,
+    void (SP:: * unlock_func) () const>
 inline
 void
-SyncGuardFunc<SyncPrim, lock_func, unlock_func>::detach ()
+SyncGuardFunc<SP, lock_func, unlock_func>::detach ()
 {
     sp = 0;
 }
 
 
-} } // namespace log4cplus { namespace thread {
+} } // namespace log4cplus { namespace thread { 
 
 
 #endif // LOG4CPLUS_THREAD_SYNCPRIMS_H

@@ -1,5 +1,5 @@
 // -*- C++ -*-
-//  Copyright (C) 2010-2017, Vaclav Haisman. All rights reserved.
+//  Copyright (C) 2010-2013, Vaclav Haisman. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without modifica-
 //  tion, are permitted provided that the following conditions are met:
@@ -31,52 +31,56 @@
 #pragma once
 #endif
 
-#include <algorithm>
-
 #if (defined (LOG4CPLUS_INLINES_ARE_EXPORTED)           \
     && defined (LOG4CPLUS_BUILD_DLL))                   \
     || defined (LOG4CPLUS_ENABLE_SYNCPRIMS_PUB_IMPL)
 #include <log4cplus/thread/syncprims.h>
 
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
+#if defined (LOG4CPLUS_SINGLE_THREADED)
+#  define LOG4CPLUS_THREADED(x)
+#  define LOG4CPLUS_THREADED2(x, y) (y)
+#else
 #  include <log4cplus/thread/impl/syncprims-impl.h>
+#  define LOG4CPLUS_THREADED(x) (x)
+#  define LOG4CPLUS_THREADED2(x, y) (x)
 #endif
 
-#define LOG4CPLUS_THROW_RTE(msg) \
-    do { log4cplus::thread::impl::syncprims_throw_exception (msg, __FILE__, \
-            __LINE__); } while (0)
 
 namespace log4cplus { namespace thread {
 
-namespace impl
-{
-
-LOG4CPLUS_EXPORT void LOG4CPLUS_ATTRIBUTE_NORETURN
-    syncprims_throw_exception(char const * const msg,
-    char const * const file, int line);
-
-}
 
 //
 //
 //
 
 LOG4CPLUS_INLINE_EXPORT
-Mutex::Mutex ()
-    LOG4CPLUS_THREADED (: mtx ())
+MutexImplBase::~MutexImplBase ()
+{ }
+
+
+//
+//
+//
+
+LOG4CPLUS_INLINE_EXPORT
+Mutex::Mutex (Mutex::Type LOG4CPLUS_THREADED (t))
+    : mtx (LOG4CPLUS_THREADED2 (new impl::Mutex (t),
+            static_cast<MutexImplBase *>(0)))
 { }
 
 
 LOG4CPLUS_INLINE_EXPORT
 Mutex::~Mutex ()
-{ }
+{
+    LOG4CPLUS_THREADED (delete static_cast<impl::Mutex *>(mtx));
+}
 
 
 LOG4CPLUS_INLINE_EXPORT
 void
 Mutex::lock () const
 {
-    LOG4CPLUS_THREADED (mtx.lock ());
+    LOG4CPLUS_THREADED (static_cast<impl::Mutex *>(mtx)->lock ());
 }
 
 
@@ -84,7 +88,7 @@ LOG4CPLUS_INLINE_EXPORT
 void
 Mutex::unlock () const
 {
-    LOG4CPLUS_THREADED (mtx.unlock ());
+    LOG4CPLUS_THREADED (static_cast<impl::Mutex *>(mtx)->unlock ());
 }
 
 
@@ -93,33 +97,26 @@ Mutex::unlock () const
 //
 
 LOG4CPLUS_INLINE_EXPORT
-Semaphore::Semaphore (unsigned LOG4CPLUS_THREADED (max_),
+SemaphoreImplBase::~SemaphoreImplBase ()
+{ }
+
+
+//
+//
+//
+
+LOG4CPLUS_INLINE_EXPORT
+Semaphore::Semaphore (unsigned LOG4CPLUS_THREADED (max),
     unsigned LOG4CPLUS_THREADED (initial))
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    : max (max_)
-    , val ((std::min) (max, initial))
-#endif
+    : sem (LOG4CPLUS_THREADED2 (new impl::Semaphore (max, initial),
+            static_cast<SemaphoreImplBase *>(0)))
 { }
 
 
 LOG4CPLUS_INLINE_EXPORT
 Semaphore::~Semaphore ()
-{ }
-
-
-LOG4CPLUS_INLINE_EXPORT
-void
-Semaphore::unlock () const
 {
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    std::lock_guard<std::mutex> guard (mtx);
-
-    if (val >= max)
-        LOG4CPLUS_THROW_RTE ("Semaphore::unlock(): val >= max");
-
-    ++val;
-    cv.notify_all ();
-#endif
+    LOG4CPLUS_THREADED (delete static_cast<impl::Semaphore *>(sem));
 }
 
 
@@ -127,21 +124,68 @@ LOG4CPLUS_INLINE_EXPORT
 void
 Semaphore::lock () const
 {
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    std::unique_lock<std::mutex> guard (mtx);
-
-    if (LOG4CPLUS_UNLIKELY(val > max))
-        LOG4CPLUS_THROW_RTE ("Semaphore::unlock(): val > max");
-
-    while (val == 0)
-        cv.wait (guard);
-
-    --val;
-
-    if (LOG4CPLUS_UNLIKELY(val >= max))
-        LOG4CPLUS_THROW_RTE ("Semaphore::unlock(): val >= max");
-#endif
+    LOG4CPLUS_THREADED (static_cast<impl::Semaphore *>(sem)->lock ());
 }
+
+
+LOG4CPLUS_INLINE_EXPORT
+void
+Semaphore::unlock () const
+{
+    LOG4CPLUS_THREADED (static_cast<impl::Semaphore *>(sem)->unlock ());
+}
+
+
+//
+//
+//
+
+LOG4CPLUS_INLINE_EXPORT
+FairMutexImplBase::~FairMutexImplBase ()
+{ }
+
+
+//
+//
+//
+
+LOG4CPLUS_INLINE_EXPORT
+FairMutex::FairMutex ()
+    : mtx (LOG4CPLUS_THREADED2 (new impl::FairMutex,
+            static_cast<FairMutexImplBase *>(0)))
+{ }
+
+
+LOG4CPLUS_INLINE_EXPORT
+FairMutex::~FairMutex ()
+{
+    LOG4CPLUS_THREADED (delete static_cast<impl::FairMutex *>(mtx));
+}
+
+
+LOG4CPLUS_INLINE_EXPORT
+void
+FairMutex::lock () const
+{
+    LOG4CPLUS_THREADED (static_cast<impl::FairMutex *>(mtx)->lock ());
+}
+
+
+LOG4CPLUS_INLINE_EXPORT
+void
+FairMutex::unlock () const
+{
+    LOG4CPLUS_THREADED (static_cast<impl::FairMutex *>(mtx)->unlock ());
+}
+
+
+//
+//
+//
+
+LOG4CPLUS_INLINE_EXPORT
+ManualResetEventImplBase::~ManualResetEventImplBase ()
+{ }
 
 
 //
@@ -150,29 +194,23 @@ Semaphore::lock () const
 
 LOG4CPLUS_INLINE_EXPORT
 ManualResetEvent::ManualResetEvent (bool LOG4CPLUS_THREADED (sig))
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    : signaled (sig)
-    , sigcount (0)
-#endif
+    : ev (LOG4CPLUS_THREADED2 (new impl::ManualResetEvent (sig),
+            static_cast<ManualResetEventImplBase *>(0)))
 { }
 
 
 LOG4CPLUS_INLINE_EXPORT
 ManualResetEvent::~ManualResetEvent ()
-{ }
+{
+    LOG4CPLUS_THREADED (delete static_cast<impl::ManualResetEvent *>(ev));
+}
 
 
 LOG4CPLUS_INLINE_EXPORT
 void
 ManualResetEvent::signal () const
 {
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    std::unique_lock<std::mutex> guard (mtx);
-
-    signaled = true;
-    sigcount += 1;
-    cv.notify_all ();
-#endif
+    LOG4CPLUS_THREADED (static_cast<impl::ManualResetEvent *>(ev)->signal ());
 }
 
 
@@ -180,19 +218,7 @@ LOG4CPLUS_INLINE_EXPORT
 void
 ManualResetEvent::wait () const
 {
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    std::unique_lock<std::mutex> guard (mtx);
-
-    if (! signaled)
-    {
-        unsigned prev_count = sigcount;
-        do
-        {
-            cv.wait (guard);
-        }
-        while (prev_count == sigcount);
-    }
-#endif
+    LOG4CPLUS_THREADED (static_cast<impl::ManualResetEvent *>(ev)->wait ());
 }
 
 
@@ -202,40 +228,8 @@ ManualResetEvent::timed_wait (unsigned long LOG4CPLUS_THREADED (msec)) const
 {
 #if defined (LOG4CPLUS_SINGLE_THREADED)
     return true;
-
 #else
-    std::unique_lock<std::mutex> guard (mtx);
-
-    if (! signaled)
-    {
-        unsigned prev_count = sigcount;
-
-        std::chrono::steady_clock::time_point const wait_until_time
-            = std::chrono::steady_clock::now ()
-            + std::chrono::milliseconds (msec);
-
-        do
-        {
-            int ret = static_cast<int>(
-                cv.wait_until (guard, wait_until_time));
-            switch (ret)
-            {
-            case static_cast<int>(std::cv_status::no_timeout):
-                break;
-
-            case static_cast<int>(std::cv_status::timeout):
-                return false;
-
-            default:
-                guard.unlock ();
-                guard.release ();
-                LOG4CPLUS_THROW_RTE ("ManualResetEvent::timed_wait");
-            }
-        }
-        while (prev_count == sigcount);
-    }
-
-    return true;
+    return static_cast<impl::ManualResetEvent *>(ev)->timed_wait (msec);
 #endif
 }
 
@@ -244,11 +238,7 @@ LOG4CPLUS_INLINE_EXPORT
 void
 ManualResetEvent::reset () const
 {
-#if ! defined (LOG4CPLUS_SINGLE_THREADED)
-    std::lock_guard<std::mutex> guard (mtx);
-
-    signaled = false;
-#endif
+    LOG4CPLUS_THREADED (static_cast<impl::ManualResetEvent *>(ev)->reset ());
 }
 
 
@@ -267,15 +257,14 @@ SharedMutexImplBase::~SharedMutexImplBase ()
 
 LOG4CPLUS_INLINE_EXPORT
 SharedMutex::SharedMutex ()
-    : sm (LOG4CPLUS_THREADED (new impl::SharedMutex))
+    : sm (LOG4CPLUS_THREADED2 (new impl::SharedMutex,
+            static_cast<SharedMutexImplBase *>(0)))
 { }
 
 
 LOG4CPLUS_INLINE_EXPORT
 SharedMutex::~SharedMutex ()
-{
-    LOG4CPLUS_THREADED (delete static_cast<impl::SharedMutex *>(sm));
-}
+{ }
 
 
 LOG4CPLUS_INLINE_EXPORT

@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2017 Tad E. Smith
+// Copyright 2003-2013 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,8 +30,6 @@
 #pragma once
 #endif
 
-#include <array>
-
 #include <log4cplus/tstring.h>
 #include <log4cplus/helpers/socketbuffer.h>
 
@@ -55,21 +53,24 @@ namespace log4cplus {
 
         class LOG4CPLUS_EXPORT AbstractSocket {
         public:
+          // ctor and dtor
             AbstractSocket();
             AbstractSocket(SOCKET_TYPE sock, SocketState state, int err);
-            AbstractSocket(AbstractSocket const &) = delete;
-            AbstractSocket(AbstractSocket &&) LOG4CPLUS_NOEXCEPT;
+            AbstractSocket(const AbstractSocket&);
             virtual ~AbstractSocket() = 0;
 
+          // methods
             /// Close socket
             virtual void close();
             virtual bool isOpen() const;
             virtual void shutdown();
-            AbstractSocket & operator = (AbstractSocket && rhs) LOG4CPLUS_NOEXCEPT;
-
-            void swap (AbstractSocket &);
+            AbstractSocket& operator=(const AbstractSocket& rhs);
 
         protected:
+          // Methods
+            virtual void copy(const AbstractSocket& rhs);
+
+          // Data
             SOCKET_TYPE sock;
             SocketState state;
             int err;
@@ -86,27 +87,13 @@ namespace log4cplus {
           // ctor and dtor
             Socket();
             Socket(SOCKET_TYPE sock, SocketState state, int err);
-            Socket(const tstring& address, unsigned short port,
-                bool udp = false, bool ipv6 = false);
-            Socket(Socket &&) LOG4CPLUS_NOEXCEPT;
+            Socket(const tstring& address, unsigned short port, bool udp = false);
             virtual ~Socket();
-
-            Socket & operator = (Socket &&) LOG4CPLUS_NOEXCEPT;
 
           // methods
             virtual bool read(SocketBuffer& buffer);
             virtual bool write(const SocketBuffer& buffer);
             virtual bool write(const std::string & buffer);
-            virtual bool write(std::size_t bufferCount,
-                SocketBuffer const * const * buffers);
-
-            template <typename... Args>
-            static bool write(Socket & socket, Args &&... args)
-            {
-                SocketBuffer const * const buffers[sizeof... (args)] {
-                    (&args)... };
-                return socket.write (sizeof... (args), buffers);
-            }
         };
 
 
@@ -119,29 +106,22 @@ namespace log4cplus {
          */
         class LOG4CPLUS_EXPORT ServerSocket : public AbstractSocket {
         public:
-            ServerSocket(unsigned short port, bool udp = false,
-                bool ipv6 = false, tstring const & host = tstring ());
-            ServerSocket(ServerSocket &&) LOG4CPLUS_NOEXCEPT;
+          // ctor and dtor
+            ServerSocket(unsigned short port);
             virtual ~ServerSocket();
-
-            ServerSocket & operator = (ServerSocket &&) LOG4CPLUS_NOEXCEPT;
 
             Socket accept();
             void interruptAccept ();
-            void swap (ServerSocket &);
 
         protected:
-            std::array<std::ptrdiff_t, 2> interruptHandles;
+            std::ptrdiff_t interruptHandles[2];
         };
 
 
-        LOG4CPLUS_EXPORT SOCKET_TYPE openSocket(unsigned short port, bool udp,
-            bool ipv6, SocketState& state);
-        LOG4CPLUS_EXPORT SOCKET_TYPE openSocket(tstring const & host,
-            unsigned short port, bool udp, bool ipv6, SocketState& state);
-
+        LOG4CPLUS_EXPORT SOCKET_TYPE openSocket(unsigned short port, SocketState& state);
         LOG4CPLUS_EXPORT SOCKET_TYPE connectSocket(const log4cplus::tstring& hostn,
-            unsigned short port, bool udp, bool ipv6, SocketState& state);
+                                                   unsigned short port, bool udp,
+                                                   SocketState& state);
         LOG4CPLUS_EXPORT SOCKET_TYPE acceptSocket(SOCKET_TYPE sock, SocketState& state);
         LOG4CPLUS_EXPORT int closeSocket(SOCKET_TYPE sock);
         LOG4CPLUS_EXPORT int shutdownSocket(SOCKET_TYPE sock);
@@ -149,8 +129,6 @@ namespace log4cplus {
         LOG4CPLUS_EXPORT long read(SOCKET_TYPE sock, SocketBuffer& buffer);
         LOG4CPLUS_EXPORT long write(SOCKET_TYPE sock,
             const SocketBuffer& buffer);
-        LOG4CPLUS_EXPORT long write(SOCKET_TYPE sock, std::size_t bufferCount,
-            SocketBuffer const * const * buffers);
         LOG4CPLUS_EXPORT long write(SOCKET_TYPE sock,
             const std::string & buffer);
 
