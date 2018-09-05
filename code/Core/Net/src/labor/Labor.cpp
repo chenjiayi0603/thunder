@@ -14,7 +14,6 @@ namespace net
 
 bool tagCoroutineArg::CoroutineYield(){return labor->CoroutineYield();}
 
-log4cplus::Logger tagCoroutineArg::GetLogger(){labor->GetLogger();}
 
 Labor::Labor()
 {
@@ -64,10 +63,18 @@ int Labor::CoroutineNew(util::coroutine_func func,void *ud)
 	return coid;
 }
 
-bool Labor::CoroutineResumeWithTimes(int nMaxTimes)
+bool Labor::CoroutineResumeWithTimes(uint32 nMaxTimes)
 {
-	while (nMaxTimes > 0 && CoroutineResume()) --nMaxTimes;
-	return (nMaxTimes > 0 ? false:true);
+	bool boHasCo(true);
+	if (0 == nMaxTimes)
+	{
+		while (boHasCo) {boHasCo = CoroutineResume();}
+	}
+	else
+	{
+		while (nMaxTimes > 0 && boHasCo) {--nMaxTimes;boHasCo = CoroutineResume();}
+	}
+	return boHasCo;
 }
 
 bool Labor::CoroutineResume()
@@ -85,7 +92,7 @@ bool Labor::CoroutineResume()
 		if (0 > coid)
 		{
 			LOG4_ERROR("%s invaid coid(%d)",__FUNCTION__,coid);
-			coroutineSchedule.coroutineIds.erase(coid);
+			coroutineSchedule.coroutineIds.erase(coroutineSchedule.coroutineRunIter++);
 			continue;
 		}
 		int nStatus = util::coroutine_status(coroutineSchedule.schedule,coid);
@@ -93,10 +100,11 @@ bool Labor::CoroutineResume()
 		if (0 == nStatus)
 		{
 			LOG4_TRACE("%s dead coid(%d)",__FUNCTION__,coid);
-			coroutineSchedule.coroutineIds.erase(coid);
+			coroutineSchedule.coroutineIds.erase(coroutineSchedule.coroutineRunIter++);
 			auto argIter = m_CoroutineScheduleArgs.find(coid);
 			if (argIter != m_CoroutineScheduleArgs.end())
 			{
+				LOG4_TRACE("%s destroy arg for coid(%d) status(%d)",__FUNCTION__,coid,nStatus);
 				delete argIter->second;
 				m_CoroutineScheduleArgs.erase(argIter);
 			}
@@ -118,19 +126,22 @@ bool Labor::CoroutineResume()
 				if (0 == status)
 				{
 					LOG4_TRACE("%s dead coid(%d)",__FUNCTION__,coid);
-					coroutineSchedule.coroutineIds.erase(coid);
+					coroutineSchedule.coroutineIds.erase(coroutineSchedule.coroutineRunIter++);
 					auto argIter = m_CoroutineScheduleArgs.find(coid);
 					if (argIter != m_CoroutineScheduleArgs.end())
 					{
+						LOG4_TRACE("%s destroy arg for coid(%d) status(%d)",__FUNCTION__,coid,nStatus);
 						delete argIter->second;
 						m_CoroutineScheduleArgs.erase(argIter);
 					}
+					continue;
 				}
 			}
 			++coroutineSchedule.coroutineRunIter;
 			return true;
 		}
 	}
+	coroutineSchedule.coroutineRunIter = coroutineSchedule.coroutineIds.end();
 	LOG4CPLUS_DEBUG_FMT(GetLogger(), "no co to run");
 	return false;
 }

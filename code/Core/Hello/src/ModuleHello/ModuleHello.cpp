@@ -1202,8 +1202,8 @@ void ModuleHello::TestCoroutinue()//用于分隔逻辑
 		int start = arg->m_a;
 		for (int i=0;i<3;i++)
 		{
-			LOG4CPLUS_TRACE_FMT(arg->GetLogger(),"coroutine running(%d),arg n(%d) tid(%u)",
-					arg->labor->CoroutineRunning() , start + i,pthread_self());
+			LOG4CPLUS_TRACE_FMT(arg->GetLabor()->GetLogger(),"coroutine running(%d),arg n(%d) tid(%u)",
+					arg->GetLabor()->CoroutineRunning() , start + i,pthread_self());
 
 			arg->CoroutineYield();
 		}

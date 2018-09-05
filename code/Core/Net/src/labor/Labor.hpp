@@ -49,7 +49,7 @@ struct tagCoroutineArg//自定义协程参数需要继承tagCoroutineArg
 {
 	Labor* labor;//不在本结构管理
 	bool CoroutineYield();
-	log4cplus::Logger GetLogger();
+	Labor* GetLabor(){return labor;}
 };
 
 struct tagCoroutineSchedule
@@ -732,7 +732,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
     virtual void ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,
                     int iErrno, const std::string& strErrMsg, const std::string& strErrShow){;}
 
-    bool CoroutineResumeWithTimes(int nMaxTimes=100);//每次最大执行协程次数.返回true 还有需要执行的协程，返回false没有还需要执行的协程
+    bool CoroutineResumeWithTimes(uint32 nMaxTimes=0);//nMaxTimes每次最大执行协程次数(nMaxTimes=0则执行所有的协程).返回true 还有需要执行的协程，返回false没有还需要执行的协程
     bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg);//arg在框架回收
 
     //框架接口
