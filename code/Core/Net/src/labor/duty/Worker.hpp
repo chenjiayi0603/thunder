@@ -137,7 +137,8 @@ public:
 	bool OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata);
 	//redis cluster
 	bool OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *r, void *privdata);
-    void Terminated(struct ev_signal* watcher);
+	//process
+    void OnTerminated(struct ev_signal* watcher);
     bool CheckParent();
     bool SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody);
 public:

@@ -91,7 +91,7 @@ void Worker::TerminatedCallback(struct ev_loop* loop, struct ev_signal* watcher,
     if (watcher->data != NULL)
     {
         Worker* pWorker = (Worker*)watcher->data;
-        pWorker->Terminated(watcher);  // timeout，worker进程无响应或与Manager通信通道异常，被manager进程终止时返回
+        pWorker->OnTerminated(watcher);  // timeout，worker进程无响应或与Manager通信通道异常，被manager进程终止时返回
     }
 }
 
@@ -253,14 +253,14 @@ void Worker::Run()
     ev_run (m_loop, 0);
 }
 
-void Worker::Terminated(struct ev_signal* watcher)
+void Worker::OnTerminated(struct ev_signal* watcher)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     int iSignum = watcher->signum;
     delete watcher;
     Destroy();
     LOG4_FATAL("terminated by signal %d!", iSignum);
-    exit(iSignum);
+    _exit(2);//exit(iSignum);
 }
 
 bool Worker::CheckParent()
@@ -661,7 +661,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                 LOG4_DEBUG("if (pData->iFd != m_iManagerControlFd && pData->iFd != m_iManagerDataFd)");
                 DestroyConnect(conn_iter);
             }
-            else
+            else//收到父进程通信fd关闭
             {
             	LOG4_ERROR("iReadLen == 0 pData->iFd(%u) m_iManagerControlFd(%u) m_iManagerDataFd(%u)",
             			pData->iFd,m_iManagerControlFd,m_iManagerDataFd);
@@ -706,14 +706,14 @@ bool Worker::FdTransfer()
         {
             LOG4_ERROR("recv_fd from m_iManagerDataFd %d len %d", m_iManagerDataFd, iAcceptFd);
             Destroy();
-            exit(2); // manager与worker通信fd已关闭，worker进程退出
+            _exit(2);//exit(2); // manager与worker通信fd已关闭，worker进程退出
         }
         else //if (errno != EAGAIN)
         {
             LOG4_ERROR("recv_fd from m_iManagerDataFd %d error %d : %s", m_iManagerDataFd,
             		errno,strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
             Destroy();
-            exit(2); // manager与worker通信fd已关闭，worker进程退出
+            _exit(2);//exit(2); // manager与worker通信fd已关闭，worker进程退出
         }
     }
     else
@@ -1957,10 +1957,20 @@ bool Worker::CreateEvents()
 
     signal(SIGPIPE, SIG_IGN);
     // 注册信号事件
-    ev_signal* signal_watcher = new ev_signal();
-    ev_signal_init (signal_watcher, TerminatedCallback, SIGINT);
-    signal_watcher->data = (void*)this;
-    ev_signal_start (m_loop, signal_watcher);
+    ev_signal* int_signal_watcher = new ev_signal();
+    ev_signal_init (int_signal_watcher, TerminatedCallback, SIGINT);
+    int_signal_watcher->data = (void*)this;
+    ev_signal_start (m_loop, int_signal_watcher);
+
+    ev_signal* kill_signal_watcher = new ev_signal();
+	ev_signal_init (kill_signal_watcher, TerminatedCallback, SIGKILL);
+	kill_signal_watcher->data = (void*)this;
+	ev_signal_start (m_loop, kill_signal_watcher);
+
+	ev_signal* term_signal_watcher = new ev_signal();
+	ev_signal_init (term_signal_watcher, TerminatedCallback, SIGTERM);
+	term_signal_watcher->data = (void*)this;
+	ev_signal_start (m_loop, term_signal_watcher);
 
     AddPeriodicTaskEvent();
     // 注册闲时处理事件         注册idle事件在Server空闲时会导致CPU占用过高，暂时弃用之，改用定时器实现

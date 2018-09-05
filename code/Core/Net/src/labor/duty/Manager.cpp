@@ -174,7 +174,7 @@ bool Manager::OnManagerTerminated(struct ev_signal* watcher)
     LOG4_WARN("%s terminated by signal %d!pid(%d)", m_oCurrentConf("server_name").c_str(), watcher->signum,getpid());
     ev_break (m_loop, EVBREAK_ALL);
     Destroy();
-    exit(-1);
+    _exit(2);//exit(-1);
 }
 
 bool Manager::OnChildTerminated(struct ev_signal* watcher)
@@ -2383,7 +2383,7 @@ bool Manager::ReportToCenter()
     oMsgHead.set_cmd(CMD_REQ_NODE_STATUS_REPORT);
     oMsgHead.set_seq(GetSequence());
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-    LOG4_TRACE("%s()：  %s", __FUNCTION__, oReportData.ToString().c_str());
+    LOG4_TRACE("%s():%s", __FUNCTION__, oReportData.ToString().c_str());
 
     std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.begin();
     for (; center_iter != m_mapCenterMsgShell.end(); ++center_iter)
