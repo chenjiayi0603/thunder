@@ -1339,6 +1339,7 @@ void Manager::CreateWorker()
             x_sock_set_block(iDataFds[1], 0);
             Worker worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf);
             worker.Run();
+            LOG4_FATAL("Worker terminated");
             exit(-2);
         }
         else if (iPid > 0)   // 父进程
@@ -1632,6 +1633,7 @@ bool Manager::RestartWorker(int iDeathPid)
             x_sock_set_block(iDataFds[1], 0);
             Worker worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf);
             worker.Run();
+            LOG4_FATAL("Worker terminated");
             exit(-2);   // 子进程worker没有正常运行
         }
         else if (iNewPid > 0)   // 父进程

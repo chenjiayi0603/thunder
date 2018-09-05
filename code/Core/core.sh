@@ -32,10 +32,10 @@ function make_Util()
 
 function make_plugins()
 {
-	if [ -f ${MAKE_PATH}/core_plugins.sh ];then
+	if [ -f ${MAKE_PATH}/plugins_core.sh ];then
    		echo "making plugins"
    		cd ${MAKE_PATH}
-	    ${MAKE_PATH}/core_plugins.sh all
+	    ${MAKE_PATH}/plugins_core.sh all
    	else
    		echo "make no plugins"     
     fi
