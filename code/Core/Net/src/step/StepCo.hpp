@@ -33,57 +33,6 @@ public:
 	virtual void OnSucc(){if (m_SuccFunc) m_SuccFunc(this);}
 	virtual void OnFail(){if (m_FailFunc) m_FailFunc(this);}
 	bool CoroutineYield();
-	//注册参考StepState
-	//发送参考StepState
-	bool SendTo(const tagMsgShell& stMsgShell){return super::SendTo(stMsgShell) && CoroutineYield();}//是协程函数则放弃执行权
-	bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-	{
-	    return(super::SendTo(stMsgShell, oMsgHead, oMsgBody)) && CoroutineYield();// 是协程函数则放弃执行权
-	}
-	bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-	{
-	    return(super::SendTo(strIdentify, oMsgHead, oMsgBody)) && CoroutineYield();// 是协程函数则放弃执行权
-	}
-	bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg)
-	{
-	    return(super::SendTo(stMsgShell, oHttpMsg)) && CoroutineYield();// ;//是协程函数则放弃执行权
-	}
-	bool SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-	{
-	    return (super::SendToNext(strNodeType, oMsgHead, oMsgBody)) && CoroutineYield();//是协程函数则放弃执行权
-	}
-	bool SendToWithMod(const std::string& strNodeType, unsigned int uiModFactor,
-	        const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-	{
-	    return (super::SendToWithMod(strNodeType, uiModFactor, oMsgHead, oMsgBody)) && CoroutineYield();//是协程函数则放弃执行权
-	}
-	bool SendToProxy(const DataMem::MemOperate* pMemOper,std::string strNodeType)
-	{
-	    return super::SendToProxy(pMemOper,strNodeType) && CoroutineYield();
-	}
-	//参考Step
-	bool SendToProxyCallBack(const DataMem::MemOperate* pMemOper,StorageCallbackStep callback,
-	            const std::string &nodeType="PROXY",uint32 uiCmd = net::CMD_REQ_STORATE)
-	{
-	    return Step::SendToProxyCallBack(pMemOper,callback,nodeType,uiCmd) && CoroutineYield();//是协程函数则放弃执行权
-	}
-    bool SendToProxyModCallBack(const DataMem::MemOperate* pMemOper,StorageCallbackStep callback,int uiModFactor,
-                const std::string &nodeType="PROXY",uint32 uiCmd = net::CMD_REQ_STORATE)
-    {
-        return Step::SendToProxyModCallBack(pMemOper,callback,uiModFactor,nodeType,uiCmd) && CoroutineYield();//是协程函数则放弃执行权
-    }
-    bool SendToCallBack(uint32 uiCmd,const std::string &strBody,StandardCallbackStep callback,
-                    const std::string &nodeType)
-    {
-        return Step::SendToCallBack(uiCmd,strBody,callback,nodeType) && CoroutineYield();//是协程函数则放弃执行权
-    }
-    bool SendToModCallBack(uint32 uiCmd,const std::string &strBody,StandardCallbackStep callback,int uiModFactor,
-                    const std::string &nodeType)
-    {
-        return Step::SendToModCallBack(uiCmd,strBody,callback,uiModFactor,nodeType) && CoroutineYield();//是协程函数则放弃执行权
-    }
-	//回调参考StepState
-	//参数参考StepState
 protected:
 private:
 	FinalFunc m_StateCoFuncVec[StepStateVecSize];//协程状态过程函数

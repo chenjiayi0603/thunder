@@ -3,7 +3,7 @@ ROBOT_HOME=`dirname $0`
 SCRIPT_NAME=`basename $0`
 cd ${ROBOT_HOME}
 ROBOT_HOME=`pwd`
-IP="192.168.1.106"
+IP="192.168.18.78"
 PORT=17137
 
 #sudo yum install -y siege

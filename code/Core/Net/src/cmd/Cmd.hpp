@@ -229,56 +229,6 @@ protected:
 	bool CoroutineResumeWithTimes(int nMaxTimes=100){return GetLabor()->CoroutineResumeWithTimes(nMaxTimes);}
 	bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg) {return GetLabor()->CoroutineNewWithArg(func,arg);}
 public:
-    //兼容项目接口
-	 /**
-	* @brief 设置公共日志格式数据
-	* @return
-	*/
-   void SetPublicLog(const net::uint32 &uiCmd,const net::uint32 &uiImid,const net::uint32 &uiGroupId)
-   {
-		m_uiCmd = uiCmd;
-		m_uiImid = uiImid;
-		m_uiGroupId = uiGroupId;
-		m_strPublicLog = "";
-   }
-	 /**
-	* @brief 获取公共日志数据
-	* @return
-	*/
-	const std::string GetPublicLog()
-	{
-		if (m_strPublicLog.length()>0)
-		{
-			return m_strPublicLog;
-		}
-		char strPublicLog[200] = {0};
-		char szID[50] = {0};
-		if (m_uiCmd>0)
-		{
-			snprintf(szID,sizeof(szID),"cmd:%u ",m_uiCmd);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		if (m_uiImid>0)
-		{
-			snprintf(szID,sizeof(szID),"imid:%u ",m_uiImid);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		if (m_uiGroupId>0)
-		{
-			snprintf(szID,sizeof(szID),"group_id:%u ",m_uiGroupId);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		m_strPublicLog = std::string(strPublicLog);
-		return m_strPublicLog;
-	}
-	//兼容项目
-	net::uint32 m_uiImid;
-	net::uint32 m_uiGroupId;
-	std::string m_strPublicLog;//统一输出日志数据
-
     const std::string& ClassName() const
     {
         return(m_strClassName);

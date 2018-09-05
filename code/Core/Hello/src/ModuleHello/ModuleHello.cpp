@@ -1239,8 +1239,9 @@ void ModuleHello::TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,con
             net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
             oRedisOperator.AddRedisField("",((StateParam*)state->GetData())->str);
             LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-            state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback,"PROXYSSDB");
+            if (!state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback,"PROXYSSDB"))return;
         }
+        state->CoroutineYield();//放弃执行，记录状态
         {
             auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
             {
@@ -1250,7 +1251,7 @@ void ModuleHello::TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,con
             snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testStepCo");
             net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
             LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-            state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,"PROXYSSDB");
+            if (!state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,"PROXYSSDB"))return;
         }
     };
     net::StepCo* pstep = new net::StepCo(stMsgShell,oInHttpMsg);

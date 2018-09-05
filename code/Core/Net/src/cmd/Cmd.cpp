@@ -19,7 +19,7 @@ Cmd::Cmd()
     : m_pErrBuff(NULL), m_pLabor(0), m_pLogger(0)
 {
     m_pErrBuff = new char[gc_iErrBuffLen];
-    m_uiGroupId = m_uiImid = m_uiCmd = 0;
+    m_uiCmd = 0;
 }
 
 Cmd::~Cmd()
