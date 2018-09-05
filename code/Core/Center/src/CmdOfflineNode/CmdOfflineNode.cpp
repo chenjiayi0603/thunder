@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <iostream>
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "CmdOfflineNode.hpp"
 #include "StepOfflineNode.h"
 
@@ -20,7 +20,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdOfflineNode();
+    net::Cmd* pCmd = new core::CmdOfflineNode();
     return (pCmd);
 }
 

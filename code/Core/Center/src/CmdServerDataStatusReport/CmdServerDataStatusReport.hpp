@@ -10,7 +10,7 @@
 #ifndef CMD_NODE_REPORT_HPP_
 #define CMD_NODE_REPORT_HPP_
 #include <iostream>
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "protocol/oss_sys.pb.h"
 #include "cmd/Cmd.hpp"
 #include "dbi/MysqlDbi.hpp"

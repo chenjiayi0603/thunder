@@ -1937,7 +1937,7 @@ int NodeSession::CheckServerConfigContent(const NodeConfigFile &nodeConfigFile,c
                     log_level != log4cplus::OFF_LOG_LEVEL)
                 {
                     LOG4_ERROR("log_level:(%d) error",log_level);
-                    return starshiplib::ERR_INVALID_DATA;
+                    return core::ERR_INVALID_DATA;
                 }
             }
         }
@@ -2084,7 +2084,7 @@ int NodeSession::OfflineNode(const std::string& sOfflineNodeIdentify)
         return nRet;
     }
     LOG4_INFO("%s() OfflineNode sOfflineNodeIdentify(%s) ok",__FUNCTION__,sOfflineNodeIdentify.c_str());
-    return starshiplib::ERR_OK;
+    return core::ERR_OK;
 }
 
 int NodeSession::OnlineNode(const std::string& sOnlineNodeIdentify)
@@ -2751,7 +2751,7 @@ int NodeSession::CheckServerConfigFromDB(const std::string &node_type,uint32 con
             if(timeElapse <= m_nNodeTimeBeat)
             {
                 LOG4_ERROR("timeElapse(%d),m_nNodeTimeBeat(%d),update config too often",timeElapse,m_nNodeTimeBeat);
-                return starshiplib::ERR_REQ_FREQUENCY;
+                return core::ERR_REQ_FREQUENCY;
             }
             LOG4_DEBUG("update config:timeElapse(%d),m_nNodeTimeBeat(%d),checkUpdateTime(%u),nowTime(%s)",
                             timeElapse,m_nNodeTimeBeat,checkUpdateTime,util::time_t2TimeStr(m_currentTime).c_str());

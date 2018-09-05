@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include "CmdNodeReport.hpp"
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include <iostream>
 using namespace std;
 
@@ -19,7 +19,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdNodeReport();
+    net::Cmd* pCmd = new core::CmdNodeReport();
     return (pCmd);
 }
 

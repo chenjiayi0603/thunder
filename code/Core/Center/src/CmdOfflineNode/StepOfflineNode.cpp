@@ -86,7 +86,7 @@ net::E_CMD_STATUS StepOfflineNode::Timeout()
         return net::STATUS_CMD_RUNNING;
     }
     LOG4CPLUS_ERROR_FMT(GetLogger(), "%s()", __FUNCTION__);
-    Response(starshiplib::ERR_ASYNC_TIMEOUT);
+    Response(core::ERR_ASYNC_TIMEOUT);
     return net::STATUS_CMD_FAULT;
 }
 

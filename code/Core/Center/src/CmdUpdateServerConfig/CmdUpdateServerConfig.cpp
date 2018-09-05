@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <iostream>
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "CmdUpdateServerConfig.hpp"
 
 #ifdef __cplusplus
@@ -18,7 +18,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdUpdateServerConfig();
+    net::Cmd* pCmd = new core::CmdUpdateServerConfig();
     return (pCmd);
 }
 

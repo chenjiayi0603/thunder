@@ -12,7 +12,7 @@
 #include <iostream>
 #include "cmd/Cmd.hpp"
 #include "protocol/oss_sys.pb.h"
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "../NodeSession.h"
 
 namespace core

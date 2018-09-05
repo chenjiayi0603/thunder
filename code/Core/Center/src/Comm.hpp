@@ -10,7 +10,7 @@
 #ifndef SRC_NODE_COMM_HPP_
 #define SRC_NODE_COMM_HPP_
 #include "ProtoError.h"
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "UnixTime.hpp"
 #include "dbi/Dbi.hpp"
 #include "log4cplus/loggingmacros.h"

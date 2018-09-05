@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <iostream>
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "../NodeSession.h"
 #include "CmdGetLoadMinServer.hpp"
 
@@ -21,7 +21,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdGetLoadMinServer();
+    net::Cmd* pCmd = new core::CmdGetLoadMinServer();
     return (pCmd);
 }
 

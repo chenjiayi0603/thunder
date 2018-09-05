@@ -58,7 +58,7 @@ net::E_CMD_STATUS StepRestartWorkers::Callback(const net::tagMsgShell &stMsgShel
     {
         LOG4CPLUS_ERROR_FMT(GetLogger(), "CMD_RSP_SYS_ERROR");
         Response(ERR_SERVERINFO);
-        return Response(starshiplib::ERR_PARSE_PACK_ERROR);
+        return Response(core::ERR_PARSE_PACK_ERROR);
     }
     OrdinaryResponse oRes;
     if (!oRes.ParseFromString(oInMsgBody.body()))

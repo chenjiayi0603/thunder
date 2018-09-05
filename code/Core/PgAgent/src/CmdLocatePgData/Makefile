@@ -17,7 +17,6 @@ UTIL_PATH = ../../../Util
 
 NET_PATH = ../../../Net
 PROTO_PATH = ../../../Proto
-DATA_PROXY_PATH = ../../../DataProxyServer
 PLUGIN_PATH = ../..
 
 VPATH = . ..
@@ -29,7 +28,7 @@ DIRS := $(SUB_DIRS)
 INC := $(INC) \
        -I .. \
        -I $(NET_PATH)/include -I $(NET_PATH)/src \
-       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
+       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/util \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(3PARTY_PATH)/include/postgresql \
        -I $(3PARTY_PATH)/include 

@@ -10,7 +10,7 @@
 #ifndef SRC_CMDDBOPER_CMDDBOPER_HPP_
 #define SRC_CMDDBOPER_CMDDBOPER_HPP_
 #include "dbi/MysqlDbi.hpp"
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "cmd/Cmd.hpp"
 #include "storage/dataproxy.pb.h"
 #include "step/StepState.hpp"

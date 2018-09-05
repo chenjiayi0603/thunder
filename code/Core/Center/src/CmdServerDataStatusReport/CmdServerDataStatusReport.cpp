@@ -18,7 +18,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdServerReport();
+    net::Cmd* pCmd = new core::CmdServerReport();
     return (pCmd);
 }
 

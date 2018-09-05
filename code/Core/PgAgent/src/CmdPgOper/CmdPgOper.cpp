@@ -7,9 +7,8 @@
  * @note
  * Modify history:
  ******************************************************************************/
-#include "../CmdPgOper/CmdPgOper.hpp"
-
-#include "../CmdPgOper/PgAgentSession.h"
+#include "CmdPgOper.hpp"
+#include "PgAgentSession.h"
 
 #ifdef __cplusplus
 extern "C" {

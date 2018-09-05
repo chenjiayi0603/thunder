@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <iostream>
-#include "json/CJsonObject.hpp"
+#include "util/json/CJsonObject.hpp"
 #include "CmdOnlineNode.hpp"
 #include "StepRestartWorkers.h"
 
@@ -19,7 +19,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new starshiplib::CmdOnlineNode();
+    net::Cmd* pCmd = new core::CmdOnlineNode();
     return (pCmd);
 }
 

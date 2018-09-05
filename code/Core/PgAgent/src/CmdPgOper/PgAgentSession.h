@@ -4,8 +4,8 @@
  *  Created on: 2018年1月8日
  *      Author: chen
  */
-#ifndef CODE_SRC_DBAGENTSSESSION_H_
-#define CODE_SRC_DBAGENTSSESSION_H_
+#ifndef CODE_SRC_PGAGENTSSESSION_H_
+#define CODE_SRC_PGAGENTSSESSION_H_
 #include <string>
 #include <map>
 
@@ -15,8 +15,8 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
-#include "../../../l3oss/include/postgresql/postgresql/server/port/win32_msvc/unistd.h"
 #include "util/json/CJsonObject.hpp"
 #include "session/Session.hpp"
 #include "NetDefine.hpp"

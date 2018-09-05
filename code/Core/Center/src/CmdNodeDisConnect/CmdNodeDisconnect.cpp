@@ -15,7 +15,7 @@ extern "C" {
 
     net::Cmd* create()
     {
-        net::Cmd* pCmd = new starshiplib::CmdNodeDisconnect();
+        net::Cmd* pCmd = new core::CmdNodeDisconnect();
         return(pCmd);
     }
 

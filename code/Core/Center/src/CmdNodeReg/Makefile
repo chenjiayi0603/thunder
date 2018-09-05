@@ -41,7 +41,7 @@ INC := $(INC) \
        -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
-       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
+       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/util \
        -I $(NET_PATH)/src 
 
 
