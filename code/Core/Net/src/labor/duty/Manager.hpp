@@ -99,8 +99,8 @@ public:
     static void WaitToExitTaskCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents); //优雅等待关闭进程
     static void ClientConnFrequencyTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
     //信号处理函数
-    bool ManagerTerminated(struct ev_signal* watcher);
-    bool ChildTerminated(struct ev_signal* watcher);
+    bool OnManagerTerminated(struct ev_signal* watcher);
+    bool OnChildTerminated(struct ev_signal* watcher);
     //io处理函数
     bool IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool FdTransfer(int iFd);

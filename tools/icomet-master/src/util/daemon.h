@@ -7,22 +7,24 @@ found in the LICENSE file.
 #define UTIL_DAEMON_H
 
 int daemonize(const char *dir=NULL){
-	switch(fork()){
-		case -1:
-			return -1;
-		case 0:
-			break;
-		default:
-			exit(0);
-	}
+	pid_t pid = fork();
+	if( pid != 0 ) exit(0);//parent
+
+	//first children
 	if(setsid() == -1){
 		exit(0);
 	}
-	if(dir != NULL){
-		if(chdir(dir) == -1){
-			exit(0);
-		}
-	}
+	umask(0);
+
+	if( pid != 0 ) exit(0);//parent
+
+	//second children
+	//需要日志文件
+//	if(dir != NULL){
+//		if(chdir(dir) == -1){
+//			exit(0);
+//		}
+//	}
 
 	if(close(STDIN_FILENO) == -1){
 		exit(0);

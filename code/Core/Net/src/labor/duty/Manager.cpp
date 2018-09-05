@@ -26,7 +26,7 @@ void Manager::SignalCallback(struct ev_loop* loop, struct ev_signal* watcher, in
         Manager* pManager = (Manager*)watcher->data;
         if (SIGCHLD == watcher->signum)
         {
-            pManager->ChildTerminated(watcher);
+            pManager->OnChildTerminated(watcher);
         }
         else if (SIGUSR1 == watcher->signum)
         {
@@ -38,7 +38,7 @@ void Manager::SignalCallback(struct ev_loop* loop, struct ev_signal* watcher, in
         }
         else
         {
-            pManager->ManagerTerminated(watcher);
+            pManager->OnManagerTerminated(watcher);
         }
     }
 }
@@ -169,7 +169,7 @@ Manager::~Manager()
     Destroy();
 }
 
-bool Manager::ManagerTerminated(struct ev_signal* watcher)
+bool Manager::OnManagerTerminated(struct ev_signal* watcher)
 {
     LOG4_WARN("%s terminated by signal %d!pid(%d)", m_oCurrentConf("server_name").c_str(), watcher->signum,getpid());
     ev_break (m_loop, EVBREAK_ALL);
@@ -177,7 +177,7 @@ bool Manager::ManagerTerminated(struct ev_signal* watcher)
     exit(-1);
 }
 
-bool Manager::ChildTerminated(struct ev_signal* watcher)
+bool Manager::OnChildTerminated(struct ev_signal* watcher)
 {
     pid_t   iPid = 0;
     int     iStatus = 0;
