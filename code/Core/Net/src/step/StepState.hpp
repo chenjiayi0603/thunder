@@ -23,6 +23,8 @@ public:
 	StageClock()
     {
         boInit = boStart = false;
+        gettimeofday(&m_clockBeginClock,NULL);
+        m_stageBeginClock = m_stageEndClock = m_clockEndClock = m_clockBeginClock;
     }
     void Init(const log4cplus::Logger &logger)
     {

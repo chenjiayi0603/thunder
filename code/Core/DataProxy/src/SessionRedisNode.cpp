@@ -176,7 +176,7 @@ std::cout << output << std::endl;
                        | ((uint32)(szDigest[1 + j * iPointPerHash] & 0xFF) << 8)
                        | (szDigest[j * iPointPerHash] & 0xFF);
                 pRedisNodeAttr->vecHash.push_back(k);
-                LOG4_DEBUG("uiHashValue = %u, szVirtualNodeIdentify = %s", k, szVirtualNodeIdentify);
+                //LOG4_DEBUG("uiHashValue = %u, szVirtualNodeIdentify = %s", k, szVirtualNodeIdentify);
                 RedisVirtualNode virtalNode = RedisVirtualNode(strMasterHostPort,strSlaveHostPort,
                                 szVirtualNodeIdentify,strNodeIdentify);
                 m_mapRedisNodeHash.insert(std::pair<uint32, RedisVirtualNode >(k,virtalNode));

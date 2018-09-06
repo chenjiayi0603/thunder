@@ -5,7 +5,7 @@ SCRIPT_NAME=`basename $0`
 cd ${SERVER_HOME}
 SERVER_HOME=`pwd`
 SERVER_BIN=${SERVER_HOME}/bin
-SERVER_CONF=${SERVER_HOME}/conf
+SERVER_CONF=${SERVER_HOME}/ssdbconf
 
 if [ $# == 1 ]; then 
 	if [ $1 == "reload" ];then
