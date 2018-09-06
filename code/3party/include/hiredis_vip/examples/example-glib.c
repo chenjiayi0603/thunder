@@ -1,8 +1,8 @@
 #include <stdlib.h>
 
-#include <hiredis.h>
-#include <async.h>
-#include <adapters/glib.h>
+#include "../adapters/glib.h"
+#include "../async.h"
+#include "../hiredis.h"
 
 static GMainLoop *mainloop;
 

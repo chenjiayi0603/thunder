@@ -14,3 +14,7 @@ libpqxx-6.2.4.tar.gz
 
 log4cplus-1.2.1.tar.gz (不可用2.0版本)
  ./configure CXXFLAGS="-std=c++0x" && make
+ 
+ 
+ hiredis-vip-master.zip
+ 需要修改。修改后的代码在3party/include/hiredis_vip

@@ -4800,10 +4800,11 @@ int redisClusterAsyncFormattedCommand(redisClusterAsyncContext *acc,
     }
     else if(ac->err)
     {
+    	ac->userData = privdata;
         __redisClusterAsyncSetError(acc, ac->err, ac->errstr);
         goto error;
     }
-
+    ac->userData = privdata;
     cad = cluster_async_data_get();
     if(cad == NULL)
     {

@@ -3,9 +3,9 @@
 #include <string.h>
 #include <signal.h>
 
-#include <hiredis.h>
-#include <async.h>
-#include <adapters/ae.h>
+#include "../adapters/ae.h"
+#include "../async.h"
+#include "../hiredis.h"
 
 /* Put event loop in the global scope, so it can be explicitly stopped */
 static aeEventLoop *loop;
