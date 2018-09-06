@@ -9,3 +9,8 @@ CXXFLAGS += -fPIC
 
 libpqxx-6.2.4.tar.gz
 ./configure --enable-shared 
+
+
+
+log4cplus-1.2.1.tar.gz (不可用2.0版本)
+ ./configure CXXFLAGS="-std=c++0x" && make

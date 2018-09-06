@@ -12,6 +12,12 @@
 /* Defined if the compiler supports GNU style variadic macros. */
 /* #undef HAS_GNU_VARIADIC_MACROS */
 
+/* Defined if the compiler provides atomic_dec_uint_nv(). */
+/* #undef HAVE_ATOMIC_DEC_UINT_NV */
+
+/* Defined if the compiler provides atomic_inc_uint(). */
+/* #undef HAVE_ATOMIC_INC_UINT */
+
 /* Define to 1 if you have the `clock_gettime' function. */
 #define HAVE_CLOCK_GETTIME 1
 
@@ -36,6 +42,10 @@
 
 /* Define to 1 if the system has the `constructor' function attribute */
 #define HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
+
+/* Define to 1 if the system has the `constructor_priority' function attribute
+   */
+#define HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY 1
 
 /* */
 #define HAVE_GETADDRINFO 1
@@ -85,6 +95,9 @@
 /* Define to 1 if you have the `kernel32' library (-lkernel32). */
 /* #undef HAVE_LIBKERNEL32 */
 
+/* Define to 1 if you have the `oleaut32' library (-loleaut32). */
+/* #undef HAVE_LIBOLEAUT32 */
+
 /* Define to 1 if you have the `ws2_32' library (-lws2_32). */
 /* #undef HAVE_LIBWS2_32 */
 
@@ -112,6 +125,9 @@
 /* Define to 1 if you have the `ntohs' function. */
 #define HAVE_NTOHS 1
 
+/* Define to 1 if you have the `OutputDebugStringW' function. */
+/* #undef HAVE_OUTPUTDEBUGSTRINGW */
+
 /* Define to 1 if you have the `pipe' function. */
 #define HAVE_PIPE 1
 
@@ -126,6 +142,9 @@
 
 /* Have PTHREAD_PRIO_INHERIT. */
 #define HAVE_PTHREAD_PRIO_INHERIT 1
+
+/* If available, contains the Python version number currently in use. */
+/* #undef HAVE_PYTHON */
 
 /* Define to 1 if you have the `shutdown' function. */
 #define HAVE_SHUTDOWN 1
@@ -182,6 +201,9 @@
 /* Define to 1 if you have the `wcstombs' function. */
 #define HAVE_WCSTOMBS 1
 
+/* Define to 1 if you have the `_vsnprintf' function. */
+/* #undef HAVE__VSNPRINTF */
+
 /* Define to 1 if you have the `_vsnprintf_s' function. */
 /* #undef HAVE__VSNPRINTF_S */
 
@@ -190,6 +212,12 @@
 
 /* Define to 1 if you have the `_vsnwprintf_s' function. */
 /* #undef HAVE__VSNWPRINTF_S */
+
+/* Defined if the compiler provides __atomic_add_fetch(). */
+#define HAVE___ATOMIC_ADD_FETCH 1
+
+/* Defined if the compiler provides __atomic_sub_fetch(). */
+#define HAVE___ATOMIC_SUB_FETCH 1
 
 /* Defined if the compiler supports __FUNCTION__ macro. */
 /* #undef HAVE___FUNCTION___MACRO */
@@ -223,6 +251,15 @@
 
 /* */
 #define LOG4CPLUS_HAVE_ARPA_INET_H 1
+
+/* */
+/* #undef LOG4CPLUS_HAVE_ATOMIC_DEC_UINT_NV */
+
+/* */
+/* #undef LOG4CPLUS_HAVE_ATOMIC_H */
+
+/* */
+/* #undef LOG4CPLUS_HAVE_ATOMIC_INC_UINT */
 
 /* */
 #define LOG4CPLUS_HAVE_C99_VARIADIC_MACROS 1
@@ -259,6 +296,9 @@
 
 /* */
 #define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
+
+/* */
+#define LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY 1
 
 /* */
 #define LOG4CPLUS_HAVE_FUNC_SYMBOL 1
@@ -334,6 +374,9 @@
 
 /* */
 #define LOG4CPLUS_HAVE_NTOHS 1
+
+/* */
+/* #undef LOG4CPLUS_HAVE_OUTPUTDEBUGSTRING */
 
 /* */
 #define LOG4CPLUS_HAVE_PIPE 1
@@ -426,6 +469,9 @@
 #define LOG4CPLUS_HAVE_WCSTOMBS 1
 
 /* */
+/* #undef LOG4CPLUS_HAVE__VSNPRINTF */
+
+/* */
 /* #undef LOG4CPLUS_HAVE__VSNPRINTF_S */
 
 /* */
@@ -433,6 +479,12 @@
 
 /* */
 /* #undef LOG4CPLUS_HAVE__VSNWPRINTF_S */
+
+/* */
+#define LOG4CPLUS_HAVE___ATOMIC_ADD_FETCH 1
+
+/* */
+#define LOG4CPLUS_HAVE___ATOMIC_SUB_FETCH 1
 
 /* */
 #define LOG4CPLUS_HAVE___SYNC_ADD_AND_FETCH 1
@@ -448,6 +500,10 @@
 
 /* */
 /* #undef LOG4CPLUS_USE_PTHREADS */
+
+/* Define so that log4cplus will use C++11 threads and synchronization
+   primitives. */
+/* #undef LOG4CPLUS_WITH_CXX11_THREADS */
 
 /* Define when iconv() is available. */
 /* #undef LOG4CPLUS_WITH_ICONV */
@@ -471,7 +527,7 @@
 #define PACKAGE_NAME "log4cplus"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "log4cplus 1.1.3"
+#define PACKAGE_STRING "log4cplus 1.2.1"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "log4cplus"
@@ -480,7 +536,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.1.3"
+#define PACKAGE_VERSION "1.2.1"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */

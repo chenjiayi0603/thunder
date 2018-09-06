@@ -1,7 +1,7 @@
 // -*- C++ -*-
 // Module:  Log4cplus
-// File:    clfsappender.h
-// Created: 5/2012
+// File:    msttsappender.h
+// Created: 10/2012
 // Author:  Vaclav Zeman
 //
 //
@@ -33,8 +33,8 @@
 
 /** @file */
 
-#ifndef LOG4CPLUS_CLFSAPPENDER_H
-#define LOG4CPLUS_CLFSAPPENDER_H
+#ifndef LOG4CPLUS_MSTTSAPPENDER_H
+#define LOG4CPLUS_MSTTSAPPENDER_H
 
 #include <log4cplus/config.hxx>
 
@@ -45,29 +45,42 @@
 #include <log4cplus/appender.h>
 
 
-#if defined (LOG4CPLUS_CLFSAPPENDER_BUILD_DLL)
-#  if defined (INSIDE_LOG4CPLUS_CLFSAPPENDER)
-#    define LOG4CPLUS_CLFSAPPENDER_EXPORT __declspec(dllexport)
-#  else
-#    define LOG4CPLUS_CLFSAPPENDER_EXPORT __declspec(dllimport)
-#  endif
+#if defined (_WIN32)
+  #if defined (log4cplusqt4debugappender_EXPORTS) \
+      || defined (log4cplusqt4debugappenderU_EXPORTS) \
+      || defined (DLL_EXPORT)
+    #undef LOG4CPLUS_MSTTSAPPENDER_BUILD_DLL
+    #define LOG4CPLUS_MSTTSAPPENDER_BUILD_DLL
+  #endif
+  #if defined (LOG4CPLUS_MSTTSAPPENDER_BUILD_DLL)
+    #if defined (INSIDE_LOG4CPLUS_MSTTSAPPENDER)
+      #define LOG4CPLUS_MSTTSAPPENDER_EXPORT __declspec(dllexport)
+    #else
+      #define LOG4CPLUS_MSTTSAPPENDER_EXPORT __declspec(dllimport)
+    #endif
+  #else
+    #define LOG4CPLUS_MSTTSAPPENDER_EXPORT
+  #endif
 #else
-#  define LOG4CPLUS_CLFSAPPENDER_EXPORT
-#endif
+  #if defined (INSIDE_LOG4CPLUS_MSTTSAPPENDER)
+    #define LOG4CPLUS_MSTTSAPPENDER_EXPORT LOG4CPLUS_DECLSPEC_EXPORT
+  #else
+    #define LOG4CPLUS_MSTTSAPPENDER_EXPORT LOG4CPLUS_DECLSPEC_IMPORT
+  #endif // defined (INSIDE_LOG4CPLUS_MSTTSAPPENDER)
+#endif // !_WIN32
 
 
 namespace log4cplus
 {
 
 
-class LOG4CPLUS_CLFSAPPENDER_EXPORT CLFSAppender
+class LOG4CPLUS_MSTTSAPPENDER_EXPORT MSTTSAppender
     : public Appender
 {
 public:
-    CLFSAppender (tstring const & logname, unsigned long logsize,
-        unsigned long buffersize);
-    explicit CLFSAppender (helpers::Properties const &);
-    virtual ~CLFSAppender ();
+    MSTTSAppender ();
+    explicit MSTTSAppender (helpers::Properties const &);
+    virtual ~MSTTSAppender ();
 
     virtual void close ();
 
@@ -76,23 +89,24 @@ public:
 protected:
     virtual void append (spi::InternalLoggingEvent const &);
 
-    void init (tstring const & logname, unsigned long logsize,
-        unsigned long buffersize);
-
     struct Data;
 
     Data * data;
 
 private:
-    CLFSAppender (CLFSAppender const &);
-    CLFSAppender & operator = (CLFSAppender const &);
+    LOG4CPLUS_PRIVATE void init (long const * rate = 0,
+        unsigned long const * volume = 0, bool speak_punc = false,
+        bool async = false);
+
+    MSTTSAppender (MSTTSAppender const &);
+    MSTTSAppender & operator = (MSTTSAppender const &);
 };
 
 
-typedef helpers::SharedObjectPtr<CLFSAppender> CLFSAppenderPtr;
+typedef helpers::SharedObjectPtr<MSTTSAppender> MSTTSAppenderPtr;
 
 
 } // namespace log4cplus
 
 
-#endif // LOG4CPLUS_CLFSAPPENDER_H
+#endif // LOG4CPLUS_MSTTSAPPENDER_H

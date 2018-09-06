@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2001-2013 Tad E. Smith
+// Copyright 2001-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,20 +61,20 @@ namespace log4cplus {
               * can be NULL.
               * @param line     Line number in file specified by
               *                 the <code>filename</code> parameter.
+              * @param function Name of function that is logging this event.
               */
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& message,
-                const char* filename, int line);
+                const char* filename, int line, const char * function = NULL);
 
-            //! This constructor is deprecated in favor of the next one because
-            //! of the additional `thread2` parameter.
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& ndc,
                 MappedDiagnosticContextMap const & mdc,
                 const log4cplus::tstring& message,
                 const log4cplus::tstring& thread,
                 log4cplus::helpers::Time time, const log4cplus::tstring& file,
-                int line) LOG4CPLUS_ATTRIBUTE_DEPRECATED;
+                int line, const log4cplus::tstring & function
+                    = log4cplus::tstring ()) LOG4CPLUS_ATTRIBUTE_DEPRECATED;
 
             InternalLoggingEvent(const log4cplus::tstring& logger,
                 LogLevel loglevel, const log4cplus::tstring& ndc,
@@ -83,7 +83,8 @@ namespace log4cplus {
                 const log4cplus::tstring& thread,
                 const log4cplus::tstring& thread2,
                 log4cplus::helpers::Time time, const log4cplus::tstring& file,
-                int line);
+                int line, const log4cplus::tstring & function
+                    = log4cplus::tstring ());
 
             InternalLoggingEvent ();
 
@@ -94,7 +95,8 @@ namespace log4cplus {
 
             void setLoggingEvent (const log4cplus::tstring & logger,
                 LogLevel ll, const log4cplus::tstring & message,
-                const char * filename, int line);
+                const char * filename, int line,
+                const char * function = NULL);
 
             void setFunction (char const * func);
             void setFunction (log4cplus::tstring const &);

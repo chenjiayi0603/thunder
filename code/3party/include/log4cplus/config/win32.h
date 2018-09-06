@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@
 #define LOG4CPLUS_HAVE_TIME_H
 #define LOG4CPLUS_HAVE_SYS_TIMEB_H
 #define LOG4CPLUS_HAVE_FTIME
-#if defined (_MSC_VER) || defined (__BORLANDC__) 
+#if defined (_MSC_VER) || defined (__BORLANDC__)
 #define LOG4CPLUS_HAVE_GMTIME_S
 #endif
 
@@ -68,6 +68,7 @@
 #define LOG4CPLUS_HAVE_SYS_STAT_H
 #define LOG4CPLUS_HAVE_TIME_H
 #define LOG4CPLUS_HAVE_STDLIB_H
+#define LOG4CPLUS_HAVE_DIRECT_H
 
 // MSVC has both and so does MinGW.
 #define LOG4CPLUS_HAVE_VSNPRINTF
@@ -93,12 +94,14 @@
 #  define LOG4CPLUS_HAVE__VSNPRINTF_S
 #  define LOG4CPLUS_HAVE__VSNWPRINTF_S
 
+// MS secure version of _tsopen().
+#  define LOG4CPLUS_HAVE__TSOPEN_S
+#endif
+
+#if defined (_MSC_VER) && _MSC_VER >= 1400
 // MS printf-like functions supporting positional parameters.
 #  define LOG4CPLUS_HAVE__VSPRINTF_P
 #  define LOG4CPLUS_HAVE__VSWPRINTF_P
-
-// MS secure version of _tsopen().
-#  define LOG4CPLUS_HAVE__TSOPEN_S
 #endif
 
 #define LOG4CPLUS_HAVE__TSOPEN
@@ -159,6 +162,13 @@
 #  endif
 #  if _MSC_VER >= 1700
 #    define LOG4CPLUS_HAVE_CXX11_ATOMICS
+#  endif
+#  if _MSC_VER >= 1900
+// C++11 threading facilities and synchronization primitives are available
+// already in earlier versions of Visual Studio compiler, however, there are
+// issues with the way mutexes are implemented and using them during process
+// shutdown. This appears to be fixed in Visual Studio 2015 and later.
+#    define LOG4CPLUS_WITH_CXX11_THREADS
 #  endif
 #endif
 

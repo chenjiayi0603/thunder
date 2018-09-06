@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -133,6 +133,10 @@ LOG4CPLUS_EXPORT log4cplus::helpers::snprintf_buf & get_macro_body_snprintf_buf 
 LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
     log4cplus::LogLevel, log4cplus::tstring const &, char const *, int,
     char const *);
+LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
+    log4cplus::LogLevel, log4cplus::tchar const *, char const *, int,
+    char const *);
+
 
 
 } // namespace detail
@@ -140,22 +144,24 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
 } // namespace log4cplus
 
 
-#if ! defined (LOG4CPLUS_DISABLE_FUNCTION_MACRO) \
-    && ! defined (LOG4CPLUS_MACRO_FUNCTION)
+#undef LOG4CPLUS_MACRO_FUNCTION
+#define LOG4CPLUS_MACRO_FUNCTION() 0
+#if ! defined (LOG4CPLUS_DISABLE_FUNCTION_MACRO)
 #  if defined (LOG4CPLUS_HAVE_FUNCSIG_MACRO)
+#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __FUNCSIG__
 #  elif defined (LOG4CPLUS_HAVE_PRETTY_FUNCTION_MACRO)
+#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __PRETTY_FUNCTION__
 #  elif defined (LOG4CPLUS_HAVE_FUNCTION_MACRO)
+#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __FUNCTION__
 #  elif defined (LOG4CPLUS_HAVE_FUNC_SYMBOL)
+#    undef LOG4CPLUS_MACRO_FUNCTION
 #    define LOG4CPLUS_MACRO_FUNCTION() __func__
 #  endif
 #endif
 
-#if ! defined (LOG4CPLUS_MACRO_FUNCTION)
-#  define LOG4CPLUS_MACRO_FUNCTION() 0
-#endif
 
 // Make TRACE and DEBUG log level unlikely and INFO, WARN, ERROR and
 // FATAL log level likely.
@@ -278,7 +284,7 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
 #if !defined(LOG4CPLUS_DISABLE_TRACE)
 #define LOG4CPLUS_TRACE_METHOD(logger, logEvent)                        \
     log4cplus::TraceLogger _log4cplus_trace_logger(logger, logEvent,    \
-                                                   __FILE__, __LINE__);
+        __FILE__, __LINE__, LOG4CPLUS_MACRO_FUNCTION ());
 #define LOG4CPLUS_TRACE(logger, logEvent)                               \
     LOG4CPLUS_MACRO_BODY (logger, logEvent, TRACE_LOG_LEVEL)
 #define LOG4CPLUS_TRACE_STR(logger, logEvent)                           \
@@ -453,5 +459,22 @@ LOG4CPLUS_EXPORT void macro_forced_log (log4cplus::Logger const &,
 #endif
 
 #endif
+
+//! Helper macro for LOG4CPLUS_ASSERT() macro.
+#define LOG4CPLUS_ASSERT_STRINGIFY(X) #X
+
+//! If the condition given in second parameter evaluates false, this
+//! macro logs it using FATAL log level, including the condition's
+//! source text.
+#define LOG4CPLUS_ASSERT(logger, condition)                             \
+    LOG4CPLUS_SUPPRESS_DOWHILE_WARNING()                                \
+    do {                                                                \
+        if (LOG4CPLUS_UNLIKELY(! (condition)))                          \
+            LOG4CPLUS_FATAL_STR ((logger),                              \
+                LOG4CPLUS_TEXT ("failed condition: ")                   \
+                LOG4CPLUS_TEXT (LOG4CPLUS_ASSERT_STRINGIFY (condition))); \
+    } while (0)                                                         \
+    LOG4CPLUS_RESTORE_DOWHILE_WARNING()
+
 
 #endif /* LOG4CPLUS_LOGGING_MACROS_HEADER_ */

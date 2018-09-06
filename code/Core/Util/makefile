@@ -29,8 +29,6 @@ INC := $(INC) \
        -I $(UTIL_PATH)/src
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(3PARTY_PATH)/lib -lprotobuf \
-           -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -lev \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -lc -ldl -lrt
