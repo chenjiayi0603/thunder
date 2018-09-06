@@ -34,8 +34,8 @@
 #include <sys/types.h>
 #include <ev.h>
 #include "../hiredis.h"
-#include "../hircluster.h"
 #include "../async.h"
+#include "../hircluster.h"
 
 typedef struct redisLibevEvents {
     redisAsyncContext *context;
@@ -145,6 +145,7 @@ static int redisLibevAttach(EV_P_ redisAsyncContext *ac) {
     return REDIS_OK;
 }
 
+//redis cluster
 static int redisLibevAttach_link(redisAsyncContext *ac, void *base)
 {
 	return redisLibevAttach((struct ev_loop *)base,ac);
@@ -159,5 +160,6 @@ static int redisClusterLibevAttach(redisClusterAsyncContext *acc, struct ev_loop
 	acc->attach_fn = redisLibevAttach_link;
     return REDIS_OK;
 }
+
 
 #endif

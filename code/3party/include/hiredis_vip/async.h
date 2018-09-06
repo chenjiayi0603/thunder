@@ -67,9 +67,8 @@ typedef struct redisAsyncContext {
     char *errstr;
 
     /* Not used by hiredis */
-    void *data;//在hiredis中被用来放置cluster_node
-    void *userData;//add by cjy，用来放置用户数据
-
+    void *data;
+    void *userData;
     void (*dataHandler)(struct redisAsyncContext* ac);
 
     /* Event library data and hooks */
@@ -124,6 +123,7 @@ int redisvAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void *privdat
 int redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata, const char *format, ...);
 int redisAsyncCommandArgv(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata, int argc, const char **argv, const size_t *argvlen);
 int redisAsyncFormattedCommand(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata, const char *cmd, size_t len);
+
 
 #ifdef __cplusplus
 }
