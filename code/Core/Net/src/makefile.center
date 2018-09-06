@@ -1,7 +1,7 @@
 TARGET = Center 
 CC = gcc
 CXX = $(shell command -v ccache >/dev/null 2>&1 && echo "ccache g++" || echo "g++")
-#编译选项 -DDISABLE_COROUTINUE
+#编译选项 
 CFLAGS = -g -Og
 CPPFLAGS = -g -Og -D_GNU_SOURCE=1 -D_REENTRANT -fPIC -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -std=c++11 -Wno-deprecated-declarations -Wno-pmf-conversions
 #链接选项
@@ -40,7 +40,7 @@ INC := $(INC) \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(3PARTY_PATH)/include/libev \
-       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
+       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/util \
        -I $(NET_PATH)/src 
 
 

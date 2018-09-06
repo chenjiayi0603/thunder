@@ -113,16 +113,11 @@ public:
                     const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
                     const NodeStatusInfo& nodeinfo);
     //删除节点
-    bool DelNode(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
-            const std::string& delNodeIdentify);
-    //上报数据负载
-    int WriteServerDataLoad(const net::tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead, const MsgBody& oInMsgBody);
+    bool DelNode(const std::string& delNodeIdentify);
 public:
     //对外服务功能接口
     //获取最小负载节点
-    int GetLoadMinNode(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
-                    NodeLoadStatus &nodeLoadStatus);
+    int GetLoadMinNode(const std::string& serverType,NodeLoadStatus &nodeLoadStatus);
     //更新节点配置
 	int UpdateServerConfig(const server::update_server_config_req &oUpdateServerConfigReq,
 	                server::update_server_config_ack &oUpdateServerConfigAck);
@@ -145,9 +140,6 @@ public:
     int CanOnlineNode(const std::string& sOnlineNodeIdentify);
     //检查能否操作重新加载逻辑配置
     int CanReloadConfigNode(const std::string& sOnlineNodeIdentify,std::string &nodeType);
-	//检查服务器最近负载
-    int CheckServerLoad(const server::check_server_load_req &oCheckServerLoadReq,
-                    server::check_server_load_ack &oCheckServerLoadAck);
 public:
     //加载服务器基础信息
     bool LoadServersBase();
@@ -245,12 +237,6 @@ private:
     typedef NodesStatisticsMap::iterator NodesStatisticsMapIT;
     typedef NodesStatisticsMap::const_iterator NodesStatisticsMapCIT;
     NodesStatisticsMap m_mapNodesStatistics;
-
-    //节点最近统计管理器（key为节点类型：IP：端口，value为节点日志信息）
-    typedef std::list<NodeStatusInfo> NodesRecentlyList;
-    typedef NodesRecentlyList::const_iterator NodesRecentlyListCIT;
-    typedef NodesRecentlyList::iterator NodesRecentlyListIT;
-    NodesRecentlyList m_listNodesRecently;
 private:
     /*
                  服务器节点注册相关函数
@@ -328,9 +314,6 @@ private:
     bool WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport = false);
     //设置服务器为下线
     bool SetNodeDataOfflineToDBByNodeId(int node_id);
-    //写server负载到db
-    bool WriteServerDataLoadToDB(const char* nodetype, int innerport,
-                    const char* innerip, int outerport,const char* outerip,const char* status);
 private:
     /*
                  服务器节点状态操作相关函数
@@ -367,12 +350,6 @@ private:
     bool ClearOverdueOfflineNodeStatisticsToDB();
     //redis负载检查
     bool ServerDataLoadCheck();
-    //写服务器数据负载状态
-    bool ReplaceServerDataLoadStatusToDB(const char* nodetype, int innerport,
-                    const char* innerip, int outerport,const char* outerip,const char* status);
-    //写服务器数据负载日志
-    bool WriteServerDataLoadLogToDB(const char* nodetype, int innerport,
-                    const char* innerip, int outerport,const char* outerip,const char* status);
     //清除过期服务器数据日志（如dataproxy的管理节点数据）
     bool ClearOverdueServerDataLogToDB();
 private:

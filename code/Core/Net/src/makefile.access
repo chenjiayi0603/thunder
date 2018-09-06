@@ -10,7 +10,7 @@ endif
  $(info  $(ACCESS_TARGETS))
 CC = gcc
 CXX = $(shell command -v ccache >/dev/null 2>&1 && echo "ccache g++" || echo "g++")
-#编译选项 -DDISABLE_COROUTINUE
+#编译选项 
 CFLAGS = -g -Og
 CPPFLAGS = -g -Og -D_GNU_SOURCE=1 -D_REENTRANT -fPIC -DNODE_BEAT=10.0  -DWORKER_OVERDUE=60.0 -std=c++11 -Wno-deprecated-declarations -Wno-pmf-conversions
 #链接选项

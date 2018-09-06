@@ -1,6 +1,6 @@
 /*******************************************************************************
  * Project:  CenterServer
- * @file     CmdNodeReg.hpp
+ * @file     CmdNodeRegister.hpp
  * @brief    被告知Worker信息
  * @author   cjy
  * @date:    2015年8月9日
@@ -23,11 +23,11 @@ namespace core
  * @date    2015年8月9日
  * @note    各个模块启动时需要向CENTER进行注册
  */
-class CmdNodeReg: public net::Cmd
+class CmdNodeRegister: public net::Cmd
 {
 public:
-    CmdNodeReg();
-    virtual ~CmdNodeReg();
+    CmdNodeRegister();
+    virtual ~CmdNodeRegister();
     virtual bool Init();
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead, const MsgBody& oInMsgBody);

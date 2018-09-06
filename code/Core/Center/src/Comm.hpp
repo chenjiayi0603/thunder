@@ -18,17 +18,13 @@
 #include "NetDefine.hpp"
 
 /*
- 1:游客，2：企业用户，3：客服，4：管理员 5：超级管理员 6:机器人
+ 1：管理员2：超级管理员
  * */
 enum eUserType
 {
     eUserType_unknown = 0,
-    eUserType_tourist = 1,
-    eUserType_companyuser = 2,
-    eUserType_customerservice = 3,
-    eUserType_manager = 4,
-    eUserType_supermanager = 5,
-    eUserType_robot = 6,
+    eUserType_manager = 1,
+    eUserType_supermanager = 2,
 };
 
 //是否在线已加载配置，0：不是，1：是

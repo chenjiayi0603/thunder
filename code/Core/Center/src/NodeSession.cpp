@@ -872,29 +872,6 @@ uint32 NodeSession::GetNodeCountByType(const std::string &nodeType)
     return count;
 }
 
-void NodeSession::AddNodesRecently(const NodeStatusInfo &nodeStatusInfo)
-{
-    SetCurrentTime();
-    {//删除过时记录
-        NodesRecentlyListIT it = m_listNodesRecently.begin();
-        NodesRecentlyListIT itEnd = m_listNodesRecently.end();
-        for(;it != itEnd;)
-        {
-            if(it->activeTime + m_NodeRecentlyTime < m_currentTime)
-            {
-                it = m_listNodesRecently.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-    m_listNodesRecently.push_back(nodeStatusInfo);
-    LOG4_DEBUG("m_listNodesRecently size(%u),nodetype(%s)",m_listNodesRecently.size(),
-                    nodeStatusInfo.nodeType.c_str());
-}
-
 //写节点到数据库，如果是报告信息需要设置boReport = true
 bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport)
 {
@@ -904,24 +881,24 @@ bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boRepor
         LOG4_WARN( "WriteNodeStatus failed");
         return (false);
     }
-    if (boReport)
-    {
-        if (!CheckNodeload())
-        {
-            LOG4_WARN( "CheckNodeload failed");
-            return (false);
-        }
-        if (!WriteNodeLog(nodeInfo))
-        {
-            LOG4_WARN( "WriteNodeLog failed");
-            return (false);
-        }
-        if (!WriteNodeStatistics(nodeInfo))
-        {
-            LOG4_WARN( "WriteNodeStatistics failed");
-            return (false);
-        }
-    }
+//    if (boReport)
+//    {
+//        if (!CheckNodeload())
+//        {
+//            LOG4_WARN( "CheckNodeload failed");
+//            return (false);
+//        }
+//        if (!WriteNodeLog(nodeInfo))
+//        {
+//            LOG4_WARN( "WriteNodeLog failed");
+//            return (false);
+//        }
+//        if (!WriteNodeStatistics(nodeInfo))
+//        {
+//            LOG4_WARN( "WriteNodeStatistics failed");
+//            return (false);
+//        }
+//    }
     return (true);
 }
 bool NodeSession::SetNodeDataOfflineToDBByNodeId(int node_id)
@@ -1165,35 +1142,35 @@ bool NodeSession::InsertNodeLogToDB()
 
         worker
      * */
-//    char szSql[3096];
-//    NodesLogMapIT it = m_mapNodesLog.begin();
-//    NodesLogMapIT itEnd = m_mapNodesLog.end();
-//    for (; it != itEnd; ++it)
-//    {
-//        NodeLogInfo& nodeLog = it->second;
-//        snprintf(szSql, sizeof(szSql) - 1,
-//                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,"
-//                        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
-//                        "'%s')",
-//                        NODE_LOAD_LOG_TABLE, nodeLog.nodeId,
-//                        nodeLog.nodeType.c_str(), nodeLog.nodeInnerPort,
-//                        nodeLog.nodeInnerIp.c_str(), nodeLog.nodeAccessPort,
-//                        nodeLog.nodeAccessIp.c_str(), nodeLog.workerNum,
-//                        m_currentTime,
-//                        nodeLog.GetAverageLoad(),nodeLog.maxLoad,nodeLog.GetAverageConnect(),nodeLog.maxConnect,
-//                        nodeLog.GetAverageClient(),nodeLog.maxClient, nodeLog.GetAverageRecvNum(), nodeLog.maxRecvNum,
-//                        nodeLog.GetAverageSendNum(),nodeLog.maxSendNum,nodeLog.GetAverageRecvByte(), nodeLog.maxRecvByte,
-//                        nodeLog.GetAverageSendByte(),nodeLog.maxSendByte,
-//                        nodeLog.worker.c_str());
-//        net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-//		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-//		if (!net::MysqlStep::Launch(GetLabor(),pstep))
-//		{
-//			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-//			return (false);
-//		}
-//        nodeLog.cleanLoad();
-//    }
+    char szSql[3096];
+    NodesLogMapIT it = m_mapNodesLog.begin();
+    NodesLogMapIT itEnd = m_mapNodesLog.end();
+    for (; it != itEnd; ++it)
+    {
+        NodeLogInfo& nodeLog = it->second;
+        snprintf(szSql, sizeof(szSql) - 1,
+                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,"
+                        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+                        "'%s')",
+                        NODE_LOAD_LOG_TABLE, nodeLog.nodeId,
+                        nodeLog.nodeType.c_str(), nodeLog.nodeInnerPort,
+                        nodeLog.nodeInnerIp.c_str(), nodeLog.nodeAccessPort,
+                        nodeLog.nodeAccessIp.c_str(), nodeLog.workerNum,
+                        m_currentTime,
+                        nodeLog.GetAverageLoad(),nodeLog.maxLoad,nodeLog.GetAverageConnect(),nodeLog.maxConnect,
+                        nodeLog.GetAverageClient(),nodeLog.maxClient, nodeLog.GetAverageRecvNum(), nodeLog.maxRecvNum,
+                        nodeLog.GetAverageSendNum(),nodeLog.maxSendNum,nodeLog.GetAverageRecvByte(), nodeLog.maxRecvByte,
+                        nodeLog.GetAverageSendByte(),nodeLog.maxSendByte,
+                        nodeLog.worker.c_str());
+        net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+		if (!net::MysqlStep::Launch(GetLabor(),pstep))
+		{
+			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+			return (false);
+		}
+        nodeLog.cleanLoad();
+    }
     return (true);
 }
 //节点统计操作
@@ -1226,54 +1203,41 @@ bool NodeSession::InsertNodeStatisticsToDB()
     /*
      * 表tb_nodeload_statistics
      *  节点基础状态
-        nodeid
-        nodetype
-        innerport
-        innerip
-        outerport
-        outerip
-        workernum
+        nodeid nodetype innerport innerip outerport outerip workernum
         //更新状态
-        currenttime
-        currentload
-        currentclient
-        currentconnect
+        currenttime currentload currentclient currentconnect
         //统计数据
-        totalrecvnum
-        totalsendnum
-        totalrecvbyte
-        totalsendbyte
+        totalrecvnum totalsendnum totalrecvbyte totalsendbyte
      * */
-//    char szSql[256];
-//    NodesStatisticsMapIT it = m_mapNodesStatistics.begin();
-//    NodesStatisticsMapIT itEnd = m_mapNodesStatistics.end();
-//    for (; it != itEnd; ++it)
-//    {
-//        NodesStaisticsInfo& nodeInfo = it->second;
-//        snprintf(szSql, sizeof(szSql) - 1,
-//                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,%d,%d,%d,%d,%d,%d,%d)",
-//                        NODE_LOAD_STATISTICS_TABLE, nodeInfo.nodeId,
-//                        nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
-//                        nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
-//                        nodeInfo.nodeAccessIp.c_str(), nodeInfo.workerNum,
-//                        m_currentTime, nodeInfo.load, nodeInfo.client,
-//                        nodeInfo.connect, nodeInfo.recvNum, nodeInfo.sendNum,
-//                        nodeInfo.recvByte, nodeInfo.sendByte);
-//        net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-//		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-//		if (!net::MysqlStep::Launch(GetLabor(),pstep))
-//		{
-//			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-//			return (false);
-//		}
-//        nodeInfo.clearLoad();
-//    }
+    char szSql[256];
+    NodesStatisticsMapIT it = m_mapNodesStatistics.begin();
+    NodesStatisticsMapIT itEnd = m_mapNodesStatistics.end();
+    for (; it != itEnd; ++it)
+    {
+        NodesStaisticsInfo& nodeInfo = it->second;
+        snprintf(szSql, sizeof(szSql) - 1,
+                        "insert into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%llu,%d,%d,%d,%d,%d,%d,%d)",
+                        NODE_LOAD_STATISTICS_TABLE, nodeInfo.nodeId,
+                        nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
+                        nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
+                        nodeInfo.nodeAccessIp.c_str(), nodeInfo.workerNum,
+                        m_currentTime, nodeInfo.load, nodeInfo.client,
+                        nodeInfo.connect, nodeInfo.recvNum, nodeInfo.sendNum,
+                        nodeInfo.recvByte, nodeInfo.sendByte);
+        net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+		if (!net::MysqlStep::Launch(GetLabor(),pstep))
+		{
+			LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+			return (false);
+		}
+        nodeInfo.clearLoad();
+    }
     return (true);
 }
 bool NodeSession::CheckNodeload()
 {
-    if (m_currentTime
-                    >= m_nodeLoadCheckLastTime + m_nodeLoadCheckTimeInterval)
+    if (m_currentTime >= m_nodeLoadCheckLastTime + m_nodeLoadCheckTimeInterval)
     {
         m_nodeLoadCheckLastTime = m_currentTime;
         ClearOverdueOfflineNodeLogToDB();
@@ -1283,54 +1247,33 @@ bool NodeSession::CheckNodeload()
 }
 bool NodeSession::ClearOverdueOfflineNodeLogToDB()
 {
-//    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-//	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE active_time <= %llu",
-//            NODE_LOAD_LOG_TABLE,
-//            (uint64)(m_currentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-//	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-//	{
-//		LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
-//		return (false);
-//	}
-//    LOG4_DEBUG( "ClearOverdueOfflineNodeLogToDB ok");
+    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE active_time <= %llu",
+            NODE_LOAD_LOG_TABLE,
+            (uint64)(m_currentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+	if (!net::MysqlStep::Launch(GetLabor(),pstep))
+	{
+		LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+		return (false);
+	}
+    LOG4_DEBUG( "ClearOverdueOfflineNodeLogToDB ok");
     return (true);
 }
 bool NodeSession::ClearOverdueOfflineNodeStatisticsToDB()
 {
-//    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-//	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE currenttime <= %llu",
-//            NODE_LOAD_STATISTICS_TABLE,
-//            (uint64)(m_currentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-//	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-//	{
-//		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
-//		return (false);
-//	}
-//    LOG4_DEBUG( "ClearOverdueOfflineNodeStatisticsToDB ok");
+    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE currenttime <= %llu",
+            NODE_LOAD_STATISTICS_TABLE,
+            (uint64)(m_currentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+	if (!net::MysqlStep::Launch(GetLabor(),pstep))
+	{
+		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
+		return (false);
+	}
+    LOG4_DEBUG( "ClearOverdueOfflineNodeStatisticsToDB ok");
     return (true);
 }
 
-bool NodeSession::WriteServerDataLoadToDB(const char* nodetype, int innerport,
-                const char* innerip, int outerport, const char* outerip,
-                const char* status)
-{
-    SetCurrentTime();
-    ServerDataLoadCheck();
-    if(!ReplaceServerDataLoadStatusToDB(nodetype, innerport, innerip, outerport,
-            outerip, status))
-    {
-    	LOG4_WARN("failed to ReplaceServerDataLoadStatusToDB nodetype:%s",nodetype);
-    	return false;
-    }
-    if(!WriteServerDataLoadLogToDB(nodetype, innerport, innerip, outerport, outerip,
-            status))
-    {
-    	LOG4_WARN("failed to WriteServerDataLoadLogToDB nodetype:%s",nodetype);
-    	return false;
-    }
-    LOG4_DEBUG("succeeded to WriteServerDataLoadToDB nodetype:%s",nodetype);
-    return (true);
-}
 bool NodeSession::ServerDataLoadCheck()
 {
     if (m_currentTime
@@ -1340,42 +1283,6 @@ bool NodeSession::ServerDataLoadCheck()
         m_serverDataLoadCheckLastTime = m_currentTime;
         ClearOverdueServerDataLogToDB();
     }
-    return (true);
-}
-bool NodeSession::ReplaceServerDataLoadStatusToDB(const char* nodetype,
-                int innerport, const char* innerip, int outerport,
-                const char* outerip, const char* status)
-{
-    char szSql[4096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "replace into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
-                    NODE_SERVER_DATA_STATUS_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
-    return (true);
-}
-bool NodeSession::WriteServerDataLoadLogToDB(const char* nodetype,
-                int innerport, const char* innerip, int outerport,
-                const char* outerip, const char* status)
-{
-    char szSql[4096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "insert into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
-                    NODE_SERVER_DATA_LOG_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
     return (true);
 }
 
@@ -1442,15 +1349,13 @@ int NodeSession::UpdateNode(const net::tagMsgShell& stMsgShell,
     NodeStatusInfo *pNodeInfo = GetNodeInfo(nodeinfo.getNodeKey());
     if (!pNodeInfo) //没有该节点则注册
     {
-        int iRet = RegNode(stMsgShell, oInMsgHead,
-                        oInMsgBody, nodeinfo);
+        int iRet = RegNode(stMsgShell, oInMsgHead,oInMsgBody, nodeinfo);
         if (iRet)
         {
             LOG4_ERROR("CmdNodeReport RegNode msg jsonbuf[%s] is wrong,error code(%d)",
                             oInMsgBody.body().c_str(), iRet);
             return iRet;
         }
-        AddNodesRecently(nodeinfo);
         return ERR_OK;
     }
     else //更新上报状态
@@ -1472,13 +1377,11 @@ int NodeSession::UpdateNode(const net::tagMsgShell& stMsgShell,
                 return ERR_SERVERINFO_RECORD;
             }
         }
-        AddNodesRecently(*pNodeInfo);
         return ERR_OK;
     }
 }
 
-bool NodeSession::DelNode(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
-		const std::string& delNodeIdentify)
+bool NodeSession::DelNode(const std::string& delNodeIdentify)
 {
 	NodeStatusInfo delNodeInfo;//节点信息
 	//获取对应的节点信息.delNodeIdentify(IP:端口)
@@ -1507,83 +1410,8 @@ bool NodeSession::DelNode(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
 }
 
 
-int NodeSession::WriteServerDataLoad(const net::tagMsgShell& stMsgShell,
-                const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
-{
-    if(eMasterStatus != m_CenterActive.status)
-    {
-        LOG4_DEBUG("it is not master,don't need to write server data load");
-        return ERR_OK;
-    }
-    std::string nodetype;
-    int innerport;
-    std::string innerip;
-    int outerport;
-    std::string outerip;
-    std::string status;
-    util::CJsonObject jParseObj;
-    if (!jParseObj.Parse(oInMsgBody.body()))
-    {
-        LOG4_WARN("error jsonParse error! body[%s]",
-                        oInMsgBody.body().c_str());
-        return ERR_BODY_JSON;
-    }
-    LOG4_DEBUG("server report json data(%s)",jParseObj.ToString().c_str());
-    if (!jParseObj.Get("nodetype", nodetype))
-    {
-        LOG4_WARN("CmdServerReport::AnyMessage miss nodetype");
-        return ERR_REQ_MISS_PARAM;
-    }
-    if (!jParseObj.Get("innerport", innerport))
-    {
-        LOG4_WARN("CmdServerReport::AnyMessage miss innerport");
-        return ERR_REQ_MISS_PARAM;
-    }
-    if (!jParseObj.Get("innerip", innerip))
-    {
-        LOG4_WARN("CmdServerReport::AnyMessage miss innerip");
-        return ERR_REQ_MISS_PARAM;
-    }
-    jParseObj.Get("outerport", outerport);
-    jParseObj.Get("outerip", outerip);
-    if (!jParseObj.Get("status", status))
-    {
-        LOG4_WARN("CmdServerReport::AnyMessage miss status");
-        return ERR_REQ_MISS_PARAM;
-    }
-    if (!WriteServerDataLoadToDB(nodetype.c_str(), innerport,
-                        innerip.c_str(), outerport, outerip.c_str(),
-                        status.c_str()))
-    {
-        LOG4_ERROR("WriteServerDataLoadToDB error,nodetype(%s),innerport(%d),innerip(%s),outerport(%d),outerip(%s),status(%s)",
-                        nodetype.c_str(), innerport, innerip.c_str(),
-                        outerport, outerip.c_str(), status.c_str());
-        return ERR_SERVERINFO_RECORD;
-    }
-    return ERR_OK;
-}
-
-int NodeSession::GetLoadMinNode(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
-                NodeLoadStatus &nodeLoadStatus)
+int NodeSession::GetLoadMinNode(const std::string& serverType,NodeLoadStatus &nodeLoadStatus)
 {//主从节点都允许分配服务器节点
-    util::CJsonObject jParseObj;
-    if (!jParseObj.Parse(oInMsgBody.body()))
-    {
-        LOG4_ERROR("error jsonParse error! json[%s]",
-                                oInMsgBody.body().c_str());
-        return ERR_BODY_JSON;
-    }
-    LOG4_DEBUG("CmdGetLoadMinServer jsonbuf[%s] Parse is ok",
-                    oInMsgBody.body().c_str());
-    //解析JSON数据
-    LOG4_DEBUG("CmdGetLoadMinServer::AnyMessage (%s)",jParseObj.ToString().c_str());
-    std::string serverType;
-    if(!jParseObj.Get("servertype",serverType))
-    {
-        LOG4_ERROR("error jsonParse error! json[%s]",
-                        oInMsgBody.body().c_str());
-        return ERR_BODY_JSON;
-    }
     if(!CheckNodeType(serverType))
     {
         LOG4_WARN("no such nodetype(%s)",serverType.c_str());
@@ -1599,8 +1427,7 @@ int NodeSession::GetLoadMinNode(const MsgHead& oInMsgHead, const MsgBody& oInMsg
     }
     if(nodeStatusList.empty())
     {
-        LOG4_ERROR("nodeStatusList empty! json[%s]",
-                        oInMsgBody.body().c_str());
+        LOG4_ERROR("serverType nodeStatusList empty!");
         return ERR_SERVERINFO;
     }
     //获取节点状态列表中负载最小的节点
@@ -1823,13 +1650,9 @@ int NodeSession::CheckServerConfigContent(const NodeConfigFile &nodeConfigFile,c
     {//检查objConfigContent
         bool boCheckConfigContent(false);
         {//检查so
-            //"so":  [{
-            //    "cmd":  1001,
-            //    "so_path":  "plugins/Logic/CmdLogin.so",
-            //    "entrance_symbol":  "create",
-            //    "load": false,
-            //    "version":  1
-            //}]
+		//"so":  [{
+		// "cmd":  1001,"so_path":  "plugins/Logic/CmdLogin.so","entrance_symbol":  "create","load": false,"version":  1
+		//}]
             util::CJsonObject jParseSoObj;
             if(checkConfigContentObj.Get("so",jParseSoObj))
             {
@@ -2162,44 +1985,6 @@ int NodeSession::CanReloadConfigNode(const std::string& sOnlineNodeIdentify,std:
         return ERR_SERVER_NODE_NO_EXIST;
     }
     nodeType = pOnlineNodeInfo->nodeType;
-    return ERR_OK;
-}
-
-int NodeSession::CheckServerLoad(const server::check_server_load_req &oCheckServerLoadReq,
-                server::check_server_load_ack &oCheckServerLoadAck)
-{
-    if (oCheckServerLoadReq.inner_port() == 0 || oCheckServerLoadReq.inner_ip().size() == 0)
-    {
-        LOG4_ERROR("inner_port(%d),inner_ip(%s) invalid",oCheckServerLoadReq.inner_port(),oCheckServerLoadReq.inner_ip().c_str());
-        return ERR_REQ_MISS_PARAM;
-    }
-    int add_up_recv_num(0);
-    int add_up_send_num(0);
-    int add_up_recv_byte(0);
-    int add_up_send_byte(0);
-    char strNodeKey[64] = { 0 };
-    snprintf(strNodeKey,sizeof(strNodeKey),"%s:%u", oCheckServerLoadReq.inner_ip().c_str(), oCheckServerLoadReq.inner_port());
-    NodesRecentlyListCIT it = m_listNodesRecently.begin();
-    NodesRecentlyListCIT itEnd = m_listNodesRecently.end();
-    NodeStatus s = eNodeStatus_Offline;
-    for(;it != itEnd;++it)
-    {
-        const NodeStatusInfo& nodeStatus = *it;
-        if(nodeStatus.getNodeKey() == strNodeKey)
-        {
-            add_up_recv_num += nodeStatus.recvNum;
-            add_up_send_num += nodeStatus.sendNum;
-            add_up_recv_byte += nodeStatus.recvByte;
-            add_up_send_byte += nodeStatus.sendByte;
-            s = eNodeStatus_Online;
-        }
-        LOG4_TRACE("RecentlyNodeStatus(%s),strNodeKey(%s)",nodeStatus.getNodeKey().c_str(),strNodeKey);
-    }
-    oCheckServerLoadAck.set_status(s);
-    oCheckServerLoadAck.set_add_up_recv_num(add_up_recv_num);
-    oCheckServerLoadAck.set_add_up_send_num(add_up_send_num);
-    oCheckServerLoadAck.set_add_up_recv_byte(add_up_recv_byte);
-    oCheckServerLoadAck.set_add_up_send_byte(add_up_send_byte);
     return ERR_OK;
 }
 

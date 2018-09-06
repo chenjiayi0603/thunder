@@ -1,6 +1,6 @@
 /*******************************************************************************
  * Project:  CenterServer
- * @file     CmdNodeReg.hpp
+ * @file     CmdNodeRegister.hpp
  * @brief    节点上报
  * @author   cjy
  * @date:    2017年1月13日

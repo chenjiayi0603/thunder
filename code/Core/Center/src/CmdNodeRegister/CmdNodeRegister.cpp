@@ -1,6 +1,6 @@
 /*******************************************************************************
  * Project:  CenterServer
- * @file     CmdNodeReg.cpp
+ * @file     CmdNodeRegister.cpp
  * @brief 
  * @author   cjy
  * @date:    2015年8月9日
@@ -9,7 +9,7 @@
  ******************************************************************************/
 #include <iostream>
 #include "util/json/CJsonObject.hpp"
-#include "CmdNodeReg.hpp"
+#include "CmdNodeRegister.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -18,7 +18,7 @@ extern "C"
 
 net::Cmd* create()
 {
-    net::Cmd* pCmd = new core::CmdNodeReg();
+    net::Cmd* pCmd = new core::CmdNodeRegister();
     return (pCmd);
 }
 
@@ -29,15 +29,15 @@ net::Cmd* create()
 namespace core
 {
 
-CmdNodeReg::CmdNodeReg()
+CmdNodeRegister::CmdNodeRegister()
                 :pSess(NULL),boInit(false)
 {
 }
-CmdNodeReg::~CmdNodeReg()
+CmdNodeRegister::~CmdNodeRegister()
 {
 }
 
-bool CmdNodeReg::Init()
+bool CmdNodeRegister::Init()
 {
     if (boInit)
     {
@@ -53,7 +53,7 @@ bool CmdNodeReg::Init()
     return true;
 }
 
-bool CmdNodeReg::AnyMessage(const net::tagMsgShell& stMsgShell,
+bool CmdNodeRegister::AnyMessage(const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
 {
     util::CJsonObject jParseObj;
@@ -62,7 +62,7 @@ bool CmdNodeReg::AnyMessage(const net::tagMsgShell& stMsgShell,
         LOG4_DEBUG("failed to parse json body");
         return Response(stMsgShell,oInMsgHead,ERR_BODY_JSON);
     }
-    LOG4_DEBUG("CmdNodeReg jsonbuf[%s] Parse is ok",
+    LOG4_DEBUG("CmdNodeRegister jsonbuf[%s] Parse is ok",
                                 oInMsgBody.body().c_str());
     //解析节点数据
     NodeStatusInfo nodeinfo;
@@ -81,7 +81,7 @@ bool CmdNodeReg::AnyMessage(const net::tagMsgShell& stMsgShell,
                     oInMsgBody, nodeinfo);
     if (regNodeRet)//注册失败返回注册应答，否则已在注册函数中发送
     {
-        LOG4_ERROR("CmdNodeReg msg jsonbuf[%s] is wrong,error code(%d)",
+        LOG4_ERROR("CmdNodeRegister msg jsonbuf[%s] is wrong,error code(%d)",
                         oInMsgBody.body().c_str(),regNodeRet);
         return Response(stMsgShell,oInMsgHead,ERR_SERVERINFO);
     }
@@ -90,7 +90,7 @@ bool CmdNodeReg::AnyMessage(const net::tagMsgShell& stMsgShell,
     return true;
 }
 
-bool CmdNodeReg::Response(const net::tagMsgShell& stMsgShell,
+bool CmdNodeRegister::Response(const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead,int iRet,int node_id)
 {
     /*
@@ -100,7 +100,7 @@ bool CmdNodeReg::Response(const net::tagMsgShell& stMsgShell,
      *  "node_id":1
      * }
      * */
-    LOG4_DEBUG( "CmdNodeReg::Response iRet(%d),node_id(%d)",iRet,node_id);
+    LOG4_DEBUG( "CmdNodeRegister::Response iRet(%d),node_id(%d)",iRet,node_id);
     if(iRet)
     {
         MsgHead oOutMsgHead;
