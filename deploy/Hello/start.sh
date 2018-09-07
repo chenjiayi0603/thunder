@@ -23,19 +23,24 @@ function process_attachto_cpu_average()
 {
 	let count=0
 	test ! -z $1 && count=`ps -ef | grep $1 | grep -v "grep" | wc -l`
-	echo "process $1:$count"
+	#echo "process $1:$count"
 	if [ $count -gt 0 ]; then 
 		CPUs=$(grep -c processor /proc/cpuinfo)
-		echo "CPUs $CPUs"
+		#echo "CPUs $CPUs"
 		PIDs=$(ps aux | grep "$1" |grep -v grep | awk '{print $2}')
 		let i=1
 		for PID in $PIDs; do
 		   CPU=$(echo "$i % $CPUs" | bc)
-		   taskset -pc $CPU $PID && echo "taskset -pc $CPU $PID succ for process PID:$PID" 
+		   taskset -pc $CPU $PID  >/dev/null 2>&1 #&& echo "taskset -pc $CPU $PID succ for process PID:$PID" 
 		   let i++
 		done
 	fi
 }
+#设置进程优先级
+#pid 4928's current affinity list: 0-5
+#pid 4928's new affinity list: 1
+#pid 4931's current affinity list: 0-5
+#pid 4931's new affinity list: 2
 
 function process_attachto_cpu_one()
 {
