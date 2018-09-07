@@ -821,15 +821,14 @@ struct NodeLoadStatus
 };
 
 //服务器白名单
-struct ServerWhiteNode
+struct WhiteNode
 {
     char inner_ip[32]; //内网IP
     bool loadFromMapRow(util::T_mapRow& valmap)
     {
         if (!valmap["inner_ip"].empty())
         {
-            snprintf(inner_ip, sizeof(inner_ip) - 1,
-                            valmap["inner_ip"].c_str());
+            snprintf(inner_ip, sizeof(inner_ip) - 1,valmap["inner_ip"].c_str());
             return true;
         }
         return false;
@@ -870,6 +869,21 @@ struct CenterActive
         return true;
     }
 };
+
+struct NodeType
+{
+	typedef std::vector<std::string> ServersList;
+	typedef std::vector<std::string>::const_iterator ServersListCIT;
+	typedef std::vector<std::string>::iterator ServersListIT;
+	std::string nodetype;
+	ServersList neededServers;
+	void clear()
+	{
+		nodetype.clear();
+		neededServers.clear();
+	}
+};
+typedef std::vector<NodeType> NodeTypesVec;
 
 //节点挂起状态
 enum eNodeStatusInfoSuspend

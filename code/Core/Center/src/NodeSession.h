@@ -63,8 +63,7 @@ public:
             0), m_nodeLoadCheckTimeInterval(0), m_serverDataLoadCheckTimeInterval(
             0), m_serverDataLoadStatusLogOverdue(0), m_nodeLoadLogInsertLastTime(
             0), m_nodeLoadStatisticsInsertLastTime(0), m_nodeLoadCheckLastTime(
-            0), m_nodeStatusCheckLastTime(0), m_serverDataLoadCheckLastTime(
-            0)
+            0), m_nodeStatusCheckLastTime(0),m_serverDataLoadCheckLastTime(0)
     {
         SetCurrentTime();
         m_dbport = 0;
@@ -123,15 +122,6 @@ public:
 	                server::update_server_config_ack &oUpdateServerConfigAck);
 	//检查管理者消息
 	int CheckMgrMsg(const MsgBody& oInMsgBody,server::user_basic &basicInfo);
-	//获取节点配置
-	//param node_type:节点类型
-    //param config_type:节点配置类型
-    //param config_content:节点内容
-    //param config_file:节点配置文件名
-    //param update_time:节点配置更新时间
-	//param reload_config:是否在线已加载配置，0：不是，1：是
-	int CheckServerConfig(const server::inquery_server_config_req &oInqueryServerConfigReq,
-	                server::inquery_server_config_ack &oInqueryServerConfigAck);
 	//下线节点
 	int OfflineNode(const std::string& sOfflineNodeIdentify);
 	//上线节点
@@ -140,7 +130,6 @@ public:
     int CanOnlineNode(const std::string& sOnlineNodeIdentify);
     //检查能否操作重新加载逻辑配置
     int CanReloadConfigNode(const std::string& sOnlineNodeIdentify,std::string &nodeType);
-public:
     //加载服务器基础信息
     bool LoadServersBase();
     //检查节点状态
@@ -150,6 +139,8 @@ public:
                     uint32 config_type,std::string &config_file);
     bool IsMaster()const {return (eMasterStatus == m_CenterActive.status);}
     bool IsSlave()const{return (eSlaveStatus == m_CenterActive.status);}
+    //服务数据接口
+    bool WriteServerDataToDB(const char* nodetype, int innerport,const char* innerip, int outerport, const char* outerip,const char* status);
 private:
     void SetCurrentTime(){m_currentTime = ::time(NULL);}
     /*
@@ -184,36 +175,23 @@ private:
     //从在线节点管理器中获取节点信息
     NodeStatusInfo *GetNodeInfo(const std::string &NodeKey);
     //获取指定类型节点的在线数量
-    net::uint32 GetNodeCountByType(const std::string &nodeType);
-    //添加最近负载
-    void AddNodesRecently(const NodeStatusInfo &nInfo);
+    uint32 GetNodeCountByType(const std::string &nodeType);
     //获取节点数量
-    inline net::uint32 GetMapNodeInfoSize()
-    {
-        return m_mapNodesStatus.size();
-    }
+    uint32 GetMapNodeInfoSize(){return m_mapNodesStatus.size();}
+
+    //服务数据接口
+    bool ServerDataLoadCheck();
+	bool ClearOverdueServerDataLogToDB();
+    bool ReplaceServerDataLoadStatusToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
+    bool WriteServerDataLoadLogToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
     //中心活跃状态
     CenterActive m_CenterActive;
-    struct NodeType
-    {
-    	typedef std::vector<std::string> ServersList;
-    	typedef std::vector<std::string>::const_iterator ServersListCIT;
-    	typedef std::vector<std::string>::iterator ServersListIT;
-        std::string nodetype;
-        ServersList neededServers;
-        void clear()
-        {
-            nodetype.clear();
-            neededServers.clear();
-        }
-    };
-    typedef std::vector<NodeType> NodeTypesVec;
     //节点类型配置
-    NodeTypesVec m_NodeTypesVec;
+    NodeTypesVec m_vecNodeTypes;
     //服务器白名单
-    std::vector<ServerWhiteNode> m_ServerWhiteNodeList;
+    std::vector<WhiteNode> m_vecWhiteNode;
     //中心服务器状态
-    std::vector<CenterActive> m_CenterActiveList;
+    std::vector<CenterActive> m_vecCenterActive;
     //根据节点类型获取所有节点状态
     bool GetNodeStatusByNodeType(const std::string & nodetype,
                     std::vector<NodeLoadStatus>& nodeStatusList);
@@ -348,10 +326,6 @@ private:
     bool ClearOverdueOfflineNodeLogToDB();
     //清理数据库中的统计节点数据中的超时信息
     bool ClearOverdueOfflineNodeStatisticsToDB();
-    //redis负载检查
-    bool ServerDataLoadCheck();
-    //清除过期服务器数据日志（如dataproxy的管理节点数据）
-    bool ClearOverdueServerDataLogToDB();
 private:
     /*
      * 网络相关函数
@@ -548,23 +522,23 @@ private:
      * */
     //节点负载最后写表tb_nodeload_log的时间
     //写表时间间隔m_nodeLoadLogTimeInterval（60s）
-    net::uint64 m_nodeLoadLogInsertLastTime;
+    uint64 m_nodeLoadLogInsertLastTime;
     //节点负载统计最后写表tb_nodeload_statistics的时间
     //写表时间间隔m_nodeLoadStatisticsTimeInterval（300s）
-    net::uint64 m_nodeLoadStatisticsInsertLastTime;
+    uint64 m_nodeLoadStatisticsInsertLastTime;
     //节点负载最后检查时间
     //（1）每隔一段时间m_nodeLoadCheckTimeInterval（1天）才检查 节点负载记录
     //(1)需要清除 tb_nodeload_log 中过期数据，根据m_nodeLoadLogOverdue过时时间
     //(2)需要清除 tb_nodeload_statistics 中过期数据 ,根据 m_nodeLoadStatisticsOverdue过时时间（60天）
-    net::uint64 m_nodeLoadCheckLastTime;
+    uint64 m_nodeLoadCheckLastTime;
     //节点状态最后检查时间
     //每隔一段时间m_nodeStatusCheckTimeInterval（60s）才检查节点状态表tb_nodeload_status
     //需要清除表 tb_nodeload_status 中过期的下线节点，过期时间根据  m_deleteOfflineNodeTimeInterval（1天）
-    net::uint64 m_nodeStatusCheckLastTime;
+    uint64 m_nodeStatusCheckLastTime;
     //节点数据负载最后检查时间
-    //每隔一段时间m_serverDataLoadCheckTimeInterval（60s）才检查过期服务器数据负载日志表tb_serverdata_log
-    //需要清除tb_serverdata_log中过期日志，过期时间根据m_serverDataLoadStatusLogOverdue（60天）
-    net::uint64 m_serverDataLoadCheckLastTime;
+	//每隔一段时间m_serverDataLoadCheckTimeInterval（60s）才检查过期服务器数据负载日志表tb_serverdata_log
+	//需要清除tb_serverdata_log中过期日志，过期时间根据m_serverDataLoadStatusLogOverdue（60天）
+	uint64 m_serverDataLoadCheckLastTime;
 };
 
 NodeSession* GetNodeSession(net::Labor* pLabor,const std::string &configPath,bool boReload=false);

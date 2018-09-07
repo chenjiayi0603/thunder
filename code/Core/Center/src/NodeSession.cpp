@@ -396,7 +396,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 //加载服务器节点类型信息
 bool NodeSession::LoadNodeTypes()
 {
-    if (m_NodeTypesVec.size() > 0)return true;
+    if (m_vecNodeTypes.size() > 0)return true;
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -427,7 +427,7 @@ bool NodeSession::LoadNodeTypes()
 
 bool NodeSession::LoadNodeTypes(util::T_vecResultSet &vecRes)
 {
-	m_NodeTypesVec.clear();
+	m_vecNodeTypes.clear();
 	NodeType nodeType;
 	for (util::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();
 					++it)
@@ -476,15 +476,15 @@ bool NodeSession::LoadNodeTypes(util::T_vecResultSet &vecRes)
 								noticeservers.c_str());
 			}
 		}
-		m_NodeTypesVec.push_back(nodeType);
+		m_vecNodeTypes.push_back(nodeType);
 	}
-	LOG4_TRACE("LoadNodeTypes ok m_NodeTypesVec size:%u",m_NodeTypesVec.size());
+	LOG4_TRACE("LoadNodeTypes ok m_vecNodeTypes size:%u",m_vecNodeTypes.size());
 	return true;
 }
 
 bool NodeSession::LoadServerWhiteList()
 {
-	if (m_ServerWhiteNodeList.size() > 0)return true;
+	if (m_vecWhiteNode.size() > 0)return true;
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -515,19 +515,19 @@ bool NodeSession::LoadServerWhiteList()
 
 bool NodeSession::LoadServerWhiteList(util::T_vecResultSet &vecRes)
 {
-	m_ServerWhiteNodeList.clear();
+	m_vecWhiteNode.clear();
 	util::T_vecResultSet::iterator it = vecRes.begin();
 	util::T_vecResultSet::iterator itEnd = vecRes.end();
 	for(;it != itEnd;++it)
 	{
-		ServerWhiteNode serverWhiteNode;
-		if(serverWhiteNode.loadFromMapRow(*it))
+		WhiteNode whiteNode;
+		if(whiteNode.loadFromMapRow(*it))
 		{
-			m_ServerWhiteNodeList.push_back(serverWhiteNode);
-			LOG4_DEBUG("server whitelist inner_ip(%s)",serverWhiteNode.inner_ip);
+			m_vecWhiteNode.push_back(whiteNode);
+			LOG4_DEBUG("server whitelist inner_ip(%s)",whiteNode.inner_ip);
 		}
 	}
-	LOG4_TRACE("LoadServerWhiteList ok m_ServerWhiteNodeList size:%u",m_ServerWhiteNodeList.size());
+	LOG4_TRACE("LoadServerWhiteList ok m_vecWhiteNode size:%u",m_vecWhiteNode.size());
 	return true;
 }
 
@@ -564,7 +564,7 @@ bool NodeSession::CheckCenterActive()
 bool NodeSession::CheckCenterActive(util::T_vecResultSet &vecRes)
 {
 	LOG4_TRACE("%s",__FUNCTION__);
-	m_CenterActiveList.clear();
+	m_vecCenterActive.clear();
     {//加载中心活跃状态
         util::T_vecResultSet::iterator it = vecRes.begin();
         util::T_vecResultSet::iterator itEnd = vecRes.end();
@@ -575,7 +575,7 @@ bool NodeSession::CheckCenterActive(util::T_vecResultSet &vecRes)
             {
                 LOG4_DEBUG("server centerActive inner_ip(%s),inner_port(%d),status(%d),activetime(%llu)",
                                 centerActive.inner_ip,centerActive.inner_port,centerActive.status,centerActive.activetime);
-                m_CenterActiveList.push_back(centerActive);
+                m_vecCenterActive.push_back(centerActive);
             }
             else
             {
@@ -592,8 +592,8 @@ bool NodeSession::SelectCenterMaster()
 	//检查中心活跃状态并选举
 	bool boIsMaster(true);//是否是主模式
 	{//选举主服务器（目前选举方式适用于两个中心节点）
-		std::vector<CenterActive>::const_iterator it = m_CenterActiveList.begin();
-		std::vector<CenterActive>::const_iterator itEnd = m_CenterActiveList.end();
+		std::vector<CenterActive>::const_iterator it = m_vecCenterActive.begin();
+		std::vector<CenterActive>::const_iterator itEnd = m_vecCenterActive.end();
 		for(;it != itEnd;++it)
 		{
 			if(eMasterStatus == it->status)//只检查主节点状态
@@ -719,14 +719,14 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
 //加载服务器基础信息
 bool NodeSession::LoadServersBase()
 {
-    if(m_NodeTypesVec.empty())
+    if(m_vecNodeTypes.empty())
     {
         if(!LoadNodeTypes())
         {
             LOG4_WARN("failed to LoadNodeTypes");
         }
     }
-    if(m_ServerWhiteNodeList.empty())
+    if(m_vecWhiteNode.empty())
     {
         if(!LoadServerWhiteList())
         {
@@ -738,8 +738,8 @@ bool NodeSession::LoadServersBase()
 
 bool NodeSession::CheckNodeType(const std::string& nodeType)
 {//检查节点类型
-    NodeTypesVec::const_iterator it = m_NodeTypesVec.begin();
-    NodeTypesVec::const_iterator itEnd = m_NodeTypesVec.end();
+    NodeTypesVec::const_iterator it = m_vecNodeTypes.begin();
+    NodeTypesVec::const_iterator itEnd = m_vecNodeTypes.end();
     for (;it != itEnd; ++it)
     {
         if (it->nodetype == nodeType)
@@ -753,8 +753,8 @@ bool NodeSession::CheckNodeType(const std::string& nodeType)
 
 bool NodeSession::CheckNodeInnerIP(const std::string& nodeInnerIp)
 {
-    std::vector<ServerWhiteNode>::const_iterator it = m_ServerWhiteNodeList.begin();
-    std::vector<ServerWhiteNode>::const_iterator itEnd = m_ServerWhiteNodeList.end();
+    std::vector<WhiteNode>::const_iterator it = m_vecWhiteNode.begin();
+    std::vector<WhiteNode>::const_iterator itEnd = m_vecWhiteNode.end();
     for(;it!=itEnd;++it)
     {
         if(it->inner_ip == nodeInnerIp)
@@ -914,11 +914,11 @@ bool NodeSession::SetNodeDataOfflineToDBByNodeId(int node_id)
 	}
     return (true);
 }
-const NodeSession::NodeType* NodeSession::GetNodeTypeServerInfo(
+const NodeType* NodeSession::GetNodeTypeServerInfo(
                 const std::string &nodeType)
 {
-    NodeTypesVec::iterator it = m_NodeTypesVec.begin();
-    NodeTypesVec::iterator itEnd = m_NodeTypesVec.end();
+    NodeTypesVec::iterator it = m_vecNodeTypes.begin();
+    NodeTypesVec::iterator itEnd = m_vecNodeTypes.end();
     for (; it != itEnd; ++it)
     {
         const NodeType& nodetype = *it;
@@ -1274,15 +1274,71 @@ bool NodeSession::ClearOverdueOfflineNodeStatisticsToDB()
     return (true);
 }
 
+bool NodeSession::WriteServerDataToDB(const char* nodetype, int innerport,
+                const char* innerip, int outerport, const char* outerip,
+                const char* status)
+{
+    SetCurrentTime();
+//    ServerDataLoadCheck();
+    if(!ReplaceServerDataLoadStatusToDB(nodetype, innerport, innerip, outerport,
+            outerip, status))
+    {
+    	LOG4_WARN("failed to ReplaceServerDataLoadStatusToDB nodetype:%s",nodetype);
+    	return false;
+    }
+//    if(!WriteServerDataLoadLogToDB(nodetype, innerport, innerip, outerport, outerip,
+//            status))
+//    {
+//    	LOG4_WARN("failed to WriteServerDataLoadLogToDB nodetype:%s",nodetype);
+//    	return false;
+//    }
+    LOG4_DEBUG("succeeded to WriteServerDataToDB nodetype:%s",nodetype);
+    return (true);
+}
+
 bool NodeSession::ServerDataLoadCheck()
 {
-    if (m_currentTime
-                    >= m_serverDataLoadCheckLastTime
-                                    + m_serverDataLoadCheckTimeInterval)
+    if (m_currentTime >= m_serverDataLoadCheckLastTime + m_serverDataLoadCheckTimeInterval)
     {
         m_serverDataLoadCheckLastTime = m_currentTime;
         ClearOverdueServerDataLogToDB();
     }
+    return (true);
+}
+bool NodeSession::ReplaceServerDataLoadStatusToDB(const char* nodetype,
+                int innerport, const char* innerip, int outerport,
+                const char* outerip, const char* status)
+{
+    char szSql[4096];
+    snprintf(szSql, sizeof(szSql) - 1,
+                    "replace into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
+                    NODE_SERVER_DATA_STATUS_TABLE, nodetype, innerport, innerip,
+                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
+    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+	if (!net::MysqlStep::Launch(GetLabor(),pstep))
+	{
+		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
+		return (false);
+	}
+    return (true);
+}
+bool NodeSession::WriteServerDataLoadLogToDB(const char* nodetype,
+                int innerport, const char* innerip, int outerport,
+                const char* outerip, const char* status)
+{
+    char szSql[4096];
+    snprintf(szSql, sizeof(szSql) - 1,
+                    "insert into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
+                    NODE_SERVER_DATA_LOG_TABLE, nodetype, innerport, innerip,
+                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
+    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+	if (!net::MysqlStep::Launch(GetLabor(),pstep))
+	{
+		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
+		return (false);
+	}
     return (true);
 }
 
@@ -1408,7 +1464,6 @@ bool NodeSession::DelNode(const std::string& delNodeIdentify)
 	}
 	return true;
 }
-
 
 int NodeSession::GetLoadMinNode(const std::string& serverType,NodeLoadStatus &nodeLoadStatus)
 {//主从节点都允许分配服务器节点
@@ -1841,30 +1896,6 @@ int NodeSession::CheckMgrMsg(const MsgBody& oInMsgBody,server::user_basic &basic
 	return ERR_OK;
 }
 
-int NodeSession::CheckServerConfig(const server::inquery_server_config_req &oInqueryServerConfigReq,
-                server::inquery_server_config_ack &oInqueryServerConfigAck)
-{
-    std::string config_content;
-    std::string config_file;
-    uint32 update_time(0);
-    uint32 auto_send(0);
-    uint32 reload_config(0);
-    if(!LoadServerConfig(oInqueryServerConfigReq.node_type(),oInqueryServerConfigReq.config_type(),
-                    config_content,config_file,update_time,
-                    auto_send,reload_config))
-	{
-	    LOG4_ERROR("failed to LoadServerConfig");
-        return ERR_SERVERINFO_RECORD;
-	}
-    ::server::node_config* pNodeConfig = oInqueryServerConfigAck.mutable_config();
-    pNodeConfig->set_config_content(config_content);
-    pNodeConfig->set_config_file(config_file);
-    pNodeConfig->set_update_time(update_time);
-    pNodeConfig->set_auto_send(auto_send);
-    pNodeConfig->set_reload_config(reload_config);
-	return ERR_OK;
-}
-
 int NodeSession::OfflineNode(const std::string& sOfflineNodeIdentify)
 {
     if (sOfflineNodeIdentify == GetSelfNodeIdentify())
@@ -2186,7 +2217,7 @@ bool NodeSession::SendServerConfigToType(const std::string& node_type,int config
 			pstep->AsyncSend(sNodeIdentify,strConfig,net::CMD_REQ_SERVER_CONFIG);
 			if (!net::StepState::Launch(GetLabor(),pstep))
 			{
-				LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
+				LOG4_WARN("%s StepState::Launch failed",__FUNCTION__);
 				return false;
 			}
 			LOG4_DEBUG("succ to send to node(%s,%s)",node_type.c_str(),sNodeIdentify.c_str());
@@ -2308,7 +2339,7 @@ int NodeSession::SendOthersNoticeToRegNode(const net::tagMsgShell& stMsgShell,co
     const std::string& strRegNodeType = regNodeStatus.nodeType;
     //发送其他服务器给注册者
     //发送格式{\"node_arry_reg\":[{\\"node_type\\":\"LOGIC\",\\"node_ip\\":\"192.168.18.22\",\\"node_port\\":40120,\\"worker_num\\":2}]}
-	const NodeSession::NodeType* pNodeType = GetNodeTypeServerInfo(strRegNodeType);
+	const NodeType* pNodeType = GetNodeTypeServerInfo(strRegNodeType);
 	if (pNodeType)
 	{
 		util::CJsonObject jRegisteredNodesObj;
@@ -2393,7 +2424,7 @@ int NodeSession::SendCenterNoticeToRegNode(const net::tagMsgShell& stMsgShell,
     const std::string& strRegNodeType = regNodeStatus.nodeType;
     //发送中心服务器给注册者
     //发送格式{\"node_arry_reg\":[{\\"node_type\\":\"CENTER\",\\"node_ip\\":\"192.168.18.22\",\\"node_port\\":40120,\\"worker_num\\":1}]}
-	const NodeSession::NodeType* pNodeType = GetNodeTypeServerInfo(strRegNodeType);
+	const NodeType* pNodeType = GetNodeTypeServerInfo(strRegNodeType);
 	if (pNodeType)
 	{
 		util::CJsonObject jRegisteredNodesObj;
@@ -2691,7 +2722,7 @@ int NodeSession::SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo)
         {
             const NodeStatusInfo& nodeInfo = it_iter->second;
             //获取其他服务的配置(同一个节点的其他子进程也通知)
-            const NodeSession::NodeType* pNodeType = GetNodeTypeServerInfo(nodeInfo.nodeType);
+            const NodeType* pNodeType = GetNodeTypeServerInfo(nodeInfo.nodeType);
             if(pNodeType)
             {
                 //其他服务需要的服务
@@ -2757,7 +2788,7 @@ int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
                 continue;
             }
             //获取其他服务的配置
-            const NodeSession::NodeType* pNodeType = GetNodeTypeServerInfo(nodeInfo.nodeType);
+            const NodeType* pNodeType = GetNodeTypeServerInfo(nodeInfo.nodeType);
             if(pNodeType)
             {
                 //其他服务需要的服务
@@ -2817,7 +2848,7 @@ int NodeSession::SendOnlineToGateway(const NodeStatusInfo& onlineNodeInfo)
 			continue;
 		}
 		//给其他服务发送通知
-		const NodeSession::NodeType* pNodeType =
+		const NodeType* pNodeType =
 						GetNodeTypeServerInfo(nodeInfo.nodeType);
 		if (pNodeType)    //已注册的节点需要的节点类型
 		{
