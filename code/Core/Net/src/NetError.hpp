@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Project:  Starship
+* Project:  Net
 * @file     NetError.hpp
 * @brief    系统错误定义
 * @author   cjy
@@ -7,8 +7,8 @@
 * @note
 * Modify history:
 ******************************************************************************/
-#ifndef OSSERROR_HPP_
-#define OSSERROR_HPP_
+#ifndef NETERROR_HPP_
+#define NETERROR_HPP_
 
 namespace net
 {
@@ -70,4 +70,4 @@ enum E_ERROR_NO
 }   // namespace net
 
 
-#endif /* OSSERROR_HPP_ */
+#endif /* NETERROR_HPP_ */

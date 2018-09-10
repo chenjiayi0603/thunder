@@ -47,8 +47,8 @@ INC := $(INC) \
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(PROTO_PATH) -lim_proto \
-           -L$(PROTO_PATH)/src -lim_proto \
+           -L$(PROTO_PATH) -lProto \
+           -L$(PROTO_PATH)/src -lProto \
            -L$(UTIL_PATH)/lib -lUtil \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lprotobuf \
