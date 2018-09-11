@@ -84,6 +84,18 @@ bool ModuleHello::AnyMessage(
 	{
 		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
+	else if ("DataPgAgentSetGet" == strOption)
+	{
+		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+	}
+	else if ("DataPgAgentSet" == strOption)
+	{
+		SetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+	}
+	else if ("DataPgAgentGet" == strOption)
+	{
+		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+	}
 	else if ("RedisearchAdd" == strOption)
 	{
 		std::string strVal;
@@ -449,7 +461,7 @@ void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	oDbOperator.AddCondition(
 			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
 			"id",1);
-	LOG4_DEBUG("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
+	LOG4_DEBUG("%s() SetPostgres %s",__FUNCTION__,sValue.c_str());
 	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 

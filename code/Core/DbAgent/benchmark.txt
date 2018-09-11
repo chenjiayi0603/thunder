@@ -1,7 +1,3 @@
-使用pgsql10.5 的库libpq.so
-使用pgxx 的库libpqxx-6.2.so libpqxx.so
-
-
 简单查询，压测
 [imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentGet 100 100 
 length:
