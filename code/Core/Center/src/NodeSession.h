@@ -79,25 +79,10 @@ public:
         m_nNodeTimeBeat = dSessionTimeout;//中心活跃上报时间
         m_pSyncMysqlDbi = NULL;
     }
-    virtual ~NodeSession()
-    {
-        if (m_pSyncMysqlDbi)
-        {
-            delete m_pSyncMysqlDbi;
-            m_pSyncMysqlDbi = NULL;
-        }
-    }
-    net::E_CMD_STATUS Timeout()
-    {//定时检查中心活跃状态
-        LOG4_DEBUG("NodeSession::Timeout CheckCenterActive nNodeActiveTimeOut:%d",m_nNodeActiveTimeOut);
-        CheckCenterActive();//定时检查中心活跃状态
-        return net::STATUS_CMD_RUNNING;
-    }
+    virtual ~NodeSession();
+    net::E_CMD_STATUS Timeout();
     //读取配置
     bool ReadConfig(const std::string& configPath);
-    //加载配置文件
-    bool LoadConfigFiles();
-    bool LoadConfigFiles(util::T_vecResultSet &vecRes);
     //初始化
     bool Init(const std::string& configPath,std::string &err,bool boReload=false);
 public:
@@ -132,7 +117,7 @@ public:
 	//发送中心服务器给注册者
 	int SendCenterNoticeToRegNode(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
 	//发送连接断开通知到其它服务
-	int SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo);
+	int SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo);
 	//获取新的节点id
 	uint32 GetNewNodeID();
 	// 添加标识的节点信息到在线节点管理器中去
@@ -187,6 +172,8 @@ public:
     bool ClearOverdueOfflineNodeLogToDB();
     //清理数据库中的统计节点数据中的超时信息
     bool ClearOverdueOfflineNodeStatisticsToDB();
+    //获取最小负载节点
+	int GetLoadMinNode(const std::string& serverType,NodeLoadStatus &nodeLoadStatus);
 
 
     /* ********************灰度功能（以及热备份功能）* */
@@ -220,8 +207,9 @@ public:
 
 
 	/* ********************服务器配置管理功能* */
-	//获取最小负载节点
-    int GetLoadMinNode(const std::string& serverType,NodeLoadStatus &nodeLoadStatus);
+	//加载配置文件
+	bool LoadServerConfig();
+	bool LoadServerConfig(util::T_vecResultSet &vecRes);
     //更新节点配置
 	int UpdateServerConfig(const server::update_server_config_req &oUpdateServerConfigReq,server::update_server_config_ack &oUpdateServerConfigAck);
 	//检查管理者消息
@@ -256,6 +244,7 @@ public:
 	bool ReplaceServerDataLoadStatusToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
 	bool WriteServerDataLoadLogToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
 
+
 	/* ***********************网络相关函数*/
 	bool SendTo(const net::tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return GetLabor()->SendTo(stMsgShell,oMsgHead,oMsgBody);}
 	bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return GetLabor()->SendTo(strIdentify,oMsgHead,oMsgBody);}
@@ -268,6 +257,7 @@ public:
 	int GetNodeBeat()const{return m_nNodeActiveTimeOut;}
 	//获取新的seq
 	int GetSequence(){return GetLabor()->GetSequence();}
+
 
 	/* ***********通用接口   */
 	void SetCurrentTime(){m_currentTime = ::time(NULL);}

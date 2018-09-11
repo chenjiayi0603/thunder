@@ -14,6 +14,21 @@ namespace core
                 { char errStr[64];snprintf(errStr,sizeof(errStr),"center cmd load(%s) failed",name);err = errStr;return false;}
 
 
+virtual NodeSession::~NodeSession()
+{
+	if (m_pSyncMysqlDbi)
+	{
+		delete m_pSyncMysqlDbi;
+		m_pSyncMysqlDbi = NULL;
+	}
+}
+net::E_CMD_STATUS NodeSession::Timeout()
+{//定时检查中心活跃状态
+	LOG4_DEBUG("NodeSession::Timeout CheckCenterActive nNodeActiveTimeOut:%d",m_nNodeActiveTimeOut);
+	CheckCenterActive();//定时检查中心活跃状态
+	return net::STATUS_CMD_RUNNING;
+}
+
 bool NodeSession::ReadConfig(const std::string& configPath)
 {
     util::CJsonObject oCenterConfJson;
@@ -55,9 +70,9 @@ bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType
     nodeConfigFile.clear();
     if(m_vecNodeConfigFile.empty())
     {
-        if(!LoadConfigFiles())
+        if(!LoadServerConfig())
         {
-            LOG4_WARN("failed to LoadConfigFiles");
+            LOG4_WARN("failed to LoadServerConfig");
             return false;
         }
     }
@@ -74,11 +89,11 @@ bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType
     return false;
 }
 
-bool NodeSession::LoadConfigFiles()
+bool NodeSession::LoadServerConfig()
 {
     if(!m_vecNodeConfigFile.empty())
     {
-        LOG4_TRACE("LoadConfigFiles already");
+        LOG4_TRACE("LoadServerConfig already");
         return true;
     }
     auto mysqlCallback = [](net::StepState* state)
@@ -90,8 +105,8 @@ bool NodeSession::LoadConfigFiles()
 			util::T_vecResultSet vecRes;
 			if (pMysqlState->m_pMysqlResSet->GetResultSet(vecRes) > 0)
 			{
-				pStageParam->pNodeSession->LoadConfigFiles(vecRes);
-				LOG4_TRACE_S(state,"LoadConfigFilesStateSendToMysqlCallback ok vecRes size:%u",vecRes.size());
+				pStageParam->pNodeSession->LoadServerConfig(vecRes);
+				LOG4_TRACE_S(state,"LoadServerConfigStateSendToMysqlCallback ok vecRes size:%u",vecRes.size());
 			}
 		}
 		return true;
@@ -109,7 +124,7 @@ bool NodeSession::LoadConfigFiles()
     return true;
 }
 
-bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
+bool NodeSession::LoadServerConfig(util::T_vecResultSet &vecRes)
 {
 	m_vecNodeConfigFile.clear();
 	NodeConfigFile nodeConfigFile;
@@ -160,7 +175,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 			continue;
 		}
 		const std::string& cmds = valmap["cmd"];
-		LOG4_DEBUG("LoadConfigFiles node_type(%s) cmd(%s)",nodeConfigFile.node_type.c_str(),
+		LOG4_DEBUG("LoadServerConfig node_type(%s) cmd(%s)",nodeConfigFile.node_type.c_str(),
 						cmds.c_str());
 		if (!cmds.empty())
 		{
@@ -171,7 +186,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 			}
 			else
 			{
-				LOG4_WARN("LoadConfigFiles parse cmd(%s) failed",
+				LOG4_WARN("LoadServerConfig parse cmd(%s) failed",
 								cmds.c_str());
 			}
 		}
@@ -182,7 +197,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 			continue;
 		}
 		const std::string& url_paths = valmap["url_path"];
-		LOG4_DEBUG("LoadConfigFiles node_type(%s) url_paths(%s)",nodeConfigFile.node_type.c_str(),
+		LOG4_DEBUG("LoadServerConfig node_type(%s) url_paths(%s)",nodeConfigFile.node_type.c_str(),
 						url_paths.c_str());
 		if (!url_paths.empty())
 		{
@@ -193,7 +208,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 			}
 			else
 			{
-				LOG4_WARN("LoadConfigFiles parse url_paths(%s) failed",
+				LOG4_WARN("LoadServerConfig parse url_paths(%s) failed",
 								url_paths.c_str());
 			}
 		}
@@ -204,7 +219,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 			continue;
 		}
 		const std::string& nessesary_fields = valmap["nessesary_fields"];
-		LOG4_DEBUG("LoadConfigFiles node_type(%s) nessesary_fields(%s)",nodeConfigFile.node_type.c_str(),
+		LOG4_DEBUG("LoadServerConfig node_type(%s) nessesary_fields(%s)",nodeConfigFile.node_type.c_str(),
 						nessesary_fields.c_str());
 		if (!nessesary_fields.empty())
 		{
@@ -214,17 +229,17 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 				for (int i = 0; i < jParse.GetArraySize(); ++i)
 				{
 					std::string str_nessesary_field = jParse[i].ToString();
-					LOG4_DEBUG("LoadConfigFiles parse nessesary_field(%s)",
+					LOG4_DEBUG("LoadServerConfig parse nessesary_field(%s)",
 									str_nessesary_field.c_str());
 					RemoveFlag(str_nessesary_field);
-					LOG4_DEBUG("LoadConfigFiles parse str_nessesary_field(%s)",
+					LOG4_DEBUG("LoadServerConfig parse str_nessesary_field(%s)",
 									str_nessesary_field.c_str());
 					nodeConfigFile.nessesary_fields.push_back(str_nessesary_field);
 				}
 			}
 			else
 			{
-				LOG4_WARN("LoadConfigFiles parse nessesary_fields(%s) failed",
+				LOG4_WARN("LoadServerConfig parse nessesary_fields(%s) failed",
 								nessesary_fields.c_str());
 			}
 		}
@@ -385,9 +400,9 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
     m_CenterActive.inner_port = m_centerInnerPort;
     m_CenterActive.status = eOfflineStatus;
     CheckCenterActive();
-    if(!LoadConfigFiles())//加载其他类型节点配置文件
+    if(!LoadServerConfig())//加载其他类型节点配置文件
     {
-        LOG4_ERROR("failed to LoadConfigFiles");
+        LOG4_ERROR("failed to LoadServerConfig");
     }
     boInit = true;
     return true;
@@ -1889,10 +1904,10 @@ int NodeSession::OfflineNode(const std::string& sOfflineNodeIdentify)
         return ERR_SERVERINFO_RECORD;
     }
 	//下线者给其它服务发通知
-    int nRet = SendDisConnectToOthers(*pOfflineNodeInfo);
+    int nRet = SendDisconnectToOthers(*pOfflineNodeInfo);
     if(nRet)
     {
-        LOG4_WARN("failed to SendDisConnectToOthers:%s",pOfflineNodeInfo->nodeType.c_str());
+        LOG4_WARN("failed to SendDisconnectToOthers:%s",pOfflineNodeInfo->nodeType.c_str());
         return nRet;
     }
     LOG4_INFO("%s() OfflineNode sOfflineNodeIdentify(%s) ok",__FUNCTION__,sOfflineNodeIdentify.c_str());
@@ -2651,11 +2666,11 @@ int NodeSession::RealDelNode(const NodeStatusInfo& delNodeInfo)
 		return ERR_SERVERINFO_RECORD;
 	}
 	//给其它模块发下线通知
-	return SendDisConnectToOthers(delNodeInfo);
+	return SendDisconnectToOthers(delNodeInfo);
 }
 
 //发送连接断开通知到其它服务
-int NodeSession::SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo)
+int NodeSession::SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo)
 {
     util::CJsonObject jNodeExitObj,tmember;
     jNodeExitObj.AddEmptySubArray("node_arry_exit");
@@ -2665,7 +2680,7 @@ int NodeSession::SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo)
     tmember.Add("worker_num", delNodeInfo.workerNum);
     jNodeExitObj["node_arry_exit"].Add(tmember);
     const std::string& strDisConnectBody = jNodeExitObj.ToString();
-    LOG4_DEBUG("SendDisConnectToOthers!jNodeExitObj[%s]",strDisConnectBody.c_str());
+    LOG4_DEBUG("SendDisconnectToOthers!jNodeExitObj[%s]",strDisConnectBody.c_str());
     bool boSendedNotice(false);
     //遍历管理器内存的node列表,如果断开连接的服务是它们需要的服务,则通知它们注销该断开连接的服务
     {
@@ -2686,7 +2701,7 @@ int NodeSession::SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo)
                 {
                     if(unRegServerType == *it)//注销的服务器是该类服务器需要的服务器,则通知该类服务器注销
                     {
-                        LOG4_DEBUG("SendDisConnectToOthers nodeInfo.getNodeKey(%s)!jNodeExitObj[%s]",
+                        LOG4_DEBUG("SendDisconnectToOthers nodeInfo.getNodeKey(%s)!jNodeExitObj[%s]",
                         		nodeInfo.getNodeKey().c_str(),jNodeExitObj.ToString().c_str());
                         net::StepState* pstep = new net::StepState();
 						pstep->AsyncSend(nodeInfo.getNodeKey(),
@@ -2704,7 +2719,7 @@ int NodeSession::SendDisConnectToOthers(const NodeStatusInfo &delNodeInfo)
             }
             else
             {
-                LOG4_WARN("SendDisConnectToOthers!node type(%s) don't have server config,please check table tb_nodetype",
+                LOG4_WARN("SendDisconnectToOthers!node type(%s) don't have server config,please check table tb_nodetype",
                             nodeInfo.nodeType.c_str());
             }
         }
