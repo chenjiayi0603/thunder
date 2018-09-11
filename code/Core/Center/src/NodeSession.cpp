@@ -394,7 +394,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 }
 
 //加载服务器节点类型信息
-bool NodeSession::LoadNodeTypes()
+bool NodeSession::LoadNodeType()
 {
     if (m_vecNodeTypes.size() > 0)return true;
     auto mysqlCallback = [](net::StepState* state)
@@ -406,8 +406,8 @@ bool NodeSession::LoadNodeTypes()
 			util::T_vecResultSet vecRes;
 			if (pMysqlState->m_pMysqlResSet->GetResultSet(vecRes) > 0)
 			{
-				pStageParam->pNodeSession->LoadNodeTypes(vecRes);
-				LOG4_TRACE_S(state,"LoadNodeTypes callback ok vecRes size:%u",vecRes.size());
+				pStageParam->pNodeSession->LoadNodeType(vecRes);
+				LOG4_TRACE_S(state,"LoadNodeType callback ok vecRes size:%u",vecRes.size());
 			}
 		}
 		return true;
@@ -425,7 +425,7 @@ bool NodeSession::LoadNodeTypes()
     return (true);
 }
 
-bool NodeSession::LoadNodeTypes(util::T_vecResultSet &vecRes)
+bool NodeSession::LoadNodeType(util::T_vecResultSet &vecRes)
 {
 	m_vecNodeTypes.clear();
 	NodeType nodeType;
@@ -448,7 +448,7 @@ bool NodeSession::LoadNodeTypes(util::T_vecResultSet &vecRes)
 			continue;
 		}
 		const std::string& noticeservers = valmap["noticeservers"];
-		LOG4_DEBUG("loadNodeTypes nodetype(%s),noticeservers(%s)",
+		LOG4_DEBUG("LoadNodeType nodetype(%s),noticeservers(%s)",
 						nodeType.nodetype.c_str(), noticeservers.c_str());
 		if (!noticeservers.empty())
 		{
@@ -458,31 +458,31 @@ bool NodeSession::LoadNodeTypes(util::T_vecResultSet &vecRes)
 				for (int i = 0; i < jParse.GetArraySize(); ++i)
 				{
 					std::string nodeTypeStr = jParse[i].ToString();
-					LOG4_DEBUG("loadNodeTypes parse noticeservers(%s)",
+					LOG4_DEBUG("LoadNodeType parse noticeservers(%s)",
 									nodeTypeStr.c_str());
 					std::string::iterator nodeTypeStrIt = std::remove(
 									nodeTypeStr.begin(), nodeTypeStr.end(),
 									'\"');
 					nodeTypeStr.erase(nodeTypeStrIt, nodeTypeStr.end());
 					LOG4_DEBUG(
-									"loadNodeTypes parse noticeservers(%s)",
+									"LoadNodeType parse noticeservers(%s)",
 									nodeTypeStr.c_str());
 					nodeType.neededServers.push_back(nodeTypeStr);
 				}
 			}
 			else
 			{
-				LOG4_WARN("loadNodeTypes parse noticeservers(%s) failed",
+				LOG4_WARN("LoadNodeType parse noticeservers(%s) failed",
 								noticeservers.c_str());
 			}
 		}
 		m_vecNodeTypes.push_back(nodeType);
 	}
-	LOG4_TRACE("LoadNodeTypes ok m_vecNodeTypes size:%u",m_vecNodeTypes.size());
+	LOG4_TRACE("LoadNodeType ok m_vecNodeTypes size:%u",m_vecNodeTypes.size());
 	return true;
 }
 
-bool NodeSession::LoadServerWhiteList()
+bool NodeSession::LoadWhiteList()
 {
 	if (m_vecWhiteNode.size() > 0)return true;
     auto mysqlCallback = [](net::StepState* state)
@@ -494,8 +494,8 @@ bool NodeSession::LoadServerWhiteList()
 			util::T_vecResultSet vecRes;
 			if (pMysqlState->m_pMysqlResSet->GetResultSet(vecRes) > 0)
 			{
-				pStageParam->pNodeSession->LoadServerWhiteList(vecRes);
-				LOG4_TRACE_S(state,"LoadServerWhiteList callback ok vecRes size:%u",vecRes.size());
+				pStageParam->pNodeSession->LoadWhiteList(vecRes);
+				LOG4_TRACE_S(state,"LoadWhiteList callback ok vecRes size:%u",vecRes.size());
 			}
 		}
 		return true;
@@ -513,7 +513,7 @@ bool NodeSession::LoadServerWhiteList()
     return true;
 }
 
-bool NodeSession::LoadServerWhiteList(util::T_vecResultSet &vecRes)
+bool NodeSession::LoadWhiteList(util::T_vecResultSet &vecRes)
 {
 	m_vecWhiteNode.clear();
 	util::T_vecResultSet::iterator it = vecRes.begin();
@@ -527,7 +527,7 @@ bool NodeSession::LoadServerWhiteList(util::T_vecResultSet &vecRes)
 			LOG4_DEBUG("server whitelist inner_ip(%s)",whiteNode.inner_ip);
 		}
 	}
-	LOG4_TRACE("LoadServerWhiteList ok m_vecWhiteNode size:%u",m_vecWhiteNode.size());
+	LOG4_TRACE("LoadWhiteList ok m_vecWhiteNode size:%u",m_vecWhiteNode.size());
 	return true;
 }
 
@@ -715,22 +715,20 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
     return true;
 }
 
-
-//加载服务器基础信息
-bool NodeSession::LoadServersBase()
+bool NodeSession::LoadNodeRoute()
 {
     if(m_vecNodeTypes.empty())
     {
-        if(!LoadNodeTypes())
+        if(!LoadNodeType())
         {
-            LOG4_WARN("failed to LoadNodeTypes");
+            LOG4_WARN("failed to LoadNodeType");
         }
     }
     if(m_vecWhiteNode.empty())
     {
-        if(!LoadServerWhiteList())
+        if(!LoadWhiteList())
         {
-            LOG4_WARN("failed to LoadServerWhiteList");
+            LOG4_WARN("failed to LoadWhiteList");
         }
     }
     return true;
@@ -766,7 +764,7 @@ bool NodeSession::CheckWhiteNode(const std::string& nodeInnerIp)
     return false;
 }
 
-bool NodeSession::CheckRunningNodeSuspend(NodeStatusInfo& nodeinfo)
+bool NodeSession::CheckNodeSuspend(NodeStatusInfo& nodeinfo)
 {
 	NodeStatusInfo *pNodeStatusInfo = GetNodeInfo(nodeinfo.getNodeKey());
 	if (pNodeStatusInfo)
@@ -779,9 +777,9 @@ bool NodeSession::CheckRunningNodeSuspend(NodeStatusInfo& nodeinfo)
 //检查节点状态
 bool NodeSession::CheckNodeStatus(const NodeStatusInfo& nodeinfo)
 {
-    if(!LoadServersBase())
+    if(!LoadNodeRoute())
     {
-        LOG4_ERROR("failed to LoadServersBase");
+        LOG4_ERROR("failed to LoadNodeRoute");
     }
     //检查节点类型
     if(!CheckNodeType(nodeinfo.nodeType))
@@ -1320,7 +1318,7 @@ int NodeSession::RegNode(const net::tagMsgShell& stMsgShell, const MsgHead& oInM
                         const MsgBody& oInMsgBody, const NodeStatusInfo& nodeinfo)
 {
     NodeStatusInfo tmpRegNodeStatus = nodeinfo;
-    CheckRunningNodeSuspend(tmpRegNodeStatus);
+    CheckNodeSuspend(tmpRegNodeStatus);
     if(eMasterStatus == m_CenterActive.status)
     {
         LOG4_DEBUG("Master(%s,%d) RealRegNode(%s)",m_CenterActive.inner_ip,m_CenterActive.inner_port,
@@ -2958,9 +2956,9 @@ NodeSession* GetNodeSession(net::Labor* pLabor,const std::string &configPath,boo
     if (pLabor->RegisterCallback(pSess))
     {
         LOG4CPLUS_DEBUG_FMT(pLabor->GetLogger(),"register NodeSession ok!");
-        if(!pSess->LoadServersBase())
+        if(!pSess->LoadNodeRoute())
         {
-            LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(),"failed to LoadServersBase");
+            LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(),"failed to LoadNodeRoute");
         }
         return (pSess);
     }

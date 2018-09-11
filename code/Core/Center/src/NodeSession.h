@@ -101,15 +101,15 @@ public:
     //初始化
     bool Init(const std::string& configPath,std::string &err,bool boReload=false);
 public:
-    /* ******************* 服务器节点路由功能     * */
-    //加载服务器基础信息
-	bool LoadServersBase();
+    /* ******************* 服务器路由功能     * */
+    //加载服务路由配置
+	bool LoadNodeRoute();
     //加载节点类型
-	bool LoadNodeTypes();
-	bool LoadNodeTypes(util::T_vecResultSet &vecRes);
+	bool LoadNodeType();
+	bool LoadNodeType(util::T_vecResultSet &vecRes);
 	//加载服务器白名单
-	bool LoadServerWhiteList();
-	bool LoadServerWhiteList(util::T_vecResultSet &vecRes);
+	bool LoadWhiteList();
+	bool LoadWhiteList(util::T_vecResultSet &vecRes);
     //注册节点
     int RegNode(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead,const MsgBody& oInMsgBody, const NodeStatusInfo& nodeinfo);
     //更新节点
@@ -125,10 +125,6 @@ public:
 	bool CheckNodeType(const std::string& nodeType);
 	//发送返回注册响应,会分配节点id
 	bool ResponseNodeReg(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,int iRet,const NodeStatusInfo &regNodeStatus);
-	//发送注册服务器的配置信息(注册成功后才调用)
-	bool SendServerConfig(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
-	//发送服务器的配置信息到指定类型节点
-	bool SendServerConfigToType(const std::string& node_type,int config_type,const util::CJsonObject& objConfigContent,const std::string& config_file,const std::string &sNodeIdentify);
 	//发送其他服务器给注册者
 	int SendOthersNoticeToRegNode(const net::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus);
 	//发送注册者给其它服务
@@ -207,7 +203,7 @@ public:
 	//更新中心活跃状态
 	bool UpdateCenterStatus(CenterStatus status,bool boPromote=false);
 	//检查正在运行并被挂起的节点
-	bool CheckRunningNodeSuspend(NodeStatusInfo& nodeinfo);
+	bool CheckNodeSuspend(NodeStatusInfo& nodeinfo);
 	//发送下线通知到网关服务
 	int SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo);
 	//发送上线通知到网关服务
@@ -247,6 +243,12 @@ public:
 	int UpdateServerConfigToDB(const std::string &node_type,uint32 config_type,const std::string& config_content,const std::string &config_file,uint32 auto_send,uint32 reload_config);
 	//获取服务器配置文件
 	bool GetServerConfigFile(const std::string &nodeType,int configType,NodeConfigFile &nodeConfigFile);
+	//发送注册服务器的配置信息(注册成功后才调用)
+	bool SendServerConfig(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
+	//发送服务器的配置信息到指定类型节点
+	bool SendServerConfigToType(const std::string& node_type,int config_type,const util::CJsonObject& objConfigContent,const std::string& config_file,const std::string &sNodeIdentify);
+
+
     /* ***********服务数据接口*/
     bool WriteServerDataToDB(const char* nodetype, int innerport,const char* innerip, int outerport, const char* outerip,const char* status);
     bool ServerDataLoadCheck();
