@@ -54,8 +54,7 @@ bool CmdNodeDisconnect::AnyMessage(
                 const MsgHead& oInMsgHead,
                 const MsgBody& oInMsgBody)
 {
-    const std::string& delNodeIdentify = oInMsgBody.body();
-    pSess->DelNode(delNodeIdentify);
+    pSess->DelNode(oInMsgBody.body());//delNodeIdentify
     return true;
 }
 

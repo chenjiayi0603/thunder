@@ -1410,7 +1410,7 @@ bool NodeSession::DelNode(const std::string& delNodeIdentify)
 	//获取对应的节点信息.delNodeIdentify(IP:端口)
 	if (!GetNodeInfo(delNodeIdentify, delNodeInfo))
 	{
-		LOG4_WARN("StepNodeDisConnect No such node.del node identity(%s)!",
+		LOG4_WARN("No such node.del node identity(%s)!",
 						delNodeIdentify.c_str());
 		return false;
 	}
@@ -1443,8 +1443,7 @@ int NodeSession::GetLoadMinNode(const std::string& serverType,NodeLoadStatus &no
     std::vector<NodeLoadStatus> vecNodeStatus;
     if(!GetNodeStatusByNodeType(serverType,vecNodeStatus))
     {
-        LOG4_ERROR("get server node failed(%s)",
-                        serverType.c_str());
+        LOG4_ERROR("get server node failed(%s)",serverType.c_str());
         return ERR_SERVERINFO;
     }
     if(vecNodeStatus.empty())
