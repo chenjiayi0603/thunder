@@ -101,23 +101,24 @@ public:
     int UpdateNode(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo& nodeinfo);
     //删除节点
     bool DelNode(const std::string& delNodeIdentify);
-	//注册节点(已有节点会更新).注册失败返回错误码
+	//注册节点路由(已有节点会更新).注册失败返回错误码
 	//注册成功会发送以下消息：	//(1)发送返回注册响应,会分配节点id	//(2)发送注册服务器的配置信息(注册成功后才调用)	//(3)发送其他服务器给注册者、发送注册者给其它服务
 	//注册返回信息：（1）注册响应,会分配节点id（2）发送注册服务器的配置信息(注册成功后才调用)（3）给注册者发其他服务器通知、注册者的给其它服务发通知    //返回注册响应,会分配节点id
-	int RealRegNode(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo& nodeinfo);
-	int RealDelNode(const NodeStatusInfo& delNodeInfo);
+	int RegNodeRoute(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo& nodeinfo);
+	//注销节点路由
+	int UnregNodeRoute(const NodeStatusInfo& nodeinfo);
 	//检查节点类型
 	bool CheckNodeType(const std::string& nodeType);
 	//发送返回注册响应,会分配节点id
 	bool ResponseNodeReg(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,int iRet,const NodeStatusInfo &regNodeStatus);
 	//发送其他服务器给注册者
-	int SendOthersNoticeToRegNode(const net::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus);
+	int SendOthersToReg(const net::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus);
 	//发送注册者给其它服务
-	int SendNodeRegNoticeToOthers(const NodeStatusInfo &regNodeStatus);
+	int SendRegToOthers(const NodeStatusInfo &regNodeStatus);
 	//发送中心服务器给注册者
-	int SendCenterNoticeToRegNode(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
+	int SendCenterToReg(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
 	//发送连接断开通知到其它服务
-	int SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo);
+	int SendUnregToOthers(const NodeStatusInfo &delNodeInfo);
 	//获取新的节点id
 	uint32 GetNewNodeID();
 	// 添加标识的节点信息到在线节点管理器中去
@@ -235,7 +236,8 @@ public:
 	bool SendServerConfig(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus);
 	//发送服务器的配置信息到指定类型节点
 	bool SendServerConfigToType(const std::string& node_type,int config_type,const util::CJsonObject& objConfigContent,const std::string& config_file,const std::string &sNodeIdentify);
-
+	//广播加载逻辑配置
+	bool ReloadServerConfigToType(const std::string& node_type,const NodeConfigFile &nodeConfigFile);
 
     /* ***********服务数据接口*/
     bool WriteServerDataToDB(const char* nodetype, int innerport,const char* innerip, int outerport, const char* outerip,const char* status);
@@ -244,23 +246,14 @@ public:
 	bool ReplaceServerDataLoadStatusToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
 	bool WriteServerDataLoadLogToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
 
-
-	/* ***********************网络相关函数*/
-	bool SendTo(const net::tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return GetLabor()->SendTo(stMsgShell,oMsgHead,oMsgBody);}
-	bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return GetLabor()->SendTo(strIdentify,oMsgHead,oMsgBody);}
-	bool SendToParent(const MsgHead& oMsgHead, const MsgBody& oMsgBody){return GetLabor()->SendToParent(oMsgHead,oMsgBody);}
-	//广播加载逻辑配置
-	bool ReloadServerConfigToType(const std::string& node_type,const NodeConfigFile &nodeConfigFile);
+	/* ***********通用接口   */
 	//广播给所有指定类型的服务器节点的管理者
 	bool SendToNodeType(const std::string& strNodeType, const MsgHead& oOutMsgHead, const MsgBody& oOutMsgBody);
 	//定时检查时间
 	int GetNodeBeat()const{return m_nNodeActiveTimeOut;}
+	void SetCurrentTime(){m_currentTime = ::time(NULL);}
 	//获取新的seq
 	int GetSequence(){return GetLabor()->GetSequence();}
-
-
-	/* ***********通用接口   */
-	void SetCurrentTime(){m_currentTime = ::time(NULL);}
 	//获取mysql last error
 	const std::string& GetSyncLastMysqlError() const{ return m_pSyncMysqlDbi->GetError();}
 	int GetSyncLastMysqlErrno() const {return m_pSyncMysqlDbi->GetErrno();}
@@ -307,8 +300,8 @@ private:
     std::string m_dbname;
     std::string m_dbcharacterset;
     int m_dbport;
-
     util::tagDbConnInfo m_dbConnInfo;
+
     //节点分配器
     uint32 m_nodeId;
     //当前时间
@@ -335,61 +328,45 @@ private:
     std::vector<NodeConfigFile> m_vecNodeConfigFile;
     //中心服务器列表
     std::vector<CenterServer> m_vecCenterServer;
-    /*
-     * 负载统计配置（后面的是对应配置文件中的字段）
-    * */
+
+    /*负载统计配置（后面的是对应配置文件中的字段）*/
     //检查节点下线时间间隔。节点一段时间不活跃，则设置其为下线状态
     //"nodeoffline_timeinterval":20
     int m_nodeOfflineTimeInterval;
-    //下线节点信息过期时间，下线节点过期后需要删除
-    //"deleteofflinenode_timeinterval":86400（1天）
+    //下线节点信息过期时间，下线节点过期后需要删除	"deleteofflinenode_timeinterval":86400（1天）
     int m_deleteOfflineNodeTimeInterval;
-    //节点上报时间间隔
-    //"nodereport_timeinterval":10 (目前未使用，暂时设置为10)
+    //节点上报时间间隔"nodereport_timeinterval":10 (目前未使用，暂时设置为10)
     int m_nodeReportTimeInterval;
-    //节点状态检查时间间隔,每隔一段时间才检查一次数据表tb_nodeload_status
-    //"nodestatuscheck_timeinterval":60
+    //节点状态检查时间间隔,每隔一段时间才检查一次数据表tb_nodeload_status "nodestatuscheck_timeinterval":60
     int m_nodeStatusCheckTimeInterval;
-    //节点负载日志写入时间间隔，每隔一段时间才写入表tb_nodeload_log
-    //"nodeloadlog_timeinterval":60
+    //节点负载日志写入时间间隔，每隔一段时间才写入表tb_nodeload_log "nodeloadlog_timeinterval":60
     int m_nodeLoadLogTimeInterval;
-    //节点负载日志过时时间，表tb_nodeload_log中的数据过期需要删除
-    //"nodeloadlog_overdue":5184000（60天）
+    //节点负载日志过时时间，表tb_nodeload_log中的数据过期需要删除 "nodeloadlog_overdue":5184000（60天）
     int m_nodeLoadLogOverdue;
-    //节点负载统计时间间隔，每隔一段时间写入表tb_nodeload_statistics
-    //"nodeloadstatistics_timeinterval":300
+    //节点负载统计时间间隔，每隔一段时间写入表tb_nodeload_statistics "nodeloadstatistics_timeinterval":300
     int m_nodeLoadStatisticsTimeInterval;
-    //节点负载统计过时时间,表tb_nodeload_statistics中的数据过期需要删除
-    //"nodeloadstatistics_overdue":5184000（60天）
+    //节点负载统计过时时间,表tb_nodeload_statistics中的数据过期需要删除 "nodeloadstatistics_overdue":5184000（60天）
     int m_nodeLoadStatisticsOverdue;
-    //节点负载检查时间(检查节点负载的日志和统计的时间间隔),表tb_nodeload_log和tb_nodeload_statistics每隔一段时间才检查过期
-    //"nodeloadcheck_timeinterval":86400（1天）
+    //节点负载检查时间(检查节点负载的日志和统计的时间间隔),表tb_nodeload_log和tb_nodeload_statistics每隔一段时间才检查过期  "nodeloadcheck_timeinterval":86400（1天）
     int m_nodeLoadCheckTimeInterval;
-    //服务器数据负载日志检查时间间隔,表tb_serverdata_log每隔一段时间才检查过期
-    //"serverdataloadstatuslogcheck_timeinterval":60
+    //服务器数据负载日志检查时间间隔,表tb_serverdata_log每隔一段时间才检查过期  "serverdataloadstatuslogcheck_timeinterval":60
     int m_serverDataLoadCheckTimeInterval;
-    //服务器数据负载日志过时时间,表tb_serverdata_log中的数据过期需要删除
-    //"serverdataloadstatuslog_overdue":5184000（60天）
+    //服务器数据负载日志过时时间,表tb_serverdata_log中的数据过期需要删除  "serverdataloadstatuslog_overdue":5184000（60天）
     int m_serverDataLoadStatusLogOverdue;
     /*记录时间，分钟在线数据修改为统计当前一分钟内各秒的值的平均值和最大值，分别记录每分钟在线用户的平均值和最大值*/
-    //节点负载最后写表tb_nodeload_log的时间
-    //写表时间间隔m_nodeLoadLogTimeInterval（60s）
+    //节点负载最后写表tb_nodeload_log的时间    写表时间间隔m_nodeLoadLogTimeInterval（60s）
     uint64 m_nodeLoadLogInsertLastTime;
-    //节点负载统计最后写表tb_nodeload_statistics的时间
-    //写表时间间隔m_nodeLoadStatisticsTimeInterval（300s）
+    //节点负载统计最后写表tb_nodeload_statistics的时间   写表时间间隔m_nodeLoadStatisticsTimeInterval（300s）
     uint64 m_nodeLoadStatisticsInsertLastTime;
     //节点负载最后检查时间
     //（1）每隔一段时间m_nodeLoadCheckTimeInterval（1天）才检查 节点负载记录
-    //(1)需要清除 tb_nodeload_log 中过期数据，根据m_nodeLoadLogOverdue过时时间
-    //(2)需要清除 tb_nodeload_statistics 中过期数据 ,根据 m_nodeLoadStatisticsOverdue过时时间（60天）
+    //(1)需要清除 tb_nodeload_log 中过期数据，根据m_nodeLoadLogOverdue过时时间  (2)需要清除 tb_nodeload_statistics 中过期数据 ,根据 m_nodeLoadStatisticsOverdue过时时间（60天）
     uint64 m_nodeLoadCheckLastTime;
     //节点状态最后检查时间
-    //每隔一段时间m_nodeStatusCheckTimeInterval（60s）才检查节点状态表tb_nodeload_status
-    //需要清除表 tb_nodeload_status 中过期的下线节点，过期时间根据  m_deleteOfflineNodeTimeInterval（1天）
+    //每隔一段时间m_nodeStatusCheckTimeInterval（60s）才检查节点状态表tb_nodeload_status  需要清除表 tb_nodeload_status 中过期的下线节点，过期时间根据  m_deleteOfflineNodeTimeInterval（1天）
     uint64 m_nodeStatusCheckLastTime;
     //节点数据负载最后检查时间
-	//每隔一段时间m_serverDataLoadCheckTimeInterval（60s）才检查过期服务器数据负载日志表tb_serverdata_log
-	//需要清除tb_serverdata_log中过期日志，过期时间根据m_serverDataLoadStatusLogOverdue（60天）
+	//每隔一段时间m_serverDataLoadCheckTimeInterval（60s）才检查过期服务器数据负载日志表tb_serverdata_log  需要清除tb_serverdata_log中过期日志，过期时间根据m_serverDataLoadStatusLogOverdue（60天）
 	uint64 m_serverDataLoadCheckLastTime;
 };
 

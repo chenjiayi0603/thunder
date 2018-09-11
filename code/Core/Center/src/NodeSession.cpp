@@ -33,8 +33,7 @@ bool NodeSession::ReadConfig(const std::string& configPath)
 {
     util::CJsonObject oCenterConfJson;
     //配置文件路径查找
-    std::string strConfFile = configPath
-                    + std::string("/CenterCmd.json");
+    std::string strConfFile = configPath + std::string("/CenterCmd.json");
     LOG4_DEBUG("CONF FILE = %s.",strConfFile.c_str());
     std::ifstream fin(strConfFile.c_str());
     //配置信息输入流
@@ -58,8 +57,7 @@ bool NodeSession::ReadConfig(const std::string& configPath)
     else
     {
         //配置信息流读取失败
-        LOG4_ERROR("Open conf (%s) error!",
-                        strConfFile.c_str());
+        LOG4_ERROR("Open conf (%s) error!",strConfFile.c_str());
         return false;
     }
     return true;
@@ -68,14 +66,11 @@ bool NodeSession::ReadConfig(const std::string& configPath)
 bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType,NodeConfigFile &nodeConfigFile)
 {
     nodeConfigFile.clear();
-    if(m_vecNodeConfigFile.empty())
-    {
-        if(!LoadServerConfig())
-        {
-            LOG4_WARN("failed to LoadServerConfig");
-            return false;
-        }
-    }
+	if(!LoadServerConfig())
+	{
+		LOG4_WARN("failed to LoadServerConfig");
+		return false;
+	}
     std::vector<NodeConfigFile>::const_iterator it = m_vecNodeConfigFile.begin();
     std::vector<NodeConfigFile>::const_iterator itEnd = m_vecNodeConfigFile.end();
     for(;it != itEnd;++it)
@@ -1329,16 +1324,15 @@ bool NodeSession::ClearOverdueServerDataLogToDB()
     return (true);
 }
 
-int NodeSession::RegNode(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead,
-                        const MsgBody& oInMsgBody, const NodeStatusInfo& nodeinfo)
+int NodeSession::RegNode(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, const NodeStatusInfo& nodeinfo)
 {
     NodeStatusInfo tmpRegNodeStatus = nodeinfo;
     CheckNodeSuspend(tmpRegNodeStatus);
     if(eMasterStatus == m_CenterActive.status)
     {
-        LOG4_DEBUG("Master(%s,%d) RealRegNode(%s)",m_CenterActive.inner_ip,m_CenterActive.inner_port,
+        LOG4_DEBUG("Master(%s,%d) RegNodeRoute(%s)",m_CenterActive.inner_ip,m_CenterActive.inner_port,
                         tmpRegNodeStatus.getNodeKey().c_str());
-        return RealRegNode(stMsgShell,oInMsgHead,oInMsgBody,tmpRegNodeStatus);
+        return RegNodeRoute(stMsgShell,oInMsgHead,oInMsgBody,tmpRegNodeStatus);
     }
     else if (eSlaveStatus == m_CenterActive.status)
     {//从节点更新内存，不更新db
@@ -1362,7 +1356,7 @@ int NodeSession::RegNode(const net::tagMsgShell& stMsgShell, const MsgHead& oInM
                             GetMapNodeInfoSize());
         }
         //从中心节点只会发布自己的路由
-        return SendCenterNoticeToRegNode(stMsgShell,oInMsgHead,oInMsgBody,tmpRegNodeStatus);
+        return SendCenterToReg(stMsgShell,oInMsgHead,oInMsgBody,tmpRegNodeStatus);
     }
     else
     {
@@ -1433,7 +1427,7 @@ bool NodeSession::DelNode(const std::string& delNodeIdentify)
 						__FUNCTION__, GetMapNodeInfoSize(),delNodeInfo.nodeType.c_str());
 	if(eMasterStatus == m_CenterActive.status)
 	{//主节点才写数据库和下发消息
-		RealDelNode(delNodeInfo);
+		UnregNodeRoute(delNodeInfo);
 	}
 	return true;
 }
@@ -1904,10 +1898,10 @@ int NodeSession::OfflineNode(const std::string& sOfflineNodeIdentify)
         return ERR_SERVERINFO_RECORD;
     }
 	//下线者给其它服务发通知
-    int nRet = SendDisconnectToOthers(*pOfflineNodeInfo);
+    int nRet = SendUnregToOthers(*pOfflineNodeInfo);
     if(nRet)
     {
-        LOG4_WARN("failed to SendDisconnectToOthers:%s",pOfflineNodeInfo->nodeType.c_str());
+        LOG4_WARN("failed to SendUnregToOthers:%s",pOfflineNodeInfo->nodeType.c_str());
         return nRet;
     }
     LOG4_INFO("%s() OfflineNode sOfflineNodeIdentify(%s) ok",__FUNCTION__,sOfflineNodeIdentify.c_str());
@@ -1941,10 +1935,10 @@ int NodeSession::OnlineNode(const std::string& sOnlineNodeIdentify)
         return ERR_SERVERINFO_RECORD;
     }
     //上线者给其它服务发通知
-    int nRet = SendNodeRegNoticeToOthers(*pOnlineNodeInfo);
+    int nRet = SendRegToOthers(*pOnlineNodeInfo);
     if(nRet)
     {
-        LOG4_WARN("failed to SendNodeRegNoticeToOthers:%s",pOnlineNodeInfo->nodeType.c_str());
+        LOG4_WARN("failed to SendRegToOthers:%s",pOnlineNodeInfo->nodeType.c_str());
         return nRet;
     }
     LOG4_INFO("%s() OnlineNode sOnlineNodeIdentify(%s) ok",__FUNCTION__,sOnlineNodeIdentify.c_str());
@@ -1992,12 +1986,7 @@ int NodeSession::CanReloadConfigNode(const std::string& sOnlineNodeIdentify,std:
     return ERR_OK;
 }
 
-/*
- 注册节点
- * */
-int NodeSession::RealRegNode(const net::tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
-					const NodeStatusInfo& nodeinfo)
+int NodeSession::RegNodeRoute(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo& nodeinfo)
 {
     NodeStatusInfo *pNodeInfo = GetNodeInfo(nodeinfo.getNodeKey());
     if (pNodeInfo) //注册过的只需要更新节点信息
@@ -2019,9 +2008,9 @@ int NodeSession::RealRegNode(const net::tagMsgShell& stMsgShell,
         //发送注册服务器的配置信息(注册成功后才调用)
         SendServerConfig(stMsgShell, oInMsgHead, oInMsgBody,*pNodeInfo);
         //给注册者发其他服务器通知
-        SendOthersNoticeToRegNode(stMsgShell, *pNodeInfo);
+        SendOthersToReg(stMsgShell, *pNodeInfo);
         //注册者给其它服务发通知
-        SendNodeRegNoticeToOthers(*pNodeInfo);
+        SendRegToOthers(*pNodeInfo);
         return (ERR_OK);
     }
     else //没有注册过的需要检查,然后分配节点并注册
@@ -2048,15 +2037,14 @@ int NodeSession::RealRegNode(const net::tagMsgShell& stMsgShell,
         //发送注册服务器的配置信息(注册成功后才调用)
         SendServerConfig(stMsgShell, oInMsgHead, oInMsgBody,tmpRegNodeStatus);
         //给注册者发其他服务器通知
-        SendOthersNoticeToRegNode(stMsgShell,tmpRegNodeStatus);
+        SendOthersToReg(stMsgShell,tmpRegNodeStatus);
         //注册者给其它服务发通知
-        SendNodeRegNoticeToOthers(tmpRegNodeStatus);
+        SendRegToOthers(tmpRegNodeStatus);
         return (ERR_OK);
     }
 }
 
-bool NodeSession::ResponseNodeReg(const net::tagMsgShell& stMsgShell,
-                const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, int iRet,const NodeStatusInfo &regNodeStatus)
+bool NodeSession::ResponseNodeReg(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, int iRet,const NodeStatusInfo &regNodeStatus)
 {
 	LOG4_DEBUG("");
     MsgHead oOutMsgHead;
@@ -2076,7 +2064,7 @@ bool NodeSession::ResponseNodeReg(const net::tagMsgShell& stMsgShell,
     {
         LOG4_DEBUG("register node(%s) ok nodeid(%d)",regNodeStatus.nodeType.c_str(),regNodeStatus.nodeId);
     }
-    return SendTo(stMsgShell, oOutMsgHead, oOutMsgBody);
+    return GetLabor()->SendTo(stMsgShell, oOutMsgHead, oOutMsgBody);
 }
 bool NodeSession::SendServerConfig(const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus)
@@ -2135,7 +2123,7 @@ bool NodeSession::SendServerConfig(const net::tagMsgShell& stMsgShell,
         oOutMsgHead.set_seq(GetLabor()->GetSequence());
         oOutMsgBody.set_body(objConfigStr);
         oOutMsgHead.set_msgbody_len(oOutMsgBody.ByteSize());
-        if (!SendTo(stMsgShell, oOutMsgHead,oOutMsgBody))
+        if (!GetLabor()->SendTo(stMsgShell, oOutMsgHead,oOutMsgBody))
         {
             LOG4_ERROR("failed to send to send server config");
             return (false);
@@ -2175,7 +2163,7 @@ bool NodeSession::SendServerConfigToType(const std::string& node_type,int config
 		oMsgHead.set_seq(GetSequence());
 		oMsgBody.set_body(strConfig);
 		oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-		if (!SendToParent(oMsgHead,oMsgBody))
+		if (!GetLabor()->SendToParent(oMsgHead,oMsgBody))
 		{
 			LOG4_WARN("failed to SendToParent");
 			return (false);
@@ -2258,12 +2246,12 @@ bool NodeSession::ReloadServerConfigToType(const std::string& node_type,const No
     MsgHead oOutMsgHead;
 	MsgBody oOutMsgBody;
 	oOutMsgHead.set_cmd(net::CMD_REQ_RELOAD_LOGIC_CONFIG);
-	oOutMsgHead.set_seq(GetSequence());
+	oOutMsgHead.set_seq(GetLabor()->GetSequence());
 	oOutMsgBody.set_body(objConfig.ToString());
 	oOutMsgHead.set_msgbody_len(oOutMsgBody.ByteSize());
     if(node_type == "CENTER")
     {
-    	if (!SendToParent(oOutMsgHead,oOutMsgBody))
+    	if (!GetLabor()->SendToParent(oOutMsgHead,oOutMsgBody))
     	{
     		LOG4_WARN("failed to send to node(%s)",node_type.c_str());
 			return (false);
@@ -2306,7 +2294,7 @@ bool NodeSession::SendToNodeType(const std::string& strNodeType, const MsgHead& 
 }
 
 //发送其他服务器给注册者
-int NodeSession::SendOthersNoticeToRegNode(const net::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus)
+int NodeSession::SendOthersToReg(const net::tagMsgShell& stMsgShell,const NodeStatusInfo &regNodeStatus)
 {
 	LOG4_DEBUG("");
     const std::string& strRegNodeType = regNodeStatus.nodeType;
@@ -2333,7 +2321,7 @@ int NodeSession::SendOthersNoticeToRegNode(const net::tagMsgShell& stMsgShell,co
 }
 
 //发送注册者给其它服务
-int NodeSession::SendNodeRegNoticeToOthers(const NodeStatusInfo &regNodeStatus)
+int NodeSession::SendRegToOthers(const NodeStatusInfo &regNodeStatus)
 {
 	LOG4_DEBUG("");
     if(regNodeStatus.suspend)//正常状态的节点才把自己的路由发布出去
@@ -2391,13 +2379,11 @@ int NodeSession::SendNodeRegNoticeToOthers(const NodeStatusInfo &regNodeStatus)
     return (ERR_OK);
 }
 
-int NodeSession::SendCenterNoticeToRegNode(const net::tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus)
+int NodeSession::SendCenterToReg(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,const NodeStatusInfo &regNodeStatus)
 {
-    const std::string& strRegNodeType = regNodeStatus.nodeType;
     //发送中心服务器给注册者
     //发送格式{\"node_arry_reg\":[{\\"node_type\\":\"CENTER\",\\"node_ip\\":\"192.168.18.22\",\\"node_port\\":40120,\\"worker_num\\":1}]}
-	const NodeType* pNodeType = GetNodeTypeServerInfo(strRegNodeType);
+	const NodeType* pNodeType = GetNodeTypeServerInfo(regNodeStatus.nodeType);
 	if (pNodeType)
 	{
 		util::CJsonObject jRegisteredNodesObj;
@@ -2406,13 +2392,13 @@ int NodeSession::SendCenterNoticeToRegNode(const net::tagMsgShell& stMsgShell,
 		pstep->AsyncSend(stMsgShell,jRegisteredNodesObj.ToString(),net::CMD_REQ_NODE_REG_NOTICE);
 		if (!net::StepState::Launch(GetLabor(),pstep))
 		{
-			LOG4_WARN("MysqlStep::Launch failed,strRegNodeType:%s",strRegNodeType.c_str());
+			LOG4_WARN("MysqlStep::Launch failed,strRegNodeType:%s",regNodeStatus.nodeType.c_str());
 			return (ERR_SERVER_ERROR);
 		}
 	}
 	else
 	{
-		LOG4_DEBUG("node type(%s) don't need other server routes",strRegNodeType.c_str());
+		LOG4_DEBUG("node type(%s) don't need other server routes",regNodeStatus.nodeType.c_str());
 	}
     return (ERR_OK);
 }
@@ -2658,19 +2644,19 @@ bool NodeSession::GetCenterNodesStatus(util::CJsonObject &jObj)
     return (true);
 }
 
-int NodeSession::RealDelNode(const NodeStatusInfo& delNodeInfo)
+int NodeSession::UnregNodeRoute(const NodeStatusInfo& nodeinfo)
 {
-	if (!SetNodeDataOfflineToDBByNodeId(delNodeInfo.nodeId))
+	if (!SetNodeDataOfflineToDBByNodeId(nodeinfo.nodeId))
 	{
-		LOG4_WARN( "SetNodeDataOfflineToDBByNodeId false(%d)!",delNodeInfo.nodeId);
+		LOG4_WARN( "SetNodeDataOfflineToDBByNodeId false(%d)!",nodeinfo.nodeId);
 		return ERR_SERVERINFO_RECORD;
 	}
 	//给其它模块发下线通知
-	return SendDisconnectToOthers(delNodeInfo);
+	return SendUnregToOthers(nodeinfo);
 }
 
 //发送连接断开通知到其它服务
-int NodeSession::SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo)
+int NodeSession::SendUnregToOthers(const NodeStatusInfo &delNodeInfo)
 {
     util::CJsonObject jNodeExitObj,tmember;
     jNodeExitObj.AddEmptySubArray("node_arry_exit");
@@ -2680,7 +2666,7 @@ int NodeSession::SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo)
     tmember.Add("worker_num", delNodeInfo.workerNum);
     jNodeExitObj["node_arry_exit"].Add(tmember);
     const std::string& strDisConnectBody = jNodeExitObj.ToString();
-    LOG4_DEBUG("SendDisconnectToOthers!jNodeExitObj[%s]",strDisConnectBody.c_str());
+    LOG4_DEBUG("SendUnregToOthers!jNodeExitObj[%s]",strDisConnectBody.c_str());
     bool boSendedNotice(false);
     //遍历管理器内存的node列表,如果断开连接的服务是它们需要的服务,则通知它们注销该断开连接的服务
     {
@@ -2701,7 +2687,7 @@ int NodeSession::SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo)
                 {
                     if(unRegServerType == *it)//注销的服务器是该类服务器需要的服务器,则通知该类服务器注销
                     {
-                        LOG4_DEBUG("SendDisconnectToOthers nodeInfo.getNodeKey(%s)!jNodeExitObj[%s]",
+                        LOG4_DEBUG("SendUnregToOthers nodeInfo.getNodeKey(%s)!jNodeExitObj[%s]",
                         		nodeInfo.getNodeKey().c_str(),jNodeExitObj.ToString().c_str());
                         net::StepState* pstep = new net::StepState();
 						pstep->AsyncSend(nodeInfo.getNodeKey(),
@@ -2719,7 +2705,7 @@ int NodeSession::SendDisconnectToOthers(const NodeStatusInfo &delNodeInfo)
             }
             else
             {
-                LOG4_WARN("SendDisconnectToOthers!node type(%s) don't have server config,please check table tb_nodetype",
+                LOG4_WARN("SendUnregToOthers!node type(%s) don't have server config,please check table tb_nodetype",
                             nodeInfo.nodeType.c_str());
             }
         }
