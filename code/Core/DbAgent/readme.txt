@@ -83,4 +83,33 @@ Successful transactions:        1000
 Failed transactions:               0
 Longest transaction:            1.06
 Shortest transaction:           0.02
+
+[imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentSet 100 100
+length:
+0
+file testfile_PgAgentSet 100 100
+/usr/bin/siege -c 100 -r 100 http://192.168.18.78:17137/hello/hello POST {
+    "option": "PgAgentSet",
+    "val":"10020"
+}
+      done.
+
+Transactions:                  10000 hits
+Availability:                 100.00 %
+Elapsed time:                  72.24 secs
+Data transferred:               0.20 MB
+Response time:                  0.72 secs
+Transaction rate:             138.43 trans/sec
+Throughput:                     0.00 MB/sec
+Concurrency:                   99.47
+Successful transactions:       10000
+Failed transactions:               0
+Longest transaction:            1.22
+Shortest transaction:           0.01
+ 
+FILE: /work/imdev/siege.log
+You can disable this annoying message by editing
+the .siegerc file in your home directory; change
+the directive 'show-logfile' to false.
+CONNECTED:56
  
