@@ -2,7 +2,7 @@
 使用pgxx 的库libpqxx-6.2.so libpqxx.so
 
 
-压测
+简单查询，压测
 [imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentGet 100 100 
 length:
 0
