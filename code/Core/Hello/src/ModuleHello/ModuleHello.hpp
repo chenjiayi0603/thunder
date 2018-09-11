@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  LoginServer
+ * Project:  Hello
  * @file     ModuleHello.hpp
  * @brief 
  * @author   cjy
@@ -46,8 +46,8 @@ public:
 private:
     void Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode);
 
-    void QueryFromPostgres(const net::tagMsgShell& stMsgShell,
-            const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
+    void SetGetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
+    void GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
 
     //redis basic
     void SetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");

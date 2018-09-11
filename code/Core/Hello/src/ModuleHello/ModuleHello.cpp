@@ -72,15 +72,13 @@ bool ModuleHello::AnyMessage(
 	std::string strOption;
 	obj.Get("option",strOption);
 
-	if ("PgAgent" == strOption)
+	if ("PgAgentSetGet" == strOption)
 	{
-		std::string strVal;
-		if (!obj.Get("val",strVal))
-		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
-			return false;
-		}
-		QueryFromPostgres(stMsgShell,oInHttpMsg,strVal,"PGAGENT");
+		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
+	}
+	else if ("PgAgentGet" == strOption)
+	{
+		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
 	else if ("RedisearchAdd" == strOption)
 	{
@@ -318,9 +316,10 @@ bool ModuleHello::AnyMessage(
     return(true);
 }
 
-void ModuleHello::QueryFromPostgres(const net::tagMsgShell& stMsgShell,
+void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,
         const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
+	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
     struct DataStepCustom:public net::DataStepParam
     {
         DataStepCustom(const std::string &node):nodeType(node){}
@@ -370,9 +369,44 @@ void ModuleHello::QueryFromPostgres(const net::tagMsgShell& stMsgShell,
 	oDbOperator.AddCondition(
 			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
 			"id",1);
-	LOG4_DEBUG("%s() QueryFromPostgres %s",__FUNCTION__,sValue.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),
-			oDbOperator.MakeMemOperate(),callback,nodeType);
+	LOG4_DEBUG("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
+	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::DataStepParam
+	{
+		DataStepCustom(){}
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
+	{
+		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback ok %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", 0);
+			oRsp.Add("msg", "ok");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+		else
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback failed %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", oMemRsp.err_no());
+			oRsp.Add("msg", "failed");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+	};
+	net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::SELECT);
+	oDbOperator.AddDbField("id");
+	oDbOperator.AddDbField("name");
+	LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() GetPostgres",__FUNCTION__);
+	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom()),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 /*
