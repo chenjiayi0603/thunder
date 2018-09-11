@@ -59,3 +59,28 @@ You can disable this annoying message by editing
 the .siegerc file in your home directory; change
 the directive 'show-logfile' to false.
 CONNECTED:56
+
+
+[imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentSet 100 10 
+length:
+0
+file testfile_PgAgentSet 100 10
+/usr/bin/siege -c 100 -r 10 http://192.168.18.78:17137/hello/hello POST {
+    "option": "PgAgentSet",
+    "val":"10020"
+}
+      done.
+
+Transactions:                   1000 hits
+Availability:                 100.00 %
+Elapsed time:                   7.59 secs
+Data transferred:               0.02 MB
+Response time:                  0.72 secs
+Transaction rate:             131.75 trans/sec
+Throughput:                     0.00 MB/sec
+Concurrency:                   94.28
+Successful transactions:        1000
+Failed transactions:               0
+Longest transaction:            1.06
+Shortest transaction:           0.02
+ 

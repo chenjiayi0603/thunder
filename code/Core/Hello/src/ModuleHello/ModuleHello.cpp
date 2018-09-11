@@ -76,6 +76,10 @@ bool ModuleHello::AnyMessage(
 	{
 		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
+	else if ("PgAgentSet" == strOption)
+	{
+		SetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
+	}
 	else if ("PgAgentGet" == strOption)
 	{
 		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
@@ -407,6 +411,46 @@ void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	oDbOperator.AddDbField("name");
 	LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() GetPostgres",__FUNCTION__);
 	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom()),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::DataStepParam
+	{
+		DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
+	{
+		net::Labor* pLabor = pStep->GetLabor();
+		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback ok %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", 0);
+			oRsp.Add("msg", "ok");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+		else
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback failed %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", oMemRsp.err_no());
+			oRsp.Add("msg", "failed");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+	};
+	net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::UPDATE);
+	oDbOperator.AddDbField("name",sValue);
+	oDbOperator.AddCondition(
+			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
+			"id",1);
+	LOG4_DEBUG("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
+	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 /*
