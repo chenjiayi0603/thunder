@@ -53,7 +53,7 @@ bool NodeSession::ReadConfig(const std::string& configPath)
 bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType,NodeConfigFile &nodeConfigFile)
 {
     nodeConfigFile.clear();
-    if(m_NodeConfigFileVec.empty())
+    if(m_vecNodeConfigFile.empty())
     {
         if(!LoadConfigFiles())
         {
@@ -61,8 +61,8 @@ bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType
             return false;
         }
     }
-    std::vector<NodeConfigFile>::const_iterator it = m_NodeConfigFileVec.begin();
-    std::vector<NodeConfigFile>::const_iterator itEnd = m_NodeConfigFileVec.end();
+    std::vector<NodeConfigFile>::const_iterator it = m_vecNodeConfigFile.begin();
+    std::vector<NodeConfigFile>::const_iterator itEnd = m_vecNodeConfigFile.end();
     for(;it != itEnd;++it)
     {
         if (it->config_type == configType && it->node_type == nodeType)
@@ -76,7 +76,7 @@ bool NodeSession::GetServerConfigFile(const std::string &nodeType,int configType
 
 bool NodeSession::LoadConfigFiles()
 {
-    if(!m_NodeConfigFileVec.empty())
+    if(!m_vecNodeConfigFile.empty())
     {
         LOG4_TRACE("LoadConfigFiles already");
         return true;
@@ -111,7 +111,7 @@ bool NodeSession::LoadConfigFiles()
 
 bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 {
-	m_NodeConfigFileVec.clear();
+	m_vecNodeConfigFile.clear();
 	NodeConfigFile nodeConfigFile;
 	for (util::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();
 					++it)
@@ -228,7 +228,7 @@ bool NodeSession::LoadConfigFiles(util::T_vecResultSet &vecRes)
 								nessesary_fields.c_str());
 			}
 		}
-		m_NodeConfigFileVec.push_back(nodeConfigFile);
+		m_vecNodeConfigFile.push_back(nodeConfigFile);
 	}
 	return true;
 }
@@ -314,7 +314,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
         LOG4_INFO("gatewayTypesArray size:%d",iGatewaySize);
     }
     {//加载中心服务器
-        m_CenterServerList.clear();
+        m_vecCenterServer.clear();
         util::CJsonObject center_servers;
         LOAD_CENTER_CMD(conf,"center_servers", center_servers);
         if(center_servers.IsEmpty())
@@ -353,7 +353,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
             centerServer.server_identify = identify;
             LOG4_DEBUG("load center_inner_host(%s),center_inner_port(%d),server_identify(%s)",
                             center_inner_host.c_str(),center_inner_port,centerServer.server_identify.c_str());
-            m_CenterServerList.push_back(centerServer);
+            m_vecCenterServer.push_back(centerServer);
         }
     }
     if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
@@ -751,7 +751,7 @@ bool NodeSession::CheckNodeType(const std::string& nodeType)
     return false;
 }
 
-bool NodeSession::CheckNodeInnerIP(const std::string& nodeInnerIp)
+bool NodeSession::CheckWhiteNode(const std::string& nodeInnerIp)
 {
     std::vector<WhiteNode>::const_iterator it = m_vecWhiteNode.begin();
     std::vector<WhiteNode>::const_iterator itEnd = m_vecWhiteNode.end();
@@ -789,8 +789,8 @@ bool NodeSession::CheckNodeStatus(const NodeStatusInfo& nodeinfo)
         LOG4_ERROR("nodeinfo type(%s) invalid",nodeinfo.nodeType.c_str());
         return false;
     }
-    //检查节点内网IP
-    if(!CheckNodeInnerIP(nodeinfo.nodeInnerIp))
+    //检查白名单
+    if(!CheckWhiteNode(nodeinfo.nodeInnerIp))
     {
         LOG4_ERROR("nodeinfo inner_ip(%s) invalid",nodeinfo.nodeInnerIp.c_str());
         return false;
@@ -914,8 +914,7 @@ bool NodeSession::SetNodeDataOfflineToDBByNodeId(int node_id)
 	}
     return (true);
 }
-const NodeType* NodeSession::GetNodeTypeServerInfo(
-                const std::string &nodeType)
+const NodeType* NodeSession::GetNodeTypeServerInfo(const std::string &nodeType)
 {
     NodeTypesVec::iterator it = m_vecNodeTypes.begin();
     NodeTypesVec::iterator itEnd = m_vecNodeTypes.end();
@@ -980,32 +979,6 @@ bool NodeSession::ReplaceNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 	}
     return (true);
 }
-bool NodeSession::UpdateNodeStatusToDB(const NodeStatusInfo& nodeInfo)
-{
-    if (nodeInfo.nodeId == 0)
-    {
-        LOG4_ERROR("UpdateNodeStatusToDB node ,node id is zero(%d,%s)",
-                        nodeInfo.nodeId, nodeInfo.nodeType.c_str());
-        return (false);
-    }
-    char szSql[3096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "update %s set serverstatus=%d,workernum=%d,activetime=%llu,connect=%d,client=%d,serverload=%d,recvnum=%d,sendnum=%d,recvbyte=%d,sendbyte=%d,worker='%s' WHERE innerport=%d and innerip='%s'",
-                    NODE_LOAD_STATUS_TABLE, eNodeStatus_Online,
-                    nodeInfo.workerNum, nodeInfo.activeTime, nodeInfo.connect,
-                    nodeInfo.client, nodeInfo.load, nodeInfo.recvNum,
-                    nodeInfo.sendNum, nodeInfo.recvByte, nodeInfo.sendByte,
-                    nodeInfo.worker.c_str(), nodeInfo.nodeInnerPort,
-                    nodeInfo.nodeInnerIp.c_str());
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("MysqlStep::Launch failed");
-		return (false);
-	}
-    return (true);
-}
 
 bool NodeSession::ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 {
@@ -1020,23 +993,10 @@ bool NodeSession::ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 	}
     return (true);
 }
-bool NodeSession::ClearNodeStatusToDBByNodeID(const NodeStatusInfo& nodeInfo)
+
+bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,std::vector<NodeLoadStatus>& vecNodeStatus)
 {
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE nodeid=%d and serverstatus=%d",
-            NODE_LOAD_STATUS_TABLE, nodeInfo.nodeId,
-            eNodeStatus_Offline);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("MysqlStep::Launch failed");
-		return (false);
-	}
-    return (true);
-}
-bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,
-                std::vector<NodeLoadStatus>& nodeStatusList)
-{
-    nodeStatusList.clear();
+    vecNodeStatus.clear();
     NodeLoadStatus nodeStatus;
     std::map<std::string, NodeStatusInfo>::iterator iter = m_mapNodesStatus.begin();
     for (; iter != m_mapNodesStatus.end(); ++iter)
@@ -1048,10 +1008,10 @@ bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,
             LOG4_DEBUG("GetNodeStatusByNodeType(innerip:%s,innerport:%d,outerip:%s,outerport:%d)",
                             nodeStatus.innerip.c_str(), nodeStatus.innerport,
                             nodeStatus.outerip.c_str(), nodeStatus.outerport);
-            nodeStatusList.push_back(nodeStatus);
+            vecNodeStatus.push_back(nodeStatus);
         }
     }
-    if (nodeStatusList.empty())
+    if (vecNodeStatus.empty())
     {
         return (false);
     }
@@ -1473,22 +1433,22 @@ int NodeSession::GetLoadMinNode(const std::string& serverType,NodeLoadStatus &no
         return ERR_SERVERINFO;
     }
     //获取指定类型的节点状态列表
-    std::vector<NodeLoadStatus> nodeStatusList;
-    if(!GetNodeStatusByNodeType(serverType,nodeStatusList))
+    std::vector<NodeLoadStatus> vecNodeStatus;
+    if(!GetNodeStatusByNodeType(serverType,vecNodeStatus))
     {
         LOG4_ERROR("get server node failed(%s)",
                         serverType.c_str());
         return ERR_SERVERINFO;
     }
-    if(nodeStatusList.empty())
+    if(vecNodeStatus.empty())
     {
-        LOG4_ERROR("serverType nodeStatusList empty!");
+        LOG4_ERROR("serverType vecNodeStatus empty!");
         return ERR_SERVERINFO;
     }
     //获取节点状态列表中负载最小的节点
     {
-        std::vector<NodeLoadStatus>::iterator itNode = nodeStatusList.begin();
-        std::vector<NodeLoadStatus>::iterator itEndNode = nodeStatusList.end();
+        std::vector<NodeLoadStatus>::iterator itNode = vecNodeStatus.begin();
+        std::vector<NodeLoadStatus>::iterator itEndNode = vecNodeStatus.end();
         nodeLoadStatus = *itNode;
         ++itNode;
         for(;itNode != itEndNode;++itNode)
@@ -1917,7 +1877,7 @@ int NodeSession::OfflineNode(const std::string& sOfflineNodeIdentify)
                         sOfflineNodeIdentify.c_str());
         return ERR_SERVER_NODE_ALREADY_OFFLINE;
 	}
-	net::uint32 nodeCount = GetNodeCountByType(pOfflineNodeInfo->nodeType);
+	uint32 nodeCount = GetNodeCountByType(pOfflineNodeInfo->nodeType);
     if(nodeCount <2)
     {
         LOG4_WARN("nodeCount(%u),need no less then 2 nodes");
@@ -2618,9 +2578,7 @@ int NodeSession::UpdateServerConfigToDB(const std::string &node_type,uint32 conf
 }
 
 //获取需要的已注册的服务器的节点状态(json格式)
-bool NodeSession::GetNeededNodesStatus(
-                const std::vector<std::string>& neededServers,
-                util::CJsonObject &jObj)
+bool NodeSession::GetNeededNodesStatus(const std::vector<std::string>& neededServers,util::CJsonObject &jObj)
 {
     const NodeStatusInfo *pInfo = NULL;
     jObj.AddEmptySubArray("node_arry_reg");
@@ -2691,8 +2649,7 @@ int NodeSession::RealDelNode(const NodeStatusInfo& delNodeInfo)
 {
 	if (!SetNodeDataOfflineToDBByNodeId(delNodeInfo.nodeId))
 	{
-		LOG4_WARN( "SetNodeDataOfflineToDBByNodeId false(%d)!",
-				delNodeInfo.nodeId);
+		LOG4_WARN( "SetNodeDataOfflineToDBByNodeId false(%d)!",delNodeInfo.nodeId);
 		return ERR_SERVERINFO_RECORD;
 	}
 	//给其它模块发下线通知
@@ -2900,6 +2857,65 @@ bool NodeSession::IsGatewayType(const std::string& nodetype)
     return false;
 }
 
+void NodeSession::RemoveFlag(std::string &str, char flag)const
+{
+	std::string::iterator it = std::remove(str.begin(), str.end(), flag);
+	str.erase(it, str.end());
+}
+
+std::string NodeSession::GetSelfNodeIdentify()const
+{
+	char strSelfNodeKey[100] = { 0 };
+	sprintf(strSelfNodeKey, "%s:%d", m_centerInnerHost.c_str(), m_centerInnerPort);
+	return std::string(strSelfNodeKey);
+}
+bool NodeSession::IsSelfNodeIdentify(const std::string& identify)const
+{
+	char strSelfNodeKey[100] = { 0 };
+	sprintf(strSelfNodeKey, "%s:%d", m_centerInnerHost.c_str(), m_centerInnerPort);
+	if(identify == strSelfNodeKey)
+	{
+		return true;
+	}
+	return false;
+}
+bool NodeSession::IsCenterServer(const std::string& identify)
+{
+	std::vector<CenterServer>::const_iterator it = m_vecCenterServer.begin();
+	std::vector<CenterServer>::const_iterator itEnd = m_vecCenterServer.end();
+	for(;it != itEnd;++it)
+	{
+		if (identify == it->server_identify)
+		{
+			return true;
+		}
+		LOG4_DEBUG("server_identify(%s),identify(%s)",it->server_identify.c_str(),identify.c_str());
+	}
+	return false;
+}
+bool NodeSession::HasIdentifyAuthority(const std::string& sNodeIdentify)
+{
+	LOG4_DEBUG("HasAuthority sNodeIdentify(%s)",sNodeIdentify.c_str());
+	if(IsCenterServer(sNodeIdentify))
+	{//中心节点操作由中心节点自己来完成
+		if(!IsSelfNodeIdentify(sNodeIdentify))
+		{
+			LOG4_DEBUG("IsSelfNodeIdentify failed(%s)",sNodeIdentify.c_str());
+			return false;
+		}
+	}
+	else//非中心节点操作，由中心主节点完成
+	{
+		if(!IsMaster())
+		{
+			LOG4_DEBUG("it 's not master(%s)",sNodeIdentify.c_str());
+			return false;
+		}
+	}
+	return true;
+}
+
+
 NodeSession* GetNodeSession(net::Labor* pLabor,const std::string &configPath,bool boReload)
 {
     NodeSession* pSess = (NodeSession*) pLabor->GetSession(1, "net::NodeSession");
@@ -2956,6 +2972,8 @@ NodeSession* GetNodeSession(net::Labor* pLabor,const std::string &configPath,boo
     }
     return (NULL);
 }
+
+
 
 
 }

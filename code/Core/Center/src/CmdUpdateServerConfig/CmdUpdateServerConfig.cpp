@@ -53,39 +53,17 @@ bool CmdUpdateServerConfig::Init()
     return true;
 }
 
-bool CmdUpdateServerConfig::AnyMessage(const net::tagMsgShell& stMsgShell,
-                const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
+bool CmdUpdateServerConfig::AnyMessage(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	m_stMsgShell = stMsgShell;
-    m_oInMsgHead = oInMsgHead;
     int nRet = CheckReqMsg(oInMsgBody);
     if (nRet > 0 && pSess->IsMaster())
 	{
-		Response(nRet);
+		Response(nRet,stMsgShell,oInMsgHead,oInMsgBody);
 		return false;
 	}
     nRet = pSess->UpdateServerConfig(m_oUpdateServerConfigReq,m_oUpdateServerConfigAck);
-    if (ERR_SERVER_CENTER_NO_OPERATION == nRet)//只有ERR_SERVER_CENTER_NO_OPERATION是指定中心节点操作后指定中心节点返回
-    {
-        LOG4_DEBUG("no right to operate,no need to response");
-        return false;
-    }
-    else if (ERR_OK == nRet)
-    {
-        return Response(nRet);
-    }
-    if (!pSess->IsMaster())
-    {
-        LOG4_DEBUG("is not master,no need to response");
-        return false;
-    }
-    if(nRet)
-    {
-        LOG4_WARN("failed to UpdateServerConfig");
-        return Response(nRet);
-    }
-    return Response(nRet);
+    return Response(nRet,stMsgShell,oInMsgHead,oInMsgBody);
 }
 
 int CmdUpdateServerConfig::CheckReqMsg(const MsgBody& oInMsgBody)
@@ -143,8 +121,19 @@ bool CmdUpdateServerConfig::parseMsg(const MsgBody& oInMsgBody,const server::use
     return(true);
 }
 
-bool CmdUpdateServerConfig::Response(int iErrno)
+bool CmdUpdateServerConfig::Response(int iErrno,
+		const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
 {
+	if (ERR_SERVER_CENTER_NO_OPERATION == iErrno)
+	{//只有ERR_SERVER_CENTER_NO_OPERATION是指定中心节点操作后指定中心节点返回
+		LOG4_DEBUG("no right to operate,no need to response");
+		return false;
+	}
+	if (!pSess->IsMaster())
+	{
+		LOG4_DEBUG("is not master,no need to response");
+		return false;
+	}
     /*
                 服务器节点上线响应
     message update_server_config_ack
@@ -162,12 +151,12 @@ bool CmdUpdateServerConfig::Response(int iErrno)
     pError->set_error_info(server_err_msg(iErrno));
     pError->set_error_client_show(server_err_msg(iErrno));
     m_oUpdateServerConfigAck.set_allocated_error(pError);
-    oOutMsgHead.set_cmd(m_oInMsgHead.cmd() + 1);
-    oOutMsgHead.set_seq(m_oInMsgHead.seq());
-    if (!SendToClient(m_stMsgShell, oOutMsgHead, m_oUpdateServerConfigAck))
+    oOutMsgHead.set_cmd(oInMsgHead.cmd() + 1);
+    oOutMsgHead.set_seq(oInMsgHead.seq());
+    if (!SendToClient(stMsgShell, oOutMsgHead, m_oUpdateServerConfigAck))
     {
         LOG4_ERROR("%s()failed to send error info to fd %d fd_seq %u",__FUNCTION__,
-                        m_stMsgShell.iFd, m_stMsgShell.ulSeq);
+        		stMsgShell.iFd, stMsgShell.ulSeq);
     }
     return (true);
 }

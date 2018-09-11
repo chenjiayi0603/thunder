@@ -36,11 +36,9 @@ private:
     int CheckReqMsg(const MsgBody& oInMsgBody);
     bool parseMsg(const MsgBody& oInMsgBody,const server::user_basic &basicInfo);
     //更新节点配置应答
-    bool Response(int iErrno);
+    bool Response(int iErrno,const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody);
     NodeSession* pSess;
     bool boInit;
-    net::tagMsgShell m_stMsgShell;
-    MsgHead m_oInMsgHead;
     server::update_server_config_req m_oUpdateServerConfigReq;
     server::update_server_config_ack m_oUpdateServerConfigAck;
 };
