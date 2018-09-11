@@ -59,11 +59,11 @@ bool CmdUpdateServerConfig::AnyMessage(const net::tagMsgShell& stMsgShell,const 
     int nRet = CheckReqMsg(oInMsgBody);
     if (nRet > 0 && pSess->IsMaster())
 	{
-		Response(nRet,stMsgShell,oInMsgHead,oInMsgBody);
+		Response(nRet,stMsgShell,oInMsgHead);
 		return false;
 	}
     nRet = pSess->UpdateServerConfig(m_oUpdateServerConfigReq,m_oUpdateServerConfigAck);
-    return Response(nRet,stMsgShell,oInMsgHead,oInMsgBody);
+    return Response(nRet,stMsgShell,oInMsgHead);
 }
 
 int CmdUpdateServerConfig::CheckReqMsg(const MsgBody& oInMsgBody)
@@ -121,8 +121,7 @@ bool CmdUpdateServerConfig::parseMsg(const MsgBody& oInMsgBody,const server::use
     return(true);
 }
 
-bool CmdUpdateServerConfig::Response(int iErrno,
-		const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
+bool CmdUpdateServerConfig::Response(int iErrno,const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead)
 {
 	if (ERR_SERVER_CENTER_NO_OPERATION == iErrno)
 	{//只有ERR_SERVER_CENTER_NO_OPERATION是指定中心节点操作后指定中心节点返回

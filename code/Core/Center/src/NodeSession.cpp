@@ -672,10 +672,7 @@ bool NodeSession::SelectCenterMaster()
 bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
 {
     /*
-        inner_ip varchar
-        inner_port  smallint
-        status  tinyint
-        activetime  bigint
+        inner_ip varchar   inner_port  smallint   status  tinyint   activetime  bigint
      * */
     ++m_nCheckActiveCounter;
     if(m_nCheckActiveCounter > 3 || boSwitch)//某节点变动时需要检查删除无效节点
@@ -727,20 +724,14 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
 
 bool NodeSession::LoadNodeRoute()
 {
-    if(m_vecNodeTypes.empty())
-    {
-        if(!LoadNodeType())
-        {
-            LOG4_WARN("failed to LoadNodeType");
-        }
-    }
-    if(m_vecWhiteNode.empty())
-    {
-        if(!LoadWhiteList())
-        {
-            LOG4_WARN("failed to LoadWhiteList");
-        }
-    }
+	if(!LoadNodeType())
+	{
+		LOG4_WARN("failed to LoadNodeType");
+	}
+	if(!LoadWhiteList())
+	{
+		LOG4_WARN("failed to LoadWhiteList");
+	}
     return true;
 }
 
