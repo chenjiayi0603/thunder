@@ -71,7 +71,7 @@ bool ModuleHello::AnyMessage(
 	}
 	std::string strOption;
 	obj.Get("option",strOption);
-
+	//PgAgent
 	if ("PgAgentSetGet" == strOption)
 	{
 		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
@@ -84,17 +84,18 @@ bool ModuleHello::AnyMessage(
 	{
 		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
-	else if ("DataPgAgentSetGet" == strOption)
+	//Proxy
+	else if ("ProxyPgAgentSetGet" == strOption)
 	{
-		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXYSSDB");
 	}
-	else if ("DataPgAgentSet" == strOption)
+	else if ("ProxyPgAgentSet" == strOption)
 	{
-		SetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+		SetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXYSSDB");
 	}
-	else if ("DataPgAgentGet" == strOption)
+	else if ("ProxyPgAgentGet" == strOption)
 	{
-		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXY");
+		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PROXYSSDB");
 	}
 	else if ("RedisearchAdd" == strOption)
 	{
