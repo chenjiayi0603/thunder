@@ -1,0 +1,61 @@
+使用pgsql10.5 的库libpq.so
+使用pgxx 的库libpqxx-6.2.so libpqxx.so
+
+
+压测
+[imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentGet 100 100 
+length:
+0
+file testfile_PgAgentGet 100 100
+/usr/bin/siege -c 100 -r 100 http://192.168.18.78:17137/hello/hello POST {
+    "option": "PgAgentGet",
+    "val":"1001"
+}
+      done.
+
+Transactions:                  10000 hits
+Availability:                 100.00 %
+Elapsed time:                   3.09 secs
+Data transferred:               0.20 MB
+Response time:                  0.03 secs
+Transaction rate:            3236.25 trans/sec
+Throughput:                     0.06 MB/sec
+Concurrency:                   98.94
+Successful transactions:       10000
+Failed transactions:               0
+Longest transaction:            0.05
+Shortest transaction:           0.00
+ 
+FILE: /work/imdev/siege.log
+You can disable this annoying message by editing
+the .siegerc file in your home directory; change
+the directive 'show-logfile' to false.
+CONNECTED:56
+[imdev@analysis78 Test]$ ./siegeTest.sh testfile_PgAgentGet 200 200   
+length:
+0
+file testfile_PgAgentGet 200 200
+/usr/bin/siege -c 200 -r 200 http://192.168.18.78:17137/hello/hello POST {
+    "option": "PgAgentGet",
+    "val":"1001"
+}
+      done.
+
+Transactions:                  40000 hits
+Availability:                 100.00 %
+Elapsed time:                  12.30 secs
+Data transferred:               0.80 MB
+Response time:                  0.06 secs
+Transaction rate:            3252.03 trans/sec
+Throughput:                     0.07 MB/sec
+Concurrency:                  199.11
+Successful transactions:       40000
+Failed transactions:               0
+Longest transaction:            0.08
+Shortest transaction:           0.00
+ 
+FILE: /work/imdev/siege.log
+You can disable this annoying message by editing
+the .siegerc file in your home directory; change
+the directive 'show-logfile' to false.
+CONNECTED:56
