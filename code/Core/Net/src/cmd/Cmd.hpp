@@ -226,7 +226,7 @@ protected:
 	bool SendToModCallBack(net::Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StandardCallbackStep callback,int uiModFactor,
 					const std::string &nodeType);
 
-	bool CoroutineResumeWithTimes(int nMaxTimes=100){return GetLabor()->CoroutineResumeWithTimes(nMaxTimes);}
+	bool CoroutineResumeWithTimes(uint32 nMaxTimes=0){return GetLabor()->CoroutineResumeWithTimes(nMaxTimes);}
 	bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg) {return GetLabor()->CoroutineNewWithArg(func,arg);}
 public:
     const std::string& ClassName() const
