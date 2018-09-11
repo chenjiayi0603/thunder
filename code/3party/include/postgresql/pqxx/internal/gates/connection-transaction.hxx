@@ -14,28 +14,29 @@ class PQXX_PRIVATE connection_transaction : callgate<connection_base>
 
   connection_transaction(reference x) : super(x) {}
 
-  result Exec(const char query[], int retries)
-	{ return home().Exec(query, retries); }
-  void RegisterTransaction(transaction_base *t)
-	{ home().RegisterTransaction(t); }
-  void UnregisterTransaction(transaction_base *t) throw ()
-	{ home().UnregisterTransaction(t); }
+  result exec(const char query[], int retries)
+	{ return home().exec(query, retries); }
+  void register_transaction(transaction_base *t)
+	{ home().register_transaction(t); }
+  void unregister_transaction(transaction_base *t) noexcept
+	{ home().unregister_transaction(t); }
 
-  bool ReadCopyLine(PGSTD::string &line)
-	{ return home().ReadCopyLine(line); }
-  void WriteCopyLine(const PGSTD::string &line)
-	{ home().WriteCopyLine(line); }
-  void EndCopyWrite() { home().EndCopyWrite(); }
+  bool read_copy_line(std::string &line)
+	{ return home().read_copy_line(line); }
+  void write_copy_line(const std::string &line)
+	{ home().write_copy_line(line); }
+  void end_copy_write() { home().end_copy_write(); }
 
-  PGSTD::string RawGetVar(const PGSTD::string &var)
-	{ return home().RawGetVar(var); }
-  void RawSetVar(const PGSTD::string &var, const PGSTD::string &value)
-	{ home().RawSetVar(var, value); }
-  void AddVariables(const PGSTD::map<PGSTD::string, PGSTD::string> &vars)
-	{ home().AddVariables(vars); }
+  std::string raw_get_var(const std::string &var)
+	{ return home().raw_get_var(var); }
+  void raw_set_var(const std::string &var, const std::string &value)
+	{ home().raw_set_var(var, value); }
+  void add_variables(const std::map<std::string, std::string> &vars)
+	{ home().add_variables(vars); }
 
+  /// @deprecated To be replaced by exec_prepared.
   result prepared_exec(
-	const PGSTD::string &statement,
+	const std::string &statement,
 	const char *const params[],
 	const int paramlengths[],
 	const int binaries[],
@@ -49,7 +50,19 @@ class PQXX_PRIVATE connection_transaction : callgate<connection_base>
 	nparams);
   }
 
-  bool prepared_exists(const PGSTD::string &statement) const
+  result exec_prepared(
+	const std::string &statement,
+	const internal::params &args)
+  {
+    return home().exec_prepared(statement, args);
+  }
+
+  result exec_params(const std::string &query, const internal::params &args)
+  {
+    return home().exec_params(query, args);
+  }
+
+  bool prepared_exists(const std::string &statement) const
 	{ return home().prepared_exists(statement); }
 
   void take_reactivation_avoidance(int counter)

@@ -12,10 +12,11 @@ class PQXX_PRIVATE transaction_tablereader : callgate<transaction_base>
 
   transaction_tablereader(reference x) : super(x) {}
 
-  void BeginCopyRead(const PGSTD::string &table, const PGSTD::string &columns)
+  void BeginCopyRead(const std::string &table, const std::string &columns)
 	{ home().BeginCopyRead(table, columns); }
 
-  bool ReadCopyLine(PGSTD::string &line) { return home().ReadCopyLine(line); }
+  bool read_copy_line(std::string &line)
+	{ return home().read_copy_line(line); }
 };
 } // namespace pqxx::internal::gate
 } // namespace pqxx::internal

@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::connection and pqxx::lazyconnection classes.
  *
- *   FILE
- *	pqxx/connection.hxx
+ * Different ways of setting up a backend connection.
  *
- *   DESCRIPTION
- *      definition of the pqxx::connection and pqxx::lazyconnection classes.
- *   Different ways of setting up a backend connection.
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection instead.
  *
- * Copyright (c) 2001-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2001-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_CONNECTION
 #define PQXX_H_CONNECTION
@@ -22,8 +16,8 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/connectionpolicy"
-#include "pqxx/basic_connection"
+#include "pqxx/connectionpolicy.hxx"
+#include "pqxx/basic_connection.hxx"
 
 namespace pqxx
 {
@@ -42,9 +36,9 @@ namespace pqxx
  * Many things come together in the connection classes.  Handling of error and
  * warning messages, for example, is defined by @e errorhandlers in the context
  * of a connection.  Prepared statements are also defined here.
- * 
+ *
  * Several types of connections are available, including plain connection and
- * lazyconnection.  These types are typedefs combining a derivative of the
+ * lazyconnection.  These types are aliases combining a derivative of the
  * connection_base class (where essentially all connection-related functionality
  * is defined) with a policy class which governs how the connection is to be
  * established.  You pass details such as the database you wish to connect to,
@@ -84,12 +78,14 @@ namespace pqxx
 class PQXX_LIBEXPORT connect_direct : public connectionpolicy
 {
 public:
-  explicit connect_direct(const PGSTD::string &opts) : connectionpolicy(opts) {}
-  virtual handle do_startconnect(handle);
+  /// The parsing of options is the same as in libpq's PQconnect.
+  /// See: https://www.postgresql.org/docs/10/static/libpq-connect.html
+  explicit connect_direct(const std::string &opts) : connectionpolicy(opts) {}
+  virtual handle do_startconnect(handle) override;
 };
 
 /// The "standard" connection type: connect to database right now
-typedef basic_connection<connect_direct> connection;
+using connection = basic_connection<connect_direct>;
 
 
 /// Lazy connection policy; causes connection to be deferred until first use.
@@ -100,13 +96,15 @@ typedef basic_connection<connect_direct> connection;
 class PQXX_LIBEXPORT connect_lazy : public connectionpolicy
 {
 public:
-  explicit connect_lazy(const PGSTD::string &opts) : connectionpolicy(opts) {}
-  virtual handle do_completeconnect(handle);
+  /// The parsing of options is the same as in libpq's PQconnect.
+  /// See: https://www.postgresql.org/docs/10/static/libpq-connect.html
+  explicit connect_lazy(const std::string &opts) : connectionpolicy(opts) {}
+  virtual handle do_completeconnect(handle) override;
 };
 
 
 /// A "lazy" connection type: connect to database only when needed
-typedef basic_connection<connect_lazy> lazyconnection;
+using lazyconnection = basic_connection<connect_lazy>;
 
 
 /// Asynchronous connection policy; connects "in the background"
@@ -119,11 +117,13 @@ typedef basic_connection<connect_lazy> lazyconnection;
 class PQXX_LIBEXPORT connect_async : public connectionpolicy
 {
 public:
-  explicit connect_async(const PGSTD::string &opts);
-  virtual handle do_startconnect(handle);
-  virtual handle do_completeconnect(handle);
-  virtual handle do_dropconnect(handle) throw ();
-  virtual bool is_ready(handle) const throw ();
+  /// The parsing of options is the same as in libpq's PQConnect
+  /// See: https://www.postgresql.org/docs/10/static/libpq-connect.html
+  explicit connect_async(const std::string &opts);
+  virtual handle do_startconnect(handle) override;
+  virtual handle do_completeconnect(handle) override;
+  virtual handle do_dropconnect(handle) noexcept override;
+  virtual bool is_ready(handle) const noexcept override;
 
 private:
   /// Is a connection attempt in progress?
@@ -132,7 +132,7 @@ private:
 
 
 /// "Asynchronous" connection type: start connecting, but don't wait for it
-typedef basic_connection<connect_async> asyncconnection;
+using asyncconnection = basic_connection<connect_async>;
 
 
 /// Nonfunctional, always-down connection policy for testing/debugging purposes
@@ -143,12 +143,12 @@ typedef basic_connection<connect_async> asyncconnection;
 class PQXX_LIBEXPORT connect_null  : public connectionpolicy
 {
 public:
-  explicit connect_null(const PGSTD::string &opts) : connectionpolicy(opts) {}
+  explicit connect_null(const std::string &opts) : connectionpolicy(opts) {}
 };
 
 
 /// A "dummy" connection type: don't connect to any database at all
-typedef basic_connection<connect_null> nullconnection;
+using nullconnection = basic_connection<connect_null>;
 
 /**
  * @}
@@ -159,4 +159,3 @@ typedef basic_connection<connect_null> nullconnection;
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

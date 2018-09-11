@@ -6,9 +6,11 @@ CXXFLAGS = -DNDEBUG -g -O2 -Wno-error -Wno-narrowing
 # -fPIC is supported. Please report any breakage of -fPIC as a bug.
 CXXFLAGS += -fPIC
 
-
+sudo ln -s /usr/local/pgsql/bin/pg_config /usr/local/bin/pg_config
 libpqxx-6.2.4.tar.gz
-./configure --enable-shared 
+./configure 
+--enable-shared 
+CXXFLAGS="-fPIC"
 
 
 

@@ -1,20 +1,13 @@
-/*-------------------------------------------------------------------------
+/** Definition of the connection policy classes.
  *
- *   FILE
- *	pqxx/connectionpolicy.hxx
+ * Interface for defining connection policies
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection instead.
  *
- *   DESCRIPTION
- *      definition of the connection policy classes
- *   Interface for defining connection policies
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection instead.
- *
- * Copyright (c) 2005-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2005-2017, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_CONNECTIONPOLICY
 #define PQXX_H_CONNECTIONPOLICY
@@ -30,7 +23,6 @@
 namespace pqxx
 {
 
-
 /**
  * @addtogroup connection Connection classes
  */
@@ -39,24 +31,24 @@ namespace pqxx
 class PQXX_LIBEXPORT connectionpolicy
 {
 public:
-  typedef internal::pq::PGconn *handle;
+  using handle = internal::pq::PGconn *;
 
-  explicit connectionpolicy(const PGSTD::string &opts);
-  virtual ~connectionpolicy() throw ();
+  explicit connectionpolicy(const std::string &opts);
+  virtual ~connectionpolicy() noexcept;
 
-  const PGSTD::string &options() const throw () { return m_options; }
+  const std::string &options() const noexcept { return m_options; }
 
   virtual handle do_startconnect(handle orig);
   virtual handle do_completeconnect(handle orig);
-  virtual handle do_dropconnect(handle orig) throw ();
-  virtual handle do_disconnect(handle orig) throw ();
-  virtual bool is_ready(handle) const throw ();
+  virtual handle do_dropconnect(handle orig) noexcept;
+  virtual handle do_disconnect(handle orig) noexcept;
+  virtual bool is_ready(handle) const noexcept;
 
 protected:
   handle normalconnect(handle);
 
 private:
-  PGSTD::string m_options;
+  std::string m_options;
 };
 
 //@}
@@ -65,4 +57,3 @@ private:
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

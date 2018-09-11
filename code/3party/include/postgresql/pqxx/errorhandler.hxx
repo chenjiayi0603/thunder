@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::errorhandler class.
  *
- *   FILE
- *	pqxx/errorhandler.hxx
+ * pqxx::errorhandler handlers errors and warnings in a database session.
  *
- *   DESCRIPTION
- *      definition of the pqxx::errorhandler class.
- *   pqxx::errorhandler handlers errors and warnings in a database session.
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection_base instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection_base instead.
  *
- * Copyright (c) 2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2012-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_ERRORHANDLER
 #define PQXX_H_ERRORHANDLER
@@ -22,13 +16,11 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include <functional>
+#include "pqxx/types.hxx"
 
 
 namespace pqxx
 {
-class connection_base;
-
 namespace internal
 {
 namespace gate
@@ -54,8 +46,7 @@ class errorhandler_connection_base;
  * instruct the connection not to pass the message to further handlers by
  * returning "false."
  */
-class PQXX_LIBEXPORT errorhandler :
-	public PGSTD::unary_function<const char[], bool>
+class PQXX_LIBEXPORT errorhandler
 {
 public:
   explicit errorhandler(connection_base &);
@@ -66,18 +57,17 @@ public:
    * @return Whether the same error message should also be passed to the
    * remaining, older errorhandlers.
    */
-  virtual bool operator()(const char msg[]) throw () =0;
+  virtual bool operator()(const char msg[]) noexcept =0;
 
 private:
   connection_base *m_home;
 
   friend class internal::gate::errorhandler_connection_base;
-  void unregister() throw ();
+  void unregister() noexcept;
 
-  // Not allowed:
-  errorhandler();
-  errorhandler(const errorhandler &);
-  errorhandler &operator=(const errorhandler &);
+  errorhandler() =delete;
+  errorhandler(const errorhandler &) =delete;
+  errorhandler &operator=(const errorhandler &) =delete;
 };
 
 
@@ -87,7 +77,7 @@ class quiet_errorhandler : public errorhandler
 public:
   quiet_errorhandler(connection_base &conn) : errorhandler(conn) {}
 
-  virtual bool operator()(const char[]) throw () { return false; }
+  virtual bool operator()(const char[]) noexcept override { return false; }
 };
 
 /**

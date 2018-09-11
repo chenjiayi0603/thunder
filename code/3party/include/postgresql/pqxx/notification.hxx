@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::notification_receiver functor interface.
  *
- *   FILE
- *	pqxx/notification.hxx
+ * pqxx::notification_receiver handles incoming notifications.
  *
- *   DESCRIPTION
- *      definition of the pqxx::notification_receiver functor interface.
- *   pqxx::notification_receiver handles incoming notifications.
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/notification instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/notification instead.
  *
- * Copyright (c) 2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2011-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_NOTIFICATION
 #define PQXX_H_NOTIFICATION
@@ -22,11 +16,13 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
+#include <string>
+
+#include "pqxx/types.hxx"
+
+
 namespace pqxx
 {
-class connection_base;
-
-
 /// "Observer" base class for notifications.
 /** @addtogroup notification Notifications and Receivers
  *
@@ -56,8 +52,7 @@ class connection_base;
  * same name.  An incoming notification is processed by invoking all receivers
  * (zero or more) of the same name.
  */
-class PQXX_LIBEXPORT PQXX_NOVTABLE notification_receiver :
-  public PGSTD::binary_function<const PGSTD::string &, int, void>
+class PQXX_LIBEXPORT PQXX_NOVTABLE notification_receiver
 {
 public:
   /// Register the receiver with a connection.
@@ -65,11 +60,13 @@ public:
    * @param c Connnection to operate on.
    * @param channel Name of the notification to listen for.
    */
-  notification_receiver(connection_base &c, const PGSTD::string &channel);
+  notification_receiver(connection_base &c, const std::string &channel);
+  notification_receiver(const notification_receiver &) =delete;
+  notification_receiver &operator=(const notification_receiver &) =delete;
   virtual ~notification_receiver();
 
   /// The channel that this receiver listens on.
-  const PGSTD::string &channel() const { return m_channel; }
+  const std::string &channel() const { return m_channel; }
 
   /// Overridable: action to invoke when notification arrives.
   /**
@@ -79,22 +76,16 @@ public:
    * our connection when the notification arrived.  The actual process ID behind
    * the connection may have changed by the time this method is called.
    */
-  virtual void operator()(const PGSTD::string &payload, int backend_pid) =0;
+  virtual void operator()(const std::string &payload, int backend_pid) =0;
 
 protected:
-  connection_base &conn() const throw () { return m_conn; }
+  connection_base &conn() const noexcept { return m_conn; }
 
 private:
-  // Not allowed.
-  notification_receiver(const notification_receiver &);
-  // Not allowed.
-  notification_receiver &operator=(const notification_receiver &);
-
   connection_base &m_conn;
-  PGSTD::string m_channel;
+  std::string m_channel;
 };
 }
 
-#include "pqxx/compiler-internal-pre.hxx"
 #include "pqxx/compiler-internal-post.hxx"
 #endif

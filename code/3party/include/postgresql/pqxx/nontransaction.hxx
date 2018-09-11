@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::nontransaction class.
  *
- *   FILE
- *	pqxx/nontransaction.hxx
+ * pqxx::nontransaction provides nontransactional database access
  *
- *   DESCRIPTION
- *      definition of the pqxx::nontransaction class.
- *   pqxx::nontransaction provides nontransactional database access
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/nontransaction instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/nontransaction instead.
  *
- * Copyright (c) 2002-2008, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2002-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_NONTRANSACTION
 #define PQXX_H_NONTRANSACTION
@@ -22,20 +16,18 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/connection_base"
-#include "pqxx/result"
-#include "pqxx/transaction_base"
+#include "pqxx/connection_base.hxx"
+#include "pqxx/result.hxx"
+#include "pqxx/transaction_base.hxx"
 
-/* Methods tested in eg. self-test program test001 are marked with "//[t1]"
- */
-
+// Methods tested in eg. test module test01 are marked with "//[t01]".
 
 namespace pqxx
 {
 
 /// Simple "transaction" class offering no transactional integrity.
 /**
- * @addtogroup transaction Transaction classes
+ * @ingroup transaction
  *
  * nontransaction, like transaction or any other transaction_base-derived class,
  * provides access to a database through a connection.  Unlike its siblings,
@@ -68,24 +60,22 @@ public:
    * @param Name Optional name for the transaction, beginning with a letter
    * and containing only letters and digits.
    */
-  explicit nontransaction(connection_base &C,
-		          const PGSTD::string &Name=PGSTD::string()) :	//[t14]
+  explicit nontransaction(						//[t14]
+	connection_base &C,
+	const std::string &Name=std::string()) :
     namedclass("nontransaction", Name), transaction_base(C) { Begin(); }
 
   virtual ~nontransaction();						//[t14]
 
 private:
-  virtual void do_begin() {}						//[t14]
-  virtual result do_exec(const char C[]);				//[t14]
-  virtual void do_commit() {}						//[t14]
-  virtual void do_abort() {}						//[t14]
+  virtual void do_begin() override {}					//[t14]
+  virtual result do_exec(const char C[]) override;			//[t14]
+  virtual void do_commit() override {}					//[t14]
+  virtual void do_abort() override {}					//[t14]
 };
 
-
 } // namespace pqxx
-
 
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

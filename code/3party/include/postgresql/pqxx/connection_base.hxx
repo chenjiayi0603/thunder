@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::connection_base abstract base class.
  *
- *   FILE
- *	pqxx/connection_base.hxx
+ * pqxx::connection_base encapsulates a frontend to backend connection
  *
- *   DESCRIPTION
- *      definition of the pqxx::connection_base abstract base class.
- *   pqxx::connection_base encapsulates a frontend to backend connection
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection_base instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/connection_base instead.
  *
- * Copyright (c) 2001-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2001-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_CONNECTION_BASE
 #define PQXX_H_CONNECTION_BASE
@@ -27,11 +21,12 @@
 #include <map>
 #include <memory>
 
-#include "pqxx/errorhandler"
-#include "pqxx/except"
-#include "pqxx/prepared_statement"
-#include "pqxx/strconv"
-#include "pqxx/util"
+#include "pqxx/errorhandler.hxx"
+#include "pqxx/except.hxx"
+#include "pqxx/prepared_statement.hxx"
+#include "pqxx/strconv.hxx"
+#include "pqxx/util.hxx"
+#include "pqxx/version.hxx"
 
 
 /* Use of the libpqxx library starts here.
@@ -40,17 +35,11 @@
  * a connection object derived from connection_base.
  */
 
-/* Methods tested in eg. self-test program test1 are marked with "//[t1]"
+/* Methods tested in eg. self-test program test1 are marked with "//[t01]"
  */
 
 namespace pqxx
 {
-class binarystring;
-class connectionpolicy;
-class notification_receiver;
-class result;
-class transaction_base;
-
 namespace internal
 {
 class reactivation_avoidance_exemption;
@@ -59,20 +48,20 @@ class sql_cursor;
 class reactivation_avoidance_counter
 {
 public:
-  reactivation_avoidance_counter() : m_counter(0) {}
+  reactivation_avoidance_counter() =default;
 
-  void add(int n) throw () { m_counter += n; }
-  void clear() throw () { m_counter = 0; }
-  int get() const throw () { return m_counter; }
+  void add(int n) noexcept { m_counter += n; }
+  void clear() noexcept { m_counter = 0; }
+  int get() const noexcept { return m_counter; }
 
 private:
-  int m_counter;
+  int m_counter = 0;
 };
 
 }
 
 
-/// Encrypt password for given user.  Requires libpq 8.2 or better.
+/// Encrypt password for given user.
 /** Use this when setting a new password for the user if password encryption is
  * enabled.  Inputs are the username the password is for, and the plaintext
  * password.
@@ -88,12 +77,10 @@ private:
  *   	"PASSWORD '" + encrypt_password(user,pw) + "'");
  * }
  * @endcode
- *
- * @since libpq 8.2
  */
-PGSTD::string PQXX_LIBEXPORT encrypt_password(				//[t0]
-	const PGSTD::string &user,
-	const PGSTD::string &password);
+std::string PQXX_LIBEXPORT encrypt_password(				//[t00]
+	const std::string &user,
+	const std::string &password);
 
 
 namespace internal
@@ -110,6 +97,7 @@ class connection_prepare_invocation;
 class connection_reactivation_avoidance_exemption;
 class connection_sql_cursor;
 class connection_transaction;
+class const_connection_largeobject;
 } // namespace pqxx::internal::gate
 } // namespace pqxx::internal
 
@@ -152,14 +140,14 @@ class PQXX_LIBEXPORT connection_base
 {
 public:
   /// Explicitly close connection.
-  void disconnect() throw ();						//[t2]
+  void disconnect() noexcept;						//[t02]
 
    /// Is this connection open at the moment?
   /** @warning This function is @b not needed in most code.  Resist the
    * temptation to check it after opening a connection; instead, rely on the
    * broken_connection exception that will be thrown on connection failure.
    */
-  bool PQXX_PURE is_open() const throw ();				//[t1]
+  bool PQXX_PURE is_open() const noexcept;				//[t01]
 
  /**
    * @name Activation
@@ -253,12 +241,12 @@ public:
   //@}
 
   /// Invoke notice processor function.  The message should end in newline.
-  void process_notice(const char[]) throw ();				//[t14]
+  void process_notice(const char[]) noexcept;				//[t14]
   /// Invoke notice processor function.  Newline at end is recommended.
-  void process_notice(const PGSTD::string &) throw ();			//[t14]
+  void process_notice(const std::string &) noexcept;			//[t14]
 
-  /// Enable tracing to a given output stream, or NULL to disable.
-  void trace(PGSTD::FILE *) throw ();					//[t3]
+  /// Enable tracing to a given output stream, or nullptr to disable.
+  void trace(std::FILE *) noexcept;					//[t03]
 
   /**
    * @name Connection properties
@@ -272,25 +260,25 @@ public:
   /** @warning This activates the connection, which may fail with a
    * broken_connection exception.
    */
-  const char *dbname();							//[t1]
+  const char *dbname();							//[t01]
 
   /// Database user ID we're connected under, if any.
   /** @warning This activates the connection, which may fail with a
    * broken_connection exception.
    */
-  const char *username();						//[t1]
+  const char *username();						//[t01]
 
-  /// Address of server, or NULL if none specified (i.e. default or local)
+  /// Address of server, or nullptr if none specified (i.e. default or local)
   /** @warning This activates the connection, which may fail with a
    * broken_connection exception.
    */
-  const char *hostname();						//[t1]
+  const char *hostname();						//[t01]
 
   /// Server port number we're connected to.
   /** @warning This activates the connection, which may fail with a
    * broken_connection exception.
    */
-  const char *port();							//[t1]
+  const char *port();							//[t01]
 
   /// Process ID for backend process.
   /** Use with care: connections may be lost and automatically re-established
@@ -302,7 +290,7 @@ public:
    *
    * @return Process identifier, or 0 if not currently connected.
    */
-  int PQXX_PURE backendpid() const throw ();				//[t1]
+  int PQXX_PURE backendpid() const noexcept;				//[t01]
 
   /// Socket currently used for connection, or -1 for none.  Use with care!
   /** Query the current socket number.  This is intended for event loops based
@@ -316,63 +304,29 @@ public:
    * nonblocking fashion, check out the pipeline class.
    *
    * @warning Don't store this value anywhere, and always be prepared for the
-   * possibility that there is no socket.  The socket may change or even go away
-   * during any invocation of libpqxx code, no matter how trivial.
+   * possibility that, at any given time, there may not be a socket!  The
+   * socket may change or even go away or be established during any invocation
+   * of libpqxx code on the connection, no matter how trivial.
    */
-  int PQXX_PURE sock() const throw ();					//[t87]
+  int PQXX_PURE sock() const noexcept;					//[t87]
 
-  /** 
+  /**
    * @name Capabilities
    *
-   * Some functionality is only available in certain versions of the backend,
-   * or only when speaking certain versions of the communications protocol that
-   * connects us to the backend.  This includes clauses for SQL statements that
-   * were not accepted in older database versions, but are required in newer
-   * versions to get the same behaviour.
+   * Some functionality may only be available in certain versions of the
+   * backend, or only when speaking certain versions of the communications
+   * protocol that connects us to the backend.
    */
   //@{
- 
-  /// Session capabilities
+
+  /// Session capabilities.
+  /** No capabilities are defined at the moment: all capabilities that older
+   * versions checked for are now always supported.
+   */
   enum capability
   {
-    /// Does the backend support prepared statements?  (If not, we emulate them)
-    cap_prepared_statements,
-
-    /// Can we specify WITH OIDS with CREATE TABLE?
-    cap_create_table_with_oids,
-
-    /// Can transactions be nested in other transactions?
-    cap_nested_transactions,
-
-    /// Can cursors be declared SCROLL?
-    cap_cursor_scroll,
-    /// Can cursors be declared WITH HOLD?
-    cap_cursor_with_hold,
-    /// Can cursors be updateable?
-    cap_cursor_update,
-    /// Can cursors fetch zero elements?  (Used to trigger a "fetch all")
-    cap_cursor_fetch_0,
-
-    /// Can we ask what table column a result column came from?
-    cap_table_column,
-
-    /// Can transactions be READ ONLY?
-    cap_read_only_transactions,
-
-    /// Do prepared statements support varargs?
-    cap_statement_varargs,
-
-    /// Is the unnamed prepared statement supported?
-    cap_prepare_unnamed_statement,
-
-    /// Can this connection execute parameterized statements?
-    cap_parameterized_statements,
-
-    /// Can notifications carry payloads?
-    cap_notify_payload,
-
     /// Not a capability value; end-of-enumeration marker
-    cap_end
+    cap_end,
   };
 
 
@@ -393,29 +347,26 @@ public:
    * or the answer will always be "no."  In particular, if you are using this
    * function on a newly-created lazyconnection, activate the connection first.
    */
-  bool supports(capability c) const throw () { return m_caps.test(c); }	//[t88]
+  bool supports(capability c) const noexcept				//[t88]
+	{ return m_caps.test(c); }
 
   /// What version of the PostgreSQL protocol is this connection using?
-  /** The answer can be 0 (when there is no connection, or the libpq version
-   * being used is too old to obtain the information); 2 for protocol 2.0; 3 for
-   * protocol 3.0; and possibly higher values as newer protocol versions are
-   * taken into use.
+  /** The answer can be 0 (when there is no connection); 3 for protocol 3.0; or
+   * possibly higher values as newer protocol versions are taken into use.
    *
    * If the connection is broken and restored, the restored connection could
-   * possibly a different server and protocol version.  This would normally
+   * possibly use a different server and protocol version.  This would normally
    * happen if the server is upgraded without shutting down the client program,
    * for example.
-   *
-   * Requires libpq version from PostgreSQL 7.4 or better.
    */
-  int PQXX_PURE protocol_version() const throw ();			//[t1]
+  int PQXX_PURE protocol_version() const noexcept;			//[t01]
 
   /// What version of the PostgreSQL server are we connected to?
   /** The result is a bit complicated: each of the major, medium, and minor
    * release numbers is written as a two-digit decimal number, and the three
-   * are then concatenated.  Thus server version 7.4.2 will be returned as the
-   * decimal number 70402.  If there is no connection to the server, of if the
-   * libpq version is too old to obtain the information, zero is returned.
+   * are then concatenated.  Thus server version 9.4.2 will be returned as the
+   * decimal number 90402.  If there is no connection to the server, this
+   * returns zero.
    *
    * @warning When writing version numbers in your code, don't add zero at the
    * beginning!  Numbers beginning with zero are interpreted as octal (base-8)
@@ -423,7 +374,7 @@ public:
    * at all because there is no digit "8" in octal notation.  Use strictly
    * decimal notation when it comes to these version numbers.
    */
-  int PQXX_PURE server_version() const throw ();			//[t1]
+  int PQXX_PURE server_version() const noexcept;			//[t01]
   //@}
 
   /// Set client-side character encoding
@@ -433,7 +384,7 @@ public:
    * with all client-side encodings or vice versa.
    * @param Encoding Name of the character set encoding to use
    */
-  void set_client_encoding(const PGSTD::string &Encoding)		//[t7]
+  void set_client_encoding(const std::string &Encoding)			//[t07]
 	{ set_variable("CLIENT_ENCODING", Encoding); }
 
   /// Set session variable
@@ -442,9 +393,9 @@ public:
    * be restored automatically.  See the PostgreSQL documentation for a list of
    * variables that can be set and their permissible values.
    * If a transaction is currently in progress, aborting that transaction will
-   * normally discard the newly set value.  Known exceptions are nontransaction
-   * (which doesn't start a real backend transaction) and PostgreSQL versions
-   * prior to 7.3.
+   * normally discard the newly set value.  However nontransaction (which
+   * doesn't start a real backend transaction) is an exception.
+   *
    * @warning Do not mix the set_variable interface with manual setting of
    * variables by executing the corresponding SQL commands, and do not get or
    * set variables while a tablestream or pipeline is active on the same
@@ -453,8 +404,9 @@ public:
    * @param Value Value vor Var to assume: an identifier, a quoted string, or a
    * number.
    */
-  void set_variable(const PGSTD::string &Var,
-		    const PGSTD::string &Value);			//[t60]
+  void set_variable(							//[t60]
+	const std::string &Var,
+	const std::string &Value);
 
   /// Read session variable
   /** Will try to read the value locally, from the list of variables set with
@@ -464,7 +416,7 @@ public:
    * set variables while a tablestream or pipeline is active on the same
    * connection.
    */
-  PGSTD::string get_variable(const PGSTD::string &);			//[t60]
+  std::string get_variable(const std::string &);			//[t60]
   //@}
 
 
@@ -485,7 +437,7 @@ public:
    *
    * @return Number of notifications processed
    */
-  int get_notifs();							//[t4]
+  int get_notifs();							//[t04]
 
 
   /// Wait for a notification to come in
@@ -521,31 +473,19 @@ public:
    * a statement has been prepared, only closing the connection or explicitly
    * "unpreparing" it can make it go away.
    *
-   * Use the transaction classes' @c prepared().exec() function to execute a
+   * Use the @c pqxx::transaction_base::exec_prepared functions to execute a
    * prepared statement.  Use @c prepared().exists() to find out whether a
-   * statement has been prepared under a given name.
+   * statement has been prepared under a given name.  See \ref prepared for a
+   * full discussion.
    *
-   * A special case is the nameless prepared statement.  You may prepare a
-   * statement without a name.  The unnamed statement can be redefined at any
-   * time, without un-preparing it first.
-   *
-   * @warning Prepared statements are not necessarily defined on the backend
-   * right away; libpqxx generally does that lazily.  This means that you can
-   * prepare statements before the connection is fully established, and that
-   * it's relatively cheap to pre-prepare lots of statements that you may or may
-   * not use during the session.  On the other hand, it also means that errors
-   * in a prepared statement may not show up until you first try to invoke it.
-   * Such an error may then break the transaction it occurs in.
-   *
-   * @warning Never try to prepare, execute, or unprepare a prepared statement
-   * manually using direct SQL queries.  Always use the functions provided by
-   * libpqxx.
+   * Never try to prepare, execute, or unprepare a prepared statement manually
+   * using direct SQL queries.  Always use the functions provided by libpqxx.
    *
    * @{
    */
 
-  /// Define a prepared statement
-  /** 
+  /// Define a prepared statement.
+  /**
    * The statement's definition can refer to a parameter using the parameter's
    * positional number n in the definition.  For example, the first parameter
    * can be used as a variable "$1", the second as "$2" and so on.
@@ -560,7 +500,7 @@ public:
    * {
    *   C.prepare("findtable", "select * from pg_tables where name=$1");
    *   work W(C);
-   *   result R = W.prepared("findtable")("mytable").exec();
+   *   result R = W.exec_prepared("findtable", "mytable");
    *   if (R.empty()) throw runtime_error("mytable not found!");
    * }
    * @endcode
@@ -570,15 +510,15 @@ public:
    * have very specific realtime requirements, you can use the @c prepare_now()
    * function to force immediate preparation.
    *
-   * @warning The statement may not be registered with the backend until it is
-   * actually used.  So if, for example, the statement is syntactically
-   * incorrect, you may see a syntax_error here, or later when you try to call
-   * the statement, or in a prepare_now() call.
+   * The statement may not be registered with the backend until it is actually
+   * used.  So if, for example, the statement is syntactically incorrect, you
+   * may see a syntax_error here, or later when you try to call the statement,
+   * or during a @c prepare_now() call.
    *
    * @param name unique name for the new prepared statement.
    * @param definition SQL statement to prepare.
    */
-  void prepare(const PGSTD::string &name, const PGSTD::string &definition);
+  void prepare(const std::string &name, const std::string &definition);
 
   /// Define a nameless prepared statement.
   /**
@@ -587,12 +527,12 @@ public:
    * feature, always keep the definition and the use close together to avoid
    * the nameless statement being redefined unexpectedly by code somewhere else.
    */
-  void prepare(const PGSTD::string &definition);
+  void prepare(const std::string &definition);
 
-  /// Drop prepared statement
-  void unprepare(const PGSTD::string &name);
+  /// Drop prepared statement.
+  void unprepare(const std::string &name);
 
-  /// Request that prepared statement be registered with the server
+  /// Request that prepared statement be registered with the server.
   /** If the statement had already been fully prepared, this will do nothing.
    *
    * If the connection should break and be transparently restored, then the new
@@ -603,39 +543,17 @@ public:
    * it's probably better not to use this and let the connection decide when and
    * whether to register prepared statements that you've defined.
    */
-  void prepare_now(const PGSTD::string &name);
+  void prepare_now(const std::string &name);
 
   /**
    * @}
    */
 
-
+  /// @deprecated Pre-C++11 transactor function.
   /**
-   * @name Transactor framework
+   * This has been superseded by the new transactor framework and
+   * @c pqxx::perform.
    *
-   * See the transactor class template for more about transactors.  To use the
-   * transactor framework, encapsulate your transaction code in a class derived
-   * from an instantiation of the pqxx::transactor template.  Then, to execute
-   * it, create an object of your transactor class and pass it to one of the
-   * perform() functions here.
-   *
-   * The perform() functions may create and execute several copies of the
-   * transactor before succeeding or ultimately giving up.  If there is any
-   * doubt over whether execution succeeded (this can happen if the connection
-   * to the server is lost just before the backend can confirm success), it is
-   * no longer retried and an in_doubt_error is thrown.
-   *
-   * Take care: no member functions will ever be invoked on the transactor
-   * object you pass into perform().  The object you pass in only serves as a
-   * "prototype" for the job to be done.  The perform() function will
-   * copy-construct transactors from the original you passed in, executing the
-   * copies only.  The original object remains "clean" in its original state.
-   *
-   * @{
-   */
-
-  /// Perform the transaction defined by a transactor-based object.
-  /**
    * Invokes the given transactor, making at most Attempts attempts to perform
    * the encapsulated code.  If the code throws any exception other than
    * broken_connection, it will be aborted right away.
@@ -644,121 +562,69 @@ public:
    * @param Attempts Maximum number of attempts to be made to execute T.
    */
   template<typename TRANSACTOR>
-  void perform(const TRANSACTOR &T, int Attempts);			//[t4]
+  void perform(const TRANSACTOR &T, int Attempts);			//[t04]
 
-  /// Perform the transaction defined by a transactor-based object.
+  /// @deprecated Pre-C++11 transactor function.  Use @c pqxx::perform instead.
   /**
+   * This has been superseded by the new transactor framework and
+   * @c pqxx::perform.
+   *
    * @param T The transactor to be executed.
    */
   template<typename TRANSACTOR>
   void perform(const TRANSACTOR &T) { perform(T, 3); }
 
-  /**
-   * @}
-   */
-
   /// Suffix unique number to name to make it unique within session context
   /** Used internally to generate identifiers for SQL objects (such as cursors
    * and nested transactions) based on a given human-readable base name.
    */
-  PGSTD::string adorn_name(const PGSTD::string &);			//[90]
+  std::string adorn_name(const std::string &);				//[90]
 
   /**
-   * @addtogroup escaping String escaping
-   *
-   * Use these functions to "groom" user-provided strings before using them in
-   * your SQL statements.  This reduces the chance of failures when users type
-   * unexpected characters, but more importantly, it helps prevent so-called SQL
-   * injection attacks.
-   *
-   * To understand what SQL injection vulnerabilities are and why they should be
-   * prevented, imagine you use the following SQL statement somewhere in your
-   * program:
-   *
-   * @code
-   *	TX.exec("SELECT number,amount "
-   *		"FROM accounts "
-   *		"WHERE allowed_to_see('" + userid + "','" + password + "')");
-   * @endcode
-   *
-   * This shows a logged-in user important information on all accounts he is
-   * authorized to view.  The userid and password strings are variables entered
-   * by the user himself.
-   *
-   * Now, if the user is actually an attacker who knows (or can guess) the
-   * general shape of this SQL statement, imagine he enters the following
-   * password:
-   *
-   * @code
-   *	x') OR ('x' = 'x
-   * @endcode
-   *
-   * Does that make sense to you?  Probably not.  But if this is inserted into
-   * the SQL string by the C++ code above, the query becomes:
-   *
-   * @code
-   *	SELECT number,amount
-   *	FROM accounts
-   *	WHERE allowed_to_see('user','x') OR ('x' = 'x')
-   * @endcode
-   *
-   * Is this what you wanted to happen?  Probably not!  The neat
-   * allowed_to_see() clause is completely circumvented by the
-   * "<tt>OR ('x' = 'x')</tt>" clause, which is always @c true.  Therefore, the
-   * attacker will get to see all accounts in the database!
-   *
-   * To prevent this from happening, use the transaction's esc() function:
-   *
-   * @code
-   *	TX.exec("SELECT number,amount "
-   *		"FROM accounts "
-   *		"WHERE allowed_to_see('" + TX.esc(userid) + "', "
-   *			"'" + TX.esc(password) + "')");
-   * @endcode
-   *
-   * Now, the quotes embedded in the attacker's string will be neatly escaped so
-   * they can't "break out" of the quoted SQL string they were meant to go into:
-   *
-   * @code
-   *	SELECT number,amount
-   *	FROM accounts
-   *	WHERE allowed_to_see('user', 'x'') OR (''x'' = ''x')
-   * @endcode
-   *
-   * If you look carefully, you'll see that thanks to the added escape
-   * characters (a single-quote is escaped in SQL by doubling it) all we get is
-   * a very strange-looking password string--but not a change in the SQL
-   * statement.
+   * @defgroup escaping-functions String-escaping functions
    */
   //@{
   /// Escape string for use as SQL string literal on this connection
-  PGSTD::string esc(const char str[]);
+  std::string esc(const char str[]);
 
   /// Escape string for use as SQL string literal on this connection
-  PGSTD::string esc(const char str[], size_t maxlen);
+  std::string esc(const char str[], size_t maxlen);
 
   /// Escape string for use as SQL string literal on this connection
-  PGSTD::string esc(const PGSTD::string &str);
+  std::string esc(const std::string &str);
 
   /// Escape binary string for use as SQL string literal on this connection
-  PGSTD::string esc_raw(const unsigned char str[], size_t len);
+  std::string esc_raw(const unsigned char str[], size_t len);
+
+  /// Unescape binary data, e.g. from a table field or notification payload.
+  /** Takes a binary string as escaped by PostgreSQL, and returns a restored
+   * copy of the original binary data.
+   */
+  std::string unesc_raw(const std::string &text)
+					     { return unesc_raw(text.c_str()); }
+
+  /// Unescape binary data, e.g. from a table field or notification payload.
+  /** Takes a binary string as escaped by PostgreSQL, and returns a restored
+   * copy of the original binary data.
+   */
+  std::string unesc_raw(const char *text);
 
   /// Escape and quote a string of binary data.
-  PGSTD::string quote_raw(const unsigned char str[], size_t len);
+  std::string quote_raw(const unsigned char str[], size_t len);
 
   /// Escape and quote an SQL identifier for use in a query.
-  PGSTD::string quote_name(const PGSTD::string &identifier);
+  std::string quote_name(const std::string &identifier);
 
   /// Represent object as SQL string, including quoting & escaping.
   /** Nulls are recognized and represented as SQL nulls. */
   template<typename T>
-  PGSTD::string quote(const T &t)
+  std::string quote(const T &t)
   {
     if (string_traits<T>::is_null(t)) return "NULL";
     return "'" + this->esc(to_string(t)) + "'";
   }
 
-  PGSTD::string quote(const binarystring &);
+  std::string quote(const binarystring &);
   //@}
 
   /// Attempt to cancel the ongoing query, if any.
@@ -782,9 +648,9 @@ public:
    *  that include the above plus any detail, hint, or context fields (these
    *  might span multiple lines).  "verbose" includes all available fields.
    */
-  void set_verbosity(error_verbosity verbosity) throw();
+  void set_verbosity(error_verbosity verbosity) noexcept;
    /// Retrieve current error verbosity
-  error_verbosity get_verbosity() const throw() {return m_verbosity;}
+  error_verbosity get_verbosity() const noexcept {return m_verbosity;}
 
   /// Return pointers to the active errorhandlers.
   /** The entries are ordered from oldest to newest handler.
@@ -799,120 +665,151 @@ public:
    * The pointers point to the real errorhandlers.  The container it returns
    * however is a copy of the one internal to the connection, not a reference.
    */
-  PGSTD::vector<errorhandler *> get_errorhandlers() const;
+  std::vector<errorhandler *> get_errorhandlers() const;
 
 protected:
-  explicit connection_base(connectionpolicy &);
+  explicit connection_base(connectionpolicy &pol) :
+	m_policy(pol)
+  {
+    // Check library version.  The check_library_version template is declared
+    // for any library version, but only actually defined for the version of
+    // the libpqxx binary against which the code is linked.
+    //
+    // If the library binary is a different version than the one declared in
+    // these headers, then this call will fail to link: there will be no
+    // definition for the function with these exact template parameter values.
+    // There will be a definition, but the version in the parameter values will
+    // be different.
+    //
+    // There is no particular reason to do this here in this constructor, except
+    // to ensure that every meaningful libpqxx client will execute it.  The call
+    // must be in the execution path somewhere or the compiler won't try to link
+    // it.  We can't use it to initialise a global or class-static variable,
+    // because a smart compiler might resolve it at compile time.
+    // 
+    // On the other hand, we don't want to make a useless function call too
+    // often for performance reasons.  A local static variable is initialised
+    // only on the definition's first execution.  Compilers will be well
+    // optimised for this behaviour, so there's a minimal one-time cost.
+    static const auto version_ok =
+      internal::check_library_version<PQXX_VERSION_MAJOR, PQXX_VERSION_MINOR>();
+    ignore_unused(version_ok);
+
+    clearcaps();
+  }
   void init();
 
-  void close() throw ();
+  void close() noexcept;
   void wait_read() const;
   void wait_read(long seconds, long microseconds) const;
   void wait_write() const;
 
 private:
 
-  result make_result(internal::pq::PGresult *rhs, const PGSTD::string &query);
+  result make_result(internal::pq::PGresult *rhs, const std::string &query);
 
-  void PQXX_PRIVATE clearcaps() throw ();
-  void PQXX_PRIVATE SetupState();
+  void clearcaps() noexcept;
+  void PQXX_PRIVATE set_up_state();
   void PQXX_PRIVATE check_result(const result &);
 
-  void PQXX_PRIVATE InternalSetTrace() throw ();
-  int PQXX_PRIVATE PQXX_PURE Status() const throw ();
-  const char * PQXX_PURE ErrMsg() const throw ();
-  void PQXX_PRIVATE Reset();
-  void PQXX_PRIVATE RestoreVars();
-  PGSTD::string PQXX_PRIVATE RawGetVar(const PGSTD::string &);
-  void PQXX_PRIVATE process_notice_raw(const char msg[]) throw ();
+  void PQXX_PRIVATE internal_set_trace() noexcept;
+  int PQXX_PRIVATE PQXX_PURE status() const noexcept;
 
-  void read_capabilities() throw ();
+  friend class internal::gate::const_connection_largeobject;
+  const char * PQXX_PURE err_msg() const noexcept;
 
-  prepare::internal::prepared_def &find_prepared(const PGSTD::string &);
+  void PQXX_PRIVATE reset();
+  std::string PQXX_PRIVATE raw_get_var(const std::string &);
+  void PQXX_PRIVATE process_notice_raw(const char msg[]) noexcept;
 
-  prepare::internal::prepared_def &register_prepared(const PGSTD::string &);
+  void read_capabilities();
+
+  prepare::internal::prepared_def &find_prepared(const std::string &);
+
+  prepare::internal::prepared_def &register_prepared(const std::string &);
 
   friend class internal::gate::connection_prepare_invocation;
-  result prepared_exec(const PGSTD::string &,
+  /// @deprecated To be replaced by exec_prepared.
+  result prepared_exec(
+	const std::string &,
 	const char *const[],
 	const int[],
 	const int[],
 	int);
-  bool prepared_exists(const PGSTD::string &) const;
+  result exec_prepared(const std::string &statement, const internal::params &);
+  bool prepared_exists(const std::string &) const;
 
   /// Connection handle.
-  internal::pq::PGconn *m_Conn;
+  internal::pq::PGconn *m_conn = nullptr;
 
   connectionpolicy &m_policy;
 
   /// Active transaction on connection, if any.
-  internal::unique<transaction_base> m_Trans;
+  internal::unique<transaction_base> m_trans;
 
-  PGSTD::list<errorhandler *> m_errorhandlers;
+  std::list<errorhandler *> m_errorhandlers;
 
   /// File to trace to, if any
-  PGSTD::FILE *m_Trace;
+  std::FILE *m_trace = nullptr;
 
-  typedef PGSTD::multimap<PGSTD::string, pqxx::notification_receiver *>
-	receiver_list;
+  using receiver_list =
+	std::multimap<std::string, pqxx::notification_receiver *>;
   /// Notification receivers.
   receiver_list m_receivers;
 
   /// Variables set in this session
-  PGSTD::map<PGSTD::string, PGSTD::string> m_Vars;
+  std::map<std::string, std::string> m_vars;
 
-  typedef PGSTD::map<PGSTD::string, prepare::internal::prepared_def> PSMap;
-
+  using PSMap = std::map<std::string, prepare::internal::prepared_def>;
   /// Prepared statements existing in this section
   PSMap m_prepared;
 
   /// Server version
-  int m_serverversion;
+  int m_serverversion = 0;
 
   /// Stacking counter: known objects that can't be auto-reactivated
   internal::reactivation_avoidance_counter m_reactivation_avoidance;
 
   /// Unique number to use as suffix for identifiers (see adorn_name())
-  int m_unique_id;
+  int m_unique_id = 0;
 
   /// Have we successfully established this connection?
-  bool m_Completed;
+  bool m_completed = false;
 
   /// Is reactivation currently inhibited?
-  bool m_inhibit_reactivation;
+  bool m_inhibit_reactivation = false;
 
   /// Set of session capabilities
-  PGSTD::bitset<cap_end> m_caps;
+  std::bitset<cap_end> m_caps;
 
   /// Current verbosity level
-  error_verbosity m_verbosity;
+  error_verbosity m_verbosity = normal;
 
   friend class internal::gate::connection_errorhandler;
   void PQXX_PRIVATE register_errorhandler(errorhandler *);
-  void PQXX_PRIVATE unregister_errorhandler(errorhandler *) throw ();
+  void PQXX_PRIVATE unregister_errorhandler(errorhandler *) noexcept;
 
   friend class internal::gate::connection_transaction;
-  result PQXX_PRIVATE Exec(const char[], int Retries);
-  void PQXX_PRIVATE RegisterTransaction(transaction_base *);
-  void PQXX_PRIVATE UnregisterTransaction(transaction_base *) throw ();
-  bool PQXX_PRIVATE ReadCopyLine(PGSTD::string &);
-  void PQXX_PRIVATE WriteCopyLine(const PGSTD::string &);
-  void PQXX_PRIVATE EndCopyWrite();
-  void PQXX_PRIVATE RawSetVar(const PGSTD::string &, const PGSTD::string &);
-  void PQXX_PRIVATE AddVariables(const PGSTD::map<PGSTD::string,
-      PGSTD::string> &);
+  result PQXX_PRIVATE exec(const char[], int Retries);
+  void PQXX_PRIVATE register_transaction(transaction_base *);
+  void PQXX_PRIVATE unregister_transaction(transaction_base *) noexcept;
+  bool PQXX_PRIVATE read_copy_line(std::string &);
+  void PQXX_PRIVATE write_copy_line(const std::string &);
+  void PQXX_PRIVATE end_copy_write();
+  void PQXX_PRIVATE raw_set_var(const std::string &, const std::string &);
+  void PQXX_PRIVATE add_variables(const std::map<std::string, std::string> &);
 
   friend class internal::gate::connection_largeobject;
-  internal::pq::PGconn *RawConnection() const { return m_Conn; }
+  internal::pq::PGconn *raw_connection() const { return m_conn; }
 
   friend class internal::gate::connection_notification_receiver;
   void add_receiver(notification_receiver *);
-  void remove_receiver(notification_receiver *) throw ();
+  void remove_receiver(notification_receiver *) noexcept;
 
   friend class internal::gate::connection_pipeline;
-  void PQXX_PRIVATE start_exec(const PGSTD::string &);
-  bool PQXX_PRIVATE consume_input() throw ();
-  bool PQXX_PRIVATE is_busy() const throw ();
+  void PQXX_PRIVATE start_exec(const std::string &);
+  bool PQXX_PRIVATE consume_input() noexcept;
+  bool PQXX_PRIVATE is_busy() const noexcept;
   int PQXX_PRIVATE encoding_code();
   internal::pq::PGresult *get_result();
 
@@ -924,58 +821,21 @@ private:
   friend class internal::gate::connection_reactivation_avoidance_exemption;
 
   friend class internal::gate::connection_parameterized_invocation;
+  /// @deprecated To be replaced with exec_params.
   result parameterized_exec(
-	const PGSTD::string &query,
+	const std::string &query,
 	const char *const params[],
 	const int paramlengths[],
 	const int binaries[],
 	int nparams);
 
-  // Not allowed:
-  connection_base(const connection_base &);
-  connection_base &operator=(const connection_base &);
-};
+  result exec_params(
+	const std::string &query,
+	const internal::params &args);
 
-
-
-#ifdef PQXX_HAVE_AUTO_PTR
-/// @deprecated Create an @c errorhandler instead.
-struct PQXX_LIBEXPORT PQXX_NOVTABLE noticer :
-  PGSTD::unary_function<const char[], void>
-{
-  virtual ~noticer() throw () {}
-  virtual void operator()(const char[]) throw () =0;
+  connection_base(const connection_base &) =delete;
+  connection_base &operator=(const connection_base &) =delete;
 };
-/// @deprecated Use @c quiet_errorhandler instead.
-struct PQXX_LIBEXPORT nonnoticer : noticer
-{
-  virtual void operator()(const char[]) throw () {}
-};
-/// @deprecated Create an @c errorhandler instead.
-class PQXX_LIBEXPORT scoped_noticer : errorhandler
-{
-public:
-  scoped_noticer(connection_base &c, PGSTD::auto_ptr<noticer> t) throw () :
-    errorhandler(c), m_noticer(t.release()) {}
-protected:
-  scoped_noticer(connection_base &c, noticer *t) throw () :
-    errorhandler(c), m_noticer(t) {}
-  virtual bool operator()(const char msg[]) throw ()
-  {
-    (*m_noticer)(msg);
-    return false;
-  }
-private:
-  PGSTD::auto_ptr<noticer> m_noticer;
-};
-/// @deprecated Create a @c quiet_errorhandler instead.
-class PQXX_LIBEXPORT disable_noticer : scoped_noticer
-{
-public:
-  explicit disable_noticer(connection_base &c) :
-    scoped_noticer(c, new nonnoticer) {}
-};
-#endif
 
 
 namespace internal
@@ -988,7 +848,7 @@ public:
   explicit reactivation_avoidance_exemption(connection_base &C);
   ~reactivation_avoidance_exemption();
 
-  void close_connection() throw () { m_open = false; }
+  void close_connection() noexcept { m_open = false; }
 
 private:
   connection_base &m_home;
@@ -1001,7 +861,6 @@ void wait_read(const internal::pq::PGconn *);
 void wait_read(const internal::pq::PGconn *, long seconds, long microseconds);
 void wait_write(const internal::pq::PGconn *);
 } // namespace pqxx::internal
-
 
 } // namespace pqxx
 

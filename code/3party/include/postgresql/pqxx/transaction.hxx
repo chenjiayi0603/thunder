@@ -1,20 +1,13 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::transaction class.
+ * pqxx::transaction represents a standard database transaction.
  *
- *   FILE
- *	pqxx/transaction.hxx
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/transaction instead.
  *
- *   DESCRIPTION
- *      definition of the pqxx::transaction class.
- *   pqxx::transaction represents a standard database transaction
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/transaction instead.
- *
- * Copyright (c) 2001-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2001-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_TRANSACTION
 #define PQXX_H_TRANSACTION
@@ -22,38 +15,37 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/dbtransaction"
-
-#ifdef PQXX_QUIET_DESTRUCTORS
-#include "pqxx/errorhandler"
-#endif
+#include "pqxx/dbtransaction.hxx"
 
 
-
-/* Methods tested in eg. self-test program test1 are marked with "//[t1]"
+/* Methods tested in eg. self-test program test1 are marked with "//[t01]"
  */
 
 
 namespace pqxx
 {
 
-/**
- * @addtogroup transaction Transaction classes
- */
-//@{
-
+namespace internal
+{
+/// Helper base class for the @c transaction class template.
 class PQXX_LIBEXPORT basic_transaction : public dbtransaction
 {
 protected:
-  basic_transaction(							//[t1]
+  basic_transaction(							//[t01]
 	connection_base &C,
-	const PGSTD::string &IsolationLevel,
+	const std::string &IsolationLevel,
 	readwrite_policy);
 
 private:
-  virtual void do_commit();						//[t1]
+  virtual void do_commit() override;					//[t01]
 };
+} // namespace internal
 
+
+/**
+ * @ingroup transaction
+ */
+//@{
 
 /// Standard back-end transaction, templatized on isolation level
 /** This is the type you'll normally want to use to represent a transaction on
@@ -87,49 +79,40 @@ private:
 template<
 	isolation_level ISOLATIONLEVEL=read_committed,
 	readwrite_policy READWRITE=read_write>
-class transaction : public basic_transaction
+class transaction : public internal::basic_transaction
 {
 public:
-  typedef isolation_traits<ISOLATIONLEVEL> isolation_tag;
+  using isolation_tag = isolation_traits<ISOLATIONLEVEL>;
 
-  /// Create a transaction
+  /// Create a transaction.
   /**
    * @param C Connection for this transaction to operate on
    * @param TName Optional name for transaction; must begin with a letter and
    * may contain letters and digits only
    */
-  explicit transaction(connection_base &C, const PGSTD::string &TName):	//[t1]
+  explicit transaction(connection_base &C, const std::string &TName):	//[t01]
     namedclass(fullname("transaction", isolation_tag::name()), TName),
-    basic_transaction(C, isolation_tag::name(), READWRITE)
+    internal::basic_transaction(C, isolation_tag::name(), READWRITE)
 	{ Begin(); }
 
-  explicit transaction(connection_base &C) :				//[t1]
-    namedclass(fullname("transaction", isolation_tag::name())),
-    basic_transaction(C, isolation_tag::name(), READWRITE)
-	{ Begin(); }
+  explicit transaction(connection_base &C) :				//[t01]
+    transaction(C, "") {}
 
-  virtual ~transaction() throw ()
-  {
-#ifdef PQXX_QUIET_DESTRUCTORS
-    quiet_errorhandler quiet(conn());
-#endif
-    End();
-  }
+  virtual ~transaction() noexcept
+	{ End(); }
 };
 
 
-/// Bog-standard, default transaction type
-typedef transaction<> work;
+/// The default transaction type.
+using work = transaction<>;
 
-/// Read-only transaction
-typedef transaction<read_committed, read_only> read_transaction;
+/// Read-only transaction.
+using read_transaction = transaction<read_committed, read_only>;
 
 //@}
 
 }
 
-
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

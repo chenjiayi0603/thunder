@@ -1,19 +1,12 @@
-/*-------------------------------------------------------------------------
+/** String conversion definitions.
  *
- *   FILE
- *	pqxx/stringconv.hxx
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/stringconv instead.
  *
- *   DESCRIPTION
- *      String conversion definitions for libpqxx
- *      DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/stringconv instead.
- *
- * Copyright (c) 2008-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2008-2017, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_STRINGCONV
 #define PQXX_H_STRINGCONV
@@ -48,21 +41,28 @@ template<typename T> struct string_traits {};
 namespace internal
 {
 /// Throw exception for attempt to convert null to given type.
-void PQXX_LIBEXPORT PQXX_NORETURN throw_null_conversion(
-	const PGSTD::string &type);
+[[noreturn]] PQXX_LIBEXPORT void throw_null_conversion(
+	const std::string &type);
 } // namespace pqxx::internal
 
+
+/** Helper: declare a typical string_traits specialisation.
+ *
+ * It'd be great to do this without a preprocessor macro.  The problem is
+ * that we want to represent the parameter type's name to programmers.
+ * There's probably a better way in newer C++ versions, but I don't think there
+ * is one in C++11.
+ */
 #define PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(T)			\
 template<> struct PQXX_LIBEXPORT string_traits<T>			\
 {									\
-  typedef T subject_type;						\
-  static const char *name() { return #T; }				\
-  static bool has_null() { return false; }				\
+  static constexpr const char *name() noexcept { return #T; }		\
+  static constexpr bool has_null() noexcept { return false; }		\
   static bool is_null(T) { return false; }				\
-  static T null() 							\
-    { internal::throw_null_conversion(name()); return subject_type(); }	\
+  [[noreturn]] static T null() 						\
+    { internal::throw_null_conversion(name()); }			\
   static void from_string(const char Str[], T &Obj);			\
-  static PGSTD::string to_string(T Obj);				\
+  static std::string to_string(T Obj);					\
 };
 
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(bool)
@@ -73,104 +73,86 @@ PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(int)
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(unsigned int)
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(long)
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(unsigned long)
-#ifdef PQXX_HAVE_LONG_LONG
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(long long)
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(unsigned long long)
-#endif
 
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(float)
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(double)
-#ifdef PQXX_HAVE_LONG_DOUBLE
 PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION(long double)
-#endif
 
 #undef PQXX_DECLARE_STRING_TRAITS_SPECIALIZATION
 
 /// String traits for C-style string ("pointer to const char")
 template<> struct PQXX_LIBEXPORT string_traits<const char *>
 {
-  static const char *name() { return "const char *"; }
-  static bool has_null() { return true; }
+  static constexpr const char *name() noexcept { return "const char *"; }
+  static constexpr bool has_null() noexcept { return true; }
   static bool is_null(const char *t) { return !t; }
-  static const char *null() { return NULL; }
+  static const char *null() { return nullptr; }
   static void from_string(const char Str[], const char *&Obj) { Obj = Str; }
-  static PGSTD::string to_string(const char *Obj) { return Obj; }
+  static std::string to_string(const char *Obj) { return Obj; }
 };
 
 /// String traits for non-const C-style string ("pointer to char")
 template<> struct PQXX_LIBEXPORT string_traits<char *>
 {
-  static const char *name() { return "char *"; }
-  static bool has_null() { return true; }
+  static constexpr const char *name() noexcept { return "char *"; }
+  static constexpr bool has_null() noexcept { return true; }
   static bool is_null(const char *t) { return !t; }
-  static const char *null() { return NULL; }
+  static const char *null() { return nullptr; }
 
   // Don't allow this conversion since it breaks const-safety.
   // static void from_string(const char Str[], char *&Obj);
 
-  static PGSTD::string to_string(char *Obj) { return Obj; }
+  static std::string to_string(char *Obj) { return Obj; }
 };
 
 /// String traits for C-style string constant ("array of char")
 template<size_t N> struct PQXX_LIBEXPORT string_traits<char[N]>
 {
-  static const char *name() { return "char[]"; }
-  static bool has_null() { return true; }
+  static constexpr const char *name() noexcept { return "char[]"; }
+  static constexpr bool has_null() noexcept { return true; }
   static bool is_null(const char t[]) { return !t; }
-  static const char *null() { return NULL; }
-  static PGSTD::string to_string(const char Obj[]) { return Obj; }
+  static const char *null() { return nullptr; }
+  static std::string to_string(const char Obj[]) { return Obj; }
 };
 
-/// String traits for "array of const char."
-/** Visual Studio 2010 isn't happy without this redundant specialization.
- * Other compilers shouldn't need it.
- */
-template<size_t N> struct PQXX_LIBEXPORT string_traits<const char[N]>
+template<> struct PQXX_LIBEXPORT string_traits<std::string>
 {
-  static const char *name() { return "char[]"; }
-  static bool has_null() { return true; }
-  static bool is_null(const char t[]) { return !t; }
-  static const char *null() { return NULL; }
-  static PGSTD::string to_string(const char Obj[]) { return Obj; }
+  static constexpr const char *name() noexcept { return "string"; }
+  static constexpr bool has_null() noexcept { return false; }
+  static bool is_null(const std::string &) { return false; }
+  static std::string null()
+	{ internal::throw_null_conversion(name()); return std::string(); }
+  static void from_string(const char Str[], std::string &Obj) { Obj=Str; }
+  static std::string to_string(const std::string &Obj) { return Obj; }
 };
 
-
-template<> struct PQXX_LIBEXPORT string_traits<PGSTD::string>
+template<> struct PQXX_LIBEXPORT string_traits<const std::string>
 {
-  static const char *name() { return "string"; }
-  static bool has_null() { return false; }
-  static bool is_null(const PGSTD::string &) { return false; }
-  static PGSTD::string null()
-	{ internal::throw_null_conversion(name()); return PGSTD::string(); }
-  static void from_string(const char Str[], PGSTD::string &Obj) { Obj=Str; }
-  static PGSTD::string to_string(const PGSTD::string &Obj) { return Obj; }
+  static constexpr const char *name() noexcept { return "const string"; }
+  static constexpr bool has_null() noexcept { return false; }
+  static bool is_null(const std::string &) { return false; }
+  static const std::string null()
+	{ internal::throw_null_conversion(name()); return std::string(); }
+  static const std::string to_string(const std::string &Obj) { return Obj; }
 };
 
-template<> struct PQXX_LIBEXPORT string_traits<const PGSTD::string>
+template<> struct PQXX_LIBEXPORT string_traits<std::stringstream>
 {
-  static const char *name() { return "const string"; }
-  static bool has_null() { return false; }
-  static bool is_null(const PGSTD::string &) { return false; }
-  static const PGSTD::string null()
-	{ internal::throw_null_conversion(name()); return PGSTD::string(); }
-  static const PGSTD::string to_string(const PGSTD::string &Obj) { return Obj; }
-};
-
-template<> struct PQXX_LIBEXPORT string_traits<PGSTD::stringstream>
-{
-  static const char *name() { return "stringstream"; }
-  static bool has_null() { return false; }
-  static bool is_null(const PGSTD::stringstream &) { return false; }
-  static PGSTD::stringstream null()
+  static constexpr const char *name() noexcept { return "stringstream"; }
+  static constexpr bool has_null() noexcept { return false; }
+  static bool is_null(const std::stringstream &) { return false; }
+  static std::stringstream null()
   {
     internal::throw_null_conversion(name());
     // No, dear compiler, we don't need a return here.
     throw 0;
   }
-  static void from_string(const char Str[], PGSTD::stringstream &Obj)
-                                                    { Obj.clear(); Obj << Str; }
-  static PGSTD::string to_string(const PGSTD::stringstream &Obj)
-                                                           { return Obj.str(); }
+  static void from_string(const char Str[], std::stringstream &Obj)
+	{ Obj.clear(); Obj << Str; }
+  static std::string to_string(const std::stringstream &Obj)
+	{ return Obj.str(); }
 };
 
 
@@ -192,8 +174,7 @@ template<> struct PQXX_LIBEXPORT string_traits<PGSTD::stringstream>
 template<typename T>
   inline void from_string(const char Str[], T &Obj)
 {
-  if (!Str)
-    throw PGSTD::runtime_error("Attempt to read NULL string");
+  if (!Str) throw std::runtime_error("Attempt to read null string");
   string_traits<T>::from_string(Str, Obj);
 }
 
@@ -211,33 +192,34 @@ template<typename T> inline void from_string(const char Str[], T &Obj, size_t)
 }
 
 template<>
-  inline void from_string<PGSTD::string>(const char Str[],
-	PGSTD::string &Obj,
-	size_t len)							//[t0]
+  inline void from_string<std::string>(					//[t00]
+	const char Str[],
+	std::string &Obj,
+	size_t len)
 {
-  if (!Str)
-    throw PGSTD::runtime_error("Attempt to read NULL string");
+  if (!Str) throw std::runtime_error("Attempt to read null string");
   Obj.assign(Str, len);
 }
 
 template<typename T>
-  inline void from_string(const PGSTD::string &Str, T &Obj)		//[t45]
+  inline void from_string(const std::string &Str, T &Obj)		//[t45]
 	{ from_string(Str.c_str(), Obj); }
 
 template<typename T>
-  inline void from_string(const PGSTD::stringstream &Str, T &Obj)	//[t0]
+  inline void from_string(const std::stringstream &Str, T &Obj)		//[t00]
 	{ from_string(Str.str(), Obj); }
 
 template<> inline void
-from_string(const PGSTD::string &Str, PGSTD::string &Obj)		//[t46]
+from_string(const std::string &Str, std::string &Obj)			//[t46]
 	{ Obj = Str; }
 
 
 namespace internal
 {
 /// Compute numeric value of given textual digit (assuming that it is a digit)
-inline int digit_to_number(char c) throw () { return c-'0'; }
-inline char number_to_digit(int i) throw () { return static_cast<char>(i+'0'); }
+inline int digit_to_number(char c) noexcept { return c-'0'; }
+inline char number_to_digit(int i) noexcept
+	{ return static_cast<char>(i+'0'); }
 } // namespace pqxx::internal
 
 
@@ -246,7 +228,7 @@ inline char number_to_digit(int i) throw () { return static_cast<char>(i+'0'); }
  * resulting string will be human-readable and in a format suitable for use in
  * SQL queries.
  */
-template<typename T> inline PGSTD::string to_string(const T &Obj)
+template<typename T> inline std::string to_string(const T &Obj)
 	{ return string_traits<T>::to_string(Obj); }
 
 //@}
@@ -254,4 +236,3 @@ template<typename T> inline PGSTD::string to_string(const T &Obj)
 } // namespace pqxx
 
 #endif
-

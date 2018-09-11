@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::robusttransaction class.
  *
- *   FILE
- *	pqxx/robusttransaction.hxx
+ * pqxx::robusttransaction is a slower but safer transaction class.
  *
- *   DESCRIPTION
- *      definition of the pqxx::robusttransaction class.
- *   pqxx::robusttransaction is a slower but safer transaction class
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/robusttransaction instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/robusttransaction instead.
  *
- * Copyright (c) 2002-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2002-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_ROBUSTTRANSACTION
 #define PQXX_H_ROBUSTTRANSACTION
@@ -22,61 +16,58 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/dbtransaction"
-
-#ifdef PQXX_QUIET_DESTRUCTORS
-#include "pqxx/errorhandler"
-#endif
+#include "pqxx/dbtransaction.hxx"
 
 
-/* Methods tested in eg. self-test program test001 are marked with "//[t1]"
- */
-
+// Methods tested in eg. test module test01 are marked with "//[t01]".
 
 namespace pqxx
 {
 
-/**
- * @addtogroup transaction Transaction classes
- *
- * @{
- */
-
+namespace internal
+{
+/// Helper base class for the @c robusttransaction class template.
 class PQXX_LIBEXPORT PQXX_NOVTABLE basic_robusttransaction :
   public dbtransaction
 {
 public:
-  /// Isolation level is read_committed by default
-  typedef isolation_traits<read_committed> isolation_tag;
+  /// Isolation level is read_committed by default.
+  using isolation_tag = isolation_traits<read_committed>;
 
   virtual ~basic_robusttransaction() =0;				//[t16]
 
 protected:
   basic_robusttransaction(
 	connection_base &C,
-	const PGSTD::string &IsolationLevel,
-	const PGSTD::string &table_name=PGSTD::string());		//[t16]
+	const std::string &IsolationLevel,
+	const std::string &table_name=std::string());			//[t16]
 
 private:
-  typedef unsigned long IDType;
-  IDType m_record_id;
-  PGSTD::string m_xid;
-  PGSTD::string m_LogTable;
-  PGSTD::string m_sequence;
-  int m_backendpid;
+  using IDType = unsigned long;
+  IDType m_record_id = 0;
+  std::string m_xid;
+  std::string m_log_table;
+  std::string m_sequence;
+  int m_backendpid = -1;
 
-  virtual void do_begin();						//[t18]
-  virtual void do_commit();						//[t16]
-  virtual void do_abort();						//[t18]
+  virtual void do_begin() override;					//[t18]
+  virtual void do_commit() override;					//[t16]
+  virtual void do_abort() override;					//[t18]
 
-  void PQXX_PRIVATE CreateLogTable();
-  void PQXX_PRIVATE CreateTransactionRecord();
-  PGSTD::string PQXX_PRIVATE sql_delete() const;
-  void PQXX_PRIVATE DeleteTransactionRecord() throw ();
-  bool PQXX_PRIVATE CheckTransactionRecord();
+  PQXX_PRIVATE void CreateLogTable();
+  PQXX_PRIVATE void CreateTransactionRecord();
+  PQXX_PRIVATE std::string sql_delete() const;
+  PQXX_PRIVATE void DeleteTransactionRecord() noexcept;
+  PQXX_PRIVATE bool CheckTransactionRecord();
 };
+} // namespace internal
 
 
+/**
+ * @ingroup transaction
+ *
+ * @{
+ */
 
 /// Slightly slower, better-fortified version of transaction
 /** robusttransaction is similar to transaction, but spends more effort (and
@@ -146,29 +137,25 @@ private:
  * attempt to recreate the table at its next time of use.
  */
 template<isolation_level ISOLATIONLEVEL=read_committed>
-class robusttransaction : public basic_robusttransaction
+class robusttransaction : public internal::basic_robusttransaction
 {
 public:
-  typedef isolation_traits<ISOLATIONLEVEL> isolation_tag;
+  using isolation_tag = isolation_traits<ISOLATIONLEVEL>;
 
   /// Constructor
   /** Creates robusttransaction of given name
    * @param C Connection that this robusttransaction should live inside.
    * @param Name optional human-readable name for this transaction
    */
-  explicit robusttransaction(connection_base &C,
-      const PGSTD::string &Name=PGSTD::string()) :
+  explicit robusttransaction(
+	connection_base &C,
+	const std::string &Name=std::string()) :
     namedclass(fullname("robusttransaction",isolation_tag::name()), Name),
-    basic_robusttransaction(C, isolation_tag::name())
+    internal::basic_robusttransaction(C, isolation_tag::name())
 	{ Begin(); }
 
-  virtual ~robusttransaction() throw ()
-  {
-#ifdef PQXX_QUIET_DESTRUCTORS
-    quiet_errorhandler quiet(conn());
-#endif
-    End();
-  }
+  virtual ~robusttransaction() noexcept
+	{ End(); }
 };
 
 /**
@@ -177,8 +164,5 @@ public:
 
 } // namespace pqxx
 
-
 #include "pqxx/compiler-internal-post.hxx"
-
 #endif
-

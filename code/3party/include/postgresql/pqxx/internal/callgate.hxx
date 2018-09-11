@@ -46,7 +46,7 @@ namespace internal
  * This special kind of "gated" friendship gives C private access to H, but only
  * through an expressly limited interface.  The gate class can access its host
  * object as home().
- * 
+ *
  * Keep gate classes entirely stateless.  They should be ultra-lightweight
  * wrappers for their host classes, and be optimized away as much as possible by
  * the compiler.  Once you start adding state, you're on a slippery slope away
@@ -61,14 +61,14 @@ template<typename HOME> class PQXX_PRIVATE callgate
 {
 protected:
   /// This class, to keep constructors easy.
-  typedef callgate<HOME> super;
+  using super = callgate<HOME>;
   /// A reference to the host class.  Helps keep constructors easy.
-  typedef HOME &reference;
+  using reference = HOME &;
 
   callgate(reference x) : m_home(x) {}
 
   /// The home object.  The gate class has full "private" access.
-  reference home() const throw () { return m_home; }
+  reference home() const noexcept { return m_home; }
 
 private:
   reference m_home;

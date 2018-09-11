@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::dbtransaction abstract base class.
  *
- *   FILE
- *	pqxx/dbtransaction.hxx
+ * pqxx::dbransaction defines a real transaction on the database.
  *
- *   DESCRIPTION
- *      definition of the pqxx::dbtransaction abstract base class.
- *   pqxx::dbransaction defines a real transaction on the database
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/dbtransaction instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/dbtransaction instead.
  *
- * Copyright (c) 2004-2009, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2004-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_DBTRANSACTION
 #define PQXX_H_DBTRANSACTION
@@ -22,7 +16,7 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/transaction_base"
+#include "pqxx/transaction_base.hxx"
 
 namespace pqxx
 {
@@ -34,9 +28,9 @@ enum readwrite_policy
 };
 
 
-/// Abstract base class responsible for bracketing a backend transaction
+/// Abstract base class responsible for bracketing a backend transaction.
 /**
- * @addtogroup transaction Transaction classes
+ * @ingroup transaction
  *
  * Use a dbtransaction-derived object such as "work" (transaction<>) to enclose
  * operations on a database in a single "unit of work."  This ensures that the
@@ -64,11 +58,6 @@ enum readwrite_policy
  * transaction are implemented by a derived class.  The implementing concrete
  * class must also call Begin() and End() from its constructors and destructors,
  * respectively, and implement do_exec().
- *
- * @warning Read-only transactions require backend version 8.0 or better.  On
- * older backends, these transactions will be able to modify the database.
- * Even if you have a newer server version, it is not wise to rely on read-only
- * transactions alone to enforce a security model.
  */
 class PQXX_LIBEXPORT PQXX_NOVTABLE dbtransaction : public transaction_base
 {
@@ -78,7 +67,7 @@ public:
 protected:
   dbtransaction(
 	connection_base &,
-	const PGSTD::string &IsolationString,
+	const std::string &IsolationString,
 	readwrite_policy rw=read_write);
 
   explicit dbtransaction(
@@ -91,11 +80,11 @@ protected:
   void start_backend_transaction();
 
   /// Sensible default implemented here: begin backend transaction
-  virtual void do_begin();						//[t1]
+  virtual void do_begin() override;					//[t01]
   /// Sensible default implemented here: perform query
-  virtual result do_exec(const char Query[]);
+  virtual result do_exec(const char Query[]) override;
   /// To be implemented by derived class: commit backend transaction
-  virtual void do_commit() =0;
+  virtual void do_commit() override =0;
   /// Sensible default implemented here: abort backend transaction
   /** Default implementation does two things:
    * <ol>
@@ -103,20 +92,18 @@ protected:
    * <li>Executes a ROLLBACK statement</li>
    * </ol>
    */
-  virtual void do_abort();						//[t13]
+  virtual void do_abort() override;				//[t13]
 
-  static PGSTD::string fullname(const PGSTD::string &ttype,
-	const PGSTD::string &isolation);
+  static std::string fullname(const std::string &ttype,
+	const std::string &isolation);
 
 private:
   /// Precomputed SQL command to run at start of this transaction
-  PGSTD::string m_StartCmd;
+  std::string m_start_cmd;
 };
-
 
 } // namespace pqxx
 
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

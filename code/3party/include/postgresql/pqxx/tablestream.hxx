@@ -1,56 +1,56 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::tablestream class.
  *
- *   FILE
- *	pqxx/tablestream.hxx
+ * pqxx::tablestream provides optimized batch access to a database table.
  *
- *   DESCRIPTION
- *      definition of the pqxx::tablestream class.
- *   pqxx::tablestream provides optimized batch access to a database table
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/tablestream instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/tablestream instead.
  *
- * Copyright (c) 2001-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2001-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_TABLESTREAM
 #define PQXX_H_TABLESTREAM
+
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
-#include "pqxx/transaction_base"
+#include "pqxx/transaction_base.hxx"
+
+
 namespace pqxx
 {
-class transaction_base;
 /// @deprecated Base class for obsolete tablereader/tablewriter classes.
 class PQXX_LIBEXPORT PQXX_NOVTABLE tablestream :
   public internal::transactionfocus
 {
 public:
-  explicit tablestream(transaction_base &Trans,
-	      const PGSTD::string &Null=PGSTD::string());
-  virtual ~tablestream() throw () =0;
+  explicit tablestream(
+	transaction_base &Trans,
+	const std::string &Null=std::string());
+  virtual ~tablestream() noexcept =0;
   virtual void complete() =0;
 protected:
-  const PGSTD::string &NullStr() const { return m_Null; }
-  bool is_finished() const throw () { return m_Finished; }
+  const std::string &NullStr() const { return m_null; }
+  bool is_finished() const noexcept { return m_finished; }
   void base_close();
   template<typename ITER>
-  static PGSTD::string columnlist(ITER colbegin, ITER colend);
+  static std::string columnlist(ITER colbegin, ITER colend);
 private:
-  PGSTD::string m_Null;
-  bool m_Finished;
+  std::string m_null;
+  bool m_finished = false;
   tablestream();
   tablestream(const tablestream &);
   tablestream &operator=(const tablestream &);
 };
+
+
 template<typename ITER> inline
-PGSTD::string tablestream::columnlist(ITER colbegin, ITER colend)
+std::string tablestream::columnlist(ITER colbegin, ITER colend)
 {
   return separated_list(",", colbegin, colend);
 }
 } // namespace pqxx
+
 #include "pqxx/compiler-internal-post.hxx"
 #endif

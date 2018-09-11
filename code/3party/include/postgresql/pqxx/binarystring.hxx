@@ -1,19 +1,12 @@
-/*-------------------------------------------------------------------------
+/** Representation for raw, binary data.
  *
- *   FILE
- *	pqxx/binarystring.hxx
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/binarystring instead.
  *
- *   DESCRIPTION
- *      Representation for raw, binary data.
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/binarystring instead.
- *
- * Copyright (c) 2003-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2003-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_BINARYSTRING
 #define PQXX_H_BINARYSTRING
@@ -21,16 +14,17 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
+#include <memory>
 #include <string>
 
-#include "pqxx/result"
+#include "pqxx/result.hxx"
 
 
 namespace pqxx
 {
 
 /// Binary data corresponding to PostgreSQL's "BYTEA" binary-string type.
-/** @addtogroup escaping String escaping
+/** @ingroup escaping-functions
  *
  * This class represents a binary string as stored in a field of type bytea.
  * The raw value returned by a bytea field contains escape sequences for certain
@@ -56,31 +50,20 @@ namespace pqxx
  * is protected against concurrency with similar operations on the same object,
  * or other objects pointing to the same data block.
  */
-class PQXX_LIBEXPORT binarystring :
-	internal::PQAlloc<
-		const unsigned char,
-		pqxx::internal::freemallocmem_templated<const unsigned char> >
+class PQXX_LIBEXPORT binarystring
 {
 public:
-  typedef content_type char_type;
-  typedef PGSTD::char_traits<char_type>::char_type value_type;
-  typedef size_t size_type;
-  typedef long difference_type;
-  typedef const value_type &const_reference;
-  typedef const value_type *const_pointer;
-  typedef const_pointer const_iterator;
+  using char_type = unsigned char;
+  using value_type = std::char_traits<char_type>::char_type;
+  using size_type = size_t;
+  using difference_type = long;
+  using const_reference = const value_type &;
+  using const_pointer = const value_type *;
+  using const_iterator = const_pointer;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-#ifdef PQXX_HAVE_REVERSE_ITERATOR
-  typedef PGSTD::reverse_iterator<const_iterator> const_reverse_iterator;
-#endif
+  binarystring(const binarystring &) =default;
 
-private:
-  typedef internal::PQAlloc<
-	value_type,
-	pqxx::internal::freemallocmem_templated<const unsigned char> >
-    super;
-
-public:
   /// Read and unescape bytea field
   /** The field will be zero-terminated, even if the original bytea field isn't.
    * @param F the field to read; must be a bytea field
@@ -88,39 +71,44 @@ public:
   explicit binarystring(const field &);					//[t62]
 
   /// Copy binary data from std::string.
-  explicit binarystring(const PGSTD::string &);
+  explicit binarystring(const std::string &);
 
   /// Copy binary data of given length straight out of memory.
   binarystring(const void *, size_t);
 
   /// Size of converted string in bytes
-  size_type size() const throw () { return m_size; }			//[t62]
+  size_type size() const noexcept { return m_size; }			//[t62]
   /// Size of converted string in bytes
-  size_type length() const throw () { return size(); }			//[t62]
-  bool empty() const throw () { return size()==0; }			//[t62]
+  size_type length() const noexcept { return size(); }			//[t62]
+  bool empty() const noexcept { return size()==0; }			//[t62]
 
-  const_iterator begin() const throw () { return data(); }		//[t62]
-  const_iterator end() const throw () { return data()+m_size; }		//[t62]
+  const_iterator begin() const noexcept { return data(); }		//[t62]
+  const_iterator cbegin() const noexcept { return begin(); }
+  const_iterator end() const noexcept { return data()+m_size; }		//[t62]
+  const_iterator cend() const noexcept { return end(); }
 
-  const_reference front() const throw () { return *begin(); }		//[t62]
-  const_reference back() const throw () { return *(data()+m_size-1); }	//[t62]
+  const_reference front() const noexcept { return *begin(); }		//[t62]
+  const_reference back() const noexcept					//[t62]
+	{ return *(data()+m_size-1); }
 
-#ifdef PQXX_HAVE_REVERSE_ITERATOR
   const_reverse_iterator rbegin() const					//[t62]
 	{ return const_reverse_iterator(end()); }
+  const_reverse_iterator crbegin() const { return rbegin(); }
   const_reverse_iterator rend() const					//[t62]
 	{ return const_reverse_iterator(begin()); }
-#endif
+  const_reverse_iterator crend() const { return rend(); }
 
   /// Unescaped field contents
-  const value_type *data() const throw () {return super::get();}	//[t62]
+  const value_type *data() const noexcept {return m_buf.get();}		//[t62]
 
-  const_reference operator[](size_type i) const throw ()		//[t62]
+  const_reference operator[](size_type i) const noexcept		//[t62]
 	{ return data()[i]; }
 
-  bool PQXX_PURE operator==(const binarystring &) const throw ();	//[t62]
-  bool operator!=(const binarystring &rhs) const throw ()		//[t62]
+  PQXX_PURE bool operator==(const binarystring &) const noexcept;	//[t62]
+  bool operator!=(const binarystring &rhs) const noexcept		//[t62]
 	{ return !operator==(rhs); }
+
+  binarystring &operator=(const binarystring &);
 
   /// Index contained string, checking for valid index
   const_reference at(size_type) const;					//[t62]
@@ -132,10 +120,8 @@ public:
   /** @warning No terminating zero is added!  If the binary data did not end in
    * a null character, you will not find one here.
    */
-  const char *get() const throw ()					//[t62]
-  {
-    return reinterpret_cast<const char *>(super::get());
-  }
+  const char *get() const noexcept					//[t62]
+	{ return reinterpret_cast<const char *>(m_buf.get()); }
 
   /// Read as regular C++ string (may include null characters)
   /** @warning libpqxx releases before 3.1 stored the string and returned a
@@ -144,58 +130,24 @@ public:
    * string once and keep it in a local variable.  Also, do not expect to be
    * able to compare the string's address to that of an earlier invocation.
    */
-  PGSTD::string str() const;						//[t62]
+  std::string str() const;						//[t62]
 
 private:
+  using smart_pointer_type = std::shared_ptr<value_type>;
+
+  /// Shorthand: construct a smart_pointer_type.
+  static smart_pointer_type make_smart_pointer(unsigned char *buf=nullptr)
+  {
+    return smart_pointer_type(
+	buf,
+	internal::freemallocmem_templated<unsigned char>);
+  }
+
+  smart_pointer_type m_buf;
   size_type m_size;
 };
-
-
-/**
- * @addtogroup escaping String escaping
- *
- * @{
- */
-
-/// Escape binary string for inclusion in SQL
-/**
- * @deprecated Use the transaction's esc_raw() functions instead
- * \relatesalso binarystring
- */
-PGSTD::string PQXX_LIBEXPORT escape_binary(const PGSTD::string &bin);
-/// Escape binary string for inclusion in SQL
-/**
- * @deprecated Use the transaction's esc_raw() functions instead
- * \relatesalso binarystring
- */
-PGSTD::string PQXX_LIBEXPORT escape_binary(const char bin[]);
-/// Escape binary string for inclusion in SQL
-/**
- * @deprecated Use the transaction's esc_raw() functions instead
- * \relatesalso binarystring
- */
-PGSTD::string PQXX_LIBEXPORT escape_binary(const char bin[], size_t len);
-/// Escape binary string for inclusion in SQL
-/**
- * @deprecated Use the transaction's esc_raw() functions instead
- * \relatesalso binarystring
- */
-PGSTD::string PQXX_LIBEXPORT escape_binary(const unsigned char bin[]);
-/// Escape binary string for inclusion in SQL
-/**
- * @deprecated Use the transaction's esc_raw() functions instead
- * \relatesalso binarystring
- */
-PGSTD::string PQXX_LIBEXPORT escape_binary(const unsigned char bin[], size_t len);
-
-/**
- * @}
- */
-
-
 }
 
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

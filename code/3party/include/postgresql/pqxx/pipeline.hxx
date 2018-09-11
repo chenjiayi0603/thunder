@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::pipeline class.
  *
- *   FILE
- *	pqxx/pipeline.hxx
- *
- *   DESCRIPTION
- *      definition of the pqxx::pipeline class.
  *   Throughput-optimized query manager
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/pipeline instead.
  *
- * Copyright (c) 2003-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/pipeline instead.
+ *
+ * Copyright (c) 2003-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_PIPELINE
 #define PQXX_H_PIPELINE
@@ -22,18 +16,14 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#ifdef PQXX_HAVE_LIMITS
 #include <limits>
-#endif
-
 #include <map>
 #include <string>
 
-#include "pqxx/transaction_base"
+#include "pqxx/transaction_base.hxx"
 
 
-/* Methods tested in eg. self-test program test001 are marked with "//[t1]"
- */
+// Methods tested in eg. test module test01 are marked with "//[t01]".
 
 namespace pqxx
 {
@@ -58,12 +48,16 @@ namespace pqxx
 class PQXX_LIBEXPORT pipeline : public internal::transactionfocus
 {
 public:
-  typedef long query_id;
+  using query_id = long;
 
-  explicit pipeline(transaction_base &,
-      const PGSTD::string &Name=PGSTD::string());			//[t69]
+  pipeline(const pipeline &) =delete;
+  pipeline &operator=(const pipeline &) =delete;
 
-  ~pipeline() throw ();
+  explicit pipeline(							//[t69]
+	transaction_base &,
+	const std::string &Name=std::string());
+
+  ~pipeline() noexcept;
 
   /// Add query to the pipeline.
   /** Queries are accumulated in the pipeline and sent to the backend in a
@@ -72,7 +66,7 @@ public:
    * confused!
    * @return Identifier for this query, unique only within this pipeline
    */
-  query_id insert(const PGSTD::string &);				//[t69]
+  query_id insert(const std::string &);					//[t69]
 
   /// Wait for all ongoing or pending operations to complete.
   /** Detaches from the transaction when done. */
@@ -116,9 +110,9 @@ public:
 
   /// Retrieve oldest unretrieved result (possibly wait for one)
   /** @return The query's identifier and its result set */
-  PGSTD::pair<query_id, result> retrieve();				//[t69]
+  std::pair<query_id, result> retrieve();				//[t69]
 
-  bool empty() const throw () { return m_queries.empty(); }		//[t69]
+  bool empty() const noexcept { return m_queries.empty(); }		//[t69]
 
   /// Set maximum number of queries to retain before issuing them to the backend
   /** The pipeline will perform better if multiple queries are issued at once,
@@ -142,23 +136,23 @@ private:
   class PQXX_PRIVATE Query
   {
   public:
-    explicit Query(const PGSTD::string &q) : m_query(q), m_res() {}
+    explicit Query(const std::string &q) : m_query(q), m_res() {}
 
-    const result &get_result() const throw () { return m_res; }
-    void set_result(const result &r) throw () { m_res = r; }
-    const PGSTD::string &get_query() const throw () { return m_query; }
+    const result &get_result() const noexcept { return m_res; }
+    void set_result(const result &r) noexcept { m_res = r; }
+    const std::string &get_query() const noexcept { return m_query; }
 
   private:
-    PGSTD::string m_query;
+    std::string m_query;
     result m_res;
   };
 
-  typedef PGSTD::map<query_id,Query> QueryMap;
+  using QueryMap = std::map<query_id,Query>;
 
-  struct getquery:PGSTD::unary_function<QueryMap::const_iterator,PGSTD::string>
+  struct getquery
   {
     getquery(){}	// Silences bogus warning in some gcc versions
-    PGSTD::string operator()(QueryMap::const_iterator i) const
+    std::string operator()(QueryMap::const_iterator i) const
 	{ return i->second.get_query(); }
   };
 
@@ -166,66 +160,55 @@ private:
   void detach();
 
   /// Upper bound to query id's
-  static query_id qid_limit() throw ()
+  static constexpr query_id qid_limit() noexcept
   {
-#if defined(PQXX_HAVE_LIMITS)
-    return PGSTD::numeric_limits<query_id>::max();
-#else
-    return LONG_MAX;
-#endif
+    return std::numeric_limits<query_id>::max();
   }
 
   /// Create new query_id
-  query_id PQXX_PRIVATE generate_id();
+  PQXX_PRIVATE query_id generate_id();
 
-  bool have_pending() const throw ()
+  bool have_pending() const noexcept
 	{ return m_issuedrange.second != m_issuedrange.first; }
 
-  void PQXX_PRIVATE issue();
+  PQXX_PRIVATE void issue();
 
   /// The given query failed; never issue anything beyond that
-  void set_error_at(query_id qid) throw () { if (qid < m_error) m_error = qid; }
+  void set_error_at(query_id qid) noexcept
+	{ if (qid < m_error) m_error = qid; }
 
-  void PQXX_PRIVATE PQXX_NORETURN internal_error(const PGSTD::string &err)
-    throw (PGSTD::logic_error);
+  /// Throw pqxx::internal_error.
+  [[noreturn]] PQXX_PRIVATE void internal_error(const std::string &err);
 
-  bool PQXX_PRIVATE obtain_result(bool expect_none=false);
+  PQXX_PRIVATE bool obtain_result(bool expect_none=false);
 
-  void PQXX_PRIVATE obtain_dummy();
-  void PQXX_PRIVATE get_further_available_results();
-  void PQXX_PRIVATE check_end_results();
+  PQXX_PRIVATE void obtain_dummy();
+  PQXX_PRIVATE void get_further_available_results();
+  PQXX_PRIVATE void check_end_results();
 
   /// Receive any results that happen to be available; it's not urgent
-  void PQXX_PRIVATE receive_if_available();
+  PQXX_PRIVATE void receive_if_available();
 
   /// Receive results, up to stop if possible
-  void PQXX_PRIVATE receive(pipeline::QueryMap::const_iterator stop);
-  PGSTD::pair<pipeline::query_id, result>
+  PQXX_PRIVATE void receive(pipeline::QueryMap::const_iterator stop);
+  std::pair<pipeline::query_id, result>
     retrieve(pipeline::QueryMap::iterator);
 
   QueryMap m_queries;
-  PGSTD::pair<QueryMap::iterator,QueryMap::iterator> m_issuedrange;
-  int m_retain;
-  int m_num_waiting;
-  query_id m_q_id;
+  std::pair<QueryMap::iterator,QueryMap::iterator> m_issuedrange;
+  int m_retain = 0;
+  int m_num_waiting = 0;
+  query_id m_q_id = 0;
 
   /// Is there a "dummy query" pending?
-  bool m_dummy_pending;
+  bool m_dummy_pending = false;
 
   /// Point at which an error occurred; no results beyond it will be available
-  query_id m_error;
-
-  /// Not allowed
-  pipeline(const pipeline &);
-  /// Not allowed
-  pipeline &operator=(const pipeline &);
+  query_id m_error = qid_limit();
 };
 
-
 } // namespace
-
 
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

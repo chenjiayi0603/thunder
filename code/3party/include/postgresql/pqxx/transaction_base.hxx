@@ -1,21 +1,15 @@
-/*-------------------------------------------------------------------------
+/** Common code and definitions for the transaction classes.
  *
- *   FILE
- *	pqxx/transaction_base.hxx
+ * pqxx::transaction_base defines the interface for any abstract class that
+ * represents a database transaction.
  *
- *   DESCRIPTION
- *      common code and definitions for the transaction classes.
- *   pqxx::transaction_base defines the interface for any abstract class that
- *   represents a database transaction
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/transaction_base instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/transaction_base instead.
  *
- * Copyright (c) 2001-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2001-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_TRANSACTION_BASE
 #define PQXX_H_TRANSACTION_BASE
@@ -32,19 +26,15 @@
  * nontransaction.
  */
 
-#include "pqxx/connection_base"
-#include "pqxx/isolation"
-#include "pqxx/result"
+#include "pqxx/connection_base.hxx"
+#include "pqxx/isolation.hxx"
+#include "pqxx/result.hxx"
+#include "pqxx/row.hxx"
 
-/* Methods tested in eg. self-test program test001 are marked with "//[t1]"
- */
+// Methods tested in eg. test module test01 are marked with "//[t01]".
 
 namespace pqxx
 {
-class connection_base;
-class transaction_base;
-
-
 namespace internal
 {
 class sql_cursor;
@@ -54,35 +44,35 @@ class PQXX_LIBEXPORT transactionfocus : public virtual namedclass
 public:
   explicit transactionfocus(transaction_base &t) :
     namedclass("transactionfocus"),
-    m_Trans(t),
+    m_trans(t),
     m_registered(false)
   {
   }
 
+  transactionfocus() =delete;
+  transactionfocus(const transactionfocus &) =delete;
+  transactionfocus &operator=(const transactionfocus &) =delete;
+
 protected:
   void register_me();
-  void unregister_me() throw ();
-  void reg_pending_error(const PGSTD::string &) throw ();
-  bool registered() const throw () { return m_registered; }
+  void unregister_me() noexcept;
+  void reg_pending_error(const std::string &) noexcept;
+  bool registered() const noexcept { return m_registered; }
 
-  transaction_base &m_Trans;
+  transaction_base &m_trans;
 
 private:
   bool m_registered;
-
-  /// Not allowed
-  transactionfocus();
-  /// Not allowed
-  transactionfocus(const transactionfocus &);
-  /// Not allowed
-  transactionfocus &operator=(const transactionfocus &);
 };
 
 
+/// Helper class to construct an invocation of a parameterised statement.
+/** @deprecated Use @c exec_params and friends instead.
+ */
 class PQXX_LIBEXPORT parameterized_invocation : statement_parameters
 {
 public:
-  parameterized_invocation(connection_base &, const PGSTD::string &query);
+  parameterized_invocation(connection_base &, const std::string &query);
 
   parameterized_invocation &operator()() { add_param(); return *this; }
   parameterized_invocation &operator()(const binarystring &v)
@@ -102,7 +92,7 @@ private:
   parameterized_invocation &operator=(const parameterized_invocation &);
 
   connection_base &m_home;
-  const PGSTD::string m_query;
+  const std::string m_query;
 };
 } // namespace internal
 
@@ -119,25 +109,36 @@ class transaction_transactionfocus;
 } // namespace internal
 
 
-/// Interface definition (and common code) for "transaction" classes.
 /**
- * @addtogroup transaction Transaction classes
- * All database access must be channeled through one of these classes for
- * safety, although not all implementations of this interface need to provide
+ * @defgroup transaction Transaction classes
+ *
+ * All database access goes through instances of these classes.
+ * However, not all implementations of this interface need to provide
  * full transactional integrity.
  *
  * Several implementations of this interface are shipped with libpqxx, including
  * the plain transaction class, the entirely unprotected nontransaction, and the
- * more cautions robusttransaction.
+ * more cautious robusttransaction.
+ */
+
+/// Interface definition (and common code) for "transaction" classes.
+/**
+ * @ingroup transaction
+ *
+ * Abstract base class for all transaction types.
  */
 class PQXX_LIBEXPORT PQXX_NOVTABLE transaction_base :
   public virtual internal::namedclass
 {
 public:
   /// If nothing else is known, our isolation level is at least read_committed
-  typedef isolation_traits<read_committed> isolation_tag;
+  using isolation_tag = isolation_traits<read_committed>;
 
-  virtual ~transaction_base() =0;					//[t1]
+  transaction_base() =delete;
+  transaction_base(const transaction_base &) =delete;
+  transaction_base &operator=(const transaction_base &) =delete;
+
+  virtual ~transaction_base() =0;					//[t01]
 
   /// Commit the transaction
   /** Unless this function is called explicitly, the transaction will not be
@@ -152,7 +153,7 @@ public:
    * to make this fact known to the caller.  The robusttransaction
    * implementation takes some special precautions to reduce this risk.
    */
-  void commit();							//[t1]
+  void commit();							//[t01]
 
   /// Abort the transaction
   /** No special effort is required to call this function; it will be called
@@ -161,16 +162,16 @@ public:
   void abort();								//[t10]
 
   /**
-   * @addtogroup escaping String escaping
+   * @ingroup escaping-functions
    */
   //@{
   /// Escape string for use as SQL string literal in this transaction
-  PGSTD::string esc(const char str[]) const          { return conn().esc(str); }
+  std::string esc(const char str[]) const            { return conn().esc(str); }
   /// Escape string for use as SQL string literal in this transaction
-  PGSTD::string esc(const char str[], size_t maxlen) const
+  std::string esc(const char str[], size_t maxlen) const
                                              { return conn().esc(str, maxlen); }
   /// Escape string for use as SQL string literal in this transaction
-  PGSTD::string esc(const PGSTD::string &str) const  { return conn().esc(str); }
+  std::string esc(const std::string &str) const      { return conn().esc(str); }
 
   /// Escape binary data for use as SQL string literal in this transaction
   /** Raw, binary data is treated differently from regular strings.  Binary
@@ -184,24 +185,38 @@ public:
    * that can disrupt their use in SQL queries, they will be replaced with
    * special escape sequences.
    */
-  PGSTD::string esc_raw(const unsigned char str[], size_t len) const	//[t62]
-                                            { return conn().esc_raw(str, len); }
+  std::string esc_raw(const unsigned char data[], size_t len) const	//[t62]
+                                           { return conn().esc_raw(data, len); }
   /// Escape binary data for use as SQL string literal in this transaction
-  PGSTD::string esc_raw(const PGSTD::string &) const;			//[t62]
+  std::string esc_raw(const std::string &) const;			//[t62]
+
+  /// Unescape binary data, e.g. from a table field or notification payload.
+  /** Takes a binary string as escaped by PostgreSQL, and returns a restored
+   * copy of the original binary data.
+   */
+  std::string unesc_raw(const std::string &text) const
+					      { return conn().unesc_raw(text); }
+
+  /// Unescape binary data, e.g. from a table field or notification payload.
+  /** Takes a binary string as escaped by PostgreSQL, and returns a restored
+   * copy of the original binary data.
+   */
+  std::string unesc_raw(const char *text) const
+					      { return conn().unesc_raw(text); }
 
   /// Represent object as SQL string, including quoting & escaping.
   /** Nulls are recognized and represented as SQL nulls. */
-  template<typename T> PGSTD::string quote(const T &t) const
+  template<typename T> std::string quote(const T &t) const
                                                      { return conn().quote(t); }
 
   /// Binary-escape and quote a binarystring for use as an SQL constant.
-  PGSTD::string quote_raw(const unsigned char str[], size_t len) const
+  std::string quote_raw(const unsigned char str[], size_t len) const
 					  { return conn().quote_raw(str, len); }
 
-  PGSTD::string quote_raw(const PGSTD::string &str) const;
+  std::string quote_raw(const std::string &str) const;
 
   /// Escape an SQL identifier for use in a query.
-  PGSTD::string quote_name(const PGSTD::string &identifier) const
+  std::string quote_name(const std::string &identifier) const
 				       { return conn().quote_name(identifier); }
   //@}
 
@@ -221,40 +236,198 @@ public:
    * @param Desc Optional identifier for query, to help pinpoint SQL errors
    * @return A result set describing the query's or command's result
    */
-  result exec(const PGSTD::string &Query,
-	      const PGSTD::string &Desc=PGSTD::string());		//[t1]
+  result exec(
+	const std::string &Query,
+	const std::string &Desc=std::string());				//[t01]
 
-  result exec(const PGSTD::stringstream &Query,
-	      const PGSTD::string &Desc=PGSTD::string())
+  result exec(
+	const std::stringstream &Query,
+	const std::string &Desc=std::string())
 	{ return exec(Query.str(), Desc); }
 
-  /// Parameterize a statement.
+  /// Execute query, which should zero rows of data.
+  /** Works like exec, but fails if the result contains data.  It still returns
+   * a result, however, which may contain useful metadata.
+   *
+   * @throw unexpected_rows If the query returned the wrong number of rows.
+   */
+  result exec0(
+	const std::string &Query,
+	const std::string &Desc=std::string())
+	{ return exec_n(0, Query, Desc); }
+
+  /// Execute query returning a single row of data.
+  /** Works like exec, but requires the result to contain exactly one row.
+   * The row can be addressed directly, without the need to find the first row
+   * in a result set.
+   *
+   * @throw unexpected_rows If the query returned the wrong number of rows.
+   */
+  row exec1(const std::string &Query, const std::string &Desc=std::string())
+	{ return exec_n(1, Query, Desc).front(); }
+
+  /// Execute query, expect given number of rows.
+  /** Works like exec, but checks that the number of rows is exactly what's
+   * expected.
+   *
+   * @throw unexpected_rows If the query returned the wrong number of rows.
+   */
+  result exec_n(
+        size_t rows,
+	const std::string &Query,
+	const std::string &Desc=std::string());
+
+  /**
+   * @name Parameterized statements
+   *
+   * You'll often need parameters in the queries you execute: "select the
+   * car with this licence plate."  If the parameter is a string, you need to
+   * quote it and escape any special characters inside it, or it may become a
+   * target for an SQL injection attack.  If it's an integer (for example),
+   * you need to convert it to a string, but in the database's format, without
+   * locale-specific niceties like "," separators between the thousands.
+   *
+   * Parameterised statements are an easier and safer way to do this.  They're
+   * like prepared statements, but for a single use.  You don't need to name
+   * them, and you don't need to prepare them first.
+   *
+   * Your query will include placeholders like @c $1 and $2 etc. in the places
+   * where you want the arguments to go.  Then, you pass the argument values
+   * and the actual query is constructed for you.
+   *
+   * Pass the exact right number of parameters, and in the right order.  The
+   * parameters in the query don't have to be neatly ordered from @c $1 to
+   * @c $2 to @c $3 - but you must pass the argument for @c $1 first, the one
+   * for @c $2 second, etc.
+   *
+   * @warning Beware of "nul" bytes.  Any string you pass as a parameter will
+   * end at the first char with value zero.  If you pass a @c std::string that
+   * contains a zero byte, the last byte in the value will be the one just
+   * before the zero.
+   */
+  //@{
+  /// Execute an SQL statement with parameters.
+  template<typename ...Args>
+  result exec_params(const std::string &query, Args &&...args)
+  {
+    return internal_exec_params(query, internal::params(std::forward<Args>(args)...));
+  }
+
+  // Execute parameterised statement, expect a single-row result.
+  /** @throw unexpected_rows if the result does not consist of exactly one row.
+   */
+  template<typename ...Args>
+  row exec_params1(const std::string &query, Args&&... args)
+  {
+    return exec_params_n(1, query, std::forward<Args>(args)...).front();
+  }
+
+  // Execute parameterised statement, expect a result with zero rows.
+  /** @throw unexpected_rows if the result contains rows.
+   */
+  template<typename ...Args>
+  result exec_params0(const std::string &query, Args &&...args)
+  {
+    return exec_params_n(0, query, std::forward<Args>(args)...);
+  }
+
+  // Execute parameterised statement, expect exactly a given number of rows.
+  /** @throw unexpected_rows if the result contains the wrong number of rows.
+   */
+  template<typename ...Args>
+  result exec_params_n(size_t rows, const std::string &query, Args &&...args)
+  {
+    const auto r = exec_params(query, std::forward<Args>(args)...);
+    check_rowcount_params(rows, r.size());
+    return r;
+  }
+
+  /// Parameterize a statement.  @deprecated Use @c exec_params instead.
   /* Use this to build up a parameterized statement invocation, then invoke it
    * using @c exec()
    *
    * Example: @c trans.parameterized("SELECT $1 + 1")(1).exec();
+   *
+   * This is the old, pre-C++11 way of handling parameterised statements.  As
+   * of libpqxx 6.0, it's made much easier using variadic templates.
    */
-  internal::parameterized_invocation parameterized(const PGSTD::string &query);
+  internal::parameterized_invocation parameterized(const std::string &query);
+  //@}
 
   /**
    * @name Prepared statements
+   *
+   * These are very similar to parameterised statements.  The difference is
+   * that you prepare them in advance, giving them identifying names.  You can
+   * then call them by these names, passing in the argument values appropriate
+   * for that call.
+   *
+   * You prepare a statement on the connection, using
+   * @c pqxx::connection_base::prepare().  But you then call the statement in a
+   * transaction, using the functions you see here.
+   *
+   * Never try to prepare, execute, or unprepare a prepared statement manually
+   * using direct SQL queries.  Always use the functions provided by libpqxx.
+   *
+   * See \ref prepared for a full discussion.
+   *
+   * @warning Beware of "nul" bytes.  Any string you pass as a parameter will
+   * end at the first char with value zero.  If you pass a @c std::string that
+   * contains a zero byte, the last byte in the value will be the one just
+   * before the zero.  If you need a zero byte, consider using
+   * pqxx::binarystring and/or SQL's @c bytea type.
    */
   //@{
-  /// Execute prepared statement.
-  /** Prepared statements are defined using the connection classes' prepare()
-   * function, and continue to live on in the ongoing session regardless of
-   * the context they were defined in (unless explicitly dropped using the
-   * connection's unprepare() function).  Their execution however, like other
-   * forms of query execution, requires a transaction object.
-   *
-   * Just like param_declaration is a helper class that lets you tag parameter
+
+  /// Execute a prepared statement, with optional arguments.
+  template<typename ...Args>
+  result exec_prepared(const std::string &statement, Args&&... args)
+  {
+    return internal_exec_prepared(statement, internal::params(std::forward<Args>(args)...));
+  }
+
+  /// Execute a prepared statement, and expect a single-row result.
+  /** @throw pqxx::unexpected_rows if the result was not exactly 1 row.
+   */
+  template<typename ...Args>
+  row exec_prepared1(const std::string &statement, Args&&... args)
+  {
+    return exec_prepared_n(1, statement, std::forward<Args>(args)...).front();
+  }
+
+  /// Execute a prepared statement, and expect a result with zero rows.
+  /** @throw pqxx::unexpected_rows if the result contained rows.
+   */
+  template<typename ...Args>
+  result exec_prepared0(const std::string &statement, Args&&... args)
+  {
+    return exec_prepared_n(0, statement, std::forward<Args>(args)...);
+  }
+
+  /// Execute a prepared statement, expect a result with given number of rows.
+  /** @throw pqxx::unexpected_rows if the result did not contain exactly the
+   *  given number of rows.
+   */
+  template<typename ...Args>
+  result exec_prepared_n(
+	size_t rows,
+	const std::string &statement,
+	Args&&... args)
+  {
+    const auto r = exec_prepared(statement, std::forward<Args>(args)...);
+    check_rowcount_prepared(statement, rows, r.size());
+    return r;
+  }
+
+  /// Execute prepared statement.  @deprecated Use exec_prepared instead.
+  /** Just like param_declaration is a helper class that lets you tag parameter
    * declarations onto the statement declaration, the invocation class returned
    * here lets you tag parameter values onto the call:
    *
    * @code
    * result run_mystatement(transaction_base &T)
    * {
-   *   return T.prepared("mystatement")("param1")(2)()(4).exec();
+   *   return T.exec_prepared("mystatement", "param1", 2, nullptr, 4);
    * }
    * @endcode
    *
@@ -285,7 +458,7 @@ public:
    * If you leave out the statement name, the call refers to the nameless
    * statement instead.
    */
-  prepare::invocation prepared(const PGSTD::string &statement=PGSTD::string());
+  prepare::invocation prepared(const std::string &statement=std::string());
 
   //@}
 
@@ -295,25 +468,24 @@ public:
   //@{
   /// Have connection process warning message
   void process_notice(const char Msg[]) const				//[t14]
-	{ m_Conn.process_notice(Msg); }
+	{ m_conn.process_notice(Msg); }
   /// Have connection process warning message
-  void process_notice(const PGSTD::string &Msg) const			//[t14]
-	{ m_Conn.process_notice(Msg); }
+  void process_notice(const std::string &Msg) const			//[t14]
+	{ m_conn.process_notice(Msg); }
   //@}
 
   /// Connection this transaction is running in
-  connection_base &conn() const { return m_Conn; }			//[t4]
+  connection_base &conn() const { return m_conn; }			//[t04]
 
   /// Set session variable in this connection
   /** The new value is typically forgotten if the transaction aborts.
-   * Known exceptions to this rule are nontransaction, and PostgreSQL versions
-   * prior to 7.3.  In the case of nontransaction, the set value will be kept
-   * regardless; but in that case, if the connection ever needs to be recovered,
-   * the set value will not be restored.
+   * However nontransaction is an exception to this rule: in that case the set
+   * value will be kept regardless.  Also, if the connection ever needs to be
+   * recovered, a value you set in a nontransaction will not be restored.
    * @param Var The variable to set
    * @param Val The new value to store in the variable
    */
-  void set_variable(const PGSTD::string &Var, const PGSTD::string &Val);//[t61]
+  void set_variable(const std::string &Var, const std::string &Val);	//[t61]
 
   /// Get currently applicable value of variable
   /** First consults an internal cache of variables that have been set (whether
@@ -325,8 +497,7 @@ public:
    *
    * @warning This function used to be declared as @c const but isn't anymore.
    */
-  PGSTD::string get_variable(const PGSTD::string &);			//[t61]
-
+  std::string get_variable(const std::string &);			//[t61]
 
 protected:
   /// Create a transaction (to be called by implementation classes only)
@@ -344,7 +515,7 @@ protected:
   void Begin();
 
   /// End transaction.  To be called by implementing class' destructor
-  void End() throw ();
+  void End() noexcept;
 
   /// To be implemented by derived implementation class: start transaction
   virtual void do_begin() =0;
@@ -366,10 +537,10 @@ protected:
    * executing the latter part of the transaction without a backend transaction
    * being active (and with the former part aborted).
    */
-  result DirectExec(const char C[], int Retries=0);
+  result direct_exec(const char C[], int Retries=0);
 
   /// Forget about any reactivation-blocking resources we tried to allocate
-  void reactivation_avoidance_clear() throw ()
+  void reactivation_avoidance_clear() noexcept
 	{m_reactivation_avoidance.clear();}
 
 protected:
@@ -408,51 +579,62 @@ private:
   };
 
   /// Make sure transaction is opened on backend, if appropriate
-  void PQXX_PRIVATE activate();
+  PQXX_PRIVATE void activate();
 
-  void PQXX_PRIVATE CheckPendingError();
+  PQXX_PRIVATE void CheckPendingError();
 
-  template<typename T> bool parm_is_null(T *p) const throw () { return !p; }
-  template<typename T> bool parm_is_null(T) const throw () { return false; }
+  template<typename T> bool parm_is_null(T *p) const noexcept
+	{ return !p; }
+  template<typename T> bool parm_is_null(T) const noexcept
+	{ return false; }
+
+  result internal_exec_prepared(
+	const std::string &statement,
+	const internal::params &args);
+
+  result internal_exec_params(
+	const std::string &query,
+	const internal::params &args);
+
+  /// Throw unexpected_rows if prepared statement returned wrong no. of rows.
+  void check_rowcount_prepared(
+	const std::string &statement,
+	size_t expected_rows,
+	size_t actual_rows);
+
+  /// Throw unexpected_rows if wrong row count from parameterised statement.
+  void check_rowcount_params(
+	size_t expected_rows, size_t actual_rows);
 
   friend class pqxx::internal::gate::transaction_transactionfocus;
-  void PQXX_PRIVATE RegisterFocus(internal::transactionfocus *);
-  void PQXX_PRIVATE UnregisterFocus(internal::transactionfocus *) throw ();
-  void PQXX_PRIVATE RegisterPendingError(const PGSTD::string &) throw ();
+  PQXX_PRIVATE void register_focus(internal::transactionfocus *);
+  PQXX_PRIVATE void unregister_focus(internal::transactionfocus *) noexcept;
+  PQXX_PRIVATE void register_pending_error(const std::string &) noexcept;
 
   friend class pqxx::internal::gate::transaction_tablereader;
-  void PQXX_PRIVATE BeginCopyRead(const PGSTD::string &, const PGSTD::string &);
-  bool ReadCopyLine(PGSTD::string &);
+  PQXX_PRIVATE void BeginCopyRead(const std::string &, const std::string &);
+  bool read_copy_line(std::string &);
 
   friend class pqxx::internal::gate::transaction_tablewriter;
-  void PQXX_PRIVATE BeginCopyWrite(
-	const PGSTD::string &Table,
-	const PGSTD::string &Columns);
-  void WriteCopyLine(const PGSTD::string &);
-  void EndCopyWrite();
+  PQXX_PRIVATE void BeginCopyWrite(
+	const std::string &Table,
+	const std::string &Columns);
+  void write_copy_line(const std::string &);
+  void end_copy_write();
 
   friend class pqxx::internal::gate::transaction_subtransaction;
 
-  connection_base &m_Conn;
+  connection_base &m_conn;
 
-  internal::unique<internal::transactionfocus> m_Focus;
-  Status m_Status;
-  bool m_Registered;
-  PGSTD::map<PGSTD::string, PGSTD::string> m_Vars;
-  PGSTD::string m_PendingError;
-
-  /// Not allowed
-  transaction_base();
-  /// Not allowed
-  transaction_base(const transaction_base &);
-  /// Not allowed
-  transaction_base &operator=(const transaction_base &);
+  internal::unique<internal::transactionfocus> m_focus;
+  Status m_status = st_nascent;
+  bool m_registered = false;
+  std::map<std::string, std::string> m_vars;
+  std::string m_pending_error;
 };
 
 } // namespace pqxx
 
-
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-

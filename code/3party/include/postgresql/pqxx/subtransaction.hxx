@@ -1,20 +1,14 @@
-/*-------------------------------------------------------------------------
+/** Definition of the pqxx::subtransaction class.
  *
- *   FILE
- *	pqxx/subtransaction.hxx
+ * pqxx::subtransaction is a nested transaction, i.e. one within a transaction.
  *
- *   DESCRIPTION
- *      definition of the pqxx::subtransaction class.
- *   pqxx::subtransaction is a nested transaction, i.e. one within a transaction
- *   DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/subtransaction instead.
+ * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/subtransaction instead.
  *
- * Copyright (c) 2005-2011, Jeroen T. Vermeulen <jtv@xs4all.nl>
+ * Copyright (c) 2005-2018, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this mistake,
  * or contact the author.
- *
- *-------------------------------------------------------------------------
  */
 #ifndef PQXX_H_SUBTRANSACTION
 #define PQXX_H_SUBTRANSACTION
@@ -22,11 +16,10 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/compiler-internal-pre.hxx"
 
-#include "pqxx/dbtransaction"
+#include "pqxx/dbtransaction.hxx"
 
 
-
-/* Methods tested in eg. self-test program test1 are marked with "//[t1]"
+/* Methods tested in eg. self-test program test1 are marked with "//[t01]"
  */
 
 
@@ -34,7 +27,7 @@ namespace pqxx
 {
 
 /**
- * @addtogroup transaction Transaction classes
+ * @ingroup transaction
  */
 /// "Transaction" nested within another transaction
 /** A subtransaction can be executed inside a backend transaction, or inside
@@ -90,18 +83,19 @@ class PQXX_LIBEXPORT subtransaction :
 public:
   /// Nest a subtransaction nested in another transaction.
   explicit subtransaction(						//[t88]
-	dbtransaction &T, const PGSTD::string &Name=PGSTD::string());
+	dbtransaction &T, const std::string &Name=std::string());
 
   /// Nest a subtransaction in another subtransaction.
   explicit subtransaction(
-	subtransaction &T, const PGSTD::string &Name=PGSTD::string());
+	subtransaction &T, const std::string &Name=std::string());
+
+  virtual ~subtransaction() noexcept
+	{ End(); }
 
 private:
-  virtual void do_begin();						//[t88]
-  virtual void do_commit();						//[t88]
-  virtual void do_abort();						//[t88]
-
-  void check_backendsupport() const;
+  virtual void do_begin() override;					//[t88]
+  virtual void do_commit() override;					//[t88]
+  virtual void do_abort() override;					//[t88]
 
   dbtransaction &m_parent;
 };
@@ -112,4 +106,3 @@ private:
 #include "pqxx/compiler-internal-post.hxx"
 
 #endif
-
