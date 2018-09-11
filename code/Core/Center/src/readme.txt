@@ -8,6 +8,6 @@
 执行 crontab -e
 * 0 * * * rdate -s time-b.nist.gov
 2）上报时间
-中心服务器的cmd的动态库的makefile的心跳时间定义宏 -DNODE_BEAT=10.0 ，必须跟框架Starship的makefile的一致
+中心服务器的cmd的动态库的makefile的心跳时间定义宏 -DNODE_BEAT=10.0 ，必须跟框架Net的makefile的一致
 3）发布前需要先安装数据表 
 执行db_im3_center_10_17.sql
