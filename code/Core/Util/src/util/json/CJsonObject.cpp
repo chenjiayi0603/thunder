@@ -55,6 +55,17 @@ bool CJsonObject::operator==(const CJsonObject& oJsonObject) const
     return(this->ToString() == oJsonObject.ToString());
 }
 
+void CJsonObject::GetKeys(const CJsonObject& oJsonObject,std::vector<std::string> &vecKeys)
+{
+	cJSON *object = oJsonObject.GetJsonData();
+    cJSON *c = object->child;
+    while (c)
+    {
+    	vecKeys.push_back(c->string);
+    	c = c->next;
+    }
+}
+
 bool CJsonObject::AddEmptySubObject(const std::string& strKey)
 {
     cJSON* pFocusData = NULL;

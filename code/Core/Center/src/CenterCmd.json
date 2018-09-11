@@ -21,5 +21,19 @@
     "center_servers":[{"center_inner_host":"192.168.2.129","center_inner_port":26000},{"center_inner_host":"192.168.18.78","center_inner_port":26000}],
     "node_recently_time":   30,
     "gateway_list_brief":"网关类型列表",
-    "gateway_list": ["INTERFACE", "ACCESS", "OSSI"]
+    "gateway_list": ["INTERFACE", "ACCESS", "OSSI"],
+    
+    
+    "ipwhite":["192.168.18.78", "192.168.1.106"],
+    "nodetype":{
+    	"COLLECT":["PROXY","LOGQUEUE","STATISTICS"],
+    	"DBAGENT_R":[],
+    	"DBAGENT_W":[],
+    	"LOGQUEUE":["PROXY","PROXYSSDB"],
+    	"PROXY":["DBAGENT_W","DBAGENT_R"],
+    	"PROXYSSDB":["DBAGENT_W","DBAGENT_R"],
+    	"STATISTICS":"["PROXY"]
+    }
+    
+    
 }

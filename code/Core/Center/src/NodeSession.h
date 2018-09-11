@@ -302,6 +302,10 @@ private:
     int m_dbport;
     util::tagDbConnInfo m_dbConnInfo;
 
+    //config
+    std::vector<std::string> m_configIpwhite;
+    util::CJsonObject m_configNodetype;
+
     //节点分配器
     uint32 m_nodeId;
     //当前时间
