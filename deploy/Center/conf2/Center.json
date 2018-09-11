@@ -31,7 +31,7 @@
             "version":  4
         }, {
             "cmd":  13,
-            "so_path":  "plugins/Center/CmdNodeReg.so",
+            "so_path":  "plugins/Center/CmdNodeRegister.so",
             "entrance_symbol":  "create",
             "process_num":  0,
             "load": true,
@@ -44,22 +44,8 @@
             "load": true,
             "version":  1
         }, {
-            "cmd":  27,
-            "so_path":  "plugins/Center/CmdGetLoadMinServer.so",
-            "entrance_symbol":  "create",
-            "process_num":  0,
-            "load": true,
-            "version":  1
-        }, {
             "cmd":  25,
-            "so_path":  "plugins/Center/CmdServerDataStatusReport.so",
-            "entrance_symbol":  "create",
-            "process_num":  0,
-            "load": true,
-            "version":  1
-        }, {
-            "cmd":  23001,
-            "so_path":  "plugins/Center/CmdInqueryServerConfig.so",
+            "so_path":  "plugins/Center/CmdServerData.so",
             "entrance_symbol":  "create",
             "process_num":  0,
             "load": true,
@@ -85,12 +71,5 @@
             "process_num":  0,
             "load": true,
             "version":  6
-        }, {
-            "cmd":  23009,
-            "so_path":  "plugins/Center/CmdCheckServerLoad.so",
-            "entrance_symbol":  "create",
-            "process_num":  0,
-            "load": true,
-            "version":  1
         }]
 }
