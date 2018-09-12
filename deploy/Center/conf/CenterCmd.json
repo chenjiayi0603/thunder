@@ -1,5 +1,5 @@
 {
-    "node_status":
+    "status":
     {
 	    "deleteofflinenode_timeinterval":	86400,
 		"nodeloadlog_timeinterval":	60,
@@ -16,7 +16,7 @@
     	"db_brief":"本中心节点连接数据库的配置, dbupdate 为0则不使用数据库",
     	"dbupdate":0,
     	
-    	"dbip":	"192.168.18.78",
+    	"dbip":	"192.168.18.78-bak",
 		"dbport":	3307,
 		"dbuser":	"root",
 		"dbpwd":	"123456",

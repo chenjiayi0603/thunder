@@ -60,8 +60,7 @@ public:
 			m_centerInnerPort(0), m_centerProcessNum(0), m_nodeOfflineTimeInterval(0),
 			m_deleteOfflineNodeTimeInterval(0), m_nodeReportTimeInterval(0), m_nodeStatusCheckTimeInterval(0),
 			m_nodeLoadLogTimeInterval(0), m_nodeLoadLogOverdue(0), m_nodeLoadStatisticsTimeInterval(0), m_nodeLoadStatisticsOverdue(0),
-			m_nodeLoadCheckTimeInterval(0), m_serverDataLoadCheckTimeInterval(0),
-			m_serverDataLoadStatusLogOverdue(0), m_nodeLoadLogInsertLastTime(0), m_nodeLoadStatisticsInsertLastTime(0),
+			m_nodeLoadCheckTimeInterval(0), m_serverDataLoadStatusLogOverdue(0), m_nodeLoadLogInsertLastTime(0), m_nodeLoadStatisticsInsertLastTime(0),
 			m_nodeLoadCheckLastTime(0), m_nodeStatusCheckLastTime(0),m_serverDataLoadCheckLastTime(0)
     {
         SetCurrentTime();
@@ -229,10 +228,7 @@ public:
 
     /* ***********服务数据接口*/
     bool WriteServerDataToDB(const char* nodetype, int innerport,const char* innerip, int outerport, const char* outerip,const char* status);
-    bool ServerDataLoadCheck();
-	bool ClearOverdueServerDataLogToDB();
 	bool ReplaceServerDataLoadStatusToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
-	bool WriteServerDataLoadLogToDB(const char* nodetype,int innerport, const char* innerip, int outerport,const char* outerip, const char* status);
 
 	/* ***********通用接口   */
 	//广播给所有指定类型的服务器节点的管理者
@@ -345,8 +341,6 @@ private:
     int m_nodeLoadStatisticsOverdue;
     //节点负载检查时间(检查节点负载的日志和统计的时间间隔),表tb_nodeload_log和tb_nodeload_statistics每隔一段时间才检查过期  "nodeloadcheck_timeinterval":86400（1天）
     int m_nodeLoadCheckTimeInterval;
-    //服务器数据负载日志检查时间间隔,表tb_serverdata_log每隔一段时间才检查过期  "serverdataloadstatuslogcheck_timeinterval":60
-    int m_serverDataLoadCheckTimeInterval;
     //服务器数据负载日志过时时间,表tb_serverdata_log中的数据过期需要删除  "serverdataloadstatuslog_overdue":5184000（60天）
     int m_serverDataLoadStatusLogOverdue;
     /*记录时间，分钟在线数据修改为统计当前一分钟内各秒的值的平均值和最大值，分别记录每分钟在线用户的平均值和最大值*/

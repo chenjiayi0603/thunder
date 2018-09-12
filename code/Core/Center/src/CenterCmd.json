@@ -1,5 +1,5 @@
 {
-    "node_status":
+    "status":
     {
 	    "deleteofflinenode_timeinterval":	86400,
 		"nodeloadlog_timeinterval":	60,

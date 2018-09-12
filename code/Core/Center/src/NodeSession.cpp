@@ -312,9 +312,9 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 	}
 
     //节点状态
-    {//"node_status"
+    {//status
     	util::CJsonObject objNodeStatus;
-		LOAD_CENTER_CMD(conf,"db", objNodeStatus);
+		LOAD_CENTER_CMD(conf,"status", objNodeStatus);
     	LOAD_CENTER_CMD(objNodeStatus,"deleteofflinenode_timeinterval", m_deleteOfflineNodeTimeInterval);//检查下线节点信息删除时间间隔
 		LOAD_CENTER_CMD(objNodeStatus,"nodeloadlog_timeinterval", m_nodeLoadLogTimeInterval);//节点负载日志写入时间间隔
 		LOAD_CENTER_CMD(objNodeStatus,"nodeloadlog_overdue", m_nodeLoadLogOverdue);//节点负载日志过时时间
@@ -322,7 +322,6 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 		LOAD_CENTER_CMD(objNodeStatus,"nodeloadstatistics_overdue", m_nodeLoadStatisticsOverdue);//节点负载统计过时时间
 		LOAD_CENTER_CMD(objNodeStatus,"nodeloadcheck_timeinterval", m_nodeLoadCheckTimeInterval);//节点负载检查时间(检查节点负载的日志和统计的时间间隔)
 		LOAD_CENTER_CMD(objNodeStatus,"serverdataloadstatuslog_overdue", m_serverDataLoadStatusLogOverdue);//服务器数据负载日志过时时间
-		LOAD_CENTER_CMD(objNodeStatus,"serverdataloadstatuslogcheck_timeinterval", m_serverDataLoadCheckTimeInterval);//服务器数据负载日志检查时间间隔
     }
     {//gate
 		int iGatewaySize(0);
@@ -1314,11 +1313,19 @@ bool NodeSession::WriteServerDataToDB(const char* nodetype, int innerport,
 {
     SetCurrentTime();
 //    ServerDataLoadCheck();
-    if(!ReplaceServerDataLoadStatusToDB(nodetype, innerport, innerip, outerport,
-            outerip, status))
-    {
-    	LOG4_WARN("failed to ReplaceServerDataLoadStatusToDB nodetype:%s",nodetype);
-    	return false;
+    {//tb_serverdata_status
+    	char szSql[4096];
+		snprintf(szSql, sizeof(szSql) - 1,
+						"replace into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
+						NODE_SERVER_DATA_STATUS_TABLE, nodetype, innerport, innerip,
+						outerport, outerip, status,util::time_t2TimeStr(m_uiCurrentTime).c_str());
+		net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+		if (!net::MysqlStep::Launch(GetLabor(),pstep))
+		{
+			LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
+			return (false);
+		}
     }
 //    if(!WriteServerDataLoadLogToDB(nodetype, innerport, innerip, outerport, outerip,
 //            status))
@@ -1327,66 +1334,6 @@ bool NodeSession::WriteServerDataToDB(const char* nodetype, int innerport,
 //    	return false;
 //    }
     LOG4_DEBUG("succeeded to WriteServerDataToDB nodetype:%s",nodetype);
-    return (true);
-}
-
-bool NodeSession::ServerDataLoadCheck()
-{
-    if (m_uiCurrentTime >= m_serverDataLoadCheckLastTime + m_serverDataLoadCheckTimeInterval)
-    {
-        m_serverDataLoadCheckLastTime = m_uiCurrentTime;
-        ClearOverdueServerDataLogToDB();
-    }
-    return (true);
-}
-bool NodeSession::ReplaceServerDataLoadStatusToDB(const char* nodetype,
-                int innerport, const char* innerip, int outerport,
-                const char* outerip, const char* status)
-{
-    char szSql[4096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "replace into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
-                    NODE_SERVER_DATA_STATUS_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_uiCurrentTime).c_str());
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
-    return (true);
-}
-bool NodeSession::WriteServerDataLoadLogToDB(const char* nodetype,
-                int innerport, const char* innerip, int outerport,
-                const char* outerip, const char* status)
-{
-    char szSql[4096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "insert into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
-                    NODE_SERVER_DATA_LOG_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_uiCurrentTime).c_str());
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
-		return (false);
-	}
-    return (true);
-}
-
-bool NodeSession::ClearOverdueServerDataLogToDB()
-{
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE time <= %llu",NODE_SERVER_DATA_LOG_TABLE,
-						(uint64)(m_uiCurrentTime - m_serverDataLoadStatusLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("net::MysqlStep::Launch failed");
-		return (false);
-	}
-    LOG4_DEBUG( "ClearOverdueOfflineNodeLogToDB ok");
     return (true);
 }
 
