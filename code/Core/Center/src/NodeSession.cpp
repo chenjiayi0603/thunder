@@ -91,7 +91,7 @@ bool NodeSession::LoadServerConfig()
         LOG4_TRACE("LoadServerConfig already");
         return true;
     }
-    if(!m_uiDbUpdate)return true;
+    if(!m_uiDbUse)return true;
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -271,7 +271,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
     {//db
 		util::CJsonObject objDb;
 		LOAD_CENTER_CMD(conf,"db", objDb);
-		LOAD_CENTER_CMD(objDb,"dbupdate", m_uiDbUpdate);
+		LOAD_CENTER_CMD(objDb,"dbuse", m_uiDbUse);
 		LOAD_CENTER_CMD(objDb,"dbip", m_dbip);//连接db地址
 		LOAD_CENTER_CMD(objDb,"dbuser", m_dbuser);
 		LOAD_CENTER_CMD(objDb,"dbpwd", m_dbpwd);
@@ -285,7 +285,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 		snprintf(m_dbConnInfo.m_szDbCharSet,sizeof(m_dbConnInfo.m_szDbCharSet),m_dbcharacterset.c_str());
 		m_dbConnInfo.m_uiDbPort = m_uiDbport;
 		m_dbConnInfo.uiTimeOut = 3;
-		if (m_uiDbUpdate)
+		if (m_uiDbUse)
 		{
 			if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
 			{
@@ -307,6 +307,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 			{
 				LOG4_ERROR("mysql error(%d:%s)",m_pSyncMysqlDbi->GetErrno(),m_pSyncMysqlDbi->GetError().c_str());
 				err = "CMysqlDbi connect failed";
+				return false;
 			}
 		}
 	}
@@ -567,7 +568,7 @@ bool NodeSession::LoadWhiteList(util::T_vecResultSet &vecRes)
 
 bool NodeSession::CheckCenterActive()
 {
-	if(!m_uiDbUpdate)
+	if(!m_uiDbUse)
 	{
 		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
 		return true;
@@ -628,7 +629,7 @@ bool NodeSession::CheckCenterActive(util::T_vecResultSet &vecRes)
 bool NodeSession::SelectCenterMaster()
 {
 	LOG4_TRACE("%s",__FUNCTION__);
-	if(!m_uiDbUpdate)
+	if(!m_uiDbUse)
 	{
 		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
 		return true;
@@ -956,7 +957,7 @@ uint32 NodeSession::GetNodeCountByType(const std::string &nodeType)
 //写节点到数据库，如果是报告信息需要设置boReport = true
 bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport)
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
     SetCurrentTime();
     if (!WriteNodeStatus(nodeInfo))
     {
@@ -985,7 +986,7 @@ bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boRepor
 }
 bool NodeSession::OfflineNodeToDB(int node_id)
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
     SetCurrentTime();
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE nodeid=%d",
@@ -1015,7 +1016,7 @@ const NodeType* NodeSession::GetNodeTypeServerInfo(const std::string &nodeType)
 //删除超时的下线节点状态到数据库
 bool NodeSession::OverdueNodeToDB()
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE activetime <= %llu and serverstatus=%d",
             NODE_LOAD_STATUS_TABLE,
@@ -1030,7 +1031,7 @@ bool NodeSession::OverdueNodeToDB()
 }
 bool NodeSession::OfflineNodesToDB()
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE activetime <= %llu",
             NODE_LOAD_STATUS_TABLE, eNodeStatus_Offline,
@@ -1045,7 +1046,7 @@ bool NodeSession::OfflineNodesToDB()
 
 bool NodeSession::ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE innerport=%d and innerip='%s'",
             NODE_LOAD_STATUS_TABLE, nodeInfo.nodeInnerPort,
@@ -1085,7 +1086,7 @@ bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,std::vect
 //写当前的节点状态
 bool NodeSession::WriteNodeStatus(const NodeStatusInfo& nodeInfo)
 {
-	if (!m_uiDbUpdate)return true;
+	if (!m_uiDbUse)return true;
 	//更新节点状态
 	char szSql[3096];
 	snprintf(szSql, sizeof(szSql) - 1,
@@ -2418,7 +2419,7 @@ int NodeSession::SendCenterToReg(const net::tagMsgShell& stMsgShell,const MsgHea
 bool NodeSession::LoadServerConfig(const std::string &nodetype,uint32 configtype,
                 std::string& config_content,std::string &config_file,uint32 &update_time,uint32 &auto_send,uint32 &reload_config)
 {
-	if(!m_uiDbUpdate)return false;
+	if(!m_uiDbUse)return false;
     if (nodetype.empty())
     {
         LOG4_ERROR("nodetype empty when LoadServerConfig");

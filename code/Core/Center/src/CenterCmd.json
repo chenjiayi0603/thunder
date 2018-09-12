@@ -13,8 +13,8 @@
     
     "db":
     {
-    	"db_brief":"本中心节点连接数据库的配置, dbupdate 为0则不使用数据库",
-    	"dbupdate":0,
+    	"db_brief":"本中心节点连接数据库的配置, dbuse 为0则不使用数据库",
+    	"dbuse":0,
     	
     	"dbip":	"192.168.18.78",
 		"dbport":	3307,
