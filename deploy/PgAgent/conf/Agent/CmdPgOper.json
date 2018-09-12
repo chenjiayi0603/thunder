@@ -36,6 +36,12 @@
             "section_factor": 3,
             "db_name": "postgres",
             "table_num": 1
+        },
+		"tb_sum": {
+            "data_type": 1,
+            "section_factor": 3,
+            "db_name": "postgres",
+            "table_num": 1
         }
     },
     "cluster": {
