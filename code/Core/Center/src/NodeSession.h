@@ -47,11 +47,7 @@ enum CenterStatus
 
 namespace core
 {
-struct LoadConfigSendToMysqlParam:public net::StepStateParam//mysql访问参数
-{
-	LoadConfigSendToMysqlParam(NodeSession* pSess):pNodeSession(pSess){}
-	NodeSession* pNodeSession;
-};
+
 
 class NodeSession: public net::Timer
 {
@@ -59,21 +55,17 @@ public:
     NodeSession(uint32 ulSessionId, ev_tstamp dSessionTimeout,
                     const std::string& strSessionName="net::NodeSession"):
         Timer(ulSessionId, dSessionTimeout, strSessionName),
-            boInit(false),m_nCheckActiveCounter(0),m_nNodeActiveTimeOut(10),m_nNodeTimeBeat(0),m_nodeId(0),
-            m_currentTime(0),m_centerInnerPort(0), m_centerProcessNum(
-            0), m_NodeRecentlyTime(30),m_nodeOfflineTimeInterval(0), m_deleteOfflineNodeTimeInterval(
-            0), m_nodeReportTimeInterval(0), m_nodeStatusCheckTimeInterval(
-            0), m_nodeLoadLogTimeInterval(0), m_nodeLoadLogOverdue(
-            0), m_nodeLoadStatisticsTimeInterval(0), m_nodeLoadStatisticsOverdue(
-            0), m_nodeLoadCheckTimeInterval(0), m_serverDataLoadCheckTimeInterval(
-            0), m_serverDataLoadStatusLogOverdue(0), m_nodeLoadLogInsertLastTime(
-            0), m_nodeLoadStatisticsInsertLastTime(0), m_nodeLoadCheckLastTime(
-            0), m_nodeStatusCheckLastTime(0),m_serverDataLoadCheckLastTime(0)
+            boInit(false),m_nCheckActiveCounter(0),m_nNodeActiveTimeOut(10),m_nNodeTimeBeat(0),
+			m_uiDbport(0),m_uiUpdateNodeDb(1),m_uiNodeId(0),m_uiCurrentTime(0),m_uiInitSessionTime(0),
+			m_centerInnerPort(0), m_centerProcessNum(0), m_nodeOfflineTimeInterval(0),
+			m_deleteOfflineNodeTimeInterval(0), m_nodeReportTimeInterval(0), m_nodeStatusCheckTimeInterval(0),
+			m_nodeLoadLogTimeInterval(0), m_nodeLoadLogOverdue(0), m_nodeLoadStatisticsTimeInterval(0), m_nodeLoadStatisticsOverdue(0),
+			m_nodeLoadCheckTimeInterval(0), m_serverDataLoadCheckTimeInterval(0),
+			m_serverDataLoadStatusLogOverdue(0), m_nodeLoadLogInsertLastTime(0), m_nodeLoadStatisticsInsertLastTime(0),
+			m_nodeLoadCheckLastTime(0), m_nodeStatusCheckLastTime(0),m_serverDataLoadCheckLastTime(0)
     {
         SetCurrentTime();
-        m_dbport = 0;
-        m_InitSessionTime = 0;
-        m_CenterActive.activetime = m_currentTime;
+        m_CenterActive.activetime = m_uiCurrentTime;
         m_CenterActive.status = eOfflineStatus;//根据仲裁来判断
         m_nNodeActiveTimeOut = dSessionTimeout * 2 + 1;//4*2 + 1= 9s 中心活跃超时时间
         m_nNodeTimeBeat = dSessionTimeout;//中心活跃上报时间
@@ -146,19 +138,15 @@ public:
 	//写节点到数据库，如果是报告信息需要设置boReport = true
 	bool WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport = false);
 	//设置服务器为下线
-	bool SetNodeDataOfflineToDBByNodeId(int node_id);
+	bool OfflineNodeToDB(int node_id);
     //删除超时的下线节点状态到数据库
-    bool ClearOverdueOfflineNodeStatusToDB();
+    bool OverdueNodeToDB();
     //检查设置超时节点为下线到数据库
-    bool CheckOfflineNodeStatusToDB();
-    //替换插入节点的状态（为上线）到数据库
-    bool ReplaceNodeStatusToDB(const NodeStatusInfo& nodeInfo);
+    bool OfflineNodesToDB();
     //(根据节点ip和端口)删除指定节点的状态到数据库
     bool ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo);
     //写当前的节点状态
     bool WriteNodeStatus(const NodeStatusInfo& nodeInfo);
-    //检查节点状态
-    bool CheckNodesStatus();
     //写入节点日志到数据库
     bool WriteNodeLog(const NodeStatusInfo& nodeStatusInfo);
     //插入节点日志到数据库
@@ -193,11 +181,11 @@ public:
 	//检查正在运行并被挂起的节点
 	bool CheckNodeSuspend(NodeStatusInfo& nodeinfo);
 	//发送下线通知到网关服务
-	int SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo);
+	int SendOfflineToGate(const NodeStatusInfo &offlineNodeInfo);
 	//发送上线通知到网关服务
-	int SendOnlineToGateway(const NodeStatusInfo& onlineNodeInfo);
+	int SendOnlineToGate(const NodeStatusInfo& onlineNodeInfo);
 	//是否是网关类型
-	bool IsGatewayType(const std::string& nodetype);
+	bool IsGate(const std::string& nodetype);
 	bool IsMaster()const {return (eMasterStatus == m_CenterActive.status);}
 	bool IsSlave()const{return (eSlaveStatus == m_CenterActive.status);}
 	//获取自身的标识符ip:port
@@ -251,17 +239,23 @@ public:
 	bool SendToNodeType(const std::string& strNodeType, const MsgHead& oOutMsgHead, const MsgBody& oOutMsgBody);
 	//定时检查时间
 	int GetNodeBeat()const{return m_nNodeActiveTimeOut;}
-	void SetCurrentTime(){m_currentTime = ::time(NULL);}
+	void SetCurrentTime(){m_uiCurrentTime = ::time(NULL);}
 	//获取新的seq
 	int GetSequence(){return GetLabor()->GetSequence();}
 	//获取mysql last error
-	const std::string& GetSyncLastMysqlError() const{ return m_pSyncMysqlDbi->GetError();}
-	int GetSyncLastMysqlErrno() const {return m_pSyncMysqlDbi->GetErrno();}
+	std::string GetSyncLastMysqlError() const{ return m_pSyncMysqlDbi ? m_pSyncMysqlDbi->GetError() :"";}
+	int GetSyncLastMysqlErrno() const {return m_pSyncMysqlDbi ? m_pSyncMysqlDbi->GetErrno(): 0;}
 	//获取 mysql连接对象
 	util::CMysqlDbi* GetSyncMysqlDbi() const{return m_pSyncMysqlDbi;}
 	//去掉符号
 	void RemoveFlag(std::string &str, char flag = '\"')const;
+	std::string RemoveFlagString(std::string str, char flag = '\"')const;
 private:
+	struct LoadConfigSendToMysqlParam:public net::StepStateParam//mysql访问参数
+	{
+		LoadConfigSendToMysqlParam(NodeSession* pSess):pNodeSession(pSess){}
+		NodeSession* pNodeSession;
+	};
     //中心活跃状态
     CenterActive m_CenterActive;
     //节点类型配置
@@ -299,19 +293,19 @@ private:
     std::string m_dbpwd;
     std::string m_dbname;
     std::string m_dbcharacterset;
-    int m_dbport;
+    uint32 m_uiDbport;
     util::tagDbConnInfo m_dbConnInfo;
 
     //config
-    std::vector<std::string> m_configIpwhite;
-    util::CJsonObject m_configNodetype;
+    util::CJsonObject m_objRoute;
+    uint32 m_uiUpdateNodeDb;
 
     //节点分配器
-    uint32 m_nodeId;
+    uint32 m_uiNodeId;
     //当前时间
-    uint64 m_currentTime;
+    uint64 m_uiCurrentTime;
     //初始化session时间
-    uint64 m_InitSessionTime;
+    uint64 m_uiInitSessionTime;
     /*数据库连接配置,如：
        "dbip":"192.168.18.68", "dbport":3395, "dbuser":"analysis", "dbpwd":"robot123456", "dbname":"db_im3_center", "dbcharacterset":"utf8",
      * */
@@ -323,8 +317,6 @@ private:
     int m_centerInnerPort;//中心服务器内网端口
     std::string m_centerNodeType;//中心服务器节点类型
     int m_centerProcessNum;//中心服务器工作进程数
-
-    int m_NodeRecentlyTime;//最近统计时间
 
     std::vector<std::string> m_GatewayTypeList;//网关类型列表
 

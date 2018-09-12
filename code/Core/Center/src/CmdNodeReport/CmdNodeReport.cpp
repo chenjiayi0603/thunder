@@ -66,8 +66,7 @@ bool CmdNodeReport::AnyMessage(const net::tagMsgShell& stMsgShell,
                                     oInMsgBody.body().c_str());
         return Response(stMsgShell,oInMsgHead,ERR_BODY_JSON);
     }
-    LOG4_DEBUG("CmdNodeReport jsonbuf[%s] Parse is ok",
-                    oInMsgBody.body().c_str());
+    LOG4_DEBUG("CmdNodeReport jsonbuf[%s] Parse is ok",oInMsgBody.body().c_str());
     //解析节点数据
     NodeStatusInfo nodeinfo;
     if (!nodeinfo.pareJsonData(jParseObj))

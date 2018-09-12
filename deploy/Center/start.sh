@@ -7,7 +7,7 @@ SERVER_HOME=`pwd`
 
 SERVER_BIN=${SERVER_HOME}/bin
 SERVER_CONF=${SERVER_HOME}/conf
-SERVER_CONF2=${SERVER_HOME}/conf2
+#SERVER_CONF2=${SERVER_HOME}/conf2
 SERVER_LIB=${SERVER_HOME}/../lib  
 SERVER_3LIB=${SERVER_HOME}/../3lib
 SERVER_LOG=${SERVER_HOME}/log
@@ -45,6 +45,7 @@ do
             info_log "the server process for $server_bin was exist!"
         fi
     fi
+    
     #热备份节点
     if [ -f "${SERVER_CONF2}/${server_bin}.json" ]
     then

@@ -53,7 +53,7 @@ public:     // method of ordinary json object or json array
     }
 
 public:     // method of ordinary json object
-    void GetKeys(const CJsonObject& oJsonObject,std::vector<std::string> &vecKeys);
+    void GetKeys(std::vector<std::string> &vecKeys);
     bool AddEmptySubObject(const std::string& strKey);
     bool AddEmptySubArray(const std::string& strKey);
     CJsonObject& operator[](const std::string& strKey);//获取成员,没有时会插入

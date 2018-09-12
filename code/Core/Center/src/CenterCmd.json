@@ -19,21 +19,22 @@
     "serverdataloadstatuslogcheck_timeinterval":    60,
     "center_servers_brief":"两个中心服务器的ip和端口",
     "center_servers":[{"center_inner_host":"192.168.2.129","center_inner_port":26000},{"center_inner_host":"192.168.18.78","center_inner_port":26000}],
-    "node_recently_time":   30,
     "gateway_list_brief":"网关类型列表",
     "gateway_list": ["INTERFACE", "ACCESS", "OSSI"],
     
-    
-    "ipwhite":["192.168.18.78", "192.168.1.106"],
-    "nodetype":{
-    	"COLLECT":["PROXY","LOGQUEUE","STATISTICS"],
-    	"DBAGENT_R":[],
-    	"DBAGENT_W":[],
-    	"LOGQUEUE":["PROXY","PROXYSSDB"],
-    	"PROXY":["DBAGENT_W","DBAGENT_R"],
-    	"PROXYSSDB":["DBAGENT_W","DBAGENT_R"],
-    	"STATISTICS":"["PROXY"]
+    "update_node_db":0,
+    "route":
+    {
+    	"ipwhite":["192.168.18.78", "192.168.1.106"],
+	    "nodetype":{
+	    	"COLLECT":["PROXYSSDB","LOGQUEUE","STATISTICS"],
+	    	"DBAGENT_R":[],
+	    	"DBAGENT_W":[],
+	    	"PGAGENT":[],
+	    	"LOGQUEUE":["PROXYSSDB"],
+	    	"PROXYSSDB":["DBAGENT_W","DBAGENT_R"],
+	    	"STATISTICS":["PROXY"],
+	    	"HELLO":["PROXYSSDB","DBAGENT_W","DBAGENT_R","PGAGENT"]
+	    }
     }
-    
-    
 }

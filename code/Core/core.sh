@@ -92,15 +92,15 @@ if [ $1 == "all" ];then
     make_plugins
 elif [ $1 == "Util" ];then
     make_Util
-elif [ $1 == "plugins" ];then
+elif [ $1 == "Plugin" ];then
     make_plugins
 elif [ $1 == "Net" ];then
     make_bins_libNet
-elif [ $1 == "clean" ];then
+elif [ $1 == "Clean" ];then
     clear_Util
     clear_Net
 else
-    echo "please input param1[all,Util,Net,clean]"
+    echo "please input param1[all,Util,Net,Plugin,Clean]"
 fi
 
 

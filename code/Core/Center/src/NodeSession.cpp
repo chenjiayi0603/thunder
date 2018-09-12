@@ -14,7 +14,7 @@ namespace core
                 { char errStr[64];snprintf(errStr,sizeof(errStr),"center cmd load(%s) failed",name);err = errStr;return false;}
 
 
-virtual NodeSession::~NodeSession()
+NodeSession::~NodeSession()
 {
 	if (m_pSyncMysqlDbi)
 	{
@@ -91,6 +91,7 @@ bool NodeSession::LoadServerConfig()
         LOG4_TRACE("LoadServerConfig already");
         return true;
     }
+    if (!GetSyncMysqlDbi())return true;
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -253,13 +254,13 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
         }
     }
     SetCurrentTime();
-    if(m_InitSessionTime + m_nNodeTimeBeat >= m_currentTime)
+    if(m_uiInitSessionTime + m_nNodeTimeBeat >= m_uiCurrentTime)
     {
-        LOG4_INFO("m_InitSessionTime(%llu),NodeTimeBeat(%d),currentTime(%llu),Init too often",
-                        m_InitSessionTime,m_nNodeTimeBeat,m_currentTime);
+        LOG4_INFO("m_uiInitSessionTime(%llu),NodeTimeBeat(%d),currentTime(%llu),Init too often",
+                        m_uiInitSessionTime,m_nNodeTimeBeat,m_uiCurrentTime);
         return true;
     }
-    m_InitSessionTime = m_currentTime;
+    m_uiInitSessionTime = m_uiCurrentTime;
     if(!ReadConfig(configPath))
     {
         LOG4_ERROR("Read conf (%s) error",configPath.c_str());
@@ -272,13 +273,13 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
     LOAD_CENTER_CMD(conf,"dbpwd", m_dbpwd);
     LOAD_CENTER_CMD(conf,"dbname", m_dbname);
     LOAD_CENTER_CMD(conf,"dbcharacterset", m_dbcharacterset);
-    LOAD_CENTER_CMD(conf,"dbport", m_dbport);
+    LOAD_CENTER_CMD(conf,"dbport", m_uiDbport);
     snprintf(m_dbConnInfo.m_szDbHost,sizeof(m_dbConnInfo.m_szDbHost),m_dbip.c_str());
     snprintf(m_dbConnInfo.m_szDbUser,sizeof(m_dbConnInfo.m_szDbUser),m_dbuser.c_str());
     snprintf(m_dbConnInfo.m_szDbPwd,sizeof(m_dbConnInfo.m_szDbPwd),m_dbpwd.c_str());
     snprintf(m_dbConnInfo.m_szDbName,sizeof(m_dbConnInfo.m_szDbName),m_dbname.c_str());
     snprintf(m_dbConnInfo.m_szDbCharSet,sizeof(m_dbConnInfo.m_szDbCharSet),m_dbcharacterset.c_str());
-    m_dbConnInfo.m_uiDbPort = m_dbport;
+    m_dbConnInfo.m_uiDbPort = m_uiDbport;
     m_dbConnInfo.uiTimeOut = 3;
     //节点负载配置
     LOAD_CENTER_CMD(conf,"deleteofflinenode_timeinterval", m_deleteOfflineNodeTimeInterval);//检查下线节点信息删除时间间隔
@@ -290,7 +291,6 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
     LOAD_CENTER_CMD(conf,"serverdataloadstatuslog_overdue", m_serverDataLoadStatusLogOverdue);//服务器数据负载日志过时时间
     LOAD_CENTER_CMD(conf,"serverdataloadstatuslogcheck_timeinterval", m_serverDataLoadCheckTimeInterval);//服务器数据负载日志检查时间间隔
     //中心服务器本身配置
-    LOAD_CENTER_CMD(conf,"node_recently_time", m_NodeRecentlyTime);//节点最近统计时间
 
     LOG4_INFO("gc_iBeatInterval:%d,NODE_BEAT:%f",net::gc_iBeatInterval,NODE_BEAT);
     m_nodeReportTimeInterval = net::gc_iBeatInterval;
@@ -366,39 +366,52 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
             m_vecCenterServer.push_back(centerServer);
         }
     }
-    if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
+    //Route配置
+    LOAD_CENTER_CMD(conf,"route", m_objRoute);
+    LOAD_CENTER_CMD(conf,"update_node_db", m_uiUpdateNodeDb);
+
+    if (m_uiUpdateNodeDb)
     {
-        delete m_pSyncMysqlDbi;
-        m_pSyncMysqlDbi = NULL;
+    	if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
+		{
+			delete m_pSyncMysqlDbi;
+			m_pSyncMysqlDbi = NULL;
+		}
+		//连接db用户、db密码、db库名、db字符集、db端口
+		m_pSyncMysqlDbi = new util::CMysqlDbi(m_dbip.c_str(), m_dbuser.c_str(),
+				m_dbpwd.c_str(), m_dbname.c_str(),
+				m_dbcharacterset.c_str(),
+				m_uiDbport);
+		if (NULL == m_pSyncMysqlDbi)
+		{
+			LOG4_ERROR("center cmd load DB failed");
+			err = "failed to new util::CMysqlDbi";
+			return false;
+		}
+		if(m_pSyncMysqlDbi->GetErrno())
+		{
+			LOG4_ERROR("mysql error(%d:%s)",m_pSyncMysqlDbi->GetErrno(),m_pSyncMysqlDbi->GetError().c_str());
+			err = "CMysqlDbi connect failed";
+		}
     }
-    //连接db用户、db密码、db库名、db字符集、db端口
-    m_pSyncMysqlDbi = new util::CMysqlDbi(m_dbip.c_str(), m_dbuser.c_str(),
-    		m_dbpwd.c_str(), m_dbname.c_str(),
-			m_dbcharacterset.c_str(),
-			m_dbport);
-    if (NULL == m_pSyncMysqlDbi)
-    {
-        LOG4_ERROR("center cmd load DB failed");
-        err = "failed to new util::CMysqlDbi";
-        return false;
-    }
-    if(m_pSyncMysqlDbi->GetErrno())
-    {
-        LOG4_ERROR("mysql error(%d:%s)",m_pSyncMysqlDbi->GetErrno(),m_pSyncMysqlDbi->GetError().c_str());
-        err = "CMysqlDbi connect failed";
-    }
+
     LOG4_DEBUG("NodeSession conneted db(%s,%d),NodeActiveTimeOut(%d),NodeTimeBeat(%d),"
                "InitSessionTime(%llu),NodeTimeBeat(%d),currentTime(%llu)",
-			   m_dbip.c_str(),m_dbport,m_nNodeActiveTimeOut,m_nNodeTimeBeat,m_InitSessionTime,m_nNodeTimeBeat,m_currentTime);
+			   m_dbip.c_str(),m_uiDbport,m_nNodeActiveTimeOut,m_nNodeTimeBeat,m_uiInitSessionTime,m_nNodeTimeBeat,m_uiCurrentTime);
 
     snprintf(m_CenterActive.inner_ip,sizeof(m_CenterActive.inner_ip),"%s",m_centerInnerHost.c_str());
     m_CenterActive.inner_port = m_centerInnerPort;
     m_CenterActive.status = eOfflineStatus;
     CheckCenterActive();
-    if(!LoadServerConfig())//加载其他类型节点配置文件
-    {
-        LOG4_ERROR("failed to LoadServerConfig");
-    }
+//    if(!LoadServerConfig())//加载其他类型节点配置文件
+//    {
+//        LOG4_ERROR("failed to LoadServerConfig");
+//    }
+    if(!LoadNodeRoute())
+	{
+		LOG4CPLUS_ERROR_FMT(GetLogger(),"failed to LoadNodeRoute");
+		return false;
+	}
     boInit = true;
     return true;
 }
@@ -407,6 +420,7 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 bool NodeSession::LoadNodeType()
 {
     if (m_vecNodeTypes.size() > 0)return true;
+
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -495,6 +509,7 @@ bool NodeSession::LoadNodeType(util::T_vecResultSet &vecRes)
 bool NodeSession::LoadWhiteList()
 {
 	if (m_vecWhiteNode.size() > 0)return true;
+
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -543,8 +558,13 @@ bool NodeSession::LoadWhiteList(util::T_vecResultSet &vecRes)
 
 bool NodeSession::CheckCenterActive()
 {
+	if (!GetSyncMysqlDbi())
+	{
+		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
+		return true;
+	}
     SetCurrentTime();
-    LOG4_DEBUG("CheckCenterActive currenttime(%llu)",m_currentTime);
+    LOG4_DEBUG("CheckCenterActive currenttime(%llu)",m_uiCurrentTime);
     auto checkCenterActiveCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -599,6 +619,11 @@ bool NodeSession::CheckCenterActive(util::T_vecResultSet &vecRes)
 bool NodeSession::SelectCenterMaster()
 {
 	LOG4_TRACE("%s",__FUNCTION__);
+	if (!GetSyncMysqlDbi())
+	{
+		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
+		return true;
+	}
 	//检查中心活跃状态并选举
 	bool boIsMaster(true);//是否是主模式
 	{//选举主服务器（目前选举方式适用于两个中心节点）
@@ -608,13 +633,13 @@ bool NodeSession::SelectCenterMaster()
 		{
 			if(eMasterStatus == it->status)//只检查主节点状态
 			{
-				if(it->activetime + m_nNodeActiveTimeOut >= m_currentTime)
+				if(it->activetime + m_nNodeActiveTimeOut >= m_uiCurrentTime)
 				{//有效节点
 					if(0 == strncmp(m_CenterActive.inner_ip,it->inner_ip,sizeof(m_CenterActive.inner_ip))\
 									&& m_CenterActive.inner_port == it->inner_port)
 					{//主中心服务器就是本节点
 						LOG4_DEBUG("it's master already(%s),activetime(%llu),nodebeat(%d),currentTime(%llu)",
-										m_CenterActive.inner_ip,m_CenterActive.activetime,m_nNodeActiveTimeOut,m_currentTime);
+										m_CenterActive.inner_ip,m_CenterActive.activetime,m_nNodeActiveTimeOut,m_uiCurrentTime);
 						break;
 					}
 					else
@@ -622,13 +647,13 @@ bool NodeSession::SelectCenterMaster()
 						//只要其他的有效节点为主的则本节点为从
 						boIsMaster = false;
 						LOG4_DEBUG("master(%s) already exist,activetime(%llu),nodebeat(%d),currentTime(%llu)",
-										it->inner_ip,it->activetime,m_nNodeActiveTimeOut,m_currentTime);
+										it->inner_ip,it->activetime,m_nNodeActiveTimeOut,m_uiCurrentTime);
 					}
 				}
 				else
 				{
 					LOG4_DEBUG("node(%s)status(%u) has been timeout,activetime(%llu),nodebeat(%d),currentTime(%llu)",
-										it->inner_ip,it->status,it->activetime,m_nNodeActiveTimeOut,m_currentTime);
+										it->inner_ip,it->status,it->activetime,m_nNodeActiveTimeOut,m_uiCurrentTime);
 				}
 			}
 		}
@@ -679,8 +704,8 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
     {
         m_nCheckActiveCounter = 0;
         {//设置过时节点状态
-            //有效时间 activetime + m_nNodeActiveTimeOut(9s) >= m_currentTime
-            uint64 validActiveTime = m_currentTime - m_nNodeActiveTimeOut;
+            //有效时间 activetime + m_nNodeActiveTimeOut(9s) >= m_uiCurrentTime
+            uint64 validActiveTime = m_uiCurrentTime - m_nNodeActiveTimeOut;
             LOG4_DEBUG("CheckActive CenterStatus validActiveTime:%llu",validActiveTime);
 			net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 			pstep->SetTask(util::eSqlTaskOper_exec,"update %s set status=%d where activetime < %llu",
@@ -692,8 +717,8 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
 			}
         }
         {//删除长时间无效节点
-            //保存记录时间 activetime + m_nNodeActiveTimeOut(9s) * 10 >= m_currentTime
-            uint64 keepRecordTime = m_currentTime - m_nNodeActiveTimeOut * 10;
+            //保存记录时间 activetime + m_nNodeActiveTimeOut(9s) * 10 >= m_uiCurrentTime
+            uint64 keepRecordTime = m_uiCurrentTime - m_nNodeActiveTimeOut * 10;
             LOG4_DEBUG("CheckActive CenterStatus keepRecordTime:%llu",keepRecordTime);
 			net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 			pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s where activetime < %llu and status=%d",
@@ -706,11 +731,11 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
         }
     }
     {//更新本节点状态
-        m_CenterActive.activetime = m_currentTime;
+        m_CenterActive.activetime = m_uiCurrentTime;
         net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 		pstep->SetTask(util::eSqlTaskOper_exec,"replace into %s values('%s',%d,%d,%d)",
                 NODE_CENTER_ACTIVE_TABLE, m_CenterActive.inner_ip,
-                m_CenterActive.inner_port,status,m_currentTime);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+                m_CenterActive.inner_port,status,m_uiCurrentTime);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 		if (!net::MysqlStep::Launch(GetLabor(),pstep))
 		{
 			LOG4_WARN("MysqlStep::Launch failed");
@@ -724,13 +749,61 @@ bool NodeSession::UpdateCenterStatus(CenterStatus status,bool boSwitch)
 
 bool NodeSession::LoadNodeRoute()
 {
-	if(!LoadNodeType())
+	if (!m_objRoute.IsEmpty())
 	{
-		LOG4_WARN("failed to LoadNodeType");
+		if (m_vecWhiteNode.size() == 0)
+		{
+			LOG4_INFO("route:%s",m_objRoute.ToString().c_str());
+			//"ipwhite"
+			util::CJsonObject objIpwhite;
+			if (m_objRoute.Get("ipwhite",objIpwhite))
+			{
+				WhiteNode whiteNode;
+				int s = objIpwhite.GetArraySize();
+				for(int i = 0;i < s;++i)
+				{
+					snprintf(whiteNode.inner_ip,sizeof(whiteNode.inner_ip),RemoveFlagString(objIpwhite[i].ToString()).c_str());
+					LOG4_INFO("whiteNode:%s",whiteNode.inner_ip);
+					m_vecWhiteNode.push_back(whiteNode);
+				}
+			}
+		}
+		if (m_vecNodeTypes.size() == 0)
+		{
+			//"nodetype"
+			util::CJsonObject objNodetype;
+			if (m_objRoute.Get("nodetype",objNodetype))
+			{
+				std::vector<std::string> vecNode;
+				objNodetype.GetKeys(vecNode);
+				for(auto node:vecNode)
+				{
+					util::CJsonObject neededservers;
+					NodeType nodeType;
+					nodeType.nodetype = node;
+					objNodetype.Get(node,neededservers);
+					int s = neededservers.GetArraySize();
+					for(int i = 0;i < s;++i)
+					{
+						nodeType.neededServers.push_back(RemoveFlagString(neededservers[i].ToString()));
+					}
+					LOG4_INFO("nodeType:%s",nodeType.nodetype.c_str());
+					for(auto neededServer:nodeType.neededServers)LOG4_INFO("neededServer:%s",neededServer.c_str());
+					m_vecNodeTypes.push_back(nodeType);
+				}
+			}
+		}
 	}
-	if(!LoadWhiteList())
+	else
 	{
-		LOG4_WARN("failed to LoadWhiteList");
+		if(!LoadNodeType())
+		{
+			LOG4_WARN("failed to LoadNodeType");
+		}
+		if(!LoadWhiteList())
+		{
+			LOG4_WARN("failed to LoadWhiteList");
+		}
 	}
     return true;
 }
@@ -809,8 +882,8 @@ net::uint32 NodeSession::GetNewNodeID()
         }
     }
     ++tmpID;
-    m_nodeId = tmpID;
-    return m_nodeId;
+    m_uiNodeId = tmpID;
+    return m_uiNodeId;
 }
 void NodeSession::AddNodeInfo(const std::string& NodeKey,
                 const NodeStatusInfo& Info)
@@ -874,6 +947,7 @@ uint32 NodeSession::GetNodeCountByType(const std::string &nodeType)
 //写节点到数据库，如果是报告信息需要设置boReport = true
 bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport)
 {
+	if (!m_uiUpdateNodeDb)return true;
     SetCurrentTime();
     if (!WriteNodeStatus(nodeInfo))
     {
@@ -900,8 +974,9 @@ bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boRepor
 //    }
     return (true);
 }
-bool NodeSession::SetNodeDataOfflineToDBByNodeId(int node_id)
+bool NodeSession::OfflineNodeToDB(int node_id)
 {
+	if (!m_uiUpdateNodeDb)return true;
     SetCurrentTime();
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE nodeid=%d",
@@ -929,12 +1004,13 @@ const NodeType* NodeSession::GetNodeTypeServerInfo(const std::string &nodeType)
 }
 
 //删除超时的下线节点状态到数据库
-bool NodeSession::ClearOverdueOfflineNodeStatusToDB()
+bool NodeSession::OverdueNodeToDB()
 {
+	if (!m_uiUpdateNodeDb)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE activetime <= %llu and serverstatus=%d",
             NODE_LOAD_STATUS_TABLE,
-            (uint64)(m_currentTime - m_deleteOfflineNodeTimeInterval),
+            (uint64)(m_uiCurrentTime - m_deleteOfflineNodeTimeInterval),
             eNodeStatus_Offline);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
 	{
@@ -943,12 +1019,13 @@ bool NodeSession::ClearOverdueOfflineNodeStatusToDB()
 	}
     return (true);
 }
-bool NodeSession::CheckOfflineNodeStatusToDB()
+bool NodeSession::OfflineNodesToDB()
 {
+	if (!m_uiUpdateNodeDb)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE activetime <= %llu",
             NODE_LOAD_STATUS_TABLE, eNodeStatus_Offline,
-            (uint64)(m_currentTime - m_nodeOfflineTimeInterval));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+            (uint64)(m_uiCurrentTime - m_nodeOfflineTimeInterval));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
 	{
 		LOG4_WARN("MysqlStep::Launch failed");
@@ -956,31 +1033,10 @@ bool NodeSession::CheckOfflineNodeStatusToDB()
 	}
     return (true);
 }
-bool NodeSession::ReplaceNodeStatusToDB(const NodeStatusInfo& nodeInfo)
-{
-    char szSql[3096];
-    snprintf(szSql, sizeof(szSql) - 1,
-                    "replace into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%d,%llu,%d,%d,%d,%d,%d,%d,%d,'%s',%d)",
-                    NODE_LOAD_STATUS_TABLE, nodeInfo.nodeId,
-                    nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
-                    nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
-                    nodeInfo.nodeAccessIp.c_str(), eNodeStatus_Online,
-                    nodeInfo.workerNum, m_currentTime, nodeInfo.load,
-                    nodeInfo.connect, nodeInfo.client, nodeInfo.recvNum,
-                    nodeInfo.sendNum, nodeInfo.recvByte, nodeInfo.sendByte,
-                    nodeInfo.worker.c_str(),nodeInfo.suspend); //时间以服务器时间为准
-    net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
-	if (!net::MysqlStep::Launch(GetLabor(),pstep))
-	{
-		LOG4_WARN("net::MysqlStep::Launch failed");
-		return (false);
-	}
-    return (true);
-}
 
 bool NodeSession::ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 {
+	if (!m_uiUpdateNodeDb)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE innerport=%d and innerip='%s'",
             NODE_LOAD_STATUS_TABLE, nodeInfo.nodeInnerPort,
@@ -1020,52 +1076,61 @@ bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,std::vect
 //写当前的节点状态
 bool NodeSession::WriteNodeStatus(const NodeStatusInfo& nodeInfo)
 {
-    if (!ReplaceNodeStatusToDB(nodeInfo))
-    {
-        return (false);
-    }
-    CheckNodesStatus();
+	if (!m_uiUpdateNodeDb)return true;
+	//更新节点状态
+	char szSql[3096];
+	snprintf(szSql, sizeof(szSql) - 1,
+					"replace into %s values(%d,'%s',%d,'%s',%d,'%s',%d,%d,%llu,%d,%d,%d,%d,%d,%d,%d,'%s',%d)",
+					NODE_LOAD_STATUS_TABLE, nodeInfo.nodeId,
+					nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
+					nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
+					nodeInfo.nodeAccessIp.c_str(), eNodeStatus_Online,
+					nodeInfo.workerNum, m_uiCurrentTime, nodeInfo.load,
+					nodeInfo.connect, nodeInfo.client, nodeInfo.recvNum,
+					nodeInfo.sendNum, nodeInfo.recvByte, nodeInfo.sendByte,
+					nodeInfo.worker.c_str(),nodeInfo.suspend); //时间以服务器时间为准
+	net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+	if (!net::MysqlStep::Launch(GetLabor(),pstep))
+	{
+		LOG4_WARN("net::MysqlStep::Launch failed");
+		return (false);
+	}
+	//检查节点状态
+	if (m_uiCurrentTime >= m_nodeStatusCheckLastTime + m_nodeStatusCheckTimeInterval)
+	{
+		m_nodeStatusCheckLastTime = m_uiCurrentTime;
+		OverdueNodeToDB(); //删除长时间下线的节点信息
+	}
+	OfflineNodesToDB(); //检查一段时间不活跃的节点信息，设置其为下线
     return (true);
 }
-//检查节点状态
-bool NodeSession::CheckNodesStatus()
-{
-    if (m_currentTime >= m_nodeStatusCheckLastTime + m_nodeStatusCheckTimeInterval)
-    {
-        m_nodeStatusCheckLastTime = m_currentTime;
-        ClearOverdueOfflineNodeStatusToDB(); //删除长时间下线的节点信息
-    }
-    CheckOfflineNodeStatusToDB(); //检查一段时间不活跃的节点信息，设置其为下线
-    return true;
-}
+
 //节点日志操作
 bool NodeSession::WriteNodeLog(const NodeStatusInfo& nodeStatusInfo)
 {
     //写日志时先把节点状态统计到节点日志中
-    {
-        //节点的key(包括节点状态和节点日志的key)都是innerIp:innerPort组成，可以直接查找
-        const std::string nodeKey = nodeStatusInfo.getNodeKey();
-        NodesLogMapIT logIter = m_mapNodesLog.find(
-                    nodeKey);
-        if (logIter != m_mapNodesLog.end())
-        {
-            logIter->second.AddUp(nodeStatusInfo);//日志需要累加状态
+	//节点的key(包括节点状态和节点日志的key)都是innerIp:innerPort组成，可以直接查找
+	const std::string nodeKey = nodeStatusInfo.getNodeKey();
+	NodesLogMapIT logIter = m_mapNodesLog.find(nodeKey);
+	if (logIter != m_mapNodesLog.end())
+	{
+		logIter->second.AddUp(nodeStatusInfo);//日志需要累加状态
 //            logIter->second.Debug(GetLogger());
-        }
-        else
-        {
-            NodeLogInfo nodeLogInfo(nodeStatusInfo);//新建节点日志
+	}
+	else
+	{
+		NodeLogInfo nodeLogInfo(nodeStatusInfo);//新建节点日志
 //            nodeLogInfo.Debug(GetLogger());
-            m_mapNodesLog.insert(make_pair(nodeKey, nodeLogInfo));
-        }
-    }
+		m_mapNodesLog.insert(make_pair(nodeKey, nodeLogInfo));
+	}
     //60s写一次日志
-    if (m_currentTime >= m_nodeLoadLogInsertLastTime + m_nodeLoadLogTimeInterval)
+    if (m_uiCurrentTime >= m_nodeLoadLogInsertLastTime + m_nodeLoadLogTimeInterval)
     {
         LOG4_DEBUG("InsertNodeLogToDB m_mapNodesLog size(%u),"
-                        "m_currentTime(%llu),m_nodeLoadLogInsertLastTime(%llu),m_nodeLoadLogTimeInterval(%u)",
-                        m_mapNodesLog.size(),m_currentTime,m_nodeLoadLogInsertLastTime,m_nodeLoadLogTimeInterval);
-        m_nodeLoadLogInsertLastTime = m_currentTime;
+                        "m_uiCurrentTime(%llu),m_nodeLoadLogInsertLastTime(%llu),m_nodeLoadLogTimeInterval(%u)",
+                        m_mapNodesLog.size(),m_uiCurrentTime,m_nodeLoadLogInsertLastTime,m_nodeLoadLogTimeInterval);
+        m_nodeLoadLogInsertLastTime = m_uiCurrentTime;
         return InsertNodeLogToDB();
     }
     return (true);
@@ -1115,7 +1180,7 @@ bool NodeSession::InsertNodeLogToDB()
                         nodeLog.nodeType.c_str(), nodeLog.nodeInnerPort,
                         nodeLog.nodeInnerIp.c_str(), nodeLog.nodeAccessPort,
                         nodeLog.nodeAccessIp.c_str(), nodeLog.workerNum,
-                        m_currentTime,
+                        m_uiCurrentTime,
                         nodeLog.GetAverageLoad(),nodeLog.maxLoad,nodeLog.GetAverageConnect(),nodeLog.maxConnect,
                         nodeLog.GetAverageClient(),nodeLog.maxClient, nodeLog.GetAverageRecvNum(), nodeLog.maxRecvNum,
                         nodeLog.GetAverageSendNum(),nodeLog.maxSendNum,nodeLog.GetAverageRecvByte(), nodeLog.maxRecvByte,
@@ -1149,7 +1214,7 @@ bool NodeSession::WriteNodeStatistics(const NodeStatusInfo& nodeInfo)
         it->second += nodeInfo;
     }
     //300s写一次统计日志
-    if (m_currentTime >= m_nodeLoadStatisticsInsertLastTime
+    if (m_uiCurrentTime >= m_nodeLoadStatisticsInsertLastTime
                                     + m_nodeLoadStatisticsTimeInterval)
     {
         return InsertNodeStatisticsToDB();
@@ -1158,7 +1223,7 @@ bool NodeSession::WriteNodeStatistics(const NodeStatusInfo& nodeInfo)
 }
 bool NodeSession::InsertNodeStatisticsToDB()
 {
-    m_nodeLoadStatisticsInsertLastTime = m_currentTime;
+    m_nodeLoadStatisticsInsertLastTime = m_uiCurrentTime;
     /*
      * 表tb_nodeload_statistics
      *  节点基础状态
@@ -1180,7 +1245,7 @@ bool NodeSession::InsertNodeStatisticsToDB()
                         nodeInfo.nodeType.c_str(), nodeInfo.nodeInnerPort,
                         nodeInfo.nodeInnerIp.c_str(), nodeInfo.nodeAccessPort,
                         nodeInfo.nodeAccessIp.c_str(), nodeInfo.workerNum,
-                        m_currentTime, nodeInfo.load, nodeInfo.client,
+                        m_uiCurrentTime, nodeInfo.load, nodeInfo.client,
                         nodeInfo.connect, nodeInfo.recvNum, nodeInfo.sendNum,
                         nodeInfo.recvByte, nodeInfo.sendByte);
         net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
@@ -1196,9 +1261,9 @@ bool NodeSession::InsertNodeStatisticsToDB()
 }
 bool NodeSession::CheckNodeload()
 {
-    if (m_currentTime >= m_nodeLoadCheckLastTime + m_nodeLoadCheckTimeInterval)
+    if (m_uiCurrentTime >= m_nodeLoadCheckLastTime + m_nodeLoadCheckTimeInterval)
     {
-        m_nodeLoadCheckLastTime = m_currentTime;
+        m_nodeLoadCheckLastTime = m_uiCurrentTime;
         ClearOverdueOfflineNodeLogToDB();
         ClearOverdueOfflineNodeStatisticsToDB();
     }
@@ -1209,7 +1274,7 @@ bool NodeSession::ClearOverdueOfflineNodeLogToDB()
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE active_time <= %llu",
             NODE_LOAD_LOG_TABLE,
-            (uint64)(m_currentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+            (uint64)(m_uiCurrentTime - m_nodeLoadLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
 	{
 		LOG4_WARN("%s MysqlStep::Launch failed",__FUNCTION__);
@@ -1223,7 +1288,7 @@ bool NodeSession::ClearOverdueOfflineNodeStatisticsToDB()
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE currenttime <= %llu",
             NODE_LOAD_STATISTICS_TABLE,
-            (uint64)(m_currentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+            (uint64)(m_uiCurrentTime - m_nodeLoadStatisticsOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
 	{
 		LOG4_WARN("%s net::MysqlStep::Launch failed",__FUNCTION__);
@@ -1257,9 +1322,9 @@ bool NodeSession::WriteServerDataToDB(const char* nodetype, int innerport,
 
 bool NodeSession::ServerDataLoadCheck()
 {
-    if (m_currentTime >= m_serverDataLoadCheckLastTime + m_serverDataLoadCheckTimeInterval)
+    if (m_uiCurrentTime >= m_serverDataLoadCheckLastTime + m_serverDataLoadCheckTimeInterval)
     {
-        m_serverDataLoadCheckLastTime = m_currentTime;
+        m_serverDataLoadCheckLastTime = m_uiCurrentTime;
         ClearOverdueServerDataLogToDB();
     }
     return (true);
@@ -1272,7 +1337,7 @@ bool NodeSession::ReplaceServerDataLoadStatusToDB(const char* nodetype,
     snprintf(szSql, sizeof(szSql) - 1,
                     "replace into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
                     NODE_SERVER_DATA_STATUS_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
+                    outerport, outerip, status,util::time_t2TimeStr(m_uiCurrentTime).c_str());
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
@@ -1290,7 +1355,7 @@ bool NodeSession::WriteServerDataLoadLogToDB(const char* nodetype,
     snprintf(szSql, sizeof(szSql) - 1,
                     "insert into %s values('%s',%d,'%s',%d,'%s','%s','%s')",
                     NODE_SERVER_DATA_LOG_TABLE, nodetype, innerport, innerip,
-                    outerport, outerip, status,util::time_t2TimeStr(m_currentTime).c_str());
+                    outerport, outerip, status,util::time_t2TimeStr(m_uiCurrentTime).c_str());
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
@@ -1305,7 +1370,7 @@ bool NodeSession::ClearOverdueServerDataLogToDB()
 {
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE time <= %llu",NODE_SERVER_DATA_LOG_TABLE,
-						(uint64)(m_currentTime - m_serverDataLoadStatusLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
+						(uint64)(m_uiCurrentTime - m_serverDataLoadStatusLogOverdue));//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 	if (!net::MysqlStep::Launch(GetLabor(),pstep))
 	{
 		LOG4_WARN("net::MysqlStep::Launch failed");
@@ -2396,6 +2461,7 @@ int NodeSession::SendCenterToReg(const net::tagMsgShell& stMsgShell,const MsgHea
 bool NodeSession::LoadServerConfig(const std::string &nodetype,uint32 configtype,
                 std::string& config_content,std::string &config_file,uint32 &update_time,uint32 &auto_send,uint32 &reload_config)
 {
+	if (!GetSyncMysqlDbi())return false;
     if (nodetype.empty())
     {
         LOG4_ERROR("nodetype empty when LoadServerConfig");
@@ -2512,14 +2578,14 @@ int NodeSession::CheckServerConfigFromDB(const std::string &node_type,uint32 con
             return ERR_SERVERINFO_RECORD;
         }
         {//检查时间间隔
-            int timeElapse = m_currentTime - checkUpdateTime;
+            int timeElapse = m_uiCurrentTime - checkUpdateTime;
             if(timeElapse <= m_nNodeTimeBeat)
             {
                 LOG4_ERROR("timeElapse(%d),m_nNodeTimeBeat(%d),update config too often",timeElapse,m_nNodeTimeBeat);
                 return core::ERR_REQ_FREQUENCY;
             }
             LOG4_DEBUG("update config:timeElapse(%d),m_nNodeTimeBeat(%d),checkUpdateTime(%u),nowTime(%s)",
-                            timeElapse,m_nNodeTimeBeat,checkUpdateTime,util::time_t2TimeStr(m_currentTime).c_str());
+                            timeElapse,m_nNodeTimeBeat,checkUpdateTime,util::time_t2TimeStr(m_uiCurrentTime).c_str());
         }
         if(config_content == checkConfigContent && config_file == checkConfigFile && auto_send == checkAutoSend)
         {
@@ -2543,7 +2609,7 @@ int NodeSession::UpdateServerConfigToDB(const std::string &node_type,uint32 conf
 	    snprintf(szSql, sizeof(szSql) - 1,
                         "replace into %s values('%s',%d,'%s','%s','%s',%d,%d)",
                         NODE_SERVER_CONFIG_TABLE, node_type.c_str(),config_type,config_content.c_str(),config_file.c_str(),
-                        util::time_t2TimeStr(m_currentTime).c_str(),auto_send,reload_config);
+                        util::time_t2TimeStr(m_uiCurrentTime).c_str(),auto_send,reload_config);
         net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 		if (!net::MysqlStep::Launch(GetLabor(),pstep))
@@ -2555,7 +2621,7 @@ int NodeSession::UpdateServerConfigToDB(const std::string &node_type,uint32 conf
 	    snprintf(szSql, sizeof(szSql) - 1,
                         "insert into %s values('%s',%d,'%s','%s','%s',%d)",
                         NODE_SERVER_CONFIG_LOG_TABLE, node_type.c_str(),config_type,config_content.c_str(),config_file.c_str(),
-                        util::time_t2TimeStr(m_currentTime).c_str(),auto_send);
+                        util::time_t2TimeStr(m_uiCurrentTime).c_str(),auto_send);
         net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 		pstep->SetTask(szSql,util::eSqlTaskOper_exec);//第一个任务(无需回调处理函数,也就无需设置自定义参数)
 		if (!net::MysqlStep::Launch(GetLabor(),pstep))
@@ -2636,9 +2702,9 @@ bool NodeSession::GetCenterNodesStatus(util::CJsonObject &jObj)
 
 int NodeSession::UnregNodeRoute(const NodeStatusInfo& nodeinfo)
 {
-	if (!SetNodeDataOfflineToDBByNodeId(nodeinfo.nodeId))
+	if (!OfflineNodeToDB(nodeinfo.nodeId))
 	{
-		LOG4_WARN( "SetNodeDataOfflineToDBByNodeId false(%d)!",nodeinfo.nodeId);
+		LOG4_WARN( "OfflineNodeToDB false(%d)!",nodeinfo.nodeId);
 		return ERR_SERVERINFO_RECORD;
 	}
 	//给其它模块发下线通知
@@ -2707,7 +2773,7 @@ int NodeSession::SendUnregToOthers(const NodeStatusInfo &delNodeInfo)
     return (net::ERR_OK);
 }
 //关闭网关服务器（INTREFACE、ACCESS、OSSI）到指定更新节点路由信息
-int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
+int NodeSession::SendOfflineToGate(const NodeStatusInfo &offlineNodeInfo)
 {
     util::CJsonObject jNodeExitObj,tmember;
     jNodeExitObj.AddEmptySubArray("node_arry_exit");
@@ -2717,7 +2783,7 @@ int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
     tmember.Add("worker_num", offlineNodeInfo.workerNum);
     jNodeExitObj["node_arry_exit"].Add(tmember);
     const std::string& strOfflineBody = jNodeExitObj.ToString();
-    LOG4_DEBUG("SendOfflineToGateway!jNodeExitObj[%s]",strOfflineBody.c_str());
+    LOG4_DEBUG("SendOfflineToGate!jNodeExitObj[%s]",strOfflineBody.c_str());
     bool boSendedNotice(false);
     //遍历管理器内存的node列表,如果断开连接的服务是它们需要的服务,则通知它们注销该断开连接的服务
     {
@@ -2729,7 +2795,7 @@ int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
                         it_iter != m_mapNodesStatus.end(); ++it_iter)//已注册的服务器
         {
             const NodeStatusInfo& nodeInfo = it_iter->second;
-            if(!IsGatewayType(nodeInfo.nodeType))//如果不是网关类型服务则不发送
+            if(!IsGate(nodeInfo.nodeType))//如果不是网关类型服务则不发送
             {
                 continue;
             }
@@ -2760,7 +2826,7 @@ int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
             }
             else
             {
-                LOG4_WARN("SendOfflineToGateway!notify node type(%s) don't have server config,please check table tb_nodetype",
+                LOG4_WARN("SendOfflineToGate!notify node type(%s) don't have server config,please check table tb_nodetype",
                             nodeInfo.nodeType.c_str());
             }
         }
@@ -2773,7 +2839,7 @@ int NodeSession::SendOfflineToGateway(const NodeStatusInfo &offlineNodeInfo)
 }
 
 //发送注册者给网关服务
-int NodeSession::SendOnlineToGateway(const NodeStatusInfo& onlineNodeInfo)
+int NodeSession::SendOnlineToGate(const NodeStatusInfo& onlineNodeInfo)
 {
     const std::string& strOnlineNodeType = onlineNodeInfo.nodeType;
     //发送格式 {\"node_arry_reg\":[{\\"node_type\\":\"ACCESS\",\\"node_ip\\":\"192.168.18.22\",\\"node_port\\":40111,\\"worker_num\\":2}]}
@@ -2789,7 +2855,7 @@ int NodeSession::SendOnlineToGateway(const NodeStatusInfo& onlineNodeInfo)
 	for (NodesStatusMapCIT it_iter = m_mapNodesStatus.begin();it_iter != m_mapNodesStatus.end(); ++it_iter) //已注册服务器
 	{
 		const NodeStatusInfo& nodeInfo = it_iter->second;
-		if(!IsGatewayType(nodeInfo.nodeType))//如果不是网关类型服务则不发送
+		if(!IsGate(nodeInfo.nodeType))//如果不是网关类型服务则不发送
 		{
 			continue;
 		}
@@ -2832,14 +2898,14 @@ int NodeSession::SendOnlineToGateway(const NodeStatusInfo& onlineNodeInfo)
 }
 
 
-bool NodeSession::IsGatewayType(const std::string& nodetype)
+bool NodeSession::IsGate(const std::string& nodetype)
 {
     int s = m_GatewayTypeList.size();
     for(int i = 0;i < s;++i)
     {
         if (nodetype == m_GatewayTypeList[i])
         {
-            LOG4_DEBUG("SendOfflineToGateway:%s is gateway type",nodetype.c_str());
+            LOG4_DEBUG("SendOfflineToGate:%s is gateway type",nodetype.c_str());
             return true;
         }
     }
@@ -2850,6 +2916,13 @@ void NodeSession::RemoveFlag(std::string &str, char flag)const
 {
 	std::string::iterator it = std::remove(str.begin(), str.end(), flag);
 	str.erase(it, str.end());
+}
+
+std::string NodeSession::RemoveFlagString(std::string str, char flag)const
+{
+	std::string::iterator it = std::remove(str.begin(), str.end(), flag);
+	str.erase(it, str.end());
+	return str;
 }
 
 std::string NodeSession::GetSelfNodeIdentify()const
@@ -2947,10 +3020,6 @@ NodeSession* GetNodeSession(net::Labor* pLabor,const std::string &configPath,boo
     if (pLabor->RegisterCallback(pSess))
     {
         LOG4CPLUS_DEBUG_FMT(pLabor->GetLogger(),"register NodeSession ok!");
-        if(!pSess->LoadNodeRoute())
-        {
-            LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(),"failed to LoadNodeRoute");
-        }
         return (pSess);
     }
     else

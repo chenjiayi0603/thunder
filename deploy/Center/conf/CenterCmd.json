@@ -17,5 +17,19 @@
         "center_inner_host":    "192.168.18.78",
         "center_inner_port":    17000
     }],
-	"node_recently_time":	31
+    "update_node_db":0,
+    "route":
+    {
+    	"ipwhite":["192.168.18.78", "192.168.1.106"],
+	    "nodetype":{
+	    	"COLLECT":["PROXYSSDB","LOGQUEUE","STATISTICS"],
+	    	"DBAGENT_R":[],
+	    	"DBAGENT_W":[],
+	    	"PGAGENT":[],
+	    	"LOGQUEUE":["PROXYSSDB"],
+	    	"PROXYSSDB":["DBAGENT_W","DBAGENT_R"],
+	    	"STATISTICS":["PROXY"],
+	    	"HELLO":["PROXYSSDB","DBAGENT_W","DBAGENT_R","PGAGENT"]
+	    }
+    }
 }
