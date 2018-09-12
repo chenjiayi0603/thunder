@@ -91,7 +91,7 @@ bool NodeSession::LoadServerConfig()
         LOG4_TRACE("LoadServerConfig already");
         return true;
     }
-    if (!GetSyncMysqlDbi())return true;
+    if(!m_uiDbUpdate)return true;
     auto mysqlCallback = [](net::StepState* state)
 	{
 		STAGE_TEST_PARAM_LOG(LoadConfigSendToMysqlParam,state,"mysqlCallback");
@@ -268,140 +268,150 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
         return false;
     }
     const util::CJsonObject& conf = m_oCurrentConf;
-    LOAD_CENTER_CMD(conf,"dbip", m_dbip);//连接db地址
-    LOAD_CENTER_CMD(conf,"dbuser", m_dbuser);
-    LOAD_CENTER_CMD(conf,"dbpwd", m_dbpwd);
-    LOAD_CENTER_CMD(conf,"dbname", m_dbname);
-    LOAD_CENTER_CMD(conf,"dbcharacterset", m_dbcharacterset);
-    LOAD_CENTER_CMD(conf,"dbport", m_uiDbport);
-    snprintf(m_dbConnInfo.m_szDbHost,sizeof(m_dbConnInfo.m_szDbHost),m_dbip.c_str());
-    snprintf(m_dbConnInfo.m_szDbUser,sizeof(m_dbConnInfo.m_szDbUser),m_dbuser.c_str());
-    snprintf(m_dbConnInfo.m_szDbPwd,sizeof(m_dbConnInfo.m_szDbPwd),m_dbpwd.c_str());
-    snprintf(m_dbConnInfo.m_szDbName,sizeof(m_dbConnInfo.m_szDbName),m_dbname.c_str());
-    snprintf(m_dbConnInfo.m_szDbCharSet,sizeof(m_dbConnInfo.m_szDbCharSet),m_dbcharacterset.c_str());
-    m_dbConnInfo.m_uiDbPort = m_uiDbport;
-    m_dbConnInfo.uiTimeOut = 3;
-    //节点负载配置
-    LOAD_CENTER_CMD(conf,"deleteofflinenode_timeinterval", m_deleteOfflineNodeTimeInterval);//检查下线节点信息删除时间间隔
-    LOAD_CENTER_CMD(conf,"nodeloadlog_timeinterval", m_nodeLoadLogTimeInterval);//节点负载日志写入时间间隔
-    LOAD_CENTER_CMD(conf,"nodeloadlog_overdue", m_nodeLoadLogOverdue);//节点负载日志过时时间
-    LOAD_CENTER_CMD(conf,"nodeloadstatistics_timeinterval", m_nodeLoadStatisticsTimeInterval);//节点负载统计时间间隔
-    LOAD_CENTER_CMD(conf,"nodeloadstatistics_overdue", m_nodeLoadStatisticsOverdue);//节点负载统计过时时间
-    LOAD_CENTER_CMD(conf,"nodeloadcheck_timeinterval", m_nodeLoadCheckTimeInterval);//节点负载检查时间(检查节点负载的日志和统计的时间间隔)
-    LOAD_CENTER_CMD(conf,"serverdataloadstatuslog_overdue", m_serverDataLoadStatusLogOverdue);//服务器数据负载日志过时时间
-    LOAD_CENTER_CMD(conf,"serverdataloadstatuslogcheck_timeinterval", m_serverDataLoadCheckTimeInterval);//服务器数据负载日志检查时间间隔
-    //中心服务器本身配置
-
-    LOG4_INFO("gc_iBeatInterval:%d,NODE_BEAT:%f",net::gc_iBeatInterval,NODE_BEAT);
-    m_nodeReportTimeInterval = net::gc_iBeatInterval;
-    m_nodeOfflineTimeInterval = net::gc_iBeatInterval * 2 + 1;
-    m_nodeStatusCheckTimeInterval = m_nodeReportTimeInterval;
-    m_centerInnerPort = GetLabor()->GetPortForServer();
-    m_centerInnerHost = GetLabor()->GetHostForServer();
-    m_centerNodeType = GetLabor()->GetNodeType();
-    m_centerProcessNum = 1;//中心服务器工作进程数只有一个
-    LOG4_INFO("center InnerPort:%d InnerHost:%s NodeType:%s ProcessNum:%d",
-    		m_centerInnerPort,m_centerInnerHost.c_str(),m_centerNodeType.c_str(),m_centerProcessNum);
-    LOG4_INFO("nodereport_timeinterval:%d nodeOfflineTimeInterval:%d nodeStatusCheckTimeInterval:%d",
-    		m_nodeReportTimeInterval,m_nodeOfflineTimeInterval,m_nodeStatusCheckTimeInterval);
-    {//网关类型列表
-        int iGatewaySize(0);
-        util::CJsonObject gatewayTypesArray;
-        if(conf.Get("gateway_list", gatewayTypesArray))
-        {
-            if (gatewayTypesArray.IsArray())
-            {
-                iGatewaySize = gatewayTypesArray.GetArraySize();
-                for(int i = 0;i < iGatewaySize;++i)
-                {
-                    std::string gatewayType = gatewayTypesArray[i].ToString();
-                    RemoveFlag(gatewayType);
-                    LOG4_DEBUG("gatewayType (%s)",gatewayType.c_str());
-                    m_GatewayTypeList.push_back(gatewayType);
-                }
-            }
-        }
-        LOG4_INFO("gatewayTypesArray size:%d",iGatewaySize);
-    }
-    {//加载中心服务器
-        m_vecCenterServer.clear();
-        util::CJsonObject center_servers;
-        LOAD_CENTER_CMD(conf,"center_servers", center_servers);
-        if(center_servers.IsEmpty())
-        {
-            err = "config_servers is empty";
-            LOG4_ERROR("config_servers is empty");
-            return false;
-        }
-        if (!center_servers.IsArray())
-        {
-            err = "center_servers is not array";
-            LOG4_ERROR("center_servers is not array");
-            return false;
-        }
-        std::string center_inner_host;
-        int center_inner_port(0);
-        int s = center_servers.GetArraySize();
-        for(int i = 0;i < s;++i)
-        {
-            CenterServer centerServer;
-            util::CJsonObject serverObj = center_servers[i];
-            if(!serverObj.Get("center_inner_host",center_inner_host))
-            {
-                LOG4_WARN("failed to get center_inner_host(%s)",serverObj.ToFormattedString().c_str());
-                return false;
-            }
-            if(!serverObj.Get("center_inner_port",center_inner_port))
-            {
-                LOG4_WARN("failed to get center_inner_port(%s)",serverObj.ToFormattedString().c_str());
-                return false;
-            }
-            centerServer.center_inner_host = center_inner_host;
-            centerServer.center_inner_port = center_inner_port;
-            char identify[64];
-            snprintf(identify,sizeof(identify),"%s:%d",center_inner_host.c_str(),center_inner_port);
-            centerServer.server_identify = identify;
-            LOG4_DEBUG("load center_inner_host(%s),center_inner_port(%d),server_identify(%s)",
-                            center_inner_host.c_str(),center_inner_port,centerServer.server_identify.c_str());
-            m_vecCenterServer.push_back(centerServer);
-        }
-    }
-    //Route配置
-    LOAD_CENTER_CMD(conf,"route", m_objRoute);
-    LOAD_CENTER_CMD(conf,"update_node_db", m_uiUpdateNodeDb);
-
-    if (m_uiUpdateNodeDb)
-    {
-    	if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
+    {//db
+		util::CJsonObject objDb;
+		LOAD_CENTER_CMD(conf,"db", objDb);
+		LOAD_CENTER_CMD(objDb,"dbupdate", m_uiDbUpdate);
+		LOAD_CENTER_CMD(objDb,"dbip", m_dbip);//连接db地址
+		LOAD_CENTER_CMD(objDb,"dbuser", m_dbuser);
+		LOAD_CENTER_CMD(objDb,"dbpwd", m_dbpwd);
+		LOAD_CENTER_CMD(objDb,"dbname", m_dbname);
+		LOAD_CENTER_CMD(objDb,"dbcharacterset", m_dbcharacterset);
+		LOAD_CENTER_CMD(objDb,"dbport", m_uiDbport);
+		snprintf(m_dbConnInfo.m_szDbHost,sizeof(m_dbConnInfo.m_szDbHost),m_dbip.c_str());
+		snprintf(m_dbConnInfo.m_szDbUser,sizeof(m_dbConnInfo.m_szDbUser),m_dbuser.c_str());
+		snprintf(m_dbConnInfo.m_szDbPwd,sizeof(m_dbConnInfo.m_szDbPwd),m_dbpwd.c_str());
+		snprintf(m_dbConnInfo.m_szDbName,sizeof(m_dbConnInfo.m_szDbName),m_dbname.c_str());
+		snprintf(m_dbConnInfo.m_szDbCharSet,sizeof(m_dbConnInfo.m_szDbCharSet),m_dbcharacterset.c_str());
+		m_dbConnInfo.m_uiDbPort = m_uiDbport;
+		m_dbConnInfo.uiTimeOut = 3;
+		if (m_uiDbUpdate)
 		{
-			delete m_pSyncMysqlDbi;
-			m_pSyncMysqlDbi = NULL;
+			if (m_pSyncMysqlDbi)//曾经建立连接的在初始化时重新建立连接
+			{
+				delete m_pSyncMysqlDbi;
+				m_pSyncMysqlDbi = NULL;
+			}
+			//连接db用户、db密码、db库名、db字符集、db端口
+			m_pSyncMysqlDbi = new util::CMysqlDbi(m_dbip.c_str(), m_dbuser.c_str(),
+					m_dbpwd.c_str(), m_dbname.c_str(),
+					m_dbcharacterset.c_str(),
+					m_uiDbport);
+			if (NULL == m_pSyncMysqlDbi)
+			{
+				LOG4_ERROR("center cmd load DB failed");
+				err = "failed to new util::CMysqlDbi";
+				return false;
+			}
+			if(m_pSyncMysqlDbi->GetErrno())
+			{
+				LOG4_ERROR("mysql error(%d:%s)",m_pSyncMysqlDbi->GetErrno(),m_pSyncMysqlDbi->GetError().c_str());
+				err = "CMysqlDbi connect failed";
+			}
 		}
-		//连接db用户、db密码、db库名、db字符集、db端口
-		m_pSyncMysqlDbi = new util::CMysqlDbi(m_dbip.c_str(), m_dbuser.c_str(),
-				m_dbpwd.c_str(), m_dbname.c_str(),
-				m_dbcharacterset.c_str(),
-				m_uiDbport);
-		if (NULL == m_pSyncMysqlDbi)
+	}
+
+    //节点状态
+    {//"node_status"
+    	util::CJsonObject objNodeStatus;
+		LOAD_CENTER_CMD(conf,"db", objNodeStatus);
+    	LOAD_CENTER_CMD(objNodeStatus,"deleteofflinenode_timeinterval", m_deleteOfflineNodeTimeInterval);//检查下线节点信息删除时间间隔
+		LOAD_CENTER_CMD(objNodeStatus,"nodeloadlog_timeinterval", m_nodeLoadLogTimeInterval);//节点负载日志写入时间间隔
+		LOAD_CENTER_CMD(objNodeStatus,"nodeloadlog_overdue", m_nodeLoadLogOverdue);//节点负载日志过时时间
+		LOAD_CENTER_CMD(objNodeStatus,"nodeloadstatistics_timeinterval", m_nodeLoadStatisticsTimeInterval);//节点负载统计时间间隔
+		LOAD_CENTER_CMD(objNodeStatus,"nodeloadstatistics_overdue", m_nodeLoadStatisticsOverdue);//节点负载统计过时时间
+		LOAD_CENTER_CMD(objNodeStatus,"nodeloadcheck_timeinterval", m_nodeLoadCheckTimeInterval);//节点负载检查时间(检查节点负载的日志和统计的时间间隔)
+		LOAD_CENTER_CMD(objNodeStatus,"serverdataloadstatuslog_overdue", m_serverDataLoadStatusLogOverdue);//服务器数据负载日志过时时间
+		LOAD_CENTER_CMD(objNodeStatus,"serverdataloadstatuslogcheck_timeinterval", m_serverDataLoadCheckTimeInterval);//服务器数据负载日志检查时间间隔
+    }
+    {//gate
+		int iGatewaySize(0);
+		util::CJsonObject gatewayArray;
+		if(conf.Get("gate", gatewayArray))
 		{
-			LOG4_ERROR("center cmd load DB failed");
-			err = "failed to new util::CMysqlDbi";
+			if (gatewayArray.IsArray())
+			{
+				iGatewaySize = gatewayArray.GetArraySize();
+				for(int i = 0;i < iGatewaySize;++i)
+				{
+					std::string gatewayType = gatewayArray[i].ToString();
+					RemoveFlag(gatewayType);
+					LOG4_DEBUG("gatewayType (%s)",gatewayType.c_str());
+					m_GatewayTypeList.push_back(gatewayType);
+				}
+			}
+		}
+		LOG4_INFO("gatewayArray size:%d",iGatewaySize);
+	}
+	{//center
+		m_vecCenterServer.clear();
+		util::CJsonObject center_servers;
+		LOAD_CENTER_CMD(conf,"center", center_servers);
+		if(center_servers.IsEmpty())
+		{
+			err = "config_servers is empty";
+			LOG4_ERROR("config_servers is empty");
 			return false;
 		}
-		if(m_pSyncMysqlDbi->GetErrno())
+		if (!center_servers.IsArray())
 		{
-			LOG4_ERROR("mysql error(%d:%s)",m_pSyncMysqlDbi->GetErrno(),m_pSyncMysqlDbi->GetError().c_str());
-			err = "CMysqlDbi connect failed";
+			err = "center_servers is not array";
+			LOG4_ERROR("center_servers is not array");
+			return false;
 		}
-    }
+		std::string center_inner_host;
+		int center_inner_port(0);
+		int s = center_servers.GetArraySize();
+		for(int i = 0;i < s;++i)
+		{
+			CenterServer centerServer;
+			util::CJsonObject serverObj = center_servers[i];
+			if(!serverObj.Get("center_inner_host",center_inner_host))
+			{
+				LOG4_WARN("failed to get center_inner_host(%s)",serverObj.ToFormattedString().c_str());
+				return false;
+			}
+			if(!serverObj.Get("center_inner_port",center_inner_port))
+			{
+				LOG4_WARN("failed to get center_inner_port(%s)",serverObj.ToFormattedString().c_str());
+				return false;
+			}
+			centerServer.center_inner_host = center_inner_host;
+			centerServer.center_inner_port = center_inner_port;
+			char identify[64];
+			snprintf(identify,sizeof(identify),"%s:%d",center_inner_host.c_str(),center_inner_port);
+			centerServer.server_identify = identify;
+			LOG4_DEBUG("load center_inner_host(%s),center_inner_port(%d),server_identify(%s)",
+							center_inner_host.c_str(),center_inner_port,centerServer.server_identify.c_str());
+			m_vecCenterServer.push_back(centerServer);
+		}
+	}
+	//Route配置
+	LOAD_CENTER_CMD(conf,"route", m_objRoute);
+	{//中心服务器本身配置
+		LOG4_INFO("gc_iBeatInterval:%d,NODE_BEAT:%f",net::gc_iBeatInterval,NODE_BEAT);
+		m_nodeReportTimeInterval = net::gc_iBeatInterval;
+		m_nodeOfflineTimeInterval = net::gc_iBeatInterval * 2 + 1;
+		m_nodeStatusCheckTimeInterval = m_nodeReportTimeInterval;
+		m_centerInnerPort = GetLabor()->GetPortForServer();
+		m_centerInnerHost = GetLabor()->GetHostForServer();
+		m_centerNodeType = GetLabor()->GetNodeType();
+		m_centerProcessNum = 1;//中心服务器工作进程数只有一个
 
+		snprintf(m_CenterActive.inner_ip,sizeof(m_CenterActive.inner_ip),"%s",m_centerInnerHost.c_str());
+		m_CenterActive.inner_port = m_centerInnerPort;
+		m_CenterActive.status = eOfflineStatus;
+
+		LOG4_INFO("center InnerPort:%d InnerHost:%s NodeType:%s ProcessNum:%d",
+				m_centerInnerPort,m_centerInnerHost.c_str(),m_centerNodeType.c_str(),m_centerProcessNum);
+		LOG4_INFO("nodereport_timeinterval:%d nodeOfflineTimeInterval:%d nodeStatusCheckTimeInterval:%d",
+				m_nodeReportTimeInterval,m_nodeOfflineTimeInterval,m_nodeStatusCheckTimeInterval);
+	}
     LOG4_DEBUG("NodeSession conneted db(%s,%d),NodeActiveTimeOut(%d),NodeTimeBeat(%d),"
                "InitSessionTime(%llu),NodeTimeBeat(%d),currentTime(%llu)",
 			   m_dbip.c_str(),m_uiDbport,m_nNodeActiveTimeOut,m_nNodeTimeBeat,m_uiInitSessionTime,m_nNodeTimeBeat,m_uiCurrentTime);
 
-    snprintf(m_CenterActive.inner_ip,sizeof(m_CenterActive.inner_ip),"%s",m_centerInnerHost.c_str());
-    m_CenterActive.inner_port = m_centerInnerPort;
-    m_CenterActive.status = eOfflineStatus;
+
     CheckCenterActive();
 //    if(!LoadServerConfig())//加载其他类型节点配置文件
 //    {
@@ -558,7 +568,7 @@ bool NodeSession::LoadWhiteList(util::T_vecResultSet &vecRes)
 
 bool NodeSession::CheckCenterActive()
 {
-	if (!GetSyncMysqlDbi())
+	if(!m_uiDbUpdate)
 	{
 		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
 		return true;
@@ -619,7 +629,7 @@ bool NodeSession::CheckCenterActive(util::T_vecResultSet &vecRes)
 bool NodeSession::SelectCenterMaster()
 {
 	LOG4_TRACE("%s",__FUNCTION__);
-	if (!GetSyncMysqlDbi())
+	if(!m_uiDbUpdate)
 	{
 		m_CenterActive.status = eMasterStatus;//不连接数据库则本节点为主节点
 		return true;
@@ -947,7 +957,7 @@ uint32 NodeSession::GetNodeCountByType(const std::string &nodeType)
 //写节点到数据库，如果是报告信息需要设置boReport = true
 bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boReport)
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
     SetCurrentTime();
     if (!WriteNodeStatus(nodeInfo))
     {
@@ -976,7 +986,7 @@ bool NodeSession::WriteNodeDataToDB(const NodeStatusInfo& nodeInfo, bool boRepor
 }
 bool NodeSession::OfflineNodeToDB(int node_id)
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
     SetCurrentTime();
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE nodeid=%d",
@@ -1006,7 +1016,7 @@ const NodeType* NodeSession::GetNodeTypeServerInfo(const std::string &nodeType)
 //删除超时的下线节点状态到数据库
 bool NodeSession::OverdueNodeToDB()
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE activetime <= %llu and serverstatus=%d",
             NODE_LOAD_STATUS_TABLE,
@@ -1021,7 +1031,7 @@ bool NodeSession::OverdueNodeToDB()
 }
 bool NodeSession::OfflineNodesToDB()
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"update %s set serverstatus=%d WHERE activetime <= %llu",
             NODE_LOAD_STATUS_TABLE, eNodeStatus_Offline,
@@ -1036,7 +1046,7 @@ bool NodeSession::OfflineNodesToDB()
 
 bool NodeSession::ClearNodeStatusToDB(const NodeStatusInfo& nodeInfo)
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
     net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
 	pstep->SetTask(util::eSqlTaskOper_exec,"delete from %s WHERE innerport=%d and innerip='%s'",
             NODE_LOAD_STATUS_TABLE, nodeInfo.nodeInnerPort,
@@ -1076,7 +1086,7 @@ bool NodeSession::GetNodeStatusByNodeType(const std::string & nodetype,std::vect
 //写当前的节点状态
 bool NodeSession::WriteNodeStatus(const NodeStatusInfo& nodeInfo)
 {
-	if (!m_uiUpdateNodeDb)return true;
+	if (!m_uiDbUpdate)return true;
 	//更新节点状态
 	char szSql[3096];
 	snprintf(szSql, sizeof(szSql) - 1,
@@ -2461,7 +2471,7 @@ int NodeSession::SendCenterToReg(const net::tagMsgShell& stMsgShell,const MsgHea
 bool NodeSession::LoadServerConfig(const std::string &nodetype,uint32 configtype,
                 std::string& config_content,std::string &config_file,uint32 &update_time,uint32 &auto_send,uint32 &reload_config)
 {
-	if (!GetSyncMysqlDbi())return false;
+	if(!m_uiDbUpdate)return false;
     if (nodetype.empty())
     {
         LOG4_ERROR("nodetype empty when LoadServerConfig");

@@ -1,23 +1,33 @@
 {
-	"dbip":	"192.168.18.78",
-	"dbport":	3307,
-	"dbuser":	"root",
-	"dbpwd":	"123456",
-	"dbname":	"db_analysis2_center",
-	"dbcharacterset":	"utf8",
-	"deleteofflinenode_timeinterval":	86400,
-	"nodeloadlog_timeinterval":	60,
-	"nodeloadlog_overdue":	5184000,
-	"nodeloadstatistics_timeinterval":	302,
-	"nodeloadstatistics_overdue":	5184001,
-	"nodeloadcheck_timeinterval":	86400,
-	"serverdataloadstatuslog_overdue":	5184000,
-	"serverdataloadstatuslogcheck_timeinterval":	60,
-	"center_servers":	 [{
+    "node_status":
+    {
+	    "deleteofflinenode_timeinterval":	86400,
+		"nodeloadlog_timeinterval":	60,
+		"nodeloadlog_overdue":	5184000,
+		"nodeloadstatistics_timeinterval":	302,
+		"nodeloadstatistics_overdue":	5184001,
+		"nodeloadcheck_timeinterval":	86400,
+		"serverdataloadstatuslog_overdue":	5184000,
+		"serverdataloadstatuslogcheck_timeinterval":	60
+	},
+    
+    "db":
+    {
+    	"db_brief":"本中心节点连接数据库的配置, dbupdate 为0则不使用数据库",
+    	"dbupdate":0,
+    	
+    	"dbip":	"192.168.18.78",
+		"dbport":	3307,
+		"dbuser":	"root",
+		"dbpwd":	"123456",
+		"dbname":	"db_analysis2_center",
+		"dbcharacterset":	"utf8"
+    },
+    "center":	 [{
         "center_inner_host":    "192.168.18.78",
         "center_inner_port":    17000
     }],
-    "update_node_db":0,
+    "gate": ["INTERFACE"],
     "route":
     {
     	"ipwhite":["192.168.18.78", "192.168.1.106"],
@@ -33,3 +43,4 @@
 	    }
     }
 }
+ 

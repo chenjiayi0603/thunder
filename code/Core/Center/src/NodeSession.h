@@ -56,7 +56,7 @@ public:
                     const std::string& strSessionName="net::NodeSession"):
         Timer(ulSessionId, dSessionTimeout, strSessionName),
             boInit(false),m_nCheckActiveCounter(0),m_nNodeActiveTimeOut(10),m_nNodeTimeBeat(0),
-			m_uiDbport(0),m_uiUpdateNodeDb(1),m_uiNodeId(0),m_uiCurrentTime(0),m_uiInitSessionTime(0),
+			m_uiDbport(0),m_uiDbUpdate(1),m_uiNodeId(0),m_uiCurrentTime(0),m_uiInitSessionTime(0),
 			m_centerInnerPort(0), m_centerProcessNum(0), m_nodeOfflineTimeInterval(0),
 			m_deleteOfflineNodeTimeInterval(0), m_nodeReportTimeInterval(0), m_nodeStatusCheckTimeInterval(0),
 			m_nodeLoadLogTimeInterval(0), m_nodeLoadLogOverdue(0), m_nodeLoadStatisticsTimeInterval(0), m_nodeLoadStatisticsOverdue(0),
@@ -298,7 +298,7 @@ private:
 
     //config
     util::CJsonObject m_objRoute;
-    uint32 m_uiUpdateNodeDb;
+    uint32 m_uiDbUpdate;
 
     //节点分配器
     uint32 m_uiNodeId;
