@@ -84,6 +84,12 @@ bool ModuleHello::AnyMessage(
 	{
 		GetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
+	else if ("PgAgentAddUp" == strOption)
+	{
+		int id(0);obj.Get("id",id);
+		int sum(0);obj.Get("sum",sum);
+		AddUpPostgres(stMsgShell,oInHttpMsg,id,obj("name"),sum,"PGAGENT");
+	}
 	//Proxy
 	else if ("ProxyPgAgentSetGet" == strOption)
 	{
@@ -463,6 +469,48 @@ void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
 			"id",1);
 	LOG4_DEBUG("%s() SetPostgres %s",__FUNCTION__,sValue.c_str());
+	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+
+void ModuleHello::AddUpPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,uint32 id,const std::string &sName,uint32 sum,const std::string &nodeType)
+{
+	if (sName.size() == 0 || sum == 0 || id == 0){LOG4_DEBUG("%s() sName.size() == 0 || sum == 0 || id == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::DataStepParam
+	{
+		DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
+	{
+		net::Labor* pLabor = pStep->GetLabor();
+		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback ok %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", 0);
+			oRsp.Add("msg", "ok");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+		else
+		{
+			net::DataStep* pDataStep = (net::DataStep*)pStep;
+			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback failed %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", oMemRsp.err_no());
+			oRsp.Add("msg", "failed");
+			pDataStep->SendBack(oRsp.ToString());
+		}
+	};
+	net::DbOperator oDbOperator(0, "tb_sum",DataMem::MemOperate::DbOperate::CUSTOM);
+	char strSql[512];
+	snprintf(strSql,sizeof(strSql),"INSERT INTO tb_sum(id,name,sum) "
+					"VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",
+					id,sName.c_str(),sum,sum);
+	oDbOperator.AddDbField(strSql);
+	LOG4_DEBUG("%s() AddUpPostgres %s",__FUNCTION__,sName.c_str());
 	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 

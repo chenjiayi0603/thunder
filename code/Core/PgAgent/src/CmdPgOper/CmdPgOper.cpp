@@ -520,13 +520,16 @@ int CmdPgOper::SyncQuery(const net::tagMsgShell& stMsgShell,const MsgHead& oInMs
 		}
 		catch (const pqxx::sql_error &e)
 		{
-			LOG4_ERROR("SQL error: %s.Query was:%s",e.what(),e.query().c_str());
-			strErr = e.query();
+			char sError[256];snprintf(sError,sizeof(sError)-1,"SQL error: %s.Query was:%s",e.what(),e.query().c_str());
+			LOG4_ERROR(sError);
+			strErr = sError;
 			iResult = 2;
 		}
 		catch (const std::exception &e)
 		{
-			LOG4_ERROR("SQL error: %s.Query was:%s",e.what());
+			char sError[256];snprintf(sError,sizeof(sError)-1,"SQL error: %s.",e.what());
+			LOG4_ERROR(sError);
+			strErr = sError;
 			iResult = 1;
 		}
 	}
