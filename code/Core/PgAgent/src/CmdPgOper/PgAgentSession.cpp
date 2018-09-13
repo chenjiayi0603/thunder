@@ -4,9 +4,8 @@
  *  Created on: 2018年1月8日
  *      Author: chenjiayi
  */
-#include "../CmdPgOper/PgAgentSession.h"
-
-#include "../CmdPgOper/CmdPgOper.hpp"
+#include "PgAgentSession.h"
+#include "CmdPgOper.hpp"
 
 namespace net
 {

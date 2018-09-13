@@ -284,7 +284,7 @@ bool CmdPgOper::GetDbConnection(const net::tagMsgShell& stMsgShell, const MsgHea
                 std::string strSlaveIdentify = oGroupHostConf("slave_host");
                 LOG4_TRACE("strMasterIdentify(%s),strSlaveIdentify(%s)",strMasterIdentify.c_str(),strSlaveIdentify.c_str());
                 bool bEstablishConnection = FetchOrEstablishConnection(stMsgShell,oInMsgHead,
-                                oQuery.db_operate().query_type(),strMasterIdentify, strSlaveIdentify,
+                                oQuery.db_operate().query_type(),strMasterIdentify, strSlaveIdentify,strDbName,
                                 oInstanceConf, ppMasterDbi, ppSlaveDbi);
                 return(bEstablishConnection);
             }
@@ -294,14 +294,16 @@ bool CmdPgOper::GetDbConnection(const net::tagMsgShell& stMsgShell, const MsgHea
 
 bool CmdPgOper::FetchOrEstablishConnection(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead,
 				DataMem::MemOperate::DbOperate::E_QUERY_TYPE eQueryType,
-                const std::string& strMasterIdentify, const std::string& strSlaveIdentify,
+                const std::string& strMasterIdentify, const std::string& strSlaveIdentify,const std::string &strDbName,
                 const util::CJsonObject& oInstanceConf, pqxx::connection** ppMasterDbi, pqxx::connection** ppSlaveDbi)
 {
-    LOG4_TRACE("%s(%s, %s, %s)", __FUNCTION__, strMasterIdentify.c_str(), strSlaveIdentify.c_str(), oInstanceConf.ToString().c_str());
+    LOG4_TRACE("%s(%s, %s,%s, %s)", __FUNCTION__, strMasterIdentify.c_str(), strSlaveIdentify.c_str(),strDbName.c_str(), oInstanceConf.ToString().c_str());
     *ppMasterDbi = NULL;
     *ppSlaveDbi = NULL;
     int iResult(0);
-    std::map<std::string, tagConnection*>::iterator dbi_iter = m_mapDbiPool.find(strMasterIdentify);
+    std::string strMasterDbIdentify = strMasterIdentify +":"+strDbName;//ip:port:db
+    std::string strSlaveDbIdentify = strSlaveIdentify +":"+strDbName;//ip:port:db
+    std::map<std::string, tagConnection*>::iterator dbi_iter = m_mapDbiPool.find(strMasterDbIdentify);
     if (dbi_iter == m_mapDbiPool.end())
     {
         tagConnection* pConnection = new tagConnection();
@@ -311,16 +313,16 @@ bool CmdPgOper::FetchOrEstablishConnection(const net::tagMsgShell& stMsgShell, c
             return(false);
         }
         pqxx::connection* pPgConn(NULL);
-        iResult = ConnectDb(oInstanceConf, pPgConn, strMasterIdentify);
+        iResult = ConnectDb(oInstanceConf, pPgConn, strMasterDbIdentify);
         if (0 == iResult)
         {
         	pConnection->pPgConn = pPgConn;
-            LOG4_TRACE("succeed in connecting strMasterIdentify(%s)", strMasterIdentify.c_str());
+            LOG4_TRACE("succeed in connecting strMasterIdentify(%s)", strMasterDbIdentify.c_str());
             *ppMasterDbi = pPgConn;
             pConnection->iQueryPermit = atoi(oInstanceConf("query_permit").c_str());
             pConnection->iTimeout = atoi(oInstanceConf("timeout").c_str());
             pConnection->ullBeatTime = time(NULL);
-            m_mapDbiPool.insert(std::pair<std::string, tagConnection*>(strMasterIdentify, pConnection));
+            m_mapDbiPool.insert(std::pair<std::string, tagConnection*>(strMasterDbIdentify, pConnection));
         }
         else
         {
@@ -337,8 +339,8 @@ bool CmdPgOper::FetchOrEstablishConnection(const net::tagMsgShell& stMsgShell, c
         *ppMasterDbi = dbi_iter->second->pPgConn;
     }
 
-    LOG4_TRACE("find slave %s.", strSlaveIdentify.c_str());
-    dbi_iter = m_mapDbiPool.find(strSlaveIdentify);
+    LOG4_TRACE("find slave %s.", strSlaveDbIdentify.c_str());
+    dbi_iter = m_mapDbiPool.find(strSlaveDbIdentify);
     if (dbi_iter == m_mapDbiPool.end())
     {
         tagConnection* pConnection = new tagConnection();
@@ -348,16 +350,16 @@ bool CmdPgOper::FetchOrEstablishConnection(const net::tagMsgShell& stMsgShell, c
             return(false);
         }
         pqxx::connection* pPgConn(NULL);
-        iResult = ConnectDb(oInstanceConf, pPgConn, strSlaveIdentify);
+        iResult = ConnectDb(oInstanceConf, pPgConn, strSlaveDbIdentify);
         if (0 == iResult)
         {
         	pConnection->pPgConn = pPgConn;
-            LOG4_TRACE("succeed in connecting strSlaveIdentify(%s)", strSlaveIdentify.c_str());
+            LOG4_TRACE("succeed in connecting strSlaveIdentify(%s)", strSlaveDbIdentify.c_str());
             *ppSlaveDbi = pPgConn;
             pConnection->iQueryPermit = atoi(oInstanceConf("query_permit").c_str());
             pConnection->iTimeout = atoi(oInstanceConf("timeout").c_str());
             pConnection->ullBeatTime = time(NULL);
-            m_mapDbiPool.insert(std::pair<std::string, tagConnection*>(strSlaveIdentify, pConnection));
+            m_mapDbiPool.insert(std::pair<std::string, tagConnection*>(strSlaveDbIdentify, pConnection));
         }
         else
         {
@@ -385,14 +387,26 @@ int CmdPgOper::ConnectDb(const util::CJsonObject& oInstanceConf, pqxx::connectio
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     util::tagDbConfDetail stDbConfDetail;
-
-    std::string::size_type nIndex = strDbIdentify.find(":");
+    std::string strDbName;
+    std::string::size_type nIndex = strDbIdentify.find(":");//ip:port:db
 	if (nIndex != std::string::npos)
 	{
 		std::string strDbHost = strDbIdentify.substr(0,nIndex);
 		strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbHost,strDbHost.c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbHost));
-		std::string strDBPort = strDbIdentify.substr(nIndex + 1);
-		stDbConfDetail.m_stDbConnInfo.m_uiDbPort = atoi(strDBPort.c_str());
+		std::string strRight = strDbIdentify.substr(nIndex + 1);
+		nIndex = strRight.find(":");
+		if (nIndex != std::string::npos)
+		{
+			std::string strDbPort = strRight.substr(0,nIndex);
+			stDbConfDetail.m_stDbConnInfo.m_uiDbPort = atoi(strRight.c_str());
+
+			strDbName = strRight.substr(nIndex + 1);
+		}
+		else
+		{
+			LOG4_ERROR("error strDbIdentify:%s", strDbIdentify.c_str());
+			return -1;
+		}
 	}
 	else
 	{
@@ -401,7 +415,7 @@ int CmdPgOper::ConnectDb(const util::CJsonObject& oInstanceConf, pqxx::connectio
 	}
 	strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbUser,oInstanceConf("user").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbUser));
     strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbPwd,oInstanceConf("password").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbPwd));
-    strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbName, "postgres",sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbName));
+    strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbName, strDbName.c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbName));
     strncpy(stDbConfDetail.m_stDbConnInfo.m_szDbCharSet,oInstanceConf("charset").c_str(),sizeof(stDbConfDetail.m_stDbConnInfo.m_szDbCharSet));
     stDbConfDetail.m_ucDbType = util::POSTGRESQL_DB;
     stDbConfDetail.m_ucAccess = 1; //直连
@@ -695,7 +709,6 @@ std::string CmdPgOper::GetFullTableName(const std::string& strTableName, uint64 
 bool CmdPgOper::CreateSql(const DataMem::MemOperate& oQuery, pqxx::connection* pPgConn, std::string& strSql)
 {
     LOG4_TRACE("%s()",__FUNCTION__);
-
     strSql.clear();
     if (oQuery.db_operate().query_type() == DataMem::MemOperate::DbOperate::CUSTOM)
 	{

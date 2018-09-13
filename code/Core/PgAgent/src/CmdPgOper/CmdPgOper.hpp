@@ -69,7 +69,7 @@ protected:
     		const DataMem::MemOperate& oQuery, pqxx::connection** ppMasterDbi, pqxx::connection** ppSlaveDbi);
     bool FetchOrEstablishConnection(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,
     				DataMem::MemOperate::DbOperate::E_QUERY_TYPE eQueryType,
-                    const std::string& strMasterIdentify, const std::string& strSlaveIdentify,
+                    const std::string& strMasterIdentify, const std::string& strSlaveIdentify,const std::string &strDbName,
                     const util::CJsonObject& oInstanceConf, pqxx::connection** ppMasterDbi, pqxx::connection** ppSlaveDbi);
     std::string GetFullTableName(const std::string& strTableName, uint64 uiFactor);
 
