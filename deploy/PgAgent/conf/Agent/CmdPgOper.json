@@ -34,13 +34,13 @@
         "tb_query": {
             "data_type": 1,
             "section_factor": 3,
-            "db_name": "postgres",
+            "db_name": "db_test",
             "table_num": 1
         },
 		"tb_sum": {
             "data_type": 1,
             "section_factor": 3,
-            "db_name": "postgres",
+            "db_name": "db_test",
             "table_num": 1
         }
     },
@@ -48,46 +48,46 @@
         "attribute": {
             "userid": {
                 "LE_10000000": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 },
                 "LE_20000000": {
-                    "postgres":"robot_db_instance_2"
+                    "db_test":"robot_db_instance_2"
                 }
             },
             "userset": {
                 "LE_1000000": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 },
                 "LE_2000000": {
-                    "postgres":"robot_db_instance_2"
+                    "db_test":"robot_db_instance_2"
                 }
             },
             "string": {
                 "LE_4294967295": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 }
             }
         },
         "log": {
             "userid": {
                 "LE_10000000": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 },
                 "LE_20000000": {
-                    "postgres":"robot_db_instance_2"
+                    "db_test":"robot_db_instance_2"
                 }
             },
             "userset": {
                 "LE_1000000": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 },
                 "LE_2000000": {
-                    "postgres":"robot_db_instance_2"
+                    "db_test":"robot_db_instance_2"
                 }
             },
             "string": {
                 "LE_4294967295": {
-                    "postgres":"robot_db_instance_1"
+                    "db_test":"robot_db_instance_1"
                 }
             }
         }
