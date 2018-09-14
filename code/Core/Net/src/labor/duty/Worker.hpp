@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  AsyncServer
+ * Project:  Net
  * @file     Worker.hpp
  * @brief    Oss工作者
  * @author   cjy
@@ -7,8 +7,8 @@
  * @note
  * Modify history:
  ******************************************************************************/
-#ifndef OssWorker_HPP_
-#define OssWorker_HPP_
+#ifndef Worker_HPP_
+#define Worker_HPP_
 
 #include <map>
 #include <list>
@@ -350,4 +350,4 @@ private:
 
 } /* namespace net */
 
-#endif /* OssWorker_HPP_ */
+#endif /* Worker_HPP_ */

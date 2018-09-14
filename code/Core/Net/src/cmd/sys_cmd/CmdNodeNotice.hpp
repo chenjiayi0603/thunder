@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  AsyncServer
+ * Project:  Net
  * @file     CmdNodeNotice.hpp
  * @brief    注册通知
  * @author   cjy

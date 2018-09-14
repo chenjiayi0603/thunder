@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  AsyncServer
+ * Project:  Net
  * @file     Manager.hpp
  * @brief    Node管理者
  * @author   cjy

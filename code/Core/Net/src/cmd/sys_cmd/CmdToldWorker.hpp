@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  AsyncServer
+ * Project:  Net
  * @file     CmdToldWorker.hpp
  * @brief    被告知Worker信息
  * @author   cjy
