@@ -38,7 +38,7 @@
 	    	"PGAGENT":[],
 	    	"LOGQUEUE":["PROXYSSDB"],
 	    	"PROXYSSDB":["DBAGENT_W","DBAGENT_R"],
-	    	"STATISTICS":["PROXY"],
+	    	"STATISTICS":["PROXYSSDB"],
 	    	"HELLO":["PROXYSSDB","DBAGENT_W","DBAGENT_R","PGAGENT"]
 	    }
     }
