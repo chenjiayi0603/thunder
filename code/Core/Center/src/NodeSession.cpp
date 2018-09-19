@@ -401,7 +401,11 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 		snprintf(m_CenterActive.inner_ip,sizeof(m_CenterActive.inner_ip),"%s",m_centerInnerHost.c_str());
 		m_CenterActive.inner_port = m_centerInnerPort;
 		m_CenterActive.status = eOfflineStatus;
-
+		if(!LoadNodeRoute())
+		{
+			LOG4CPLUS_ERROR_FMT(GetLogger(),"failed to LoadNodeRoute");
+			return false;
+		}
 		LOG4_INFO("center InnerPort:%d InnerHost:%s NodeType:%s ProcessNum:%d",
 				m_centerInnerPort,m_centerInnerHost.c_str(),m_centerNodeType.c_str(),m_centerProcessNum);
 		LOG4_INFO("nodereport_timeinterval:%d nodeOfflineTimeInterval:%d nodeStatusCheckTimeInterval:%d",
@@ -417,11 +421,6 @@ bool NodeSession::Init(const std::string& configPath,std::string &err,bool boRel
 //    {
 //        LOG4_ERROR("failed to LoadServerConfig");
 //    }
-    if(!LoadNodeRoute())
-	{
-		LOG4CPLUS_ERROR_FMT(GetLogger(),"failed to LoadNodeRoute");
-		return false;
-	}
     boInit = true;
     return true;
 }
@@ -780,40 +779,61 @@ bool NodeSession::LoadNodeRoute()
 		}
 		if (m_vecNodeTypes.size() == 0)
 		{
-			//"nodetype"
-			util::CJsonObject objNodetype;
-			if (m_objRoute.Get("nodetype",objNodetype))
+			util::CJsonObject objAutoNodetype;
+			if (m_objRoute.Get("auto",objAutoNodetype))//"auto" ,优先自动路由
 			{
 				std::vector<std::string> vecNode;
-				objNodetype.GetKeys(vecNode);
+				int s = objAutoNodetype.GetArraySize();
+				for(int i = 0;i < s;++i)
+				{
+					vecNode.push_back(RemoveFlagString(objAutoNodetype[i].ToString()));
+				}
 				for(auto node:vecNode)
 				{
-					util::CJsonObject neededservers;
 					NodeType nodeType;
 					nodeType.nodetype = node;
-					objNodetype.Get(node,neededservers);
-					int s = neededservers.GetArraySize();
-					for(int i = 0;i < s;++i)
+					for(auto n:vecNode)
 					{
-						nodeType.neededServers.push_back(RemoveFlagString(neededservers[i].ToString()));
+						nodeType.neededServers.push_back(n);
 					}
 					LOG4_INFO("nodeType:%s",nodeType.nodetype.c_str());
 					for(auto neededServer:nodeType.neededServers)LOG4_INFO("neededServer:%s",neededServer.c_str());
 					m_vecNodeTypes.push_back(nodeType);
 				}
 			}
+			else//"node"
+			{
+				util::CJsonObject objNodetype;
+				if (m_objRoute.Get("node",objNodetype))
+				{
+					std::vector<std::string> vecNode;
+					objNodetype.GetKeys(vecNode);
+					for(auto node:vecNode)
+					{
+						util::CJsonObject neededservers;
+						NodeType nodeType;
+						nodeType.nodetype = node;
+						objNodetype.Get(node,neededservers);
+						int s = neededservers.GetArraySize();
+						for(int i = 0;i < s;++i)
+						{
+							nodeType.neededServers.push_back(RemoveFlagString(neededservers[i].ToString()));
+						}
+						LOG4_INFO("nodeType:%s",nodeType.nodetype.c_str());
+						for(auto neededServer:nodeType.neededServers)LOG4_INFO("neededServer:%s",neededServer.c_str());
+						m_vecNodeTypes.push_back(nodeType);
+					}
+				}
+			}
 		}
 	}
-	else
+	if(!LoadNodeType())
 	{
-		if(!LoadNodeType())
-		{
-			LOG4_WARN("failed to LoadNodeType");
-		}
-		if(!LoadWhiteList())
-		{
-			LOG4_WARN("failed to LoadWhiteList");
-		}
+		LOG4_WARN("failed to LoadNodeType");
+	}
+	if(!LoadWhiteList())
+	{
+		LOG4_WARN("failed to LoadWhiteList");
 	}
     return true;
 }
