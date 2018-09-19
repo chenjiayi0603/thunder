@@ -17,31 +17,137 @@ message trace
 	string platform = 5;
 
 	string event_id = 6;
-	string ip = 7;
-	string location = 8;
-	string session_id = 9;
+	string event_entry = 7;	//触发事件的入口，这个事件打开页还是点击按钮时触发的：1、页面加载  2、按钮点击 3、banner横幅点击 9、会话结束(app端感知到屏熄、home键切到后台、杀掉进程）0、未知
+	string ip = 8;
+	string location = 9;
+	string session_id = 10;
 
-	string app_version = 10;
-	string channel = 11;
-	string net = 12;
-	string carrier = 13;
-	string os = 14;
-	string os_version = 15;
+	string app_version = 11;
+	string channel = 12;
+	string project_id= 13;//H5项目id,h5专用,app不填
+	string net = 14;
+	string carrier = 15;
+	string os = 16;
+	string os_version = 17;
 
-	string browser_brand = 16;
-	string browser_version = 17;
-	string referer_domain = 18;
-	string url = 19;
-	string ref = 20;
-	string utm_source = 21;
-	string utm_medium = 22;
-	string utm_term = 23;
-	string utm_campaign = 24;
-	string utm_content = 25;
+	string browser_brand = 18;
+	string browser_version = 19;
+	string referer_domain = 20;
+	string url = 21;
+	string ref = 22;
+	string utm_source = 23;
+	string utm_medium = 24;
+	string utm_term = 25;
+	string utm_campaign = 26;
+	string utm_content = 27;
 
-	repeated attribute attributes = 26;
+	repeated attribute attributes = 28;
 
-	uint64 time = 27;
+	uint64 time = 29;
+		
+}
+
+message Event
+{
+
+	string user_id = 3;
+	string device_id = 4;
+	string platform = 5;
+
+	string event_id = 6;
+	string event_entry = 7;	//触发事件的入口，这个事件打开页还是点击按钮时触发的：1、页面加载  2、按钮点击 3、banner横幅点击 9、会话结束(app端感知到屏熄、home键切到后台、杀掉进程）0、未知
+	string client_ip = 8;
+	string location = 9;
+	string session_id = 10;
+
+	string app_version = 11;
+	string channel = 12;
+	string project_id= 13;//H5项目id,h5专用,app不填
+	string net = 14;
+	string carrier = 15;
+	string os = 16;
+	string os_version = 17;
+
+	string browser_brand = 18;
+	string browser_version = 19;
+	string referer_domain = 20;
+	string url = 21;
+	string ref = 22;
+	string utm_source = 23;
+	string utm_medium = 24;
+	string utm_term = 25;
+	string utm_campaign = 26;
+	string utm_content = 27;
+
+	repeated attribute attributes = 28;
+
+	uint64 time = 29;
+
+	uint32 app_id = 30;
+	uint32 gmid = 31;//后台给用户分配的ID信息
+
+
+ 	// add by analyse
+ 	E_EVENT_OPERATE event_oper  = 32;
+
+	string tourist_id           = 33;
+	uint32 user_type            = 34;         //用户类型 
+	
+	 // value
+	 int32 pv                   = 35;
+	 int32 uv                   = 36;
+	 int32 vv                   = 37;
+	 int32 iv                   = 38;
+	 int64 length               = 39;
+	 int32 exit_vv              = 40;
+	 int32 bounce_vv            = 41;
+	 string next_page           = 42;
+	 int32  level               = 43;
+	 string next_event          = 44;
+
+	 enum E_EVENT_OPERATE
+	 {
+		 EVENT_ADD               = 0;        // 新增事件
+		 EVENT_DEL               = 1;        // 删除事件
+	 }
+}
+
+message Result
+{
+// key
+ uint32 app_id               = 1;
+ string date                 = 2;
+ string channel              = 3;
+ string app_version          = 4;
+ 
+ string platform             = 5;
+ string event_entry          = 6;
+ string project_id           = 7;
+ string utm_source           = 8;
+ string utm_medium           = 9;
+ string utm_term             = 10;
+ string utm_campaign         = 11;
+ string utm_content          = 12;
+ string event_id             = 13;
+
+ int32   session_length      = 14;
+ int32   session_time        = 15;
+ 
+ // value
+ int32 pv                   = 16;
+ int32 uv                   = 17;
+ int32 vv                   = 18;
+ int32 iv                   = 19;
+ int64 length               = 20;
+ int32 exit_vv              = 21;
+ int32 bounce_vv            = 22;
+ string next_page           = 23;
+ int32  level               = 24;
+ string next_event          = 25;
+ 
+
+ string key1                = 26;
+ uint32 key2                = 27;
 }
 
 message device
@@ -59,6 +165,13 @@ message device
 	string screen = 9;
 
 	uint64 time = 10;
+
+	string utm_source           = 11;
+	string utm_medium           = 12;
+	string utm_term             = 13;
+	string utm_campaign         = 14;
+	string utm_content          = 15;
+	uint32 gmid = 16;
 }
 
 
@@ -70,12 +183,15 @@ message user
 	string user_id= 3;
 	string device_id= 4;
 	string platform= 5;
-
 	repeated attribute attributes= 6;
 
 	uint64 time= 7;
-
-	uint32 gmid = 8;//后台给用户分配的ID
+	string utm_source           = 8;
+	string utm_medium           = 9;
+	string utm_term             = 10;
+	string utm_campaign         = 11;
+	string utm_content          = 12;
+	uint32 gmid = 13;//后台给用户分配的ID
 }
 
 message behaviour
@@ -122,21 +238,23 @@ message get_gmid_info
 
 	string utm_term = 6;
 	string utm_campaign= 7;
+	string utm_content= 8;//广告内容
 }
 
 //获取gmid相关信息响应
 message get_gmid_info_ack
 {
-	int32 code           = 1;
+	int32 code          = 1;
 	string msg          = 2;
 	int32 gmid 			= 3; //gmid
-	string user_id          = 4;//用户的UserID
+	string user_id      = 4;//用户的UserID
 	
 	string utm_source = 5;//广告来源	
 	string utm_medium= 6;//广告媒介
 
 	string utm_term = 7;//广告关键字
 	string utm_campaign= 8;//广告名称
+	string utm_content= 9;//广告内容	
 }
 
 
