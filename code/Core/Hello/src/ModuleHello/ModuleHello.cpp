@@ -44,17 +44,17 @@ bool ModuleHello::Init()
 {
 //    TestJson2pbRepeatedFields();
 //    {
-//        m_CustomClock.Start("TimeStr2time_t",GetLogger());
+//        m_RunClock.StartClock("TimeStr2time_t",GetLogger());
 //        uint32 time(0);
 //        for(int i = 0;i < 10000;++i)
 //        {
 //            time = util::TimeStr2time_t("2017-12-31 23:59:59");
 //        }
-//        m_CustomClock.EndClock();
+//        m_RunClock.EndClock();
 //        LOG4_INFO("TimeStr2time_t 10000 times time(%u)",time);
 //			TimeStr2time_t 10000 times time(1514735999)
-//			10000 times EndClock() CustomClock TimeStr2time_t use time(55.188000) ms
-//			10000 times EndClock() CustomClock TimeStr2time_t use time(65.248001) ms (加上分配uint32 time的时间)
+//			10000 times EndClock() net::RunClock TimeStr2time_t use time(55.188000) ms
+//			10000 times EndClock() net::RunClock TimeStr2time_t use time(65.248001) ms (加上分配uint32 time的时间)
 //    }
     return(true);
 }
@@ -1044,14 +1044,14 @@ void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const Ht
     struct DataStepCustom:public net::DataStepParam
     {
         DataStepCustom(const std::string &sK2,const std::string& node,log4cplus::Logger logger):
-            sKey2(sK2),strNode(node){m_CustomClock.Start("CustomClock RedisbitmapGET_GET",logger);}
-        ~DataStepCustom(){m_CustomClock.EndClock();}//EndClock() CustomClock CustomClock RedisbitmapGET_GET use time(4.998000) ms
+            sKey2(sK2),strNode(node){m_RunClock.StartClock("net::RunClock RedisbitmapGET_GET",logger);}
+        ~DataStepCustom(){m_RunClock.EndClock();}//EndClock() net::RunClock net::RunClock RedisbitmapGET_GET use time(4.998000) ms
         std::string sKey2;
         std::string strNode;
 
         std::vector<uint32> usersData1;
         std::vector<uint32> usersData2;
-        CustomClock m_CustomClock;
+        net::RunClock m_RunClock;
     };
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
@@ -2210,7 +2210,7 @@ void ModuleHello::TestJson2pbRepeatedFields()
         //"testFoo3":[3,33],"testFoo4":["4","44"],
         //"testFoo5":[{"testBar1":1,"testBar2":"2","testBar3":"3","testbar4":"NA==","testBar5":5,"testBar6":"6","testBar7":7},
         //{"testBar1":11,"testBar2":"22","testBar3":"33","testbar4":"NDQ=","testBar5":55,"testBar6":"66","testBar7":7.700000}]}
-        m_CustomClock.Start("pb to json",GetLogger());
+        m_RunClock.StartClock("pb to json",GetLogger());
         std::string strTmpJson;
         for(int i = 0;i < 10000;++i)
         {
@@ -2226,9 +2226,9 @@ void ModuleHello::TestJson2pbRepeatedFields()
                 return;
             }
         }
-        m_CustomClock.EndClock();
-        //EndClock() CustomClock pb to json use time(251.009003) ms 不加换行和空格
-        //EndClock() CustomClock pb to json use time(1335.982056) ms 加换行和空格
+        m_RunClock.EndClock();
+        //EndClock() net::RunClock pb to json use time(251.009003) ms 不加换行和空格
+        //EndClock() net::RunClock pb to json use time(1335.982056) ms 加换行和空格
         LOG4_DEBUG("test_proto3 succ to MessageToJsonString 10000 times strJson:%s",strJson.c_str());
         /*
         test_foo1: "foo1"
@@ -2305,7 +2305,7 @@ void ModuleHello::TestJson2pbRepeatedFields()
         //  repeated uint64 test_foo4 = 4;
         //  repeated .test_bar test_foo5 = 5;
         //}
-        m_CustomClock.Start("json 2 pb",GetLogger());
+        m_RunClock.StartClock("json 2 pb",GetLogger());
         for(int i = 0;i < 10000;++i)
         {
         	server::test_proto3 testProto1;
@@ -2319,8 +2319,8 @@ void ModuleHello::TestJson2pbRepeatedFields()
                 return;
             }
         }
-        m_CustomClock.EndClock();
-        //EndClock() CustomClock json 2 pb use time(659.744995) ms  不加空格和换行
+        m_RunClock.EndClock();
+        //EndClock() net::RunClock json 2 pb use time(659.744995) ms  不加空格和换行
         LOG4_DEBUG("test_proto3 JsonStringToMessage 10000 times testProto1:%s,testProto1 descriptor:%s",
                                 testProto1.DebugString().c_str(),testProto1.descriptor()->DebugString().c_str());
     }

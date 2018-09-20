@@ -1,35 +1,36 @@
 #include "util/bzhash.hpp"
-#include "LocalFileMgr.h"
+#include "FileMgr.h"
 #include "AnalysisRedisProto.h"
 
 namespace analysis
 {
 
-LocalFileMgr::LocalFileMgr()
+FileMgr::FileMgr():m_dWriteLogInterval(0),m_dCreateLogInterval(0),m_uiSyncLog(1),m_uiLogQueueNum(0),m_uiLogFormat(0),m_uiCreateLogLastTime(0),m_uiWriteLogLastTime(0)
 {
-    m_currentTime = 0;
-    m_createLogLastTime = 0;
+    m_uiCurrentTime = 0;
+    m_uiCreateLogLastTime = 0;
     m_uiSyncLog = 1;
     m_uiLogFormat = 0;
     m_boNeedSync = false;
     m_uiWritedLogCounter = 0;
     m_pOssLabor = NULL;
-    m_logQueueNum = 0;
+    m_uiLogQueueNum = 0;
+    m_uiWriteLogLastTime = 0;
 }
 
-LocalFileMgr::~LocalFileMgr()
+FileMgr::~FileMgr()
 {
     CloseLog();
 }
 
-bool LocalFileMgr::OpenLog(const std::string &configPath,
+bool FileMgr::OpenLog(const std::string &configPath,
                 const std::string& sLogFilePath,int logQueueNum)
 {
     if (m_strConfigPath != configPath)
     {
         m_strConfigPath = configPath;
-        m_datalogPath = sLogFilePath;
-        m_logQueueNum = logQueueNum;
+        m_strDatalogPath = sLogFilePath;
+        m_uiLogQueueNum = logQueueNum;
     }
     static const char szLogDataFileName[] = "Log_"; //日志文件库名
     //打开或者创建日志文件数据文件
@@ -37,7 +38,7 @@ bool LocalFileMgr::OpenLog(const std::string &configPath,
     char sLogName[256];
     char sTimeStamp[64];
     util::GetTimeStampMinuteStr(sTimeStamp, sizeof(sTimeStamp));//用毫秒字符串来作为文件名
-    snprintf(sLogName, sizeof(sLogName) - 1, "%s%s%s_%s", m_datalogPath.c_str(),
+    snprintf(sLogName, sizeof(sLogName) - 1, "%s%s%s_%s", m_strDatalogPath.c_str(),
                     szLogDataFileName, sTimeStamp,m_strWorkerIdentify.c_str());//dir/prefile_time_ident.dat
     if (m_logFile.IsOpened() && m_logFile.m_logName == sLogName)
     {
@@ -63,17 +64,30 @@ bool LocalFileMgr::OpenLog(const std::string &configPath,
         LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to open logDataName(%s)",
                                     __FUNCTION__,m_logFile.m_logDataName.c_str());
     }
-    setCurrentTime();
-    m_createLogLastTime = m_currentTime;
+    SetCurrentTime();
+    m_uiCreateLogLastTime = m_uiCurrentTime;
     LOG4CPLUS_INFO_FMT(m_oLogger,
-                    "OpenLog ok,configPath(%s),sLogFilePath(%s),currentTime(%llu),m_createLogLastTime(%u) logFile logDataName(%s) logFile FD(%d)",
-                    configPath.c_str(), sLogFilePath.c_str(),m_currentTime,m_createLogLastTime,
+                    "OpenLog ok,configPath(%s),sLogFilePath(%s),currentTime(%llu),m_uiCreateLogLastTime(%u) logFile logDataName(%s) logFile FD(%d)",
+                    configPath.c_str(), sLogFilePath.c_str(),m_uiCurrentTime,m_uiCreateLogLastTime,
                     m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
     m_uiWritedLogCounter = 0;
     return (true);
 }
 
-void LocalFileMgr::CloseLog()
+bool FileMgr::OpenNewLog()
+{
+	RoutineWrite();//在创建新日志文件前需要把之前的日志文件全部写入上一个文件
+	//创建新的日志文件（如果已经打开旧的日志文件则会关闭旧的日志文件）
+	if(!OpenLog(m_strConfigPath,m_strDatalogPath,m_uiLogQueueNum))
+	{
+		LOG4CPLUS_ERROR_FMT(m_oLogger,"failed to open new log file,datalogPath(%s)",m_strDatalogPath.c_str());
+		return false;
+	}
+	LOG4CPLUS_DEBUG_FMT(m_oLogger,"open new log file,datalogPath(%s)",m_strDatalogPath.c_str());
+	return true;
+}
+
+void FileMgr::CloseLog()
 {
     LOG4CPLUS_INFO_FMT(m_oLogger,"%s() need to CloseLog m_logDataName(%s) file no(%d)",
                         __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
@@ -86,24 +100,24 @@ void LocalFileMgr::CloseLog()
     //如果有数据存储尚未完成是要进行额外的处理，不能直接关闭文件
     if (!IsAllWriteComplete())
     {
-        RoutineAllWrite();
+    	RoutineWrite();
     }
     LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog ok m_logDataName(%s) file no(%d)",
                     __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
     m_logFile.close();
 }
 
-bool LocalFileMgr::TryOpenNewLog()
+bool FileMgr::TryOpenNewLog()
 {
-    if(!OpenLog(m_strConfigPath,m_datalogPath,m_logQueueNum))
+    if(!OpenLog(m_strConfigPath,m_strDatalogPath,m_uiLogQueueNum))
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger,"failed to open log file,m_datalogPath(%s)",m_datalogPath.c_str());
+        LOG4CPLUS_ERROR_FMT(m_oLogger,"failed to open log file,m_strDatalogPath(%s)",m_strDatalogPath.c_str());
         return false;
     }
     return true;
 }
 
-bool LocalFileMgr::CheckSync()
+bool FileMgr::CheckSync()
 {
     //在数据都写入系统缓存队列后同步到磁盘(目前使用系统的缓存，则不在用户空间一次写入多个消息)
     if (m_uiSyncLog > 0 && m_boNeedSync)
@@ -120,8 +134,9 @@ bool LocalFileMgr::CheckSync()
     return true;
 }
 
-bool LocalFileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部写入
+bool FileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部写入
 {
+	m_uiWriteLogLastTime = m_uiCurrentTime;
     if (boForceNewLog)
     {
         LOG4CPLUS_INFO_FMT(m_oLogger,"%s() force to open new file",__FUNCTION__);
@@ -142,15 +157,14 @@ bool LocalFileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的�
         }
     }
     LogMsgVec& logMsgVec = m_logMsgVec;    //写日志队列
-    LOG4CPLUS_INFO_FMT(m_oLogger, "RoutineWrite time(%d) logfilename(%s) logMsgVec size(%u)",
-                    m_currentTime,m_logFile.m_logDataName.c_str(),logMsgVec.size());
+    LOG4CPLUS_INFO_FMT(m_oLogger, "RoutineWrite time(%d) logfilename(%s) logMsgVec size(%u)",m_uiCurrentTime,m_logFile.m_logDataName.c_str(),m_logMsgVec.size());
     if (logMsgVec.size() > 0)
     {
         uint32 counter(0);
         LogMsgVec::iterator cit = logMsgVec.begin();
         for (; cit != logMsgVec.end();++cit,++counter)
         {
-            if (m_logQueueNum  > 0 && counter >= m_logQueueNum)
+            if (m_uiLogQueueNum  > 0 && counter >= m_uiLogQueueNum)
             {
                 break;
             }
@@ -210,13 +224,13 @@ bool LocalFileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的�
             logMsgVec.clear();
         }
         m_uiWritedLogCounter += counter;
-        LOG4CPLUS_INFO_FMT(m_oLogger, "%s() counter(%d,%llu) logMsgVec(%u) m_uiLogFormat(%u) m_logQueueNum(%u)",
-                        __FUNCTION__,counter,m_uiWritedLogCounter,logMsgVec.size(),m_uiLogFormat,m_logQueueNum);
+        LOG4CPLUS_INFO_FMT(m_oLogger, "%s() counter(%d,%llu) logMsgVec(%u) m_uiLogFormat(%u) m_uiLogQueueNum(%u)",
+                        __FUNCTION__,counter,m_uiWritedLogCounter,logMsgVec.size(),m_uiLogFormat,m_uiLogQueueNum);
     }
     return true;
 }
 //自定义二进制头存储结构
-bool LocalFileMgr::Write2CustomHeadLogFile(const std::string& logBody,uint32 nLogCmd)
+bool FileMgr::Write2CustomHeadLogFile(const std::string& logBody,uint32 nLogCmd)
 {
     /*
     {"account_number":1,"balance":39225,"firstname":"Amber","lastname":"Duke","age":32,"gender":"M","address":"880 Holmes Lane","employer":"Pyrami","email":"amberduke@pyrami.com","city":"Brogan","state":"IL"}
@@ -243,7 +257,7 @@ bool LocalFileMgr::Write2CustomHeadLogFile(const std::string& logBody,uint32 nLo
     return true;
 }
 //类ES型存储结构消费文件
-bool LocalFileMgr::Write2ESConsumeFile(const behaviour::behaviour& message)
+bool FileMgr::Write2ESConsumeFile(const behaviour::behaviour& message)
 {
     LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() Write2ESConsumeFile message(%s)",__FUNCTION__,message.DebugString().c_str());
     util::CJsonObject msgs;
@@ -270,7 +284,7 @@ bool LocalFileMgr::Write2ESConsumeFile(const behaviour::behaviour& message)
     return true;
 }
 
-bool LocalFileMgr::Write2ESConsumeFileWithLog(const std::string& logBody,const behaviour::behaviour& message)
+bool FileMgr::Write2ESConsumeFileWithLog(const std::string& logBody,const behaviour::behaviour& message)
 {
     m_buff.Clear();
     //数据头
@@ -360,7 +374,7 @@ bool LocalFileMgr::Write2ESConsumeFileWithLog(const std::string& logBody,const b
  \"model\":\"iPhone 5s\",\"app_version\":\"1.0\",\"time\":\"2017-08-14 16:15:10\"}\n"
  * */
 //ssdb存储类ES结构消费文件
-bool LocalFileMgr::Write2SSDBConsumeFile(const behaviour::behaviour& message)
+bool FileMgr::Write2SSDBConsumeFile(const behaviour::behaviour& message)
 {
     LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() Write2SSDBConsumeFile message(%s)",__FUNCTION__,message.DebugString().c_str());
     util::CJsonObject msgs;
@@ -387,7 +401,7 @@ bool LocalFileMgr::Write2SSDBConsumeFile(const behaviour::behaviour& message)
     return true;
 }
 
-bool LocalFileMgr::Write2SSDBConsumeFileWithLog(const std::string& logBody,const behaviour::behaviour& message)
+bool FileMgr::Write2SSDBConsumeFileWithLog(const std::string& logBody,const behaviour::behaviour& message)
 {
     m_buff.Clear();
     {//数据头
@@ -477,7 +491,7 @@ bool LocalFileMgr::Write2SSDBConsumeFileWithLog(const std::string& logBody,const
         };
         std::string sValue(m_buff.GetReadBuff(),m_buff.ReadDataLen());
         char sUniqueId[32];snprintf(sUniqueId,sizeof(sUniqueId),"%llu",util::GetUniqueId(m_pOssLabor->GetNodeId(),m_pOssLabor->GetWorkerIndex()));
-        char sDate[32];util::GetDateStr(sDate,sizeof(sDate),m_currentTime);
+        char sDate[32];util::GetDateStr(sDate,sizeof(sDate),m_uiCurrentTime);
         //事件消息1:100:TRACE?20111101-ssdb hash
         //用户消息1:100:USER?20111101-ssdb hash
         //设备消息1:100:DEVICE?20111101-ssdb hash
@@ -511,45 +525,11 @@ bool LocalFileMgr::Write2SSDBConsumeFileWithLog(const std::string& logBody,const
     return true;
 }
 
-void LocalFileMgr::RoutineAllWrite()
+bool FileMgr::AddLog(const behaviour::behaviour &logMsg)
 {
-    RoutineWrite();    //写入日志队列
-}
-
-bool LocalFileMgr::IsAllWriteComplete()
-{
-    return (m_logMsgVec.size() == 0);
-}
-
-uint32 LocalFileMgr::GetAllWriteSize()
-{
-    return m_logMsgVec.size();
-}
-
-bool LocalFileMgr::AddLog(const behaviour::behaviour &logMsg,bool boForceWrite,bool boForceNewLog)
-{
-    if (boForceNewLog)//新文件需要开始创建
-    {
-        m_logMsgVec.push_back(logMsg);//立刻写盘
-        return RoutineWrite(boForceNewLog);
-    }
-    else
-    {
-        if (boForceWrite)//强制写磁盘
-        {
-            m_logMsgVec.push_back(logMsg);//立刻写盘
-            return RoutineWrite(boForceNewLog);
-        }
-        else if (GetAllWriteSize() >= m_logQueueNum)
-        {
-            m_logMsgVec.push_back(logMsg);//立刻写盘
-            return RoutineWrite(boForceNewLog);
-        }
-        else//延时批量写盘
-        {
-            m_logMsgVec.push_back(logMsg);//
-        }
-    }
+	m_logMsgVec.push_back(logMsg);
+    if (NeedNewLogCycle(SetCurrentTime()))return RoutineWrite(true);//需要新文件并写盘
+    else if (NeedWriteLogCycle(m_uiCurrentTime)) return RoutineWrite();//需要写盘
 	return true;
 }
 

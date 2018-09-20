@@ -28,7 +28,7 @@
 #include "step/Step.hpp"
 #include "cmd/Cmd.hpp"
 #include "Comm.hpp"
-#include "LocalFileMgr.h"
+#include "FileMgr.h"
 
 #define LOGQUEUE_SESSIN_ID (20000)
 
@@ -40,113 +40,33 @@ class LogQueueSession: public net::Session
 public:
     LogQueueSession(double session_timeout = 1.0)
                     : net::Session(LOGQUEUE_SESSIN_ID, session_timeout,"analysis::LogQueueSession"),
-                      boInit(false),boTestWriteLogs(false),m_currentTime(0),m_writeLogInterval(0),m_createLogInterval(0),
-                      m_uiVerifyLog(0),m_uiSyncLog(1),m_logQueueNum(0),m_uiLogFormat(0),
-                      m_uiTestWriteTime(0),m_writeLogLastTime(0),m_createLogLastTime(0)
+                      boInit(false),boTestWriteLogs(false),m_uiVerifyLog(0),m_uiCurrentTime(0),m_uiTestWriteTime(0)
     {
     }
-    virtual ~LogQueueSession()
-    {
-    }
+    virtual ~LogQueueSession(){}
     bool Init(const util::CJsonObject& conf,const util::CJsonObject& logTableConf);
-    net::E_CMD_STATUS Timeout()
-    {
-        if (m_localFileMgr.GetAllWriteSize() > 0)
-        {
-            CheckOpenNewLog();
-            m_localFileMgr.RoutineWrite(false);
-        }
-        m_localFileMgr.CheckSync();
-        return net::STATUS_CMD_RUNNING;
-    }
-    void SetConfigPath(const std::string &configpath)
-    {
-        m_strConfigPath = configpath;
-    }
-    void SetWorkerIdentify(const std::string &workerIdentify)
-    {
-        m_strWorkerIdentify = workerIdentify;
-    }
-    void SetLogQueueNum(uint32 logQueueNum)
-    {
-        m_logQueueNum = logQueueNum;
-    }
-    const std::string& GetWorkerIdentify()const {return m_strWorkerIdentify;}
-    void SetCurrentTime()
-    {
-        m_currentTime = ::time(NULL);
-    }
-    uint64 getCurrentTime()
-    {
-        return m_currentTime;
-    }
+    net::E_CMD_STATUS Timeout();
+
     void TestWriteLogs();
+    uint32 SetCurrentTime(){m_uiCurrentTime = ::time(NULL);return m_uiCurrentTime;}
     bool AppendLog(behaviour::behaviour &message,int& nErrCode);
+    bool VerifyLog(behaviour::behaviour &message,int& nErrCode);
     bool CheckOpenNewLog();
-    /*
-     "log_list":[
-        {
-            "log_cmd":1,
-            "log_type":"appStartTrace",
-            "fields": [
-            ]
-        },
-        {
-            "log_cmd":2,
-            "log_type":"appPageTrace",
-            "fields": [
-            ]
-        }
-    ]
-     * */
-    struct LogTable
-    {
-        uint32 nLogCmd;
-        std::string strLogType;
-        std::vector<std::string> fieldsVec;
-        LogTable():nLogCmd(0){}
-        LogTable(const LogTable& log)
-        {
-            nLogCmd = log.nLogCmd;
-            strLogType = log.strLogType;
-            fieldsVec = log.fieldsVec;
-        }
-        const LogTable& operator=(const LogTable& log)
-        {
-            nLogCmd = log.nLogCmd;
-            strLogType = log.strLogType;
-            fieldsVec = log.fieldsVec;
-            return *this;
-        }
-    };
-    std::vector<util::CJsonObject> m_vecComsumeTables;
+
+    std::string m_strConfigPath;
+	std::string m_strWorkerIdentify;
 private:
     bool boInit;
     bool boTestWriteLogs;
-    net::uint32 m_currentTime;
-    std::string m_strConfigPath;
-    std::string m_strWorkerIdentify;
-    //config
-    std::string m_datalogPath; //日志文件目录 路径
-    double m_writeLogInterval; //定时写日志间隔
-    double m_createLogInterval; //创建日志文件间隔
-
-    net::uint32 m_uiVerifyLog;
-    net::uint32 m_uiSyncLog;//同步写日志
-    net::uint32 m_logQueueNum;
-    uint32 m_uiLogFormat;
-
+    uint32 m_uiVerifyLog;
+    uint32 m_uiCurrentTime;
     uint32 m_uiTestWriteTime;
-    uint32 m_writeLogLastTime;
-    uint32 m_createLogLastTime;
-
-    CustomClock m_CustomClock;
 
     //日志
-    LocalFileMgr m_localFileMgr;
+    FileMgr m_FileMgr;
 
-    std::map<std::string,LogTable> m_mapLogTypes;//logtype -> LogTable
-    util::CJsonObject m_clientMsg;
+    std::map<std::string,LogTable> m_mapLogTable;//logtype -> LogTable
+    util::CJsonObject m_jsonLogMsg;
 };
 
 LogQueueSession* GetLogQueueSession(net::Labor* pLabor,const std::string &strConfigPath,const std::string& strWorkerIdentify);

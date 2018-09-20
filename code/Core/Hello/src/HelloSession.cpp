@@ -26,7 +26,7 @@ bool HelloSession::Init(const util::CJsonObject& conf)
     LOG4_INFO("%s valid time delay:%d",__FUNCTION__,m_ValidTimeDelay);
     LOG4CPLUS_DEBUG_FMT(GetLogger(),"%s() objModuleLocateDataRequest(%s)",
                         __FUNCTION__,m_objModuleLocateDataRequest.ToString().c_str());
-    setCurrentTime();
+    SetCurrentTime();
     boInit = true;
     return true;
 }

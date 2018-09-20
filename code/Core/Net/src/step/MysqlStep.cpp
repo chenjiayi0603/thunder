@@ -155,8 +155,8 @@ bool MysqlStep::Launch(Labor* pLabor,MysqlStep *pStep,uint32 uiTimeOutMax,uint8 
 		return(false);
 	}
 	pStep->SetStepDesc(std::string("MysqlStep:") + pStep->m_strLastCmd);
-	LOG4_TRACE_S(pLabor,"%s() uiMysqlStepRegisterCounter:%llu StageClock(%d,%d)",__FUNCTION__,++uiMysqlStepRegisterCounter,
-	                pStep->m_StageClock.boInit,pStep->m_StageClock.boStart);
+	LOG4_TRACE_S(pLabor,"%s() uiMysqlStepRegisterCounter:%llu RunClock(%d,%d)",__FUNCTION__,++uiMysqlStepRegisterCounter,
+	                pStep->m_RunClock.boInit,pStep->m_RunClock.boStart);
 	return true;
 }
 

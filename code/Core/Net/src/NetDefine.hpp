@@ -7,9 +7,14 @@
 * @note
 * Modify history:
 ******************************************************************************/
-#ifndef OSSDEFINE_HPP_
-#define OSSDEFINE_HPP_
+#ifndef NETDEFINE_HPP_
+#define NETDEFINE_HPP_
 #include <time.h>
+#include <sys/time.h>
+#include <memory.h>
+#include "log4cplus/logger.h"
+#include "log4cplus/fileappender.h"
+#include "log4cplus/loggingmacros.h"
 
 #ifndef NODE_BEAT
 #define NODE_BEAT 1.0
@@ -123,6 +128,178 @@ struct tagSequence
     uint32 ulSeq;
 };
 
+//函数运行时间计算类
+class RunClock
+{
+public:
+	RunClock()
+    {
+		Reset();
+    }
+	~RunClock()
+	{
+		if (boInit)
+		{
+			gettimeofday(&m_tvTotalEndClock,NULL);
+			float useTime=1000000*(m_tvTotalEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+ m_tvTotalEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
+			LOG4CPLUS_INFO_FMT(m_logger,"%s() RunClock use time(%lf) ms",__FUNCTION__,useTime/1000);
+		}
+	}
+	void Reset()
+	{
+		boInit = boStart = false;
+		gettimeofday(&m_tvTotalBeginClock,NULL);
+		m_tvRunBeginClock = m_tvRunEndClock = m_tvTotalEndClock = m_tvTotalBeginClock;
+	}
+    void Init(const log4cplus::Logger &logger)
+    {
+    	if (!boInit)
+    	{
+    		m_logger = logger;
+			boInit = true;
+    	}
+    }
+    void StartClock(const char* desc,const log4cplus::Logger &logger)
+    {
+    	snprintf(m_desc,sizeof(m_desc),"%s",desc);
+    	Init(logger);
+    }
+
+    void StartClock(int nStage)
+    {
+    	if(boInit && !boStart)
+		{
+			snprintf(m_desc,sizeof(m_desc),"stage:%d",nStage);
+			StartClock();
+		}
+    }
+    void StartClock()
+    {
+        gettimeofday(&m_tvRunBeginClock,NULL);
+        boStart = true;
+    }
+    void EndClock()
+    {
+        if (boInit && boStart)
+        {
+            gettimeofday(&m_tvRunEndClock,NULL);
+            float useTime=1000000*(m_tvRunEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+m_tvRunEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
+            LOG4CPLUS_INFO_FMT(m_logger,"%s() %s use time(%lf) ms",__FUNCTION__,m_desc,useTime/1000);
+            boStart = false;
+        }
+    }
+    void TotalRunTime()
+    {
+        if (boInit)
+        {
+            gettimeofday(&m_tvTotalEndClock,NULL);
+            float useTime=1000000*(m_tvTotalEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+
+                    m_tvTotalEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
+            useTime/=1000;
+            LOG4CPLUS_INFO_FMT(m_logger,"%s() RunClock use time(%lf) ms",__FUNCTION__,useTime);
+        }
+    }
+    bool boInit;
+    bool boStart;
+    timeval m_tvRunBeginClock;
+    timeval m_tvRunEndClock;
+
+    timeval m_tvTotalBeginClock;
+	timeval m_tvTotalEndClock;
+    char m_desc[32];
+    log4cplus::Logger m_logger;
+};
+
+struct BUFF_RW
+{
+    BUFF_RW(): m_pbuffer(NULL), size(0),indexW(0),indexR(0)
+    {
+    }
+    ~BUFF_RW()
+    {
+        if (m_pbuffer)
+        {
+            ::free(m_pbuffer);
+        }
+    }
+    char* m_pbuffer;
+    uint32 size;
+    uint32 indexW;
+    uint32 indexR;
+    inline void Clear()
+    {
+        indexR = indexW = 0;
+    }
+    inline void Resize(uint32 buffsize)
+    {
+        if (buffsize > 0)
+        {
+            if (size < buffsize)//容量只会扩大
+            {
+                m_pbuffer = (char*) ::realloc(m_pbuffer, buffsize);
+                size = buffsize;
+            }
+        }
+    }
+    inline void Write(const char* data,int dataSize)
+    {
+        if ((indexW + dataSize) > size)
+        {
+            Resize(indexW + dataSize);
+        }
+        memcpy(m_pbuffer + indexW,data,dataSize);
+        indexW += dataSize;
+    }
+    inline bool Read(char* data,unsigned int dataSize)
+    {
+        if ((indexR + dataSize) > indexW)
+        {
+            return false;
+        }
+        memcpy(data,m_pbuffer + indexR,dataSize);
+        indexR += dataSize;
+        return true;
+    }
+    inline char* Getbuff() const
+    {
+        return m_pbuffer;
+    }
+    inline char* GetWriteBuff() const
+    {
+        return m_pbuffer + indexW;
+    }
+    inline char* GetReadBuff() const
+    {
+        return m_pbuffer + indexR;
+    }
+    inline void AdvanceIndexW(uint32 s)
+    {
+        if (indexW + s <= size)
+        {
+            indexW += s;
+        }
+    }
+    void RewindR(uint32 s)
+    {
+        if (s > 0 && indexR > s)
+        {
+            indexR -= s;
+        }
+    }
+
+    uint32 GetIndexW()const {return indexW;}
+    uint32 GetIndexR()const {return indexR;}
+    uint32 GetSize()const {return size;}
+    uint32 ReadDataLen()const
+    {
+        if (indexW > indexR)
+        {
+            return indexW - indexR;
+        }
+        return 0;
+    }
+};
+
 }
 
-#endif /* OSSDEFINE_HPP_ */
+#endif /* NETDEFINE_HPP_ */

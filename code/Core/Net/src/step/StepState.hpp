@@ -7,7 +7,6 @@
 #include "step/Step.hpp"
 #include "step/HttpStep.hpp"
 #include "session/Session.hpp"
-#include "NetError.hpp"
 #include "storage/RedisOperator.hpp"
 #include "storage/DbOperator.hpp"
 #include "storage/MemOperator.hpp"
@@ -16,82 +15,6 @@ namespace net
 {
 #define StepStateVecSize (20)
 
-//函数运行时间计算类
-class StageClock
-{
-public:
-	StageClock()
-    {
-        boInit = boStart = false;
-        gettimeofday(&m_clockBeginClock,NULL);
-        m_stageBeginClock = m_stageEndClock = m_clockEndClock = m_clockBeginClock;
-    }
-    void Init(const log4cplus::Logger &logger)
-    {
-    	if (!boInit)
-    	{
-    		m_logger = logger;
-			gettimeofday(&m_clockBeginClock,NULL);
-			boInit = true;
-    	}
-    }
-    void Start(int nStage)
-    {
-        if(boInit && !boStart)
-        {
-            snprintf(m_desc,sizeof(m_desc),"stage:%d",nStage);
-            StartClock();
-            boStart = true;
-        }
-    }
-    ~StageClock()
-    {
-        if (boInit)
-        {
-        	gettimeofday(&m_clockEndClock,NULL);
-			float useTime=1000000*(m_clockEndClock.tv_sec-m_stageBeginClock.tv_sec)+
-					m_clockEndClock.tv_usec-m_stageBeginClock.tv_usec;
-			useTime/=1000;
-			LOG4CPLUS_INFO_FMT(m_logger,"%s() StageClock use time(%lf) ms",__FUNCTION__,useTime);
-        }
-    }
-    void StartClock()
-    {
-        gettimeofday(&m_stageBeginClock,NULL);
-    }
-    void EndClock()
-    {
-        if (boInit && boStart)
-        {
-            gettimeofday(&m_stageEndClock,NULL);
-            float useTime=1000000*(m_stageEndClock.tv_sec-m_stageBeginClock.tv_sec)+
-            		m_stageEndClock.tv_usec-m_stageBeginClock.tv_usec;
-            useTime/=1000;
-            LOG4CPLUS_INFO_FMT(m_logger,"%s() %s use time(%lf) ms",__FUNCTION__,m_desc,useTime);
-            boStart = false;
-        }
-    }
-    void AlarmClock()
-    {
-        if (boInit)
-        {
-            gettimeofday(&m_clockEndClock,NULL);
-            float useTime=1000000*(m_clockEndClock.tv_sec-m_stageBeginClock.tv_sec)+
-                    m_clockEndClock.tv_usec-m_stageBeginClock.tv_usec;
-            useTime/=1000;
-            LOG4CPLUS_INFO_FMT(m_logger,"%s() StageClock use time(%lf) ms",__FUNCTION__,useTime);
-        }
-    }
-    bool boInit;
-    bool boStart;
-    timeval m_stageBeginClock;
-    timeval m_stageEndClock;
-
-    timeval m_clockBeginClock;
-	timeval m_clockEndClock;
-    char m_desc[32];
-    log4cplus::Logger m_logger;
-};
 //参数基类（自定义参数类则继承参数基类）
 struct StepStateParam
 {
@@ -191,7 +114,7 @@ public:
 
 	void SetTimeOutMax(uint32 uiTimeOutMax){m_uiTimeOutMax = uiTimeOutMax;}
 	void SetTimeOutRetry(){m_uiTimeOutRetry = 1;}//设置重新尝试过程
-	void InitClock(){m_StageClock.Init(GetLogger());}
+	void InitClock(){m_RunClock.Init(GetLogger());}
 	virtual void OnSucc(){if (m_SuccFunc) m_SuccFunc(this);}
 	virtual void OnFail(){if (m_FailFunc) m_FailFunc(this);}
 	log4cplus::Logger GetLogger(){return Step::GetLogger();}
@@ -236,7 +159,7 @@ protected:
     int m_uiNextState;//指定下一个状态机
 
     StepStateParam * m_data;
-    StageClock m_StageClock;
+    RunClock m_RunClock;
     int m_iErrno;
     std::string m_strErrMsg;
     std::string m_strStepDesc;

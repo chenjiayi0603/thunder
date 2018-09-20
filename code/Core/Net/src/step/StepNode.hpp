@@ -1,6 +1,6 @@
 
-#ifndef SRC_StepNodeAccess_HPP_
-#define SRC_StepNodeAccess_HPP_
+#ifndef SRC_StepNode_HPP_
+#define SRC_StepNode_HPP_
 #include "step/Step.hpp"
 #include "step/HttpStep.hpp"
 #include "session/Session.hpp"

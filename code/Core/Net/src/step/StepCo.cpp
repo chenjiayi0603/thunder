@@ -102,9 +102,9 @@ E_CMD_STATUS StepCo::Emit(int iErrno , const std::string& strErrMsg , const std:
 				int s = GetLabor()->CoroutineStatus(m_curCoid);
 				if (0 != s)
 				{
-					m_StageClock.Start(m_uiState);
+					m_RunClock.StartClock(m_uiState);
 					GetLabor()->CoroutineResume(m_curCoid);
-					m_StageClock.EndClock();
+					m_RunClock.EndClock();
 					s = GetLabor()->CoroutineStatus(m_curCoid);
 				}
                 //                 COROUTINE_DEAD 0

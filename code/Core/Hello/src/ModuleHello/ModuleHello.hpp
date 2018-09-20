@@ -104,7 +104,7 @@ private:
     void TestProto3Type();
     void TestJson2pbRepeatedFields();
 
-    CustomClock m_CustomClock;
+    net::RunClock m_RunClock;
 };
 
 } /* namespace core */

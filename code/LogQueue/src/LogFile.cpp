@@ -30,7 +30,7 @@ LogFile::~LogFile()
 {
 }
 
-int LogFile::GetFileSize()
+int LogFile::GetFileSize()const
 {
     if (m_dataFd <= 0)
     {

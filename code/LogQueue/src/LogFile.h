@@ -39,7 +39,7 @@ public:
     {
         return (m_dataFd > 0);
     }
-    int GetFileSize();
+    int GetFileSize()const;
     bool ClearFile();
     //打开文件库
     bool open(const char* sLogName);

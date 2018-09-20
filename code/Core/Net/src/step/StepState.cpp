@@ -103,9 +103,9 @@ E_CMD_STATUS StepState::Emit(int iErrno , const std::string& strErrMsg , const s
 		LOG4_TRACE("%s() uiLastState(%u) uiState(%u) before run",__FUNCTION__,m_uiLastState,m_uiState);
 		if (m_StateVec[m_uiState])
 		{
-			m_StageClock.Start(m_uiState);
+			m_RunClock.StartClock(m_uiState);
 			bool boRet = m_StateVec[m_uiState](this);
-			m_StageClock.EndClock();
+			m_RunClock.EndClock();
 			LOG4_TRACE("%s() uiLastState(%u) uiState(%u) after run",__FUNCTION__,m_uiLastState,m_uiState);
 			if (!boRet)
 			{
@@ -221,9 +221,9 @@ E_CMD_STATUS StepState::Timeout()
     	if (m_uiTimeOutRetry > 0)
     	{
     	    SetNextState(m_uiState - 1);
-    		LOG4_WARN("%s() retry last stage. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u) StepState(%p,%u) Timeout AlarmClock(%d,%d)",
-    		    		__FUNCTION__,m_uiTimeOutCounter,m_uiTimeOutMax,m_uiTimeOutRetry,this,m_uiState,m_StageClock.boInit,m_StageClock.boStart);
-    		m_StageClock.AlarmClock();
+    		LOG4_WARN("%s() retry last stage. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u) StepState(%p,%u) Timeout TotalRunTime(%d,%d)",
+    		    		__FUNCTION__,m_uiTimeOutCounter,m_uiTimeOutMax,m_uiTimeOutRetry,this,m_uiState,m_RunClock.boInit,m_RunClock.boStart);
+    		m_RunClock.TotalRunTime();
     		return Emit();//retry last stage
     	}
         return STATUS_CMD_RUNNING;
