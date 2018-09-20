@@ -28,19 +28,19 @@ bool FileMgr::OpenLog()
     util::GetTimeStampMinuteStr(sTimeStamp, sizeof(sTimeStamp));//用毫秒字符串来作为文件名
     snprintf(sLogName, sizeof(sLogName) - 1, "%s%s%s_%s", m_strDatalogPath.c_str(),
                     szLogDataFileName, sTimeStamp,m_strWorkerIdentify.c_str());//dir/prefile_time_ident.dat
-    if (m_logFile.IsOpened() && m_logFile.m_logName == sLogName)
+    if (m_logFile.IsOpened() && m_logFile.m_strLogFileName == sLogName)
     {
-        LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() file already opened m_logName(%s)",__FUNCTION__,m_logFile.m_logName.c_str());
+        LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() file already opened m_strLogFileName(%s)",__FUNCTION__,m_logFile.m_strLogFileName.c_str());
         return (true);
     }
     if (m_logFile.open(sLogName))//当前时间作为新的日志文件，如果已有该文件则使用该文件
     {
-    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to open logDataName(%s)",__FUNCTION__,m_logFile.m_logDataName.c_str());
+    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to open logDataName(%s)",__FUNCTION__,m_logFile.m_strLogFileFullName.c_str());
 
     }
     else if (m_logFile.create(sLogName))
     {
-    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to create logDataName(%s)",__FUNCTION__,m_logFile.m_logDataName.c_str());
+    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to create logDataName(%s)",__FUNCTION__,m_logFile.m_strLogFileFullName.c_str());
     }
     else
     {
@@ -50,18 +50,18 @@ bool FileMgr::OpenLog()
     SetCurrentTime();
     m_uiCreateLogLastTime = m_uiCurrentTime;
     m_uiWritedLogCounter = 0;
-    LOG4CPLUS_INFO_FMT(m_oLogger,"OpenLog ok,logFile(%s,%d,%u)",m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD(),m_uiCreateLogLastTime);
+    LOG4CPLUS_INFO_FMT(m_oLogger,"OpenLog ok,logFile(%s,%d,%u)",m_logFile.m_strLogFileFullName.c_str(),m_logFile.GetFileFD(),m_uiCreateLogLastTime);
     return (true);
 }
 
 void FileMgr::CloseLog()
 {
-    LOG4CPLUS_INFO_FMT(m_oLogger,"%s() need to CloseLog m_logDataName(%s) file no(%d)",
-                        __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
+    LOG4CPLUS_INFO_FMT(m_oLogger,"%s() need to CloseLog m_strLogFileFullName(%s) file no(%d)",
+                        __FUNCTION__,m_logFile.m_strLogFileFullName.c_str(),m_logFile.GetFileFD());
     if (!m_logFile.IsOpened())
     {
-        LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog file not open m_logDataName(%s) file no(%d)",
-                        __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
+        LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog file not open m_strLogFileFullName(%s) file no(%d)",
+                        __FUNCTION__,m_logFile.m_strLogFileFullName.c_str(),m_logFile.GetFileFD());
         return;
     }
     //如果有数据存储尚未完成是要进行额外的处理，不能直接关闭文件
@@ -69,8 +69,8 @@ void FileMgr::CloseLog()
     {
     	RoutineWrite();
     }
-    LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog ok m_logDataName(%s) file no(%d)",
-                    __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
+    LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog ok m_strLogFileFullName(%s) file no(%d)",
+                    __FUNCTION__,m_logFile.m_strLogFileFullName.c_str(),m_logFile.GetFileFD());
     m_logFile.close();
 }
 
@@ -82,7 +82,7 @@ bool FileMgr::CheckSync()
         if(-1 == m_logFile.SyncDataLog())
         {
             LOG4CPLUS_FATAL_FMT(m_oLogger,"SyncDataLog failed errno(%d),strerror(%s) GetFileFD(%u) logDataName(%s)",
-                            errno, strerror(errno),m_logFile.GetFileFD(),m_logFile.m_logDataName.c_str());
+                            errno, strerror(errno),m_logFile.GetFileFD(),m_logFile.m_strLogFileFullName.c_str());
             return false;
         }
         m_boNeedSync = false;
@@ -106,7 +106,7 @@ bool FileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部�
     else if (!m_logFile.IsOpened() || !m_logFile.ArchiveExist())
     {
         LOG4CPLUS_INFO_FMT(m_oLogger,"%s() m_logFile(%s) not existd or not open(%d),need to open new file",
-                    __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
+                    __FUNCTION__,m_logFile.m_strLogFileFullName.c_str(),m_logFile.GetFileFD());
         if(!OpenLog())
         {
             LOG4CPLUS_FATAL_FMT(m_oLogger,"OpenLog failed");
@@ -114,7 +114,7 @@ bool FileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部�
         }
     }
     LogMsgVec& logMsgVec = m_logMsgVec;    //写日志队列
-    LOG4CPLUS_INFO_FMT(m_oLogger, "RoutineWrite time(%d) logfilename(%s) logMsgVec size(%u)",m_uiCurrentTime,m_logFile.m_logDataName.c_str(),m_logMsgVec.size());
+    LOG4CPLUS_INFO_FMT(m_oLogger, "RoutineWrite time(%d) logfilename(%s) logMsgVec size(%u)",m_uiCurrentTime,m_logFile.m_strLogFileFullName.c_str(),m_logMsgVec.size());
     if (logMsgVec.size() > 0)
     {
         uint32 counter(0);

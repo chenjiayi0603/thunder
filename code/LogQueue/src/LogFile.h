@@ -20,7 +20,7 @@ class LogFile
 public:
     LogFile();
     LogFile(const LogFile& logFile);
-    LogFile &operator =( const LogFile &logFile );
+    LogFile &operator =(const LogFile &logFile);
     ~LogFile();
     bool IsOpened()const{return (m_dataFd > 0);}
     int GetFileSize()const;
@@ -29,14 +29,14 @@ public:
     void close();//关闭文件库
     bool create(const char* sLogName);//创建文件库
 
-    bool ArchiveExist()const{return util::IsArchive(m_logDataName.c_str());}
+    bool ArchiveExist()const{return util::IsArchive(m_strLogFileFullName.c_str());}
     void SetLogger(const log4cplus::Logger &logger){m_oLogger = logger;}//设置日志
     bool WriteLog(const char* lpDataBuffer,int nLogSize);//写一个日志记录到日志文件
     bool AppendDataFile(const char* lpBuffer, uint64 dwSize);
     int SyncDataLog(){return ::fsync(m_dataFd);}
     int GetFileFD()const {return m_dataFd;}
-    std::string             m_logName;//日志文件（不带后缀名,含路径）
-    std::string             m_logDataName;//日志数据文件(含后缀名,含路径)
+    std::string             m_strLogFileName;//日志文件（不带后缀名,含路径）
+    std::string             m_strLogFileFullName;//日志数据文件(含后缀名,含路径)
     int                     m_dataFd;
     log4cplus::Logger       m_oLogger;
 private:

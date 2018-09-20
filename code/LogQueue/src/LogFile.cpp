@@ -27,15 +27,15 @@ LogFile::LogFile(): m_dataFd(-1)
 
 LogFile::LogFile(const LogFile& logFile)
 {
-	m_logName = logFile.m_logName;
-	m_logDataName = logFile.m_logDataName;
+	m_strLogFileName = logFile.m_strLogFileName;
+	m_strLogFileFullName = logFile.m_strLogFileFullName;
 	m_dataFd = logFile.m_dataFd;
 	m_oLogger = logFile.m_oLogger;
 }
 LogFile& LogFile::operator =( const LogFile &logFile )
 {
-	m_logName = logFile.m_logName;
-	m_logDataName = logFile.m_logDataName;
+	m_strLogFileName = logFile.m_strLogFileName;
+	m_strLogFileFullName = logFile.m_strLogFileFullName;
 	m_dataFd = logFile.m_dataFd;
 	m_oLogger = logFile.m_oLogger;
 	return *this;
@@ -55,9 +55,8 @@ int LogFile::GetFileSize()const
     struct stat fileStat;
     if (-1 == ::fstat(m_dataFd, &fileStat))
     {
-        LOG4CPLUS_WARN_FMT(m_oLogger,
-                        "Can not query data file size,file no(%d) errno(%d),strerror(%s) m_logDataName(%s)",
-                        m_dataFd,errno, strerror(errno),m_logDataName.c_str());
+        LOG4CPLUS_WARN_FMT(m_oLogger,"Can not query data file size,file no(%d) errno(%d),strerror(%s) m_strLogFileFullName(%s)",
+                        m_dataFd,errno, strerror(errno),m_strLogFileFullName.c_str());
         return -1;
     }
     return fileStat.st_size;//在文件末尾处写
@@ -73,36 +72,32 @@ bool LogFile::ClearFile()
         return false;
     }
     close();
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "clear db file(%s) ok",
-                    m_logDataName.c_str());
+    LOG4CPLUS_DEBUG_FMT(m_oLogger, "clear db file(%s) ok",m_strLogFileFullName.c_str());
     return true;
 }
 
 bool LogFile::open(const char* sLogName)
 {
-    if (IsOpened() && m_logName == sLogName)
+    if (IsOpened() && m_strLogFileName == sLogName)
     {
-        LOG4CPLUS_INFO_FMT(m_oLogger, "Already opened:\"%s\"",
-                                m_logDataName.c_str());
+        LOG4CPLUS_INFO_FMT(m_oLogger, "Already opened:\"%s\"",m_strLogFileFullName.c_str());
         return true;
     }
     //关闭之前打开文件
     close();
-    m_logName = sLogName;
+    m_strLogFileName = sLogName;
     LogOpenHelper openHelper;
     //以读写方式打开数据文件
-    m_logDataName = m_logName + DataFileExt;
-    openHelper.m_dataFd = ::open(m_logDataName.c_str(), O_RDWR, 0);
+    m_strLogFileFullName = m_strLogFileName + DataFileExt;
+    openHelper.m_dataFd = ::open(m_strLogFileFullName.c_str(), O_RDWR, 0);
     if (-1 == openHelper.m_dataFd)
     {
-        LOG4CPLUS_TRACE_FMT(m_oLogger, "Can not open DataFile \"%s\"",
-                        m_logDataName.c_str());
+        LOG4CPLUS_TRACE_FMT(m_oLogger, "Can not open DataFile \"%s\"",m_strLogFileFullName.c_str());
         return false;
     }
     //将文件句柄以及文件头保存到类中
     m_dataFd = openHelper.m_dataFd;
-    LOG4CPLUS_TRACE_FMT(m_oLogger, "succ to open DataFile \"%s\"",
-                            m_logDataName.c_str());
+    LOG4CPLUS_TRACE_FMT(m_oLogger, "succ to open DataFile \"%s\"",m_strLogFileFullName.c_str());
     return true;
 }
 
@@ -119,17 +114,17 @@ void LogFile::close()
 bool LogFile::create(const char* pLogName)
 {
     LogOpenHelper helper;
-    m_logName = pLogName;
-    m_logDataName = m_logName + DataFileExt;
+    m_strLogFileName = pLogName;
+    m_strLogFileFullName = m_strLogFileName + DataFileExt;
     //数据文件已经存在则不能再创建
-    if (util::IsArchive(m_logDataName.c_str()))
+    if (util::IsArchive(m_strLogFileFullName.c_str()))
     {
         LOG4CPLUS_WARN_FMT(m_oLogger,
                         "data file \"%s\" already exists",
-                        m_logDataName.c_str());
-        if (0 != util::RemoveFile(m_logDataName.c_str()))
+                        m_strLogFileFullName.c_str());
+        if (0 != util::RemoveFile(m_strLogFileFullName.c_str()))
         {
-            LOG4CPLUS_ERROR_FMT(m_oLogger,"data file \"%s\" already exists,failed to RemoveFile",m_logDataName.c_str());
+            LOG4CPLUS_ERROR_FMT(m_oLogger,"data file \"%s\" already exists,failed to RemoveFile",m_strLogFileFullName.c_str());
             return false;
         }
     }
@@ -143,13 +138,13 @@ bool LogFile::create(const char* pLogName)
         return false;
     }
     //创建数据文件
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "create dataFile %s", m_logDataName.c_str());
+    LOG4CPLUS_DEBUG_FMT(m_oLogger, "create dataFile %s", m_strLogFileFullName.c_str());
     //不存在则创建.参数3用于指定文件的访问权限位
     //创建的文件文件拥有者可读写权限
-    helper.m_dataFd = ::open(m_logDataName.c_str(), O_RDWR | O_CREAT |O_APPEND, S_IRUSR|S_IWUSR|S_IRGRP | S_IWGRP);
+    helper.m_dataFd = ::open(m_strLogFileFullName.c_str(), O_RDWR | O_CREAT |O_APPEND, S_IRUSR|S_IWUSR|S_IRGRP | S_IWGRP);
     if (-1 == helper.m_dataFd)
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger,"Can not create new data file \"%s\",errno(%d),strerror(%s)",m_logDataName.c_str(), errno, strerror(errno));
+        LOG4CPLUS_ERROR_FMT(m_oLogger,"Can not create new data file \"%s\",errno(%d),strerror(%s)",m_strLogFileFullName.c_str(), errno, strerror(errno));
         return false;
     }
     //关闭之前打开的文件
@@ -166,20 +161,20 @@ bool LogFile::WriteLog(const char* lpDataBuffer,int nLogSize)
     if (-1 == ::fstat(m_dataFd, &fileStat))
     {
         LOG4CPLUS_WARN_FMT(m_oLogger,
-                        "Can not query data file size,file no(%d) errno(%d),strerror(%s) m_logDataName(%s)",
-                        m_dataFd,errno, strerror(errno),m_logDataName.c_str());
+                        "Can not query data file size,file no(%d) errno(%d),strerror(%s) m_strLogFileFullName(%s)",
+                        m_dataFd,errno, strerror(errno),m_strLogFileFullName.c_str());
         return false;
     }
     uint64 nOffset = fileStat.st_size;//在文件末尾处写
     if (!WriteDataFile(nOffset, lpDataBuffer, nLogSize))
     {
         LOG4CPLUS_ERROR_FMT(m_oLogger,
-                        "failed to Write data body to data file,position(%llu),file no(%d),errno(%d),strerror(%s) m_logDataName(%s)",
-                        nOffset, m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                        "failed to Write data body to data file,position(%llu),file no(%d),errno(%d),strerror(%s) m_strLogFileFullName(%s)",
+                        nOffset, m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
         return false;
     }
-    LOG4CPLUS_TRACE_FMT(m_oLogger,"%s() write log nOffset(%d) nLogSize(%d) m_logDataName(%s)",
-                    __FUNCTION__,nOffset,nLogSize,m_logDataName.c_str());
+    LOG4CPLUS_TRACE_FMT(m_oLogger,"%s() write log nOffset(%d) nLogSize(%d) m_strLogFileFullName(%s)",
+                    __FUNCTION__,nOffset,nLogSize,m_strLogFileFullName.c_str());
     nOffset += nLogSize;
     if (nOffset)
     {
@@ -188,16 +183,16 @@ bool LogFile::WriteLog(const char* lpDataBuffer,int nLogSize)
         if (0 >= lNewSize)
         {
             LOG4CPLUS_ERROR_FMT(m_oLogger,
-                            "Can not query data file size,position(%llu),file no(%d),errno(%d),strerror(%s) m_logDataName(%s)",
-                            nOffset, m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                            "Can not query data file size,position(%llu),file no(%d),errno(%d),strerror(%s) m_strLogFileFullName(%s)",
+                            nOffset, m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
             return false;
         }
         //设置文件结束位置（linux下文件没有文件结束符）
         if (-1 == ::ftruncate(m_dataFd, nOffset))
         {
             LOG4CPLUS_WARN_FMT(m_oLogger,
-                            "Can not set end of data file,position(%llu),file no(%d),errno(%d),strerror(%s) m_logDataName(%s)",
-                            nOffset, m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                            "Can not set end of data file,position(%llu),file no(%d),errno(%d),strerror(%s) m_strLogFileFullName(%s)",
+                            nOffset, m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
             return false;
         }
     }
@@ -211,7 +206,7 @@ bool LogFile::WriteDataFile(uint64 nOffset, const char* lpBuffer, uint64 dwSize)
     {
         LOG4CPLUS_ERROR_FMT(m_oLogger,
                         "Fatal error can not set data file pointer,position(%llu),file no(%d),errno(%d),strerror(%s) logDataName(%s)",
-                        nOffset, m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                        nOffset, m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
         return false;
     }
     size_t dwBytesToWrite, dwBytesWriten;
@@ -229,7 +224,7 @@ bool LogFile::WriteDataFile(uint64 nOffset, const char* lpBuffer, uint64 dwSize)
         {
             LOG4CPLUS_ERROR_FMT(m_oLogger,
                             "Fatal error can not write data file,errno(%d),strerror(%s) logDataName(%s)",
-                            errno, strerror(errno),m_logDataName.c_str());
+                            errno, strerror(errno),m_strLogFileFullName.c_str());
             return false;
         }
         ptr += dwBytesWriten;
@@ -258,11 +253,11 @@ bool LogFile::AppendDataFile(const char* lpBuffer, uint64 dwSize)
         {
             LOG4CPLUS_ERROR_FMT(m_oLogger,
                             "Fatal error can not write data file,errno(%d),strerror(%s) logDataName(%s)",
-                            errno, strerror(errno),m_logDataName.c_str());
+                            errno, strerror(errno),m_strLogFileFullName.c_str());
             return false;
         }
         LOG4CPLUS_TRACE_FMT(m_oLogger,"%s() write log dwBytesWriten(%d) dwSize(%llu) logDataName(%s)",
-                            __FUNCTION__,dwBytesWriten,dwSize,m_logDataName.c_str());
+                            __FUNCTION__,dwBytesWriten,dwSize,m_strLogFileFullName.c_str());
         ptr += dwBytesWriten;
         dwSize -= dwBytesWriten;
     }
@@ -276,7 +271,7 @@ bool LogFile::ReadDataFile(uint64 nOffset, char* lpBuffer, uint64 dwSize) const
     {
         LOG4CPLUS_WARN_FMT(m_oLogger,
                         "ReadDataFile:Fatal error can not set data file pointer,position(%llu),file no(%d),errno(%d),strerror(%s) logDataName(%s)",
-                        nOffset, m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                        nOffset, m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
         return false;
     }
     uint32 dwBytesToRead = 0;
@@ -294,7 +289,7 @@ bool LogFile::ReadDataFile(uint64 nOffset, char* lpBuffer, uint64 dwSize) const
         {
             LOG4CPLUS_ERROR_FMT(m_oLogger,
                             "ReadDataFile:Fatal error can not read data file,file no(%d),errno(%d),strerror(%s) logDataName(%s)",
-                            m_dataFd, errno, strerror(errno),m_logDataName.c_str());
+                            m_dataFd, errno, strerror(errno),m_strLogFileFullName.c_str());
             return false;
         }
         ptr += dwBytesReaded;
