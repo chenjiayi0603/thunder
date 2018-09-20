@@ -50,12 +50,9 @@ public:
     void Init(net::Labor* pOssLabor,const log4cplus::Logger& logger,const std::string &strWorkerIdentify)
     {m_pOssLabor = pOssLabor;m_oLogger = logger;m_logFile.SetLogger(logger);SetCurrentTime();m_strWorkerIdentify = strWorkerIdentify;}
     uint32 SetCurrentTime(){m_uiCurrentTime = ::time(NULL);return m_uiCurrentTime;}
-    std::vector<util::CJsonObject> m_vecLogTables;
     std::vector<util::CJsonObject> m_vecComsumeTables;//消费文件格式
     /*日志接口*/
-    bool OpenLog(const std::string &configPath, const std::string& sLogFilePath,int logQueueNum);//打开日志文件
-    bool OpenNewLog();
-    bool TryOpenNewLog();
+    bool OpenLog();//打开日志文件
     bool AddLog(const behaviour::behaviour &logMsg);//追加日志记录到日志队列追加列表
     void CloseLog();//关闭当前打开的文件库
     bool CheckSync();//检查同步

@@ -8,14 +8,9 @@ namespace analysis
 FileMgr::FileMgr():m_dWriteLogInterval(0),m_dCreateLogInterval(0),m_uiSyncLog(1),m_uiLogQueueNum(0),m_uiLogFormat(0),m_uiCreateLogLastTime(0),m_uiWriteLogLastTime(0)
 {
     m_uiCurrentTime = 0;
-    m_uiCreateLogLastTime = 0;
-    m_uiSyncLog = 1;
-    m_uiLogFormat = 0;
     m_boNeedSync = false;
     m_uiWritedLogCounter = 0;
     m_pOssLabor = NULL;
-    m_uiLogQueueNum = 0;
-    m_uiWriteLogLastTime = 0;
 }
 
 FileMgr::~FileMgr()
@@ -23,15 +18,8 @@ FileMgr::~FileMgr()
     CloseLog();
 }
 
-bool FileMgr::OpenLog(const std::string &configPath,
-                const std::string& sLogFilePath,int logQueueNum)
+bool FileMgr::OpenLog()
 {
-    if (m_strConfigPath != configPath)
-    {
-        m_strConfigPath = configPath;
-        m_strDatalogPath = sLogFilePath;
-        m_uiLogQueueNum = logQueueNum;
-    }
     static const char szLogDataFileName[] = "Log_"; //日志文件库名
     //打开或者创建日志文件数据文件
     //如 /data/file/Log_201511241139_192.168.18.68:16004.0.dat
@@ -42,49 +30,28 @@ bool FileMgr::OpenLog(const std::string &configPath,
                     szLogDataFileName, sTimeStamp,m_strWorkerIdentify.c_str());//dir/prefile_time_ident.dat
     if (m_logFile.IsOpened() && m_logFile.m_logName == sLogName)
     {
-        LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() file already opened m_logName(%s)",
-                        __FUNCTION__,m_logFile.m_logName.c_str());
+        LOG4CPLUS_TRACE_FMT(m_oLogger, "%s() file already opened m_logName(%s)",__FUNCTION__,m_logFile.m_logName.c_str());
         return (true);
     }
-    if (!m_logFile.open(sLogName))//当前时间作为新的日志文件，如果已有该文件则使用该文件
+    if (m_logFile.open(sLogName))//当前时间作为新的日志文件，如果已有该文件则使用该文件
     {
-        if (!m_logFile.create(sLogName))
-        {
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "%s() failed to open or create logFile(%s)",__FUNCTION__,sLogName);
-            return (false);
-        }
-        else
-        {
-            LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to create logDataName(%s)",
-                            __FUNCTION__,m_logFile.m_logDataName.c_str());
-        }
+    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to open logDataName(%s)",__FUNCTION__,m_logFile.m_logDataName.c_str());
+
+    }
+    else if (m_logFile.create(sLogName))
+    {
+    	LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to create logDataName(%s)",__FUNCTION__,m_logFile.m_logDataName.c_str());
     }
     else
     {
-        LOG4CPLUS_INFO_FMT(m_oLogger, "%s() succ to open logDataName(%s)",
-                                    __FUNCTION__,m_logFile.m_logDataName.c_str());
+    	LOG4CPLUS_ERROR_FMT(m_oLogger, "%s() failed to open and create sLogName(%s)",__FUNCTION__,sLogName);
+		return (false);
     }
     SetCurrentTime();
     m_uiCreateLogLastTime = m_uiCurrentTime;
-    LOG4CPLUS_INFO_FMT(m_oLogger,
-                    "OpenLog ok,configPath(%s),sLogFilePath(%s),currentTime(%llu),m_uiCreateLogLastTime(%u) logFile logDataName(%s) logFile FD(%d)",
-                    configPath.c_str(), sLogFilePath.c_str(),m_uiCurrentTime,m_uiCreateLogLastTime,
-                    m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
     m_uiWritedLogCounter = 0;
+    LOG4CPLUS_INFO_FMT(m_oLogger,"OpenLog ok,logFile(%s,%d,%u)",m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD(),m_uiCreateLogLastTime);
     return (true);
-}
-
-bool FileMgr::OpenNewLog()
-{
-	RoutineWrite();//在创建新日志文件前需要把之前的日志文件全部写入上一个文件
-	//创建新的日志文件（如果已经打开旧的日志文件则会关闭旧的日志文件）
-	if(!OpenLog(m_strConfigPath,m_strDatalogPath,m_uiLogQueueNum))
-	{
-		LOG4CPLUS_ERROR_FMT(m_oLogger,"failed to open new log file,datalogPath(%s)",m_strDatalogPath.c_str());
-		return false;
-	}
-	LOG4CPLUS_DEBUG_FMT(m_oLogger,"open new log file,datalogPath(%s)",m_strDatalogPath.c_str());
-	return true;
 }
 
 void FileMgr::CloseLog()
@@ -105,16 +72,6 @@ void FileMgr::CloseLog()
     LOG4CPLUS_INFO_FMT(m_oLogger,"%s() CloseLog ok m_logDataName(%s) file no(%d)",
                     __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
     m_logFile.close();
-}
-
-bool FileMgr::TryOpenNewLog()
-{
-    if(!OpenLog(m_strConfigPath,m_strDatalogPath,m_uiLogQueueNum))
-    {
-        LOG4CPLUS_ERROR_FMT(m_oLogger,"failed to open log file,m_strDatalogPath(%s)",m_strDatalogPath.c_str());
-        return false;
-    }
-    return true;
 }
 
 bool FileMgr::CheckSync()
@@ -140,9 +97,9 @@ bool FileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部�
     if (boForceNewLog)
     {
         LOG4CPLUS_INFO_FMT(m_oLogger,"%s() force to open new file",__FUNCTION__);
-        if(!TryOpenNewLog())
+        if(!OpenLog())
         {
-            LOG4CPLUS_FATAL_FMT(m_oLogger,"TryOpenNewLog failed");
+            LOG4CPLUS_FATAL_FMT(m_oLogger,"OpenLog failed");
             return false;
         }
     }
@@ -150,9 +107,9 @@ bool FileMgr::RoutineWrite(bool boForceNewLog)    //写入日志队列的全部�
     {
         LOG4CPLUS_INFO_FMT(m_oLogger,"%s() m_logFile(%s) not existd or not open(%d),need to open new file",
                     __FUNCTION__,m_logFile.m_logDataName.c_str(),m_logFile.GetFileFD());
-        if(!TryOpenNewLog())
+        if(!OpenLog())
         {
-            LOG4CPLUS_FATAL_FMT(m_oLogger,"TryOpenNewLog failed");
+            LOG4CPLUS_FATAL_FMT(m_oLogger,"OpenLog failed");
             return false;
         }
     }

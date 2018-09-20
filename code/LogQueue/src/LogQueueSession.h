@@ -40,7 +40,7 @@ class LogQueueSession: public net::Session
 public:
     LogQueueSession(double session_timeout = 1.0)
                     : net::Session(LOGQUEUE_SESSIN_ID, session_timeout,"analysis::LogQueueSession"),
-                      boInit(false),boTestWriteLogs(false),m_uiVerifyLog(0),m_uiCurrentTime(0),m_uiTestWriteTime(0)
+                      boInit(false),m_uiVerifyLog(0),m_uiCurrentTime(0),m_uiTestWriteTime(0)
     {
     }
     virtual ~LogQueueSession(){}
@@ -57,7 +57,6 @@ public:
 	std::string m_strWorkerIdentify;
 private:
     bool boInit;
-    bool boTestWriteLogs;
     uint32 m_uiVerifyLog;
     uint32 m_uiCurrentTime;
     uint32 m_uiTestWriteTime;

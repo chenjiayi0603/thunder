@@ -19,47 +19,19 @@ class LogFile
     static const char DataFileExt[]; //数据文件后缀
 public:
     LogFile();
-    LogFile(const LogFile& logFile)
-    {
-        m_logName = logFile.m_logName;
-        m_logDataName = logFile.m_logDataName;
-        m_dataFd = logFile.m_dataFd;
-        m_oLogger = logFile.m_oLogger;
-    }
-    LogFile &operator =( const LogFile &logFile )
-    {
-        m_logName = logFile.m_logName;
-        m_logDataName = logFile.m_logDataName;
-        m_dataFd = logFile.m_dataFd;
-        m_oLogger = logFile.m_oLogger;
-        return *this;
-    }
+    LogFile(const LogFile& logFile);
+    LogFile &operator =( const LogFile &logFile );
     ~LogFile();
-    bool IsOpened()const
-    {
-        return (m_dataFd > 0);
-    }
+    bool IsOpened()const{return (m_dataFd > 0);}
     int GetFileSize()const;
     bool ClearFile();
-    //打开文件库
-    bool open(const char* sLogName);
-    //关闭文件库
-    void close();
-    //创建文件库
-    bool create(const char* sLogName);
+    bool open(const char* sLogName);//打开文件库
+    void close();//关闭文件库
+    bool create(const char* sLogName);//创建文件库
 
-    bool ArchiveExist()const
-    {
-        return util::IsArchive(m_logDataName.c_str());
-    }
-
-    //设置日志
-    void SetLogger(const log4cplus::Logger &logger)
-    {
-        m_oLogger = logger;
-    }
-    //写一个日志记录到日志文件
-    bool WriteLog(const char* lpDataBuffer,int nLogSize);
+    bool ArchiveExist()const{return util::IsArchive(m_logDataName.c_str());}
+    void SetLogger(const log4cplus::Logger &logger){m_oLogger = logger;}//设置日志
+    bool WriteLog(const char* lpDataBuffer,int nLogSize);//写一个日志记录到日志文件
     bool AppendDataFile(const char* lpBuffer, uint64 dwSize);
     int SyncDataLog(){return ::fsync(m_dataFd);}
     int GetFileFD()const {return m_dataFd;}

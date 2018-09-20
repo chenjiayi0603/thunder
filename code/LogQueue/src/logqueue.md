@@ -39,3 +39,21 @@ CustomClock TestWriteLogs use time(2635.263916) ms
                文件6.68mb
 qps:54347.8
                    吞吐量：36.3 Mb/s
+
+
+
+## 每个消息异步写 （新） ##
+TestWriteLogs AppendLog uiCounter(10000) strLogInfo.size(673) sizeof(LogDataHeader):8 log_info:568 m_uiVerifyLog(0)
+ RunClock use time(9.402000) ms
+文件6.28mb
+约
+qps:1000000
+吞吐量：628 Mb/s
+
+## 每个消息异步写 + 加合法性检查（新） ##
+TestWriteLogs() TestWriteLogs AppendLog uiCounter(10000) strLogInfo.size(801) sizeof(LogDataHeader):8 log_info:696 m_uiVerifyLog(1)
+ RunClock use time(134.341003) ms
+文件7.5mb
+约
+qps:74626
+吞吐量：56 Mb/s

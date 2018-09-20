@@ -108,6 +108,8 @@ bool LogQueueSession::Init(const util::CJsonObject& conf,const util::CJsonObject
         m_FileMgr.Init(GetLabor(),GetLogger(),m_strWorkerIdentify);
     }
     boInit = true;
+    TestWriteLogs();
+    LOG4CPLUS_INFO_FMT(GetLogger(),"LogQueueSession init ok");
     return true;
 }
 
@@ -158,19 +160,32 @@ net::RunClock TestWriteLogs use time(184.009995) ms
 文件6.68mb
 qps:54347.8
 吞吐量：36.3 Mb/s
+
+新
+每个消息异步写
+TestWriteLogs AppendLog uiCounter(10000) strLogInfo.size(673) sizeof(LogDataHeader):8 log_info:568 m_uiVerifyLog(0)
+ RunClock use time(9.402000) ms
+文件6.28mb
+约
+qps:1000000
+吞吐量：628 Mb/s
+
+每个消息异步写 + 加合法性检查
+TestWriteLogs() TestWriteLogs AppendLog uiCounter(10000) strLogInfo.size(801) sizeof(LogDataHeader):8 log_info:696 m_uiVerifyLog(1)
+ RunClock use time(134.341003) ms
+文件7.5mb
+约
+qps:74626
+吞吐量：56 Mb/s
  * */
 void LogQueueSession::TestWriteLogs()
 {
-    if (boTestWriteLogs)
-    {
-        return;
-    }
-    boTestWriteLogs = true;
+	LOG4_INFO("%s",__FUNCTION__);
     if (m_uiTestWriteTime > 0)
     {
     	net::RunClock runClock;
     	runClock.StartClock("TestWriteLogs",GetLogger());
-        const std::string strLogInfo = "{\"eventName\":\"\345\220\257\345\212\250\",\"eventId\":\"1234567890\",\"pageName\":\"\347\231\273\345\275\225\351\241\265\",\"pageUrl\":\"http://192.168.18.44/index.php/API/apidoc/AppStartTrace\",\n\n    \"userName\":\"chenjiayi\",\n    \"location\":\"\346\267\261\345\234\263\",\n    \"gender\":\"\347\224\267\",\n    \"age\":25,\n    \"sourceId\":\"1234567890\",\n    \"sourcePage\":\"\344\275\240\346\210\221\351\207\221\350\236\215\351\246\226\351\241\265\",\n\n    \"deviceId\":\"00-50-56-C0-00-08\",\n    \"ip\":\"192.168.11.232\",\n    \"os\":\"iOS6\",\n    \"deviceBrand\":\"Apple\",\n    \"osVersion\":\"4.0\",\n    \"resolution\":\"640*960\",\n    \"deviceLanguage\":\"zh-CN\",\n    \"modelNumber\":\"iPhone 5s\",\n    \"networkType\":\"WIFI\",\n    \"networkProvider\":\"46000\",\n    \"sysNo\":\"NW_APP\",\n\n    \"startTime\":\"14000000\",\n    \"appVersion\":\"1.0\",\n\n    \"sendTime\":\"14000000\"\n}";
+        const std::string strLogInfo = "{\"appkey\":\"1234567890\",\"type\":\"trace\",\"device_id\":\"1234567890\",\"platform\":\"js\",\"session_id\":\"1234567890\",\"event_id\":\"1234567890\",\"eventName\":\"\345\220\257\345\212\250\",\"eventId\":\"1234567890\",\"pageName\":\"\347\231\273\345\275\225\351\241\265\",\"pageUrl\":\"http://192.168.18.44/index.php/API/apidoc/AppStartTrace\",\n\n    \"userName\":\"chenjiayi\",\n    \"location\":\"\346\267\261\345\234\263\",\n    \"gender\":\"\347\224\267\",\n    \"age\":25,\n    \"sourceId\":\"1234567890\",\n    \"sourcePage\":\"\344\275\240\346\210\221\351\207\221\350\236\215\351\246\226\351\241\265\",\n\n    \"deviceId\":\"00-50-56-C0-00-08\",\n    \"ip\":\"192.168.11.232\",\n    \"os\":\"iOS6\",\n    \"deviceBrand\":\"Apple\",\n    \"osVersion\":\"4.0\",\n    \"resolution\":\"640*960\",\n    \"deviceLanguage\":\"zh-CN\",\n    \"modelNumber\":\"iPhone 5s\",\n    \"networkType\":\"WIFI\",\n    \"networkProvider\":\"46000\",\n    \"sysNo\":\"NW_APP\",\n\n    \"startTime\":\"14000000\",\n    \"appVersion\":\"1.0\",\n\n    \"sendTime\":\"14000000\"\n}";
         util::CJsonObject objLog;
         if (!objLog.Parse(strLogInfo))
         {
@@ -180,6 +195,7 @@ void LogQueueSession::TestWriteLogs()
         LOG4_INFO("%s() TestWriteLogs AppendLog m_uiTestWriteTime(%u) strLogInfo.size(%u) sizeof(LogDataHeader):%u objLog:%s",
                                 __FUNCTION__,m_uiTestWriteTime,strLogInfo.size(),sizeof(LogDataHeader),objLog.ToString().c_str());
         behaviour::behaviour oInAsk;
+        oInAsk.set_log_cmd(1);
         oInAsk.set_type("trace");
         oInAsk.set_log_info(objLog.ToString());//不含回车
         uint32 uiCounter(0);
@@ -192,10 +208,11 @@ void LogQueueSession::TestWriteLogs()
                 break;
             }
         }
-        LOG4_INFO("%s() TestWriteLogs AppendLog uiCounter(%u) strLogInfo.size(%u) sizeof(LogDataHeader):%u log_info:%u",
-                        __FUNCTION__,uiCounter,strLogInfo.size(),sizeof(LogDataHeader),oInAsk.log_info().size());
+        LOG4_INFO("%s() TestWriteLogs AppendLog uiCounter(%u) strLogInfo.size(%u) sizeof(LogDataHeader):%u log_info:%u m_uiVerifyLog(%u)",
+                        __FUNCTION__,uiCounter,strLogInfo.size(),sizeof(LogDataHeader),oInAsk.log_info().size(),m_uiVerifyLog);
         runClock.EndClock();
     }
+    m_uiTestWriteTime = 0;
 }
 
 bool LogQueueSession::CheckOpenNewLog()
@@ -205,7 +222,7 @@ bool LogQueueSession::CheckOpenNewLog()
     {
         LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() m_dCreateLogInterval(%lf) m_uiCreateLogLastTime(%u) m_uiCurrentTime(%u)",
                 __FUNCTION__,m_FileMgr.m_dCreateLogInterval,m_FileMgr.m_uiCreateLogLastTime,m_uiCurrentTime);
-        return m_FileMgr.TryOpenNewLog();
+        return m_FileMgr.OpenLog();
     }
     return true;
 }
@@ -231,12 +248,6 @@ bool LogQueueSession::VerifyLog(behaviour::behaviour &message,int& nErrCode)
 	if (message.log_info().size() == 0)
 	{
 		LOG4CPLUS_WARN_FMT(GetLogger(), "%s() message.log_info().size() == 0",__FUNCTION__);
-		nErrCode = ERR_INVALID_PARAMS;
-		return false;
-	}
-	if (message.log_cmd() == 0)
-	{
-		LOG4CPLUS_WARN_FMT(GetLogger(), "%s() message.log_cmd() == 0,message:%s",__FUNCTION__,message.DebugString().c_str());
 		nErrCode = ERR_INVALID_PARAMS;
 		return false;
 	}
@@ -293,11 +304,13 @@ bool LogQueueSession::VerifyLog(behaviour::behaviour &message,int& nErrCode)
 				}
 			}
 		}
-		LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s() succ to validate log_info:%s",__FUNCTION__,message.log_info().c_str());
+		//LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s() succ to validate log_info:%s",__FUNCTION__,message.log_info().c_str());
 	}
-	else
+	if (message.log_cmd() == 0)
 	{
-		LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s() no need to verify log here,log_cmd:%u",__FUNCTION__,message.log_cmd());
+		LOG4CPLUS_WARN_FMT(GetLogger(), "%s() message.log_cmd() == 0,message:%s",__FUNCTION__,message.DebugString().c_str());
+		nErrCode = ERR_INVALID_PARAMS;
+		return false;
 	}
 	return true;
 }

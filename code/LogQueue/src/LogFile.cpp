@@ -21,9 +21,24 @@ public:
     }
 };
 
-LogFile::LogFile()
-                : m_dataFd(-1)
+LogFile::LogFile(): m_dataFd(-1)
 {
+}
+
+LogFile::LogFile(const LogFile& logFile)
+{
+	m_logName = logFile.m_logName;
+	m_logDataName = logFile.m_logDataName;
+	m_dataFd = logFile.m_dataFd;
+	m_oLogger = logFile.m_oLogger;
+}
+LogFile& LogFile::operator =( const LogFile &logFile )
+{
+	m_logName = logFile.m_logName;
+	m_logDataName = logFile.m_logDataName;
+	m_dataFd = logFile.m_dataFd;
+	m_oLogger = logFile.m_oLogger;
+	return *this;
 }
 
 LogFile::~LogFile()
@@ -134,9 +149,7 @@ bool LogFile::create(const char* pLogName)
     helper.m_dataFd = ::open(m_logDataName.c_str(), O_RDWR | O_CREAT |O_APPEND, S_IRUSR|S_IWUSR|S_IRGRP | S_IWGRP);
     if (-1 == helper.m_dataFd)
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger,
-                        "Can not create new data file \"%s\",errno(%d),strerror(%s)",
-                        m_logDataName.c_str(), errno, strerror(errno));
+        LOG4CPLUS_ERROR_FMT(m_oLogger,"Can not create new data file \"%s\",errno(%d),strerror(%s)",m_logDataName.c_str(), errno, strerror(errno));
         return false;
     }
     //关闭之前打开的文件

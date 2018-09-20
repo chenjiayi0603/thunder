@@ -1,0 +1,40 @@
+{
+	"log_tables_brief":"消息类型、必须字段、存盘格式（对于es格式头）",
+    "log_tables":[
+        {
+            "log_cmd":1,
+            "log_type":"trace",
+            "fields": [
+                 "appkey",
+                 "type",
+                 "device_id",
+                 "platform",
+                 "session_id",
+                 "event_id"
+            ],
+            "comsume_head":{"index":{"_index":"db_trace","_type":"tb_trace"}}
+        },
+        {
+            "log_cmd":2,
+            "log_type":"device",
+            "fields": [
+                "appkey",
+                 "type",
+                 "device_id",
+                 "platform"
+            ],
+            "comsume_head":{"index":{"_index":"db_device","_type":"tb_device"}}
+        },
+        {
+            "log_cmd":3,
+            "log_type":"user",
+            "fields": [
+                "appkey",
+                 "type",
+                 "device_id",
+                 "platform"
+            ],
+            "comsume_head":{"index":{"_index":"db_user","_type":"tb_user"}}
+        }
+    ] 
+}
