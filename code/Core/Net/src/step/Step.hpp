@@ -92,66 +92,6 @@ public:
      * @param data 数据
      */
     virtual void SetData(void* data){};
-
-    /**
-	 * @brief 设置公共日志格式数据
-	 * @return
-	 */
-	void SetPublicLog(const net::uint32 &uiCmd,const net::uint32 &uiImid,const net::uint32 &uiGroupId)
-	{
-		m_uiCmd = uiCmd;
-		m_uiImid = uiImid;
-		m_uiGroupId = uiGroupId;
-		m_strPublicLog = "";
-	}
-
-	/**
-	 * @brief 设置公共日志数据
-	 * @return
-	 */
-	void SetPublicLog(const std::string &strLog)
-	{
-		m_strPublicLog = strLog;
-	}
-
-	 /**
-	 * @brief 获取公共日志数据
-	 * @return
-	 */
-	const std::string GetPublicLog()
-	{
-		if (m_strPublicLog.length()>0)
-		{
-			return m_strPublicLog;
-		}
-		char strPublicLog[200] = {0};
-		char szID[50] = {0};
-		if (m_uiCmd>0)
-		{
-			snprintf(szID,sizeof(szID),"cmd:%u ",m_uiCmd);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		if (m_uiImid>0)
-		{
-			memset(szID,0,sizeof(szID));
-			snprintf(szID,sizeof(szID),"imid:%u ",m_uiImid);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		if (m_uiGroupId>0)
-		{
-			memset(szID,0,sizeof(szID));
-			snprintf(szID,sizeof(szID),"group_id:%u ",m_uiGroupId);
-			strncat(strPublicLog,szID,sizeof(strPublicLog));
-		}
-
-		m_strPublicLog = std::string(strPublicLog);
-		return m_strPublicLog;
-	}
-	net::uint32 m_uiImid;
-	net::uint32 m_uiGroupId;
-	std::string m_strPublicLog;//统一输出日志数据
 public:
     /**
      * @brief 设置步骤最近刷新时间
