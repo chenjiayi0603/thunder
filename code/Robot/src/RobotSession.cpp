@@ -11,7 +11,7 @@
 namespace robot
 {
 
-bool RobotSession::Init(const loss::CJsonObject& conf)
+bool RobotSession::Init(const lnet::CJsonObject& conf)
 {
     if(boInit)
     {
@@ -214,7 +214,7 @@ bool RobotSession::LoadAiEngine()
     StepLoadAiEngineQuestions* pStepLoadAiEngineQuestions = new StepLoadAiEngineQuestions(boForceLoadWords);
     if (pStepLoadAiEngineQuestions == NULL)
     {
-        LOG4CPLUS_ERROR_FMT(GetLogger(), "error %d: new StepLoadAiEngineQuestions() error!", oss::ERR_NEW);
+        LOG4CPLUS_ERROR_FMT(GetLogger(), "error %d: new StepLoadAiEngineQuestions() error!", net::ERR_NEW);
         return false;
     }
     if (!RegisterCallback(pStepLoadAiEngineQuestions))
@@ -224,7 +224,7 @@ bool RobotSession::LoadAiEngine()
         LOG4CPLUS_ERROR_FMT(GetLogger(), "failed to RegisterCallback(pStepLoadAiEngineQuestions)");
         return false;
     }
-    if (oss::STATUS_CMD_RUNNING != pStepLoadAiEngineQuestions->Emit(ERR_OK))
+    if (net::STATUS_CMD_RUNNING != pStepLoadAiEngineQuestions->Emit(ERR_OK))
     {
         LOG4CPLUS_ERROR_FMT(GetLogger(), "failed to pStepLoadAiEngineQuestions Emit");
         DeleteCallback(pStepLoadAiEngineQuestions);
@@ -269,7 +269,7 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
         for (int i=0; i<res->num_matches; i++ )//结果数
         {
             //sphinx_result -> CJsonObject
-            loss::CJsonObject jObjJson;
+            lnet::CJsonObject jObjJson;
             jObjJson.Add("id",sphinx_get_id ( res, i ));
             jObjJson.Add("weight",sphinx_get_weight ( res, i));
             LOG4_TRACE("res(id:%s) num_attrs:%d",jObjJson("id").c_str(),res->num_attrs);
@@ -336,7 +336,7 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
 //    char szSql[128];
 //    snprintf(szSql, sizeof(szSql) - 1, "select * from tb_answer where id = %d", answer_id);
 //    LOG4_TRACE(szSql);
-//    loss::T_vecResultSet vecRes;
+//    lnet::T_vecResultSet vecRes;
 //    if (0 != m_pMysqlDbi->ExecSql(szSql, vecRes))
 //    {
 //        LOG4_ERROR("loadNodeTypes error,%d:%s",
@@ -353,11 +353,11 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
 //    }
 //    int nResLen(0);
 //    char tempRes[1024];
-//    for (loss::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();it = vecRes.end())//只需要一个结果
+//    for (lnet::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();it = vecRes.end())//只需要一个结果
 //    {
-//        loss::T_mapRow& valmap = *it;
+//        lnet::T_mapRow& valmap = *it;
 //        //req
-//        loss::T_mapRow::iterator mapit = valmap.find("req");
+//        lnet::T_mapRow::iterator mapit = valmap.find("req");
 //        if (valmap.end() == mapit)
 //        {
 //            LOG4_ERROR("failed to get segment \"req\"");
@@ -492,7 +492,7 @@ void RobotSession::RemoveFlag(std::string &str, char flag)const
     str.erase(it, str.end());
 }
 
-RobotSession* GetRobotSession(oss::OssLabor* pLabor,const std::string &configPath)
+RobotSession* GetRobotSession(net::OssLabor* pLabor,const std::string &configPath)
 {
     RobotSession* pSess = (RobotSession*) pLabor->GetSession(ROBOT_SESSIN_ID,"robot::RobotSession");
     if (pSess)
@@ -503,10 +503,10 @@ RobotSession* GetRobotSession(oss::OssLabor* pLabor,const std::string &configPat
     if (pSess == NULL)
     {
         LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(), "error %d: new RobotSession() error!",
-                        oss::ERR_NEW);
+                        net::ERR_NEW);
         return (NULL);
     }
-    loss::CJsonObject   oCurrentConf;       ///< 当前加载的配置
+    lnet::CJsonObject   oCurrentConf;       ///< 当前加载的配置
     {
         //配置文件路径查找
         std::string strConfFile = configPath + std::string("/RobotCmd.json");

@@ -20,13 +20,13 @@ inline int robot_err_code(int code)
 {
     switch (code)
     {
-        case oss::ERR_OK:                               return ERR_OK;
-        case oss::ERR_PARASE_PROTOBUF:                  return ERR_PARASE_PROTOBUF;
-        case oss::ERR_UNKNOWN_CMD:                      return ERR_UNKNOWN_CMD;
-        case oss::ERR_SERVERINFO:                       return ERR_SERVERINFO;
-        case oss::ERR_BODY_JSON:                        return ERR_BODY_JSON;
-        case oss::ERR_SERVERINFO_RECORD:                return ERR_SERVERINFO_RECORD;
-        case oss::ERR_TIMEOUT:                          return ERR_TIMEOUT;
+        case net::ERR_OK:                               return ERR_OK;
+        case net::ERR_PARASE_PROTOBUF:                  return ERR_PARASE_PROTOBUF;
+        case net::ERR_UNKNOWN_CMD:                      return ERR_UNKNOWN_CMD;
+        case net::ERR_SERVERINFO:                       return ERR_SERVERINFO;
+        case net::ERR_BODY_JSON:                        return ERR_BODY_JSON;
+        case net::ERR_SERVERINFO_RECORD:                return ERR_SERVERINFO_RECORD;
+        case net::ERR_TIMEOUT:                          return ERR_TIMEOUT;
     }
     if (code < 10000)
     {

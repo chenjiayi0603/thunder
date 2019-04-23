@@ -28,10 +28,10 @@
 
 namespace robot
 {
-typedef oss::uint8 uint8;
-typedef oss::uint16 uint16;
-typedef oss::uint32 uint32;
-typedef oss::uint64 uint64;
+typedef net::uint8 uint8;
+typedef net::uint16 uint16;
+typedef net::uint32 uint32;
+typedef net::uint64 uint64;
 
 #define SAFE_DELETE(x) { if (x) delete x; x = NULL; }
 #define SAFE_ARRAY_DELETE(x) { if (x) delete [] x; x = NULL; }
@@ -104,7 +104,7 @@ struct ai_engine_question
     }
     void CalLevenshtein()
     {
-        nLevenshtein = loss::Levenshtein(question,strReqQuestion);
+        nLevenshtein = lnet::Levenshtein(question,strReqQuestion);
     }
     uint32 GetLevenshtein()const
     {

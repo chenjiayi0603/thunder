@@ -26,11 +26,11 @@
 namespace robot
 {
 
-class RobotSession: public oss::Session
+class RobotSession: public net::Session
 {
 public:
     RobotSession(double session_timeout = 5.0)
-                    : oss::Session(ROBOT_SESSIN_ID, session_timeout,"robot::RobotSession"),
+                    : net::Session(ROBOT_SESSIN_ID, session_timeout,"robot::RobotSession"),
                       boInit(false),boTest(false),boLoadAiEngineQuestions(false),m_LastBuildAiEngineQuestionsIndexTime(0),
                       m_LastLoadAiEngineQuestionsTime(0),m_currenttime(0),m_nSphinxPort(0),m_nSphinxAnswerMatchMode(0),
                       m_nSphinxAnswerRankMode(0),m_Client(NULL),m_uiBuildQuestionIndexInterval(0),m_uiLoadBulkQuestionInterval(0)
@@ -39,13 +39,13 @@ public:
     virtual ~RobotSession()
     {
     }
-    bool Init(const loss::CJsonObject& conf);
-    oss::E_CMD_STATUS Timeout()
+    bool Init(const lnet::CJsonObject& conf);
+    net::E_CMD_STATUS Timeout()
     {
         setCurrentTime();
         LoadAiEngine();
         BuildAiQuestionIndex();
-        return oss::STATUS_CMD_RUNNING;
+        return net::STATUS_CMD_RUNNING;
     }
     void SetConfigPath(const std::string &configpath)
     {
@@ -121,7 +121,7 @@ private:
     uint32 m_uiLoadBulkQuestionInterval;//全量获取所有问题时间间隔
 };
 
-RobotSession* GetRobotSession(oss::OssLabor* pLabor,const std::string &configPath);
+RobotSession* GetRobotSession(net::OssLabor* pLabor,const std::string &configPath);
 
 }
 ;

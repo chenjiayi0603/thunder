@@ -16,7 +16,7 @@ namespace robot
 {
 
 StepQueryRobotAnswer::StepQueryRobotAnswer(
-                const oss::tagMsgShell& stMsgShell,
+                const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead,
                 const robot_session::robot_single_msg_req &oRobotSingleMsg,
                 const user_basic &basicInfo,
@@ -34,7 +34,7 @@ StepQueryRobotAnswer::~StepQueryRobotAnswer()
 }
 
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestionFromRedis()
+net::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestionFromRedis()
 {
     /*
                            机器人前置问题列表。
@@ -48,31 +48,31 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestionFromRedis()
     char szRedisKey[32];//前置问题列表
     snprintf(szRedisKey,sizeof(szRedisKey),"%u:%u:%u",REDIS_T_HASH, IM_DATA_AI_PRE_QUESTION_LIST,
                     m_obasicInfo.appid());
-    oss::RedisOperator oRedisOper(
+    net::RedisOperator oRedisOper(
                     0,
                     szRedisKey,
                     "",
                     "HGET");
-    oss::uint64 question_id = loss::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
+    net::uint64 question_id = lnet::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
     oRedisOper.AddRedisField("",question_id);//0
 
     MsgHead oMsgHead;
     MsgBody oMsgBody;
     oMsgBody.set_body(oRedisOper.MakeMemOperate()->SerializeAsString());
-    oMsgHead.set_cmd(oss::CMD_REQ_STORATE);
+    oMsgHead.set_cmd(net::CMD_REQ_STORATE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
     if (!SendToNext("PROXY", oMsgHead, oMsgBody))
     {
         LOG4_ERROR("%s() send to dataproxy error!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     LOG4_TRACE("%s() oRedisOper(%s)",__FUNCTION__,oRedisOper.MakeMemOperate()->DebugString().c_str());
     m_stage = eStepQueryRobotAnswer_Inquery_Pre_question;
-    return oss::STATUS_CMD_RUNNING;
+    return net::STATUS_CMD_RUNNING;
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestion()
+net::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestion()
 {
     /*
                            机器人前置问题列表。
@@ -86,14 +86,14 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestion()
     char szRedisKey[32];//前置问题列表
     snprintf(szRedisKey,sizeof(szRedisKey),"%u:%u:%u",REDIS_T_HASH, IM_DATA_AI_PRE_QUESTION_LIST,
                     m_obasicInfo.appid());
-    oss::MemOperator oMemOper(
+    net::MemOperator oMemOper(
                     0,
                     "tb_ai_pre_question",
                     DataMem::MemOperate::DbOperate::SELECT,
                     szRedisKey,
                     "HMSET",
                     "HMGET");
-    oss::uint64 question_id = loss::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
+    net::uint64 question_id = lnet::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
     oMemOper.AddRedisField("",question_id);//0
     oMemOper.AddDbField("question_id");//0
     oMemOper.AddDbField("appid");//1
@@ -114,21 +114,21 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestion()
     MsgHead oMsgHead;
     MsgBody oMsgBody;
     oMsgBody.set_body(oMemOper.MakeMemOperate()->SerializeAsString());
-    oMsgHead.set_cmd(oss::CMD_REQ_STORATE);
+    oMsgHead.set_cmd(net::CMD_REQ_STORATE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
     if (!SendToNext("PROXY", oMsgHead, oMsgBody))
     {
         LOG4_ERROR("%s() send to dataproxy error!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     LOG4_TRACE("%s() oMemOper(%s)",__FUNCTION__,oMemOper.MakeMemOperate()->DebugString().c_str());
     m_stage = eStepQueryRobotAnswer_Inquery_Pre_question;
-    return oss::STATUS_CMD_RUNNING;
+    return net::STATUS_CMD_RUNNING;
 }
 
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::GetSphinxEngineAnswerId()
+net::E_CMD_STATUS StepQueryRobotAnswer::GetSphinxEngineAnswerId()
 {
     /*
     1  tb_ai_engine_question   智能引擎问题表 不分表
@@ -170,33 +170,33 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetSphinxEngineAnswerId()
         LOG4_TRACE("%s() ok to get nIndexid(%llu) strAnswer(%s) QuerySphinxAnswer",
                         __FUNCTION__,m_nIndexid,m_strAnswer.c_str());
         robot_session::robot_single_msg_ack oAck;
-        oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-        oAck.set_send_time(loss::GetCurrentTime());
+        oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+        oAck.set_send_time(lnet::GetCurrentTime());
         oAck.set_msg_type(eRobotMsgType_text);
         oAck.set_msg_template(1);
         oAck.set_msg(m_strAnswer);
         EndClock();
         Response(ERR_OK,oAck);
         m_stage = eStepQueryRobotAnswer_Sphinx_Engine_question_ok;
-        return(oss::STATUS_CMD_COMPLETED);
+        return(net::STATUS_CMD_COMPLETED);
     }
     else
     {
         LOG4_TRACE("%s() failed to get answer,QuerySphinxAnswer",__FUNCTION__);
         DefaultResponse();
         m_stage = eStepQueryRobotAnswer_Sphinx_Engine_question_ok;
-        return oss::STATUS_CMD_COMPLETED;
+        return net::STATUS_CMD_COMPLETED;
     }
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
+net::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
 {
     SessionAiEngine* pSessionAiEngine = GetSessionAiEngine(GetLabor());
     if (!pSessionAiEngine)
     {
         LOG4_WARN("%s() GetSessionAiEngine failed",__FUNCTION__);
         Response(ERR_SYSTEM_ERROR);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     std::vector<ai_engine_question> aiQuestionVec;
     if (!pSessionAiEngine->GetAiQuestionListByReqQuestion(m_strFilteredQuestion,m_obasicInfo.appid(),aiQuestionVec))
@@ -204,7 +204,7 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
         LOG4_TRACE("%s() GetBestAiQuestionByQuestion no match ai queston",__FUNCTION__);
         DefaultResponse();
         m_stage = eStepQueryRobotAnswer_Session_Ai_Engine_question_ok;
-        return oss::STATUS_CMD_COMPLETED;
+        return net::STATUS_CMD_COMPLETED;
     }
     if (aiQuestionVec.size() > 0)
     {
@@ -215,8 +215,8 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
          * */
         robot_session::robot_single_msg_ack oAck;
         //logic生成msgid
-        //oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-        oAck.set_send_time(loss::GetCurrentTime());
+        //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+        oAck.set_send_time(lnet::GetCurrentTime());
         oAck.set_msg_type(eRobotMsgType_text);
         oAck.set_msg(answer);
         oAck.set_msg_template(ePreQuestionAnswerTemplate_guide);
@@ -225,15 +225,15 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
         Response(ERR_OK,oAck);
         m_stage = eStepQueryRobotAnswer_Session_Ai_Engine_question_ok;
         MatchQuestionLog(aiQuestionVec);
-        return oss::STATUS_CMD_COMPLETED;
+        return net::STATUS_CMD_COMPLETED;
     }
     LOG4_WARN("%s() GetBestAiQuestionByQuestion no match",__FUNCTION__);
     DefaultResponse();
     m_stage = eStepQueryRobotAnswer_Session_Ai_Engine_question_ok;
-    return oss::STATUS_CMD_COMPLETED;
+    return net::STATUS_CMD_COMPLETED;
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::GetAiAnswer()
+net::E_CMD_STATUS StepQueryRobotAnswer::GetAiAnswer()
 {
     /*
                 机器人搜索引擎问题列表。
@@ -251,7 +251,7 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetAiAnswer()
     char szRedisKey[32];
     snprintf(szRedisKey,sizeof(szRedisKey),"%u:%u:%u",REDIS_T_HASH, IM_DATA_AI_ROBOT_QUESTION_LIST,
                     m_obasicInfo.appid());
-    oss::MemOperator oMemOper(
+    net::MemOperator oMemOper(
                     0,
                     "tb_ai_engine_question",
                     DataMem::MemOperate::DbOperate::SELECT,
@@ -273,10 +273,10 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetAiAnswer()
                         m_obasicInfo.appid());
         oMemOper.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,
                         "index_id",
-                        (oss::uint64)m_nIndexid);
+                        (net::uint64)m_nIndexid);
     }
     oMsgBody.set_body(oMemOper.MakeMemOperate()->SerializeAsString());
-    oMsgHead.set_cmd(oss::CMD_REQ_STORATE);
+    oMsgHead.set_cmd(net::CMD_REQ_STORATE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
     LOG4_TRACE("%s() query for ai answer,appid(%u),m_nIndexid(%llu)",__FUNCTION__,m_obasicInfo.appid(),m_nIndexid);
@@ -284,13 +284,13 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::GetAiAnswer()
     {
         LOG4_ERROR("%s() send to dataproxy error!",__FUNCTION__);
         Response(ERR_SYSTEM_ERROR);
-        return(oss::STATUS_CMD_FAULT);
+        return(net::STATUS_CMD_FAULT);
     }
     m_stage = eStepQueryRobotAnswer_Inquery_Engine_question;
-    return(oss::STATUS_CMD_RUNNING);
+    return(net::STATUS_CMD_RUNNING);
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+net::E_CMD_STATUS StepQueryRobotAnswer::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
     if(eStepQueryRobotAnswer_Start == m_stage)
     {
@@ -302,9 +302,9 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Emit(int iErrno, const std::string& strE
     }
     else if(eStepQueryRobotAnswer_Inquery_Engine_question_ok == m_stage)
     {
-        return (oss::STATUS_CMD_COMPLETED);
+        return (net::STATUS_CMD_COMPLETED);
     }
-    return(oss::STATUS_CMD_RUNNING);
+    return(net::STATUS_CMD_RUNNING);
 }
 
 void StepQueryRobotAnswer::Response(int iErrno)
@@ -332,8 +332,8 @@ void StepQueryRobotAnswer::DefaultResponse()
 {
     robot_session::robot_single_msg_ack oAck;
     //logic生成msgid
-    //oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-    oAck.set_send_time(loss::GetCurrentTime());
+    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+    oAck.set_send_time(lnet::GetCurrentTime());
     oAck.set_msg_type(eRobotMsgType_text);
     oAck.set_msg_template(1);
     oAck.set_msg(m_pRobotSession->GetDefaultAnswer());
@@ -371,16 +371,16 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
      * */
     if (question.GetLevenshtein() == 0)
     {
-        loss::CJsonObject objSubQuestions;
+        lnet::CJsonObject objSubQuestions;
         objSubQuestions.Add(question.answer);
-        loss::CJsonObject objAnswerJson;
+        lnet::CJsonObject objAnswerJson;
         objAnswerJson.Add("title",question.question);
         objAnswerJson.Add("sub_questions",objSubQuestions);
         answer = objAnswerJson.ToString();
     }
     else
     {
-        loss::CJsonObject objSubQuestions;
+        lnet::CJsonObject objSubQuestions;
         objSubQuestions.Add(question.question);
         if (aiQuestionVec.size() > 1)
         {
@@ -396,7 +396,7 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
         }
         if (objSubQuestions.GetArraySize() > 1)
         {
-            loss::CJsonObject objAnswerJson;
+            lnet::CJsonObject objAnswerJson;
             objAnswerJson.Add("title",m_pRobotSession->GetAiQuestionGuide());
             objAnswerJson.Add("sub_questions",objSubQuestions);
             answer = objAnswerJson.ToString();
@@ -405,7 +405,7 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
         {
             objSubQuestions.Clear();
             objSubQuestions.Add(question.answer);
-            loss::CJsonObject objAnswerJson;
+            lnet::CJsonObject objAnswerJson;
             objAnswerJson.Add("title",question.question);
             objAnswerJson.Add("sub_questions",objSubQuestions);
             answer = objAnswerJson.ToString();
@@ -441,24 +441,24 @@ void StepQueryRobotAnswer::MatchQuestionLog(const std::vector<ai_engine_question
      * */
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
-                    const oss::tagMsgShell& stMsgShell,
+net::E_CMD_STATUS StepQueryRobotAnswer::Callback(
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody,
                     void* data)
 {
-    if (oss::CMD_RSP_SYS_ERROR == oInMsgHead.cmd())
+    if (net::CMD_RSP_SYS_ERROR == oInMsgHead.cmd())
     {
         LOG4_ERROR("%s()system response error",__FUNCTION__);
         Response(ERR_SYSTEM_ERROR);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     DataMem::MemRsp oRsp;
     if(!oRsp.ParseFromString(oInMsgBody.body()))
     {
         LOG4_ERROR("%s()parse protobuf data fault",__FUNCTION__);
         Response(ERR_SYSTEM_ERROR);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     //读存储出错
     if(0 != oRsp.err_no())
@@ -472,7 +472,7 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
             LOG4_ERROR("%s() dataproxy error %d!",__FUNCTION__,oRsp.err_no());
         }
         Response(ERR_SYSTEM_ERROR);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     if (eStepQueryRobotAnswer_Inquery_Pre_question == m_stage)
     {
@@ -491,8 +491,8 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
                      * */
                     robot_session::robot_single_msg_ack oAck;
                     //logic生成msgid
-                    //oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-                    oAck.set_send_time(loss::GetCurrentTime());
+                    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+                    oAck.set_send_time(lnet::GetCurrentTime());
                     oAck.set_msg_type(eRobotMsgType_text);
                     oAck.set_msg(oRecord.field_info(4).col_value());
                     oAck.set_msg_template(::strtoul(oRecord.field_info(5).col_value().c_str(),NULL,10));
@@ -501,7 +501,7 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
                                     oAck.DebugString().c_str(),oRecord.DebugString().c_str());
                     InqueryPrequestionClock();
                     m_stage = eStepQueryRobotAnswer_Inquery_Pre_question_ok;
-                    return(oss::STATUS_CMD_COMPLETED);
+                    return(net::STATUS_CMD_COMPLETED);
                 }
                 else
                 {
@@ -550,28 +550,28 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
                             __FUNCTION__,m_nIndexid,oRecord.field_info(6).col_value().c_str());
                     robot_session::robot_single_msg_ack oAck;
                     //logic生成msgid
-                    //oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-                    oAck.set_send_time(loss::GetCurrentTime());
+                    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+                    oAck.set_send_time(lnet::GetCurrentTime());
                     oAck.set_msg_type(eRobotMsgType_text);
                     oAck.set_msg(oRecord.field_info(6).col_value());
                     RobotAnswerEnginequestionClock();
                     EndClock();
                     Response(ERR_OK,oAck);
                     m_stage = eStepQueryRobotAnswer_Inquery_Engine_question_ok;
-                    return(oss::STATUS_CMD_COMPLETED);
+                    return(net::STATUS_CMD_COMPLETED);
                 }
                 else
                 {
                     LOG4_ERROR("%s() oRecord.field_info_size() != 9.appid(%u),m_nIndexid(%llu)!",__FUNCTION__,m_obasicInfo.appid(),m_nIndexid);
                     Response(ERR_SYSTEM_ERROR);
-                    return(oss::STATUS_CMD_FAULT);
+                    return(net::STATUS_CMD_FAULT);
                 }
             }
             else
             {
                 LOG4_ERROR("%s() failed to parse from oRecord.appid(%u),m_nIndexid(%llu)!",__FUNCTION__,m_obasicInfo.appid(),m_nIndexid);
                 Response(ERR_SYSTEM_ERROR);
-                return(oss::STATUS_CMD_FAULT);
+                return(net::STATUS_CMD_FAULT);
             }
         }
         else
@@ -580,22 +580,22 @@ oss::E_CMD_STATUS StepQueryRobotAnswer::Callback(
             RobotAnswerEnginequestionClock();
             EndClock();
             Response(ERR_SYSTEM_ERROR);
-            return(oss::STATUS_CMD_COMPLETED);
+            return(net::STATUS_CMD_COMPLETED);
         }
     }
-    return(oss::STATUS_CMD_COMPLETED);
+    return(net::STATUS_CMD_COMPLETED);
 }
 
-oss::E_CMD_STATUS StepQueryRobotAnswer::Timeout()
+net::E_CMD_STATUS StepQueryRobotAnswer::Timeout()
 {
     if (m_uiTimeOut < 3)
     {
         ++m_uiTimeOut;
-        return(oss::STATUS_CMD_RUNNING);
+        return(net::STATUS_CMD_RUNNING);
     }
     LOG4CPLUS_WARN_FMT(GetLogger(), "cmd %u, seq %lu, robot timeout!", m_oReqMsgHead.cmd(), m_oReqMsgHead.seq());
     Response(ERR_SERVER_TIMEOUT);
-    return(oss::STATUS_CMD_FAULT);
+    return(net::STATUS_CMD_FAULT);
 }
 
 

@@ -13,9 +13,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-oss::Cmd* create()
+net::Cmd* create()
 {
-    oss::Cmd* pCmd = new robot::CmdSortSessionMessagesLog();
+    net::Cmd* pCmd = new robot::CmdSortSessionMessagesLog();
     return(pCmd);
 }
 #ifdef __cplusplus
@@ -40,7 +40,7 @@ bool CmdSortSessionMessagesLog::Init()
 }
 
 bool CmdSortSessionMessagesLog::AnyMessage(
-                const oss::tagMsgShell& stMsgShell,
+                const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead,
                 const MsgBody& oInMsgBody)
 {

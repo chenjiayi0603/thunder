@@ -53,29 +53,29 @@ enum eStepQueryRobotAnswer_Stage
 };
 
 
-class StepQueryRobotAnswer: public oss::Step
+class StepQueryRobotAnswer: public net::Step
 {
 public:
     StepQueryRobotAnswer(
-                    const oss::tagMsgShell& stMsgShell,
+                    const net::tagMsgShell& stMsgShell,
                                     const MsgHead& oInMsgHead,
                                     const robot_session::robot_single_msg_req &oRobotSingleMsg,
                                     const user_basic &basicInfo,
                                     RobotSession* pRobotSession,std::string &strFilteredQuestion);
     virtual ~StepQueryRobotAnswer();
-    virtual oss::E_CMD_STATUS Emit(int iErrno=0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
-    oss::E_CMD_STATUS GetPreQuestionFromRedis();
-    oss::E_CMD_STATUS GetPreQuestion();
-    oss::E_CMD_STATUS GetSessionAiEngineQuestion();
-    oss::E_CMD_STATUS GetSphinxEngineAnswerId();
-    oss::E_CMD_STATUS GetAiAnswer();
+    virtual net::E_CMD_STATUS Emit(int iErrno=0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
+    net::E_CMD_STATUS GetPreQuestionFromRedis();
+    net::E_CMD_STATUS GetPreQuestion();
+    net::E_CMD_STATUS GetSessionAiEngineQuestion();
+    net::E_CMD_STATUS GetSphinxEngineAnswerId();
+    net::E_CMD_STATUS GetAiAnswer();
 
-    virtual oss::E_CMD_STATUS Callback(
-                    const oss::tagMsgShell& stMsgShell,
+    virtual net::E_CMD_STATUS Callback(
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody,
                     void* data = NULL);
-    virtual oss::E_CMD_STATUS Timeout();
+    virtual net::E_CMD_STATUS Timeout();
 private:
     void Response(int iErrno);
     void Response(int iErrno,robot_session::robot_single_msg_ack &oRsp);
@@ -110,7 +110,7 @@ private:
         useTime/=1000;
         LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() Step StepQueryRobotAnswer use time(%lf) ms",__FUNCTION__,useTime);
     }
-    oss::tagMsgShell m_stReqMsgShell;
+    net::tagMsgShell m_stReqMsgShell;
     MsgHead m_oReqMsgHead;
     robot_session::robot_single_msg_req m_oRobotSingleMsg;
     std::string m_strFilteredQuestion;
@@ -121,7 +121,7 @@ private:
     uint64 m_nIndexid;
     std::string m_strAnswer;
 
-    oss::uint32 m_uiTimeOut;
+    net::uint32 m_uiTimeOut;
 
     timeval m_cBeginClock;
     timeval m_cInqueryPrequestionClock;

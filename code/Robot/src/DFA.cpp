@@ -48,7 +48,7 @@ bool DFA::CreateKeysTree(const std::set<std::string> &keywordSet)
     return true;
 }
 
-oss::uint16 DFA::Filter(const std::string& tofilter,std::string& filtered,bool boSameWord)
+net::uint16 DFA::Filter(const std::string& tofilter,std::string& filtered,bool boSameWord)
 {
     filtered = tofilter;
     if(tofilter.empty())

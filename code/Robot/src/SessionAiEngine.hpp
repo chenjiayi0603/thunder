@@ -21,15 +21,15 @@ namespace robot
 
 #define SESSION_AI_ENGINE_TIMER     (5)
 //ulSessionId为appid
-class SessionAiEngine: public oss::Timer
+class SessionAiEngine: public net::Timer
 {
 public:
     SessionAiEngine(uint32 ulAppid,ev_tstamp dSessionTimeout = SESSION_AI_ENGINE_TIMER);
     virtual ~SessionAiEngine();
-    virtual oss::E_CMD_STATUS Timeout()
+    virtual net::E_CMD_STATUS Timeout()
     {
         CheckRoutine();
-        return(oss::STATUS_CMD_RUNNING);
+        return(net::STATUS_CMD_RUNNING);
     }
     /*
      * 初始化引擎单词库
@@ -111,7 +111,7 @@ public:
         m_AiEngineWordsSet.insert(oWord.word);
         if (oWord.dir.size() > 0)
         {
-            m_AiEngineWordsTypeMap.insert(std::make_pair(loss::HashStrToUint64(oWord.word.c_str(),oWord.word.size()),oWord.dir));
+            m_AiEngineWordsTypeMap.insert(std::make_pair(lnet::HashStrToUint64(oWord.word.c_str(),oWord.word.size()),oWord.dir));
         }
 //        LOG4CPLUS_TRACE_FMT(GetLogger(),"AddAiEngineKey ok,"
 //                        "m_AiEngineKeysSet size(%u),word(%s)",m_AiEngineWordsSet.size(),
@@ -123,7 +123,7 @@ public:
         m_AiEngineWordsSet.erase(oWord.word);
         if (oWord.dir.size() > 0)
         {
-            m_AiEngineWordsTypeMap.erase(loss::HashStrToUint64(oWord.word.c_str(),oWord.word.size()));
+            m_AiEngineWordsTypeMap.erase(lnet::HashStrToUint64(oWord.word.c_str(),oWord.word.size()));
         }
 //        LOG4CPLUS_TRACE_FMT(GetLogger(),"DelAiEngineTipsKey ok"
 //                        "m_AiEngineKeysTipsFraudSet size(%u),word(%s)",
@@ -321,7 +321,7 @@ private:
     bool boBuildAiEngineQuestions;
     bool boTest;
     log4cplus::Logger m_Logger;
-    oss::uint64 m_CheckRoutineTime;
+    net::uint64 m_CheckRoutineTime;
     SessionAiEngineQuestionsStatus m_status;
     //忽略字符
     std::vector<unsigned char> m_ignoreCharsVec;
@@ -400,7 +400,7 @@ private:
     WordTypeCounterMap m_wordTypeCounterMap;//wordType -> counter
 };
 
-SessionAiEngine* GetSessionAiEngine(oss::OssLabor* pLabor);
+SessionAiEngine* GetSessionAiEngine(net::OssLabor* pLabor);
 
 
 //搜索引擎在词库 354507个， ai问题 43个 时，占用实际内存为3.6g

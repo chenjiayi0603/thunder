@@ -20,7 +20,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-oss::Cmd* create();
+net::Cmd* create();
 #ifdef __cplusplus
 }
 #endif
@@ -28,14 +28,14 @@ oss::Cmd* create();
 namespace robot
 {
 
-class CmdSortSessionMessagesLog: public oss::Cmd
+class CmdSortSessionMessagesLog: public net::Cmd
 {
 public:
     CmdSortSessionMessagesLog();
     virtual ~CmdSortSessionMessagesLog();
     bool Init();
     virtual bool AnyMessage(
-                    const oss::tagMsgShell& stMsgShell,
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody);
 protected:
@@ -44,7 +44,7 @@ protected:
 public:
     bool Response(int iErrno,
                     behaviour_common::sort_tb_session_messages_log_list_ack &oSortTbsessionMessagesLogListAck);
-    oss::tagMsgShell m_stMsgShell;
+    net::tagMsgShell m_stMsgShell;
     MsgHead m_oInMsgHead;
     std::vector<behaviour_common::tb_session_messages_log> m_messageLogs;
     SessionAiEngine* m_pSessionAiEngine;

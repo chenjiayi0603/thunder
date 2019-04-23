@@ -122,9 +122,9 @@ public:
     /**
      * @brief 登记回调步骤
      * @note  登记回调步骤。如果StepA.Callback()调用之后仍有后续步骤，则需在StepA.Callback()
-     * 中new一个 新的具体步骤oss::Step子类实例StepB，调用oss::Step基类的RegisterCallback()
+     * 中new一个 新的具体步骤net::Step子类实例StepB，调用net::Step基类的RegisterCallback()
      * 方法将该新实例登记并执行该新实例的StepB.Start()方法，若StepB.Start()执行成功则后续
-     * StepB.Callback()会被调用，若StepB.Start()执行失败，则调用oss::Step基类的
+     * StepB.Callback()会被调用，若StepB.Start()执行失败，则调用net::Step基类的
      * DeleteCallback()将刚登记的StepB删除掉并执行对应的错误处理。
      * 若RegisterCallback()登记失败（失败可能性微乎其微）则应将StepB销毁,重新new StepB实例并登记，
      * 若多次（可自定义）登记失败则应放弃登记，并将StepB销毁；若RegisterCallback()登记成功则一定不可以

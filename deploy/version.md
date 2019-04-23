@@ -44,13 +44,13 @@ gcc 4.8.2 ，glibc  GLIBCXX_3.4.19（开发环境）
 
 在session中远程过程调用：
 <pre><code>
-auto Callback = [] (const DataMem::MemRsp &oRsp,oss::Session* pSession)
+auto Callback = [] (const DataMem::MemRsp &oRsp,net::Session* pSession)
 {
     //返回的响应
 };
 char sRedisKey[64];
 //写sRedisKey 
-oss::RedisOperator oRedisOperator(0, sRedisKey,"HMSET");
+net::RedisOperator oRedisOperator(0, sRedisKey,"HMSET");
 //写oRedisOperator
 SendToProxyCallBack(oRedisOperator.MakeMemOperate(),Callback,true)；//发送
 </code></pre>
@@ -64,14 +64,14 @@ SendToProxyCallBack(oRedisOperator.MakeMemOperate(),Callback,true)；//发送
 
 异步访问mysql步骤接口如下：
 <pre><code>
-auto mysqlCallback = [](oss::StepState* state)
+auto mysqlCallback = [](net::StepState* state)
 {
 	LOG4_TRACE_S(state,"LoadConfigFilesStateSendToMysqlCallback");
 	STAGE_TEST_PARAM(LoadConfigSendToMysqlParam,state);
-	oss::MysqlStep* pMysqlState = (oss::MysqlStep*)state;
+	net::MysqlStep* pMysqlState = (net::MysqlStep*)state;
 	if (pMysqlState->m_pMysqlResSet)
 	{
-		loss::T_vecResultSet vecRes;
+		lnet::T_vecResultSet vecRes;
 		if (pMysqlState->m_pMysqlResSet->GetResultSet(vecRes) > 0)
 		{
 			pStageParam->pNodeSession->LoadConfigFiles(vecRes);
@@ -80,11 +80,11 @@ auto mysqlCallback = [](oss::StepState* state)
 	}
 	return true;
 };
-oss::MysqlStep* pstep = new oss::MysqlStep(m_dbConnInfo);
-pstep->SetTask(loss::eSqlTaskOper_select,"select * from %s", NODE_CONFIG_FILES_TABLE);//第一个任务，读取配置
+net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
+pstep->SetTask(lnet::eSqlTaskOper_select,"select * from %s", NODE_CONFIG_FILES_TABLE);//第一个任务，读取配置
 pstep->AddStateFunc(mysqlCallback);//stage 0
 pstep->SetData(new LoadConfigSendToMysqlParam(this));
-if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+if (!net::MysqlStep::Launch(GetLabor(),pstep))
 {
 	LOG4_WARN("MysqlStep::Launch failed");
 	return (false);
@@ -102,7 +102,7 @@ if (!oss::MysqlStep::Launch(GetLabor(),pstep))
 <pre><code>
 auto mysqlCallback_tb_nodetype = [](bolt::StepState* state)
 {
-	oss::MysqlStep* pMysqlState = (oss::MysqlStep*)state;
+	net::MysqlStep* pMysqlState = (net::MysqlStep*)state;
 	if (pMysqlState->m_pMysqlResSet)//第一个任务响应结果集
 	{
 		llib::T_vecResultSet vecRes;
@@ -127,11 +127,11 @@ auto mysqlCallback_tb_nodetype = [](bolt::StepState* state)
 		}
 	}
 };
-oss::MysqlStep* pstep = new oss::MysqlStep(stMsgShell,oInHttpMsg,
+net::MysqlStep* pstep = new net::MysqlStep(stMsgShell,oInHttpMsg,
 		local_mysql_ip,local_mysql_port,local_mysql_dbname,local_mysql_user,local_mysql_pwd,local_mysql_charset);
 pstep->SetTask(llib::eSqlTaskOper_select,"select * from tb_nodetype");//第一个任务，读取节点类型
 pstep->AddCoroutinueFunc(mysqlCallback_tb_nodetype);//stage 0 ,第一个协程函数
-if (!oss::MysqlStep::Launch(GetLabor(),pstep))
+if (!net::MysqlStep::Launch(GetLabor(),pstep))
 {
 	LOG4_WARN("MysqlStep::Launch failed");
 	return (false);

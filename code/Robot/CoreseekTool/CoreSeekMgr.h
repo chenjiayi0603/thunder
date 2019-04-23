@@ -43,8 +43,8 @@ public:
     CoreSeekMgr(const std::string& strConfFile);
     bool Init();
     bool loadServerConf();
-    bool SetProcessName(const loss::CJsonObject& oJsonConf);
-    bool InitLogger(const loss::CJsonObject& oJsonConf);
+    bool SetProcessName(const lnet::CJsonObject& oJsonConf);
+    bool InitLogger(const lnet::CJsonObject& oJsonConf);
     void Run();
     void SetLogger(const log4cplus::Logger& oLogger);
     const log4cplus::Logger& GetLogger();
@@ -54,8 +54,8 @@ private:
     std::string m_strConfFile;              ///< 配置文件(启动时参数传入)
     std::string m_strWorkPath;              //工作目录
     std::string m_strConfigPath;            //配置目录
-    loss::CJsonObject m_oLastConf;          ///< 上次加载的配置
-    loss::CJsonObject m_oCurrentConf;       //< 当次加载的配置
+    lnet::CJsonObject m_oLastConf;          ///< 上次加载的配置
+    lnet::CJsonObject m_oCurrentConf;       //< 当次加载的配置
     int m_iLogLevel;
     std::string m_strServerName;
     CoreSeekSession  m_CoreseekToolSession;       //会话

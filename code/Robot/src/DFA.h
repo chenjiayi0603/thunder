@@ -52,7 +52,7 @@ struct TreeNode
     }
     ~TreeNode()
     {
-        for(oss::uint16 i = 0;i < subNodes.size();++i)
+        for(net::uint16 i = 0;i < subNodes.size();++i)
         {
             delete subNodes[i];
         }
@@ -63,7 +63,7 @@ struct TreeNode
      * @param index
      * @param node
      */
-    bool setSubNode(oss::uint16 index,TreeNode* node)
+    bool setSubNode(net::uint16 index,TreeNode* node)
     {
         if(subNodes.empty())
         {
@@ -76,7 +76,7 @@ struct TreeNode
         subNodes[index] = node;
         return true;
     }
-    bool getSubNode(oss::uint16 index,TreeNode*& node)const
+    bool getSubNode(net::uint16 index,TreeNode*& node)const
     {
         if (index >= subNodes.size())
         {
@@ -146,7 +146,7 @@ public:
      * @param boSameWord 计算相同单词(true:单词计数包括相同单词，false:不同单词计数)
      * return 含关键词个数
      * */
-    oss::uint16 Filter(const std::string& tofilter,std::string& filtered,bool boSameWord=true);
+    net::uint16 Filter(const std::string& tofilter,std::string& filtered,bool boSameWord=true);
     /*
      * 判断是否是关键词
      * */

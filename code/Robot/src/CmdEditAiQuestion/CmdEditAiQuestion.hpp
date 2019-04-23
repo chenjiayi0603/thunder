@@ -20,7 +20,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-oss::Cmd* create();
+net::Cmd* create();
 #ifdef __cplusplus
 }
 #endif
@@ -35,20 +35,20 @@ enum eEditAiQuestion_Oper
     eEditAiQuestion_Del = 2,
 };
 
-class CmdEditAiQuestion: public oss::Cmd
+class CmdEditAiQuestion: public net::Cmd
 {
 public:
     CmdEditAiQuestion();
     virtual ~CmdEditAiQuestion();
     bool Init();
     virtual bool AnyMessage(
-                    const oss::tagMsgShell& stMsgShell,
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody);
 protected:
     bool parseMsg(const MsgBody& oInMsgBody,const user_basic &basicInfo);
 public:
-    oss::tagMsgShell m_stMsgShell;
+    net::tagMsgShell m_stMsgShell;
     MsgHead m_oInMsgHead;
     robot_knowledge::edit_ai_question_req m_oEditAiQuestionReq;
     SessionAiEngine* m_pSessionAiEngine;

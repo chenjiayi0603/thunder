@@ -42,7 +42,7 @@ private:
 
     bool                boInit;
     uint64              m_currenttime; //当前时间
-    loss::CJsonObject   m_oCoreSeekCmdConf; //加载配置
+    lnet::CJsonObject   m_oCoreSeekCmdConf; //加载配置
     std::string         m_readWordsFilePath;//词库目录
     int                 m_separate;//是否写入分开的文件
     int                 m_deleteOldWordsFile;//删除老词库文件

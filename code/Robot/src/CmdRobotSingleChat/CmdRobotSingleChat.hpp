@@ -22,7 +22,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-oss::Cmd* create();
+net::Cmd* create();
 #ifdef __cplusplus
 }
 #endif
@@ -30,14 +30,14 @@ oss::Cmd* create();
 namespace robot
 {
 
-class CmdRobotSingleChat: public oss::Cmd
+class CmdRobotSingleChat: public net::Cmd
 {
 public:
     CmdRobotSingleChat();
     virtual ~CmdRobotSingleChat();
     bool Init();
     virtual bool AnyMessage(
-                    const oss::tagMsgShell& stMsgShell,
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody);
 protected:
@@ -47,7 +47,7 @@ protected:
 public:
     bool m_boInit;
     RobotSession* m_pRobotSession;
-    oss::tagMsgShell m_stMsgShell;
+    net::tagMsgShell m_stMsgShell;
     MsgHead m_oInMsgHead;
     robot_session::robot_single_msg_req m_oRobotSingleMsgReq;
     StepQueryRobotAnswer *pStepQueryRobotAnswer;

@@ -16,8 +16,8 @@
 namespace robot
 {
 
-StepLoadAiEngineQuestions::StepLoadAiEngineQuestions(bool boForceLoadWords,oss::Step *pNextStep)
-                : oss::Step(pNextStep),
+StepLoadAiEngineQuestions::StepLoadAiEngineQuestions(bool boForceLoadWords,net::Step *pNextStep)
+                : net::Step(pNextStep),
                   m_boForceLoadWords(boForceLoadWords),m_timeout(0),m_status(eAiEngineWordsLoadQuestionStatus_start),m_pSessionAiEngine(NULL)
 {
 }
@@ -26,13 +26,13 @@ StepLoadAiEngineQuestions::~StepLoadAiEngineQuestions()
 {
 }
 
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+net::E_CMD_STATUS StepLoadAiEngineQuestions::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
     LOG4_TRACE("%s() m_status(%d) ",__FUNCTION__,m_status);
-    if(oss::ERR_OK != iErrno)
+    if(net::ERR_OK != iErrno)
     {
         LOG4_ERROR("%s() %s StepLoadAiEngineQuestions::Emit iErrno error(%d) ",__FUNCTION__,iErrno);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     if(eAiEngineWordsLoadQuestionStatus_start == m_status)
     {
@@ -73,14 +73,14 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Emit(int iErrno, const std::string&
         {
             NextStep();
         }
-        return oss::STATUS_CMD_COMPLETED;
+        return net::STATUS_CMD_COMPLETED;
     }
     LOG4_TRACE("%s() invalid status(%u)",__FUNCTION__,m_status);
-    return oss::STATUS_CMD_RUNNING;
+    return net::STATUS_CMD_RUNNING;
 }
 
 //加载app
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadApp()
+net::E_CMD_STATUS StepLoadAiEngineQuestions::LoadApp()
 {
     /*
          app域名表tb_app_domain
@@ -97,7 +97,7 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadApp()
         6   create_time DATETIME    创建时间，默认值为 '1970-01-01 08:00:00'
         7   update_time DATETIME    更新时间，默认值为 '1970-01-01 08:00:00'
      * */
-    oss::DbOperator oDbOper(
+    net::DbOperator oDbOper(
                     0,
                     "tb_app_domain",
                     DataMem::MemOperate::DbOperate::SELECT);
@@ -111,38 +111,38 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadApp()
     MsgHead oMsgHead;
     MsgBody oMsgBody;
     oMsgBody.set_body(oDbOper.MakeMemOperate()->SerializeAsString());
-    oMsgHead.set_cmd(oss::CMD_REQ_STORATE);
+    oMsgHead.set_cmd(net::CMD_REQ_STORATE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
     if (!SendToNext("PROXY", oMsgHead, oMsgBody))
     {
         LOG4_ERROR("%s() send to dataproxy error!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     LOG4_TRACE("%s() oDbOper(%s)",__FUNCTION__,oDbOper.MakeMemOperate()->DebugString().c_str());
     m_status = eAiEngineWordsLoadQuestionStatus_load_app;
-    return oss::STATUS_CMD_RUNNING;
+    return net::STATUS_CMD_RUNNING;
 }
 
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadWords()
+net::E_CMD_STATUS StepLoadAiEngineQuestions::LoadWords()
 {
     if (m_appidlist.size() == 0)
     {
         LOG4_ERROR("%s() m_appidlist.size() == 0!",__FUNCTION__);
-        return oss::STATUS_CMD_COMPLETED;
+        return net::STATUS_CMD_COMPLETED;
     }
     m_pSessionAiEngine = GetSessionAiEngine(GetLabor());
     if (!m_pSessionAiEngine)
     {
         LOG4CPLUS_ERROR_FMT(GetLogger(), "%s() GetSessionAiEngine failed",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     LOG4CPLUS_TRACE_FMT(GetLogger(), "%s() GetSessionAiEngine ok!",__FUNCTION__);
     {
         if (!m_pSessionAiEngine->LoadAiEngineWords(m_boForceLoadWords))
         {
             LOG4CPLUS_ERROR_FMT(GetLogger(), "%s() LoadAiEngineWords failed",__FUNCTION__);
-            return oss::STATUS_CMD_FAULT;
+            return net::STATUS_CMD_FAULT;
         }
         LOG4CPLUS_TRACE_FMT(GetLogger(), "%s() LoadAiEngineWords ok!",__FUNCTION__);
     }
@@ -151,12 +151,12 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadWords()
 }
 
 //加载引擎问题
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadAiEngineQuestion()
+net::E_CMD_STATUS StepLoadAiEngineQuestions::LoadAiEngineQuestion()
 {
     if (m_appidlist.size() == 0)
     {
         LOG4_ERROR("%s() m_appidlist.size() == 0!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     uint32 appid = m_appidlist.front();
     /*
@@ -182,7 +182,7 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadAiEngineQuestion()
     char szRedisKey[32];
     snprintf(szRedisKey,sizeof(szRedisKey),"%u:%u:%u",REDIS_T_HASH, IM_DATA_AI_ROBOT_QUESTION_LIST,
                     appid);
-    oss::MemOperator oMemOper(
+    net::MemOperator oMemOper(
                     0,
                     "tb_ai_engine_question",
                     DataMem::MemOperate::DbOperate::SELECT,
@@ -206,34 +206,34 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::LoadAiEngineQuestion()
     MsgHead oMsgHead;
     MsgBody oMsgBody;
     oMsgBody.set_body(oMemOper.MakeMemOperate()->SerializeAsString());
-    oMsgHead.set_cmd(oss::CMD_REQ_STORATE);
+    oMsgHead.set_cmd(net::CMD_REQ_STORATE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
     if (!SendToNext("PROXY", oMsgHead, oMsgBody))
     {
         LOG4_ERROR("%s() send to dataproxy error!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     LOG4_TRACE("%s() oMemOper(%s)",__FUNCTION__,oMemOper.MakeMemOperate()->DebugString().c_str());
     m_status = eAiEngineWordsLoadQuestionStatus_load_questions;
-    return oss::STATUS_CMD_RUNNING;
+    return net::STATUS_CMD_RUNNING;
 }
 
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
-                const oss::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead,
+net::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
+                const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead,
                 const MsgBody& oInMsgBody, void* data)
 {
     LOG4_TRACE("%s() StepLoadAiEngineQuestions::Callback",__FUNCTION__);
-    if (oss::CMD_RSP_SYS_ERROR == oInMsgHead.cmd())
+    if (net::CMD_RSP_SYS_ERROR == oInMsgHead.cmd())
     {
         LOG4_ERROR("%s() system response error",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     DataMem::MemRsp oMemRsp;
     if (!oMemRsp.ParseFromString(oInMsgBody.body()))
     {
         LOG4_WARN("%s() StepLoadAiEngineQuestions::Callback,oMemRsp format error!",__FUNCTION__);
-        return oss::STATUS_CMD_FAULT;
+        return net::STATUS_CMD_FAULT;
     }
     if (oMemRsp.err_no())
     {
@@ -246,7 +246,7 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
         {
             LOG4_ERROR("%s() dataproxy error %d!",__FUNCTION__,oMemRsp.err_no());
         }
-        return (oss::STATUS_CMD_FAULT);
+        return (net::STATUS_CMD_FAULT);
     }
     if(eAiEngineWordsLoadQuestionStatus_load_app == m_status)
     {//加载app
@@ -302,7 +302,7 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
         if (appid <= 0)
         {
             LOG4_WARN("%s() eAiEngineWordsLoadQuestionStatus_load_questions appid(%u)",__FUNCTION__,appid);
-            return (oss::STATUS_CMD_FAULT);
+            return (net::STATUS_CMD_FAULT);
         }
         int iRecSize = oMemRsp.record_data_size();
         LOG4_TRACE("%s() eAiEngineWordsLoadQuestionStatus_load_questions appid(%u) iRecSize(%d) oMemRsp(%s)",
@@ -336,8 +336,8 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
                             aiEngineQuestion.question_type = ::strtoul(oRecord.field_info(4).col_value().c_str(),NULL,10);//value question_type
                             aiEngineQuestion.question = oRecord.field_info(5).col_value();//value question
                             aiEngineQuestion.answer = oRecord.field_info(6).col_value();//value answer
-                            aiEngineQuestion.create_date = loss::TimeStr2time_t(oRecord.field_info(7).col_value());//value create_date
-                            aiEngineQuestion.update_date = loss::TimeStr2time_t(oRecord.field_info(8).col_value());//value update_date
+                            aiEngineQuestion.create_date = lnet::TimeStr2time_t(oRecord.field_info(7).col_value());//value create_date
+                            aiEngineQuestion.update_date = lnet::TimeStr2time_t(oRecord.field_info(8).col_value());//value update_date
                             LOG4_TRACE("%s() appid(%u) oRecord(%s)",__FUNCTION__,appid,oRecord.DebugString().c_str());
                         }
                         if (m_pSessionAiEngine)
@@ -359,7 +359,7 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
             {
                 LOG4_TRACE("%s() iRecSize(%d),oMemRsp.curcount(%d) < oMemRsp.totalcount(%d) m_status(%d)",
                                 __FUNCTION__,iRecSize,oMemRsp.curcount(),oMemRsp.totalcount(),m_status);
-                return (oss::STATUS_CMD_RUNNING);
+                return (net::STATUS_CMD_RUNNING);
             }
             else
             {
@@ -371,10 +371,10 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
         return Emit(ERR_OK);
     }
     LOG4_TRACE("%s() invalid status(%u)",__FUNCTION__,m_status);
-    return (oss::STATUS_CMD_RUNNING);
+    return (net::STATUS_CMD_RUNNING);
 }
 
-oss::E_CMD_STATUS StepLoadAiEngineQuestions::Timeout()
+net::E_CMD_STATUS StepLoadAiEngineQuestions::Timeout()
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
     if (m_timeout < 3)
@@ -382,13 +382,13 @@ oss::E_CMD_STATUS StepLoadAiEngineQuestions::Timeout()
         ++m_timeout;
         LOG4_TRACE("%s() StepLoadAiEngineQuestions::Timeout(%u)",
                         __FUNCTION__,m_timeout);
-        return (oss::STATUS_CMD_RUNNING);
+        return (net::STATUS_CMD_RUNNING);
     }
     else
     {
         LOG4_WARN("%s() StepLoadAiEngineQuestions::Timeout(%u)",
                         __FUNCTION__,m_timeout);
-        return (oss::STATUS_CMD_FAULT);
+        return (net::STATUS_CMD_FAULT);
     }
 }
 

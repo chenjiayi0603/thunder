@@ -15,9 +15,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-oss::Cmd* create()
+net::Cmd* create()
 {
-    oss::Cmd* pCmd = new robot::CmdRobotSingleChat();
+    net::Cmd* pCmd = new robot::CmdRobotSingleChat();
     return(pCmd);
 }
 #ifdef __cplusplus
@@ -55,7 +55,7 @@ bool CmdRobotSingleChat::Init()
 }
 
 bool CmdRobotSingleChat::AnyMessage(
-                const oss::tagMsgShell& stMsgShell,
+                const net::tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead,
                 const MsgBody& oInMsgBody)
 {
@@ -96,9 +96,9 @@ bool CmdRobotSingleChat::AnyMessage(
         pStepQueryRobotAnswer = new StepQueryRobotAnswer(stMsgShell, oInMsgHead, m_oRobotSingleMsgReq,basicInfo,m_pRobotSession,strFilteredQuestion);
         if (pStepQueryRobotAnswer == NULL)
         {
-            LOG4CPLUS_ERROR_FMT(GetLogger(), "error %d: new StepFromClient() error!", oss::ERR_NEW);
+            LOG4CPLUS_ERROR_FMT(GetLogger(), "error %d: new StepFromClient() error!", net::ERR_NEW);
             Response(ERR_SERVER_ERROR);
-            return oss::STATUS_CMD_FAULT;
+            return net::STATUS_CMD_FAULT;
         }
         if (!RegisterCallback(pStepQueryRobotAnswer))
         {
@@ -106,16 +106,16 @@ bool CmdRobotSingleChat::AnyMessage(
             pStepQueryRobotAnswer = NULL;
             LOG4CPLUS_ERROR_FMT(GetLogger(), "failed to RegisterCallback(pStepQueryRobotAnswer)");
             Response(ERR_SERVER_ERROR);
-            return oss::STATUS_CMD_FAULT;
+            return net::STATUS_CMD_FAULT;
         }
-        oss::E_CMD_STATUS ret = pStepQueryRobotAnswer->Emit(ERR_OK);
-        if (oss::STATUS_CMD_FAULT == ret)
+        net::E_CMD_STATUS ret = pStepQueryRobotAnswer->Emit(ERR_OK);
+        if (net::STATUS_CMD_FAULT == ret)
         {
             LOG4CPLUS_ERROR_FMT(GetLogger(), "failed to pStepQueryRobotAnswer Emit");
             DeleteCallback(pStepQueryRobotAnswer);
             return false;
         }
-        else if (oss::STATUS_CMD_COMPLETED == ret)
+        else if (net::STATUS_CMD_COMPLETED == ret)
         {
             DeleteCallback(pStepQueryRobotAnswer);
             return true;
@@ -124,8 +124,8 @@ bool CmdRobotSingleChat::AnyMessage(
     }
     LOG4_WARN("no answer for no words");
     robot_session::robot_single_msg_ack oAck;
-//    oAck.set_msg_id(loss::GetUniqueId(GetNodeId(),GetWorkerIndex()));//在Logic生成msg_id
-    oAck.set_send_time(loss::GetCurrentTime());
+//    oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));//在Logic生成msg_id
+    oAck.set_send_time(lnet::GetCurrentTime());
     oAck.set_msg_type(eRobotMsgType_text);
     oAck.set_msg(m_pRobotSession->GetDefaultAnswer());
     Response(ERR_OK,oAck);

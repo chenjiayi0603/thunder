@@ -31,24 +31,24 @@ enum AiEngineWordsLoadQuestionStatus
 };
 
 
-class StepLoadAiEngineQuestions: public oss::Step
+class StepLoadAiEngineQuestions: public net::Step
 {
 public:
-    StepLoadAiEngineQuestions(bool boForceLoadWords = false,oss::Step *pNextStep = NULL);
+    StepLoadAiEngineQuestions(bool boForceLoadWords = false,net::Step *pNextStep = NULL);
     virtual ~StepLoadAiEngineQuestions();
-    virtual oss::E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
-    virtual oss::E_CMD_STATUS Callback(
-                    const oss::tagMsgShell& stMsgShell,
+    virtual net::E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
+    virtual net::E_CMD_STATUS Callback(
+                    const net::tagMsgShell& stMsgShell,
                     const MsgHead& oInMsgHead,
                     const MsgBody& oInMsgBody,
                     void* data = NULL);
-    oss::E_CMD_STATUS LoadApp();
-    oss::E_CMD_STATUS LoadWords();
-    oss::E_CMD_STATUS LoadAiEngineQuestion();
-    virtual oss::E_CMD_STATUS Timeout();
+    net::E_CMD_STATUS LoadApp();
+    net::E_CMD_STATUS LoadWords();
+    net::E_CMD_STATUS LoadAiEngineQuestion();
+    virtual net::E_CMD_STATUS Timeout();
 private:
     bool m_boForceLoadWords;
-    oss::uint16 m_timeout;
+    net::uint16 m_timeout;
     std::list<uint32> m_appidlist;
     AiEngineWordsLoadQuestionStatus m_status;
     SessionAiEngine* m_pSessionAiEngine;
