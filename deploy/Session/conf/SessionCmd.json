@@ -1,0 +1,18 @@
+{
+    "verify_log_brief":"是否需要本节点检查日志格式",
+	"verify_log":1,
+	"unique_log":1,
+	
+	"user_session_brief":"用户会话",
+	"user_session_begin":"会话开始",
+	"user_session_timeout":60,
+	
+	"config_period":5,
+	"bulk_period":2,
+	"bulk_count":100,
+	"bulk_send_times_brief":"为0则不限制发送次数",
+	"bulk_send_times":0,
+	"send_fact_brief":"是否直接发送事实数据，是否发送logqueue",
+	"send_log_queue":1,
+	"send_fact":1
+}

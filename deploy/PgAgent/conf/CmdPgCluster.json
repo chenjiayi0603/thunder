@@ -1,0 +1,130 @@
+{
+    "data_type": ["attribute","log"],
+    "data_type_enum": {"attribute": 1,        "log": 2    },
+    "section_factor": [        "userid",        "userset",        "string"    ],
+    "section_factor_enum": {        "userid": 1,        "userset": 2,        "string": 3    },
+    "factor_section": {
+        "userid": [            10000000,            20000000        ],
+        "userset": [            1000000,            2000000        ],
+        "string": [            4294967295        ]
+    },
+    "table": {
+        "tb_test": {"data_type": 1,"section_factor": 3,"db_name": "db_test","table_num": 1},
+        "tb_sum": {"data_type": 1,"section_factor": 3,"db_name": "db_test","table_num": 1},
+        "tb_app_key": {"data_type": 1,  "section_factor": 3, "db_name": "db_analysis3_conf",  "table_num": 1 },
+        "tb_conf_event": {"data_type": 1,   "section_factor": 3,  "db_name": "db_analysis3_conf",   "table_num": 1  },
+        "tb_conf_page": {"data_type": 1, "section_factor": 3,  "db_name": "db_analysis3_conf", "table_num": 1 },
+        "tb_conf_funnel": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_conf","table_num": 1},
+        "tb_conf_session_length": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_conf","table_num": 1},
+        "tb_conf_session_event_num": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_conf","table_num": 1},
+        "tb_attribute_user": { "data_type": 1,   "section_factor": 3,  "db_name": "db_analysis3_offline", "table_num": 1 },
+        "tb_attribute_device": {  "data_type": 1,  "section_factor": 3,  "db_name": "db_analysis3_offline",  "table_num": 1 },
+        "tb_fact_trace": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_offline","table_num": 1},
+        "tb_fact_session": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_offline","table_num": 1},
+        "tb_job_record": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_offline","table_num": 1},
+        "tb_offline_user_tags": {"data_type": 1,"section_factor": 3,"db_name": "db_analysis3_offline","table_num": 1},
+        "tb_online_realtime": {"data_type": 2,"section_factor": 3,"db_name": "db_analysis3_online","table_num": 1},
+        "tb_online_page": {"data_type": 2,"section_factor": 3,"db_name": "db_analysis3_online","table_num": 1},
+        "tb_online_route": {"data_type": 2,"section_factor": 3,"db_name": "db_analysis3_online","table_num": 1},
+        "tb_online_funnel": {"data_type": 2,"section_factor": 3,"db_name": "db_analysis3_online","table_num": 1}
+    },
+    "cluster": {
+        "attribute": {
+            "userid": {
+                "LE_10000000": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                },
+                "LE_20000000": {
+                    "db_test":"analysis3_db_instance_2",
+                    "db_analysis3_conf":"analysis3_db_instance_2",
+                    "db_analysis3_offline":"analysis3_db_instance_2",
+                    "db_analysis3_online":"analysis3_db_instance_2"
+                }
+            },
+            "userset": {
+                "LE_1000000": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                },
+                "LE_2000000": {
+                    "db_test":"analysis3_db_instance_2",
+                    "db_analysis3_conf":"analysis3_db_instance_2",
+                    "db_analysis3_offline":"analysis3_db_instance_2",
+                    "db_analysis3_online":"analysis3_db_instance_2"
+                }
+            },
+            "string": {
+                "LE_4294967295": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                }
+            }
+        },
+        "log": {
+            "userid": {
+                "LE_10000000": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                },
+                "LE_20000000": {
+                    "db_test":"analysis3_db_instance_2",
+                    "db_analysis3_conf":"analysis3_db_instance_2",
+                    "db_analysis3_offline":"analysis3_db_instance_2",
+                    "db_analysis3_online":"analysis3_db_instance_2"
+                }
+            },
+            "userset": {
+                "LE_1000000": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                },
+                "LE_2000000": {
+                    "db_test":"analysis3_db_instance_2",
+                    "db_analysis3_conf":"analysis3_db_instance_2",
+                    "db_analysis3_offline":"analysis3_db_instance_2",
+                    "db_analysis3_online":"analysis3_db_instance_2"
+                }
+            },
+            "string": {
+                "LE_4294967295": {
+                    "db_test":"analysis3_db_instance_1",
+                    "db_analysis3_conf":"analysis3_db_instance_1",
+                    "db_analysis3_offline":"analysis3_db_instance_1",
+                    "db_analysis3_online":"analysis3_db_instance_1"
+                }
+            }
+        }
+    },
+    "db_group": {
+    	"instance_brief":"每个实例为一个集群， 主从集群:masterslave. 版本 为 postgres 10.5",
+        "analysis3_db_instance_1": {
+        	"use_group":"masterslave",
+        	"masterslave":{"master_host":"192.168.18.78:5432","slave_host":"192.168.18.78:5433"},
+            "user": "postgres",
+            "password": "postgres",
+            "charset": "utf8",
+            "query_permit": 8,
+            "timeout": 3
+        },
+        "analysis3_db_instance_2": {
+        	"use_group":"masterslave",
+        	"masterslave":{"master_host":"192.168.18.78:5432","slave_host":"192.168.18.78:5433"},
+            "user": "postgres",
+            "password": "postgres",
+            "charset": "utf8",
+            "query_permit": 8,
+            "timeout": 3
+        }
+    }
+}

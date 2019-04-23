@@ -1,0 +1,13 @@
+{
+	"log_tables_brief":"消息类型、格式头部",
+    "log_tables":[
+        {
+            "log_type":"trace","log_cmd":2，
+            "head":{"index":{"_index":"db_analysis3_offline","_type":"tb_fact_trace"}}
+        },
+        {
+            "log_type":"session","log_cmd":1,
+            "head":{"index":{"_index":"db_analysis3_offline","_type":"tb_fact_session"}}
+        }
+    ]
+}
