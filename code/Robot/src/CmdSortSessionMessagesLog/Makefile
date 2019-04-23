@@ -1,6 +1,6 @@
 CC = gcc
-CXX = g++
-CXXFLAG = -g -O0 -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -Wstrict-overflow
+CXX = $(shell command -v ccache >/dev/null 2>&1 && echo "ccache g++" || echo "g++")
+CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wno-unused-variable -Wno-unused-function -Wno-pmf-conversions
 
 ifeq ($(unit_test),y)
 CXXFLAG += -DUNIT_TEST
@@ -16,21 +16,21 @@ SYSTEM_LIB_PATH:=/usr/lib64
 else
 SYSTEM_LIB_PATH:=/usr/lib
 endif
-LIB3RD_PATH = ../../../l3oss
-LOSS_PATH = ../../../loss
-PROTO_PATH = ../../../proto
+3PARTY_PATH = ../../../../3party
+UTIL_PATH = ../../../Util
+PROTO_PATH = ../../../Proto
 
-STARSHIP_PATH = ../../../Starship
+NET_PATH = ../../../Net
 PLUGIN_PATH = ../..
 
 VPATH = . \
         .. \
         $(PLUGIN_PATH)/protocol \
-        $(STARSHIP_PATH)/src/cmd \
-        $(STARSHIP_PATH)/src/step \
-        $(STARSHIP_PATH)/src/session \
-        $(STARSHIP_PATH)/src/labor \
-        $(STARSHIP_PATH)/src/protocol 
+        $(NET_PATH)/src/cmd \
+        $(NET_PATH)/src/step \
+        $(NET_PATH)/src/session \
+        $(NET_PATH)/src/labor \
+        $(NET_PATH)/src/protocol 
 SUB_DIRS := $(VPATH)
 #SUB_DIRS := $(foreach dir, $(VPATH), $(shell find $(dir) -maxdepth 5 -type d))
 DIRS := $(SUB_DIRS)
@@ -38,23 +38,19 @@ DIRS := $(SUB_DIRS)
 
 INC := $(INC) \
        -I .. \
-       -I $(PROTO_PATH) \
-       -I $(PROTO_PATH)/src \
-       -I $(LIB3RD_PATH)/include \
-       -I $(LIB3RD_PATH)/include/mysql \
-       -I $(LIB3RD_PATH)/include/sphinxc \
-       -I $(LOSS_PATH)/src \
-       -I $(STARSHIP_PATH)/src 
+       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include \
+       -I $(3PARTY_PATH)/include \
+       -I $(3PARTY_PATH)/include/mariadb \
+       -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
+       -I $(NET_PATH)/src 
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(PROTO_PATH)/src -lrobot_proto \
-           -L$(LOSS_PATH)/lib -lloss \
-           -L$(LIB3RD_PATH)/lib -lhiredis \
-           -L$(LIB3RD_PATH)/lib -lprotobuf \
-           -L$(LIB3RD_PATH)/lib -llog4cplus \
-           -L$(LIB3RD_PATH)/lib -ljemalloc \
-           -L$(LIB3RD_PATH)/lib -lsphinxc \
+           -L$(UTIL_PATH)/lib -lUtil \
+           -L$(3PARTY_PATH)/lib -lhiredis_vip \
+           -L$(3PARTY_PATH)/lib -lprotobuf \
+           -L$(3PARTY_PATH)/lib -llog4cplus \
+           -L$(3PARTY_PATH)/lib -ljemalloc \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -ldl -lrt
 
@@ -63,17 +59,17 @@ CC_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.cc))
 C_SRCS = $(foreach dir, $(DIRS), $(wildcard $(dir)/*.c))
 OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cc,%.o,$(CC_SRCS))
 
-SO_PATH = . #$(STARSHIP_PATH)/plugins
+SO_PATH = . #$(NET_PATH)/plugins
 STEP_PATH = .
 COMM_PATH = .. \
-            $(STARSHIP_PATH)/plugins/protocol \
+            $(NET_PATH)/plugins/protocol \
             $(PROTO_PATH) \
-            $(STARSHIP_PATH)/src/cmd \
-            $(STARSHIP_PATH)/src/step \
-            $(STARSHIP_PATH)/src/session \
-            $(STARSHIP_PATH)/src/labor \
-            $(STARSHIP_PATH)/src/protocol 
-            #$(STARSHIP_PATH)/src
+            $(NET_PATH)/src/cmd \
+            $(NET_PATH)/src/step \
+            $(NET_PATH)/src/session \
+            $(NET_PATH)/src/labor \
+            $(NET_PATH)/src/protocol 
+            #$(NET_PATH)/src
 
 SO_PATH = . 
 SO_DEP_PATH = $(SO_PATH) $(PLUGIN_PATH)/src
@@ -98,9 +94,9 @@ all: $(TARGET)
 .SECONDARY: $(PB_OBJS) $(CMD_DEP_CPP_OBJS) $(CMD_DEP_C_OBJS)  
 
 Cmd%.so:Cmd%.o $(PB_OBJS) $(CMD_DEP_CPP_OBJS) $(CMD_DEP_C_OBJS)  
-	$(CXX) -fPIE -rdynamic -shared -g -o $@ $^ $(LDFLAGS)
+	$(CXX) -fPIC -rdynamic -shared -g -o $@ $^ $(LDFLAGS)
 Module%.so:Module%.o $(PB_OBJS) $(CMD_DEP_CPP_OBJS) $(CMD_DEP_C_OBJS)  
-	$(CXX) -fPIE -rdynamic -shared -g -o $@ $^ $(LDFLAGS)
+	$(CXX) -fPIC -rdynamic -shared -g -o $@ $^ $(LDFLAGS)
 
 %.o:%.cpp
 	$(CXX) $(INC) $(CXXFLAG) -c -o $@ $< $(LDFLAGS)

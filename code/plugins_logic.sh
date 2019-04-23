@@ -4,7 +4,7 @@
 MAKE_PATH=`pwd`
 cd ${MAKE_PATH}
 RUN_PATH=${MAKE_PATH}/../deploy
-command="all,clean,LogQueue,Collect"
+command="all,clean,Robot"
 #plugins_logic.conf 为逻辑节点插件列表,一行的格式为 HelloServer 	/HelloServer/src  /plugins/HelloServer
 
 if [ $# -lt 1 ]; then 
