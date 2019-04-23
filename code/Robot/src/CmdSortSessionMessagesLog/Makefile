@@ -1,6 +1,6 @@
 CC = gcc
 CXX = $(shell command -v ccache >/dev/null 2>&1 && echo "ccache g++" || echo "g++")
-CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wno-unused-variable -Wno-unused-function -Wno-pmf-conversions
+CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wstrict-overflow
 
 ifeq ($(unit_test),y)
 CXXFLAG += -DUNIT_TEST
@@ -16,11 +16,11 @@ SYSTEM_LIB_PATH:=/usr/lib64
 else
 SYSTEM_LIB_PATH:=/usr/lib
 endif
-3PARTY_PATH = ../../../../3party
-UTIL_PATH = ../../../Util
-PROTO_PATH = ../../../Proto
+3PARTY_PATH = ../../../Core/../3party
+UTIL_PATH = ../../../Core/Util
+NET_PATH = ../../../Core/Net
 
-NET_PATH = ../../../Net
+PROTO_PATH = ../../../Proto
 PLUGIN_PATH = ../..
 
 VPATH = . \
@@ -38,7 +38,8 @@ DIRS := $(SUB_DIRS)
 
 INC := $(INC) \
        -I .. \
-       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include \
+       -I $(PLUGIN_PATH)/src \
+       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include  \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
@@ -46,6 +47,8 @@ INC := $(INC) \
 
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
+           -L$(PROTO_PATH) -lProto \
+           -L$(PROTO_PATH)/src -lProto \
            -L$(UTIL_PATH)/lib -lUtil \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lprotobuf \
@@ -72,7 +75,8 @@ COMM_PATH = .. \
             #$(NET_PATH)/src
 
 SO_PATH = . 
-SO_DEP_PATH = $(SO_PATH) $(PLUGIN_PATH)/src
+PLUGIN_PATH_SRC := $(shell find $(PLUGIN_PATH)/src ! -name 'Cmd*'  ! -name 'Module*' -type d) 
+SO_DEP_PATH = $(SO_PATH) $(PLUGIN_PATH_SRC) 
 STEP_PATH = .
 CMD_SO_CPP_SRCS = $(foreach dir, $(SO_PATH), $(wildcard $(dir)/Cmd*.cpp))
 MODULE_SO_CPP_SRCS = $(foreach dir, $(SO_PATH), $(wildcard $(dir)/Module*.cpp))
