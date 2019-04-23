@@ -227,7 +227,7 @@ bool LbsProxySession::DeleteDocOnce(const char*db, const char*coll,
     NULL, &error))
     {
         char *condStr = bson_as_json(cond, NULL);
-        LOG4CPLUS_ERROR_FMT(GetLogger(), "Delete failed,cond:%s,error: %s\n",
+        LOG4_ERROR("Delete failed,cond:%s,error: %s\n",
                         condStr, error.message);
         bson_free(condStr);
         mongoc_collection_destroy(collection);
@@ -235,7 +235,7 @@ bool LbsProxySession::DeleteDocOnce(const char*db, const char*coll,
     }
     {
         char *condStr = bson_as_json(cond, NULL);
-        LOG4CPLUS_DEBUG_FMT(GetLogger(),"DeleteDocOnce ok,cond:%s",condStr);
+        LOG4_DEBUG("DeleteDocOnce ok,cond:%s",condStr);
         bson_free(condStr);
     }
     mongoc_collection_destroy(collection);
@@ -257,7 +257,7 @@ bool LbsProxySession::DeleteDocAll(const char*db, const char*coll,
     NULL, &error))
     {
         char *condStr = bson_as_json(cond, NULL);
-        LOG4CPLUS_ERROR_FMT(GetLogger(), "Delete failed,cond:%s,error: %s\n",
+        LOG4_ERROR("Delete failed,cond:%s,error: %s\n",
                         condStr, error.message);
         bson_free(condStr);
         mongoc_collection_destroy(collection);
@@ -330,7 +330,7 @@ bool LbsProxySession::Command(const char*db, const char*coll,
                     &error))
     {
         char *commandStr = bson_as_json(command, NULL);
-        LOG4CPLUS_ERROR_FMT(GetLogger(), "failed to run command:%s,error: %s\n",
+        LOG4_ERROR("failed to run command:%s,error: %s\n",
                         commandStr, error.message);
         bson_free(commandStr);
         mongoc_collection_destroy(collection);
@@ -344,14 +344,14 @@ int LbsProxySession::InsertDoc(const char*db, const char*tb,
                 const util::CJsonObject &insertdObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "insertdObj json(%s)",
+    LOG4_DEBUG("insertdObj json(%s)",
                     insertdObj.ToString().c_str());
     //插入的文档
     bson_t * insertddoc = GetBsonDoc(insertdObj, error);
     DebugOutPutBson(GetLogger(), insertddoc, "InsertDoc insertddoc");
     if (!insertddoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "insertdObj convert to bson failed(%s)",
+        LOG4_WARN("insertdObj convert to bson failed(%s)",
                         insertdObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -374,14 +374,14 @@ int LbsProxySession::SearchDocs(const char*db, const char*tb,
                 unsigned int limit, unsigned int batch_size)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s)",
+    LOG4_DEBUG("condObj json(%s)",
                     condObj.ToString().c_str());
     //查询的条件
     bson_t * condDoc = GetBsonDoc(condObj, error);
     DebugOutPutBson(GetLogger(), condDoc, "SearchDocs condDoc");
     if (!condDoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -407,13 +407,13 @@ int LbsProxySession::SearchDocs(const char*db, const char*tb,
     }
     else
     {
-        LOG4CPLUS_DEBUG_FMT(GetLogger(), "SearchDocs all fields");
+        LOG4_DEBUG("SearchDocs all fields");
     }
     mongoc_cursor_t *cursor(NULL);
     if (!SearchDocs(db, tb, condDoc, cursor, skip, limit, batch_size,
                     fieldsDoc))
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "SearchDocs failed");
+        LOG4_WARN("SearchDocs failed");
         SAFE_DESTROY_BSON(condDoc);
         SAFE_DESTROY_BSON(fieldsDoc);
         retCode = ERR_OPERATOR_MONGO_ERROR;
@@ -430,7 +430,7 @@ int LbsProxySession::SearchDocs(const char*db, const char*tb,
         tmpReplyObj.Clear();
         tmpReplyObj.Parse(str);
         replyObjs.push_back(tmpReplyObj);
-        LOG4CPLUS_DEBUG_FMT(GetLogger(), "reply:%s\n", str);
+        LOG4_DEBUG("reply:%s\n", str);
         bson_free(str);
     }
     mongoc_cursor_destroy(cursor);
@@ -444,14 +444,14 @@ int LbsProxySession::UpdateDoc(const char*db, const char*tb,
                 const util::CJsonObject &updatedObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s),updatedObj json(%s)",
+    LOG4_DEBUG("condObj json(%s),updatedObj json(%s)",
                     condObj.ToString().c_str(), updatedObj.ToString().c_str());
     //更新的条件
     bson_t * conddoc = GetBsonDoc(condObj, error);
     DebugOutPutBson(GetLogger(), conddoc, "UpdateDoc conddoc");
     if (!conddoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -461,7 +461,7 @@ int LbsProxySession::UpdateDoc(const char*db, const char*tb,
     DebugOutPutBson(GetLogger(), updatedoc);
     if (!updatedoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "updatedObj convert to bson failed(%s)",
+        LOG4_WARN("updatedObj convert to bson failed(%s)",
                         updatedObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -484,14 +484,14 @@ int LbsProxySession::UpsertDoc(const char*db, const char* tb,
                 const util::CJsonObject &updatedObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s),updatedObj json(%s)",
+    LOG4_DEBUG("condObj json(%s),updatedObj json(%s)",
                     condObj.ToString().c_str(), updatedObj.ToString().c_str());
     //更新的条件
     bson_t * conddoc = GetBsonDoc(condObj, error);
     DebugOutPutBson(GetLogger(), conddoc, "UpsertDoc conddoc");
     if (!conddoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -501,7 +501,7 @@ int LbsProxySession::UpsertDoc(const char*db, const char* tb,
     DebugOutPutBson(GetLogger(), updatedoc);
     if (!updatedoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "updatedObj convert to bson failed(%s)",
+        LOG4_WARN("updatedObj convert to bson failed(%s)",
                         updatedObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -523,13 +523,13 @@ int LbsProxySession::DeleteDocOnce(const char*db, const char*tb,
                 const util::CJsonObject &condObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s)",
+    LOG4_DEBUG("condObj json(%s)",
                     condObj.ToString().c_str());
     //删除的条件
     bson_t * condDoc = GetBsonDoc(condObj, error);
     if (!condDoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -549,13 +549,13 @@ int LbsProxySession::DeleteDocAll(const char*db, const char*tb,
                 const util::CJsonObject &condObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s),updatedObj json(%s)",
+    LOG4_DEBUG("condObj json(%s),updatedObj json(%s)",
                     condObj.ToString().c_str());
     //删除的条件
     bson_t * condDoc = GetBsonDoc(condObj, error);
     if (!condDoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -575,13 +575,13 @@ int LbsProxySession::Count(const char*db, const char*tb,
                 const util::CJsonObject &condObj, long long &count)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "condObj json(%s)",
+    LOG4_DEBUG("condObj json(%s)",
                     condObj.ToString().c_str());
     //计算的条件
     bson_t * condDoc = GetBsonDoc(condObj, error);
     if (!condDoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "condObj convert to bson failed(%s)",
+        LOG4_WARN("condObj convert to bson failed(%s)",
                         condObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -602,13 +602,13 @@ int LbsProxySession::Command(const char*db, const char*tb,
                 util::CJsonObject &replyObj)
 {
     int retCode(ERR_OK);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "commandObj json(%s),updatedObj json(%s)",
+    LOG4_DEBUG("commandObj json(%s),updatedObj json(%s)",
                     commandObj.ToString().c_str());
     //执行的命令
     bson_t * commandDoc = GetBsonDoc(commandObj, error);
     if (!commandDoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "commandObj convert to bson failed(%s)",
+        LOG4_WARN("commandObj convert to bson failed(%s)",
                         commandObj.ToString().c_str());
         retCode = ERR_REQ_MISS_PARAM;
         return retCode;
@@ -641,7 +641,7 @@ bool LbsProxySession::GetUserCoordinateInfo(unsigned int user_id,util::CJsonObje
     mongoc_cursor_t *cursor(NULL);
     if (!SearchDocs(user_dbname.c_str(), user_tbname.c_str(), condDoc, cursor))
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "SearchDocs failed");
+        LOG4_WARN("SearchDocs failed");
         SAFE_DESTROY_BSON(condDoc);
         return false;
     }
@@ -652,7 +652,7 @@ bool LbsProxySession::GetUserCoordinateInfo(unsigned int user_id,util::CJsonObje
     {
         str = bson_as_json(doc, NULL);
         userObj.Parse(str);
-        LOG4CPLUS_DEBUG_FMT(GetLogger(), "reply:%s\n", str);
+        LOG4_DEBUG("reply:%s\n", str);
         bson_free(str);
         mongoc_cursor_destroy(cursor);
 		SAFE_DESTROY_BSON(condDoc);
@@ -676,7 +676,7 @@ bool LbsProxySession::GetGroupCoordinateInfo(unsigned int group_id,util::CJsonOb
     mongoc_cursor_t *cursor(NULL);
     if (!SearchDocs(group_dbname.c_str(), group_tbname.c_str(), condDoc, cursor))
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(), "SearchDocs failed");
+        LOG4_WARN("SearchDocs failed");
         SAFE_DESTROY_BSON(condDoc);
         return false;
     }
@@ -687,7 +687,7 @@ bool LbsProxySession::GetGroupCoordinateInfo(unsigned int group_id,util::CJsonOb
     {
         str = bson_as_json(doc, NULL);
         groupObj.Parse(str);
-        LOG4CPLUS_DEBUG_FMT(GetLogger(), "reply:%s\n", str);
+        LOG4_DEBUG("reply:%s\n", str);
         bson_free(str);
         mongoc_cursor_destroy(cursor);
 		SAFE_DESTROY_BSON(condDoc);
@@ -715,13 +715,13 @@ bool LbsProxySession::UpsertUserCoordinateInfo(unsigned int user_id,double longi
     requestjObj["coordinate"].Add(longitude);
     requestjObj["coordinate"].Add(latitude);
     requestjObj.Add("user_id", (long long) user_id);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "user coordinate json(%s)",
+    LOG4_DEBUG("user coordinate json(%s)",
                                     requestjObj.ToString().c_str());
     bson_error_t error;
     bson_t * updatedoc = GetBsonDoc(requestjObj, error);
     if (!updatedoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(),
+        LOG4_WARN(
                         "convert to bson failed(%s)",
                         requestjObj.ToString().c_str());
         return false;
@@ -755,13 +755,13 @@ bool LbsProxySession::UpsertGroupCoordinateInfo(unsigned int group_id,double lon
     requestjObj["coordinate"].Add(longitude);
     requestjObj["coordinate"].Add(latitude);
     requestjObj.Add("group_id", (int) group_id);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "group coordinate json(%s)",
+    LOG4_DEBUG("group coordinate json(%s)",
                     requestjObj.ToString().c_str());
     bson_error_t error;
     bson_t * updatedoc = GetBsonDoc(requestjObj, error);
     if (!updatedoc)
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(),
+        LOG4_WARN(
                         "convert to bson failed(%s)",
                         requestjObj.ToString().c_str());
         return false;
@@ -784,12 +784,12 @@ bool LbsProxySession::UpsertGroupCoordinateInfo(unsigned int group_id,double lon
 bool LbsProxySession::DeleteGroupCoordinate(unsigned int group_id)
 {
     bson_t *cond = GetBsonDoc("group_id", (int)group_id); //条件为group_id
-    LOG4CPLUS_DEBUG_FMT(GetLogger(),"DeleteGroupCoordinate group_id[%u]",group_id);
+    LOG4_DEBUG("DeleteGroupCoordinate group_id[%u]",group_id);
     //删除操作
     if(!DeleteDocOnce(group_dbname.c_str(),group_tbname.c_str(),cond))
     {
         SAFE_DESTROY_BSON(cond);
-        LOG4CPLUS_DEBUG_FMT(GetLogger(),"DeleteDoc() fault");
+        LOG4_DEBUG("DeleteDoc() fault");
         return false;
     }
     SAFE_DESTROY_BSON(cond);
@@ -798,12 +798,12 @@ bool LbsProxySession::DeleteGroupCoordinate(unsigned int group_id)
 
 bool LbsProxySession::DeleteUserCoordinate(unsigned int imid)
 {
-    LOG4CPLUS_DEBUG_FMT(GetLogger(),"DeleteUserCoordinate user_id[%u]",imid);
+    LOG4_DEBUG("DeleteUserCoordinate user_id[%u]",imid);
     bson_t *cond = GetBsonDocInt64("user_id", (long long)imid); //条件为user_id
     //删除操作
     if(!DeleteDocOnce(user_dbname.c_str(),user_tbname.c_str(),cond))
     {
-        LOG4CPLUS_WARN_FMT(GetLogger(),
+        LOG4_WARN(
                                 "DeleteDocOnce failed,imid(%ll)",imid);
         return false;
     }

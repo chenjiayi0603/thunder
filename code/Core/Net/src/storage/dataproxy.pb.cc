@@ -441,7 +441,7 @@ void protobuf_RegisterTypes(const ::std::string&) {
 void AddDescriptorsImpl() {
   InitDefaults();
   static const char descriptor[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
-      "\n\017dataproxy.proto\022\007DataMem\"\212\r\n\nMemOperat"
+      "\n\017dataproxy.proto\022\007DataMem\"\224\r\n\nMemOperat"
       "e\022\026\n\016section_factor\030\001 \001(\004\0227\n\rredis_opera"
       "te\030\002 \001(\0132 .DataMem.MemOperate.RedisOpera"
       "te\0221\n\ndb_operate\030\003 \001(\0132\035.DataMem.MemOper"
@@ -453,7 +453,7 @@ void AddDescriptorsImpl() {
       "_ttl\030\006 \001(\005\022\027\n\017redis_structure\030\007 \001(\005\022\024\n\014d"
       "ata_purpose\030\010 \001(\005\022\020\n\010hash_key\030\t \001(\014\"A\n\014O"
       "PERATE_TYPE\022\030\n\024OPERATE_TYPE_UNKNOWN\020\000\022\n\n"
-      "\006T_READ\020\001\022\013\n\007T_WRITE\020\002\032\256\t\n\tDbOperate\022>\n\n"
+      "\006T_READ\020\001\022\013\n\007T_WRITE\020\002\032\270\t\n\tDbOperate\022>\n\n"
       "query_type\030\001 \001(\0162*.DataMem.MemOperate.Db"
       "Operate.E_QUERY_TYPE\022\022\n\ntable_name\030\002 \001(\t"
       "\022\036\n\006fields\030\003 \003(\0132\016.DataMem.Field\022@\n\ncond"
@@ -480,27 +480,27 @@ void AddDescriptorsImpl() {
       "\001(\01620.DataMem.MemOperate.DbOperate.Order"
       "By.E_RELATION\022\020\n\010col_name\030\002 \001(\t\"7\n\nE_REL"
       "ATION\022\026\n\022E_RELATION_UNKNOWN\020\000\022\007\n\003ASC\020\001\022\010"
-      "\n\004DESC\020\002\"\204\001\n\014E_QUERY_TYPE\022\030\n\024E_QUERY_TYP"
+      "\n\004DESC\020\002\"\216\001\n\014E_QUERY_TYPE\022\030\n\024E_QUERY_TYP"
       "E_UNKNONW\020\000\022\n\n\006SELECT\020\001\022\n\n\006INSERT\020\002\022\021\n\rI"
       "NSERT_IGNORE\020\003\022\n\n\006UPDATE\020\004\022\013\n\007REPLACE\020\005\022"
-      "\n\n\006DELETE\020\006\022\n\n\006CUSTOM\020\007\",\n\006Record\022\"\n\nfie"
-      "ld_info\030\001 \003(\0132\016.DataMem.Field\"c\n\005Field\022\020"
-      "\n\010col_name\030\001 \001(\t\022%\n\010col_type\030\002 \001(\0162\023.Dat"
-      "aMem.E_COL_TYPE\022\021\n\tcol_value\030\003 \001(\014\022\016\n\006co"
-      "l_as\030\004 \001(\t\"\317\002\n\006MemRsp\022\016\n\006err_no\030\001 \001(\005\022\017\n"
-      "\007err_msg\030\002 \001(\014\022\022\n\ntotalcount\030\003 \001(\005\022\020\n\010cu"
-      "rcount\030\004 \001(\005\022$\n\013record_data\030\005 \003(\0132\017.Data"
-      "Mem.Record\022\014\n\004from\030\006 \001(\005\022*\n\006locate\030\007 \001(\013"
-      "2\032.DataMem.MemRsp.DataLocate\032U\n\nDataLoca"
-      "te\022\024\n\014section_from\030\001 \001(\r\022\022\n\nsection_to\030\002"
-      " \001(\r\022\014\n\004hash\030\003 \001(\r\022\017\n\007divisor\030\004 \001(\r\"G\n\rE"
-      "_RESULT_FROM\022\031\n\025E_RESULT_FROM_UNKNOWN\020\000\022"
-      "\016\n\nFROM_REDIS\020\001\022\013\n\007FROM_DB\020\002*D\n\nE_COL_TY"
-      "PE\022\n\n\006STRING\020\000\022\007\n\003INT\020\001\022\n\n\006BIGINT\020\002\022\t\n\005F"
-      "LOAT\020\003\022\n\n\006DOUBLE\020\004"
+      "\n\n\006DELETE\020\006\022\n\n\006CUSTOM\020\007\022\010\n\004BULK\020\010\",\n\006Rec"
+      "ord\022\"\n\nfield_info\030\001 \003(\0132\016.DataMem.Field\""
+      "c\n\005Field\022\020\n\010col_name\030\001 \001(\t\022%\n\010col_type\030\002"
+      " \001(\0162\023.DataMem.E_COL_TYPE\022\021\n\tcol_value\030\003"
+      " \001(\014\022\016\n\006col_as\030\004 \001(\t\"\317\002\n\006MemRsp\022\016\n\006err_n"
+      "o\030\001 \001(\005\022\017\n\007err_msg\030\002 \001(\014\022\022\n\ntotalcount\030\003"
+      " \001(\005\022\020\n\010curcount\030\004 \001(\005\022$\n\013record_data\030\005 "
+      "\003(\0132\017.DataMem.Record\022\014\n\004from\030\006 \001(\005\022*\n\006lo"
+      "cate\030\007 \001(\0132\032.DataMem.MemRsp.DataLocate\032U"
+      "\n\nDataLocate\022\024\n\014section_from\030\001 \001(\r\022\022\n\nse"
+      "ction_to\030\002 \001(\r\022\014\n\004hash\030\003 \001(\r\022\017\n\007divisor\030"
+      "\004 \001(\r\"G\n\rE_RESULT_FROM\022\031\n\025E_RESULT_FROM_"
+      "UNKNOWN\020\000\022\016\n\nFROM_REDIS\020\001\022\013\n\007FROM_DB\020\002*D"
+      "\n\nE_COL_TYPE\022\n\n\006STRING\020\000\022\007\n\003INT\020\001\022\n\n\006BIG"
+      "INT\020\002\022\t\n\005FLOAT\020\003\022\n\n\006DOUBLE\020\004"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
-      descriptor, 2258);
+      descriptor, 2268);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "dataproxy.proto", &protobuf_RegisterTypes);
 }
@@ -635,6 +635,7 @@ bool MemOperate_DbOperate_E_QUERY_TYPE_IsValid(int value) {
     case 5:
     case 6:
     case 7:
+    case 8:
       return true;
     default:
       return false;
@@ -650,6 +651,7 @@ const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::UPDATE;
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::REPLACE;
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::DELETE;
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::CUSTOM;
+const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::BULK;
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::E_QUERY_TYPE_MIN;
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate::E_QUERY_TYPE_MAX;
 const int MemOperate_DbOperate::E_QUERY_TYPE_ARRAYSIZE;

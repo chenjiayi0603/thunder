@@ -12,15 +12,6 @@
 namespace net
 {
 
-HttpStep::HttpStep(Step* pNextStep)
-    : net::Step(pNextStep)
-{
-}
-
-HttpStep::~HttpStep()
-{
-}
-
 bool HttpStep::HttpPost(const std::string& strUrl, const std::string& strBody, const std::map<std::string, std::string>& mapHeaders)
 {
     HttpMsg oHttpMsg;
@@ -91,18 +82,18 @@ bool HttpStep::HttpRequest(const HttpMsg& oHttpMsg)
             strPath = oHttpMsg.url().substr(stUrl.field_data[UF_PATH].off, stUrl.field_data[UF_PATH].len);
         }
 
-        return(GetLabor()->SentTo(strHost, iPort, strPath, oHttpMsg, this));
+        return(g_pLabor->SentTo(strHost, iPort, strPath, oHttpMsg, this));
     }
     else
     {
-        LOG4CPLUS_ERROR_FMT(GetLogger(), "http_parser_parse_url \"%s\" error!", oHttpMsg.url().c_str());
+        LOG4_ERROR("http_parser_parse_url \"%s\" error!", oHttpMsg.url().c_str());
         return(false);
     }
 }
 
 bool HttpStep::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg)
 {
-    return(GetLabor()->SendTo(stMsgShell, oHttpMsg));
+    return(g_pLabor->SendTo(stMsgShell, oHttpMsg));
 }
 
 } /* namespace net */

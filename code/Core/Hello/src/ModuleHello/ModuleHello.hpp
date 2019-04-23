@@ -23,14 +23,6 @@
 #include "step/HttpStep.hpp"
 #include "../HelloSession.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create();
-#ifdef __cplusplus
-}
-#endif
-
 namespace core
 {
 
@@ -40,21 +32,22 @@ public:
     ModuleHello();
     virtual ~ModuleHello();
     virtual bool Init();
-    virtual bool AnyMessage(
-                    const net::tagMsgShell& stMsgShell,
-                    const HttpMsg& oInHttpMsg);
+    void Tests();
+    virtual bool AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 private:
     void Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode);
-
+#define PG_TB_TEST "tb_test"
+    void InsertPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
     void SetGetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
     void GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
     void SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType);
     void AddUpPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,uint32 id,const std::string &sName,uint32 sum,const std::string &nodeType);
-
+#define PROXY "PROXYSSDB"
+#define TEST_SSDB_KEY "1:2:testkey"
     //redis basic
-    void SetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");
-    void OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");
-    void OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType="PROXY");
+    void SetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType=PROXY);
+    void OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType=PROXY);
+    void OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType=PROXY);
 
     //redisearch http://redisearch.io/Commands/
     void RedisearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sDoc,const std::string &sValue);
@@ -66,15 +59,14 @@ private:
 
     //redis bitmap
 #define  SETBIT_KEY "4:4:SETBIT"
-#define PROXY "PROXYSSDB"
     void RedisbitmapSETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey=SETBIT_KEY,const std::string &sNode=PROXY);
     void RedisbitmapGETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey=SETBIT_KEY,const std::string &sNode=PROXY);
     void RedisbitmapBITPOS(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey=SETBIT_KEY,const std::string &sNode=PROXY);
     void RedisbitmapGET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey=SETBIT_KEY,const std::string &sNode=PROXY);
     void RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey1=SETBIT_KEY,const std::string &sKey2=SETBIT_KEY,const std::string &sNode=PROXY);
 
-    static void String2UserData(const std::string & col_value,std::vector<uint32>& usersData,log4cplus::Logger logger);
-    static void OPUserData(const std::vector<uint32>& usersData1,const std::vector<uint32>& usersData2,log4cplus::Logger logger);
+    static void String2UserData(const std::string & col_value,std::vector<uint32>& usersData);
+    static void OPUserData(const std::vector<uint32>& usersData1,const std::vector<uint32>& usersData2);
 
 #define  MSG_KEY "1:11:MSG"
     void SsdbMsgHset(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey=MSG_KEY,const std::string &sNode=PROXY);
@@ -89,6 +81,7 @@ private:
 
     //Coroutinue
     void TestCoroutinue();
+    void TestCoroutinueAuto();
     void TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &str);
 
     //stage machine
@@ -104,6 +97,7 @@ private:
     void TestProto3Type();
     void TestJson2pbRepeatedFields();
 
+    bool boTests;
     net::RunClock m_RunClock;
 };
 

@@ -49,9 +49,12 @@ public:
                     const std::string& strReadCmd = "",
                     uint64 uiModFactor = 0);
     virtual ~MemOperator();
-
     virtual DataMem::MemOperate* MakeMemOperate();
-
+    void ClearFields()
+    {
+    	if (GetDbOperate())GetDbOperate()->clear_fields();
+    	if (GetRedisOperate())GetRedisOperate()->clear_fields();
+    }
     /**
      * @brief 添加字段
      * @param strFieldName 字段名

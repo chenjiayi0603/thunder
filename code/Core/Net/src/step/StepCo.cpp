@@ -12,37 +12,24 @@
 namespace net
 {
 //使用类似StepState
-
 StepCo::StepCo()
 {
 	Init();
 }
 
-StepCo::StepCo(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody)
+StepCo::StepCo(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead):StepState(stInMsgShell,oInMsgHead)
 {
-	m_stReqMsgShell = stReqMsgShell;
-	m_oReqMsgHead = oReqMsgHead;
-	m_oReqMsgBody = oReqMsgBody;
 	Init();
 }
 
-StepCo::StepCo(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead)
+StepCo::StepCo(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody):StepState(stInMsgShell,oInMsgHead,oInMsgBody)
 {
-	m_stReqMsgShell = stReqMsgShell;
-	m_oReqMsgHead = oReqMsgHead;
 	Init();
 }
 
-StepCo::StepCo(const tagMsgShell& stReqMsgShell, const HttpMsg& oInHttpMsg)
+StepCo::StepCo(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg):StepState(stInMsgShell,oInHttpMsg)
 {
-	m_stReqMsgShell = stReqMsgShell;
-	m_oInHttpMsg = oInHttpMsg;
 	Init();
-}
-
-StepCo::~StepCo()
-{
-    //在StepState析构函数回收StepState的成员
 }
 
 void StepCo::Init()
@@ -59,14 +46,7 @@ void StepCo::AddCoroutinueFunc(FinalFunc func)
 {
 	if (m_uiStateVecNum < StepStateVecSize)
 	{
-		if (GetLabor()->IsCoroutineEnable())
-		{
-			m_StateCoFuncVec[m_uiStateVecNum++] = func;
-		}
-		else
-		{
-			LOG4_WARN("%s() Coroutine Not Enable",__FUNCTION__);
-		}
+		m_StateCoFuncVec[m_uiStateVecNum++] = func;
 	}
 }
 E_CMD_STATUS StepCo::Emit(int iErrno , const std::string& strErrMsg , const std::string& strErrShow )
@@ -95,22 +75,19 @@ E_CMD_STATUS StepCo::Emit(int iErrno , const std::string& strErrMsg , const std:
 		{
 			if (m_curCoid == -1)
 			{
-				m_curCoid = GetLabor()->CoroutineNew((util::coroutine_func)m_StateCoFuncVec[m_uiState],this);
+				m_curCoid = net::CoroutineNew((util::coroutine_func)m_StateCoFuncVec[m_uiState],this);
 			}
 			if (m_curCoid >= 0)
 			{
-				int s = GetLabor()->CoroutineStatus(m_curCoid);
+				int s = net::CoroutineStatus(m_curCoid);
 				if (0 != s)
 				{
 					m_RunClock.StartClock(m_uiState);
-					GetLabor()->CoroutineResume(m_curCoid);
+					net::CoroutineResume(m_curCoid);
 					m_RunClock.EndClock();
-					s = GetLabor()->CoroutineStatus(m_curCoid);
+					s = net::CoroutineStatus(m_curCoid);
 				}
-                //                 COROUTINE_DEAD 0
-                //                 COROUTINE_READY 1
-                //                 COROUTINE_RUNNING 2
-                //                 COROUTINE_SUSPEND 3
+                // COROUTINE_DEAD 0 COROUTINE_READY 1 COROUTINE_RUNNING 2 COROUTINE_SUSPEND 3
 				if (0 == s)
 				{
 					++m_uiState;//执行完本状态，转为下一个状态
@@ -143,7 +120,7 @@ E_CMD_STATUS StepCo::Emit(int iErrno , const std::string& strErrMsg , const std:
 
 E_CMD_STATUS StepCo::Timeout()
 {
-    LOG4CPLUS_TRACE_FMT(GetLogger(),"%s()",__FUNCTION__);
+    LOG4_TRACE("%s()",__FUNCTION__);
     ++m_uiTimeOutCounter;
     if (m_uiTimeOutCounter < m_uiTimeOutMax)
     {
@@ -153,8 +130,8 @@ E_CMD_STATUS StepCo::Timeout()
     		{
     			SetNextState(m_uiState - 1);
     		}
-    		LOG4_WARN("%s() retry last stage. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u) StepState(%p,%u)",
-    		    		__FUNCTION__,m_uiTimeOutCounter,m_uiTimeOutMax,m_uiTimeOutRetry,this,m_uiState);
+    		LOG4_WARN("%s() retry last stage. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u) State(%u)",
+    		    		__FUNCTION__,m_uiTimeOutCounter,m_uiTimeOutMax,m_uiTimeOutRetry,m_uiState);
     		return Emit();//retry last stage
     	}
         return STATUS_CMD_RUNNING;
@@ -169,7 +146,7 @@ bool StepCo::CoroutineYield()
 {
 	if (m_StateCoFuncVec[m_uiState])//是协程函数才放弃执行权
 	{
-		return GetLabor()->CoroutineYield();
+		return net::CoroutineYield();
 	}
 	return true;
 }

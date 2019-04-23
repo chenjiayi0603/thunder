@@ -336,7 +336,18 @@ const std::string util::time_t2TimeStr(
     {
         strftime(szTime, 20, "%Y-%m", &stTime);
     }
-
+    else if ("HH:MI:SS" == strTimeFormat)
+    {
+    	strftime(szTime, 20, "%H:%M:%S", &stTime);
+    }
+    else if ("DD HH:MI:SS" == strTimeFormat)
+	{
+    	strftime(szTime, 20, "%d %H:%M:%S", &stTime);
+	}
+    else if ("MM-DD HH:MI:SS" == strTimeFormat)
+	{
+		strftime(szTime, 20, "%m-%d %H:%M:%S", &stTime);
+	}
     return szTime;
 }
 

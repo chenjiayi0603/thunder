@@ -13,14 +13,6 @@
 #include "ModuleLocateData/StepLocateData.hpp"
 #include "cmd/Module.hpp"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create();
-#ifdef __cplusplus
-}
-#endif
-
 namespace core
 {
 

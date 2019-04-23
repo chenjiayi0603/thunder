@@ -18,6 +18,7 @@
 #include "util/StreamCodec.hpp"
 #include "util/CBuffer.hpp"
 #include "protocol/msg.pb.h"
+#include "labor/Labor.hpp"
 #include "labor/duty/Attribution.hpp"
 #include "NetDefine.hpp"
 #include "cmd/CW.hpp"
@@ -75,11 +76,6 @@ public:
      */
     virtual E_CODEC_STATUS Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, MsgBody& oMsgBody) = 0;
 protected:
-    log4cplus::Logger GetLogger()
-    {
-        return m_oLogger;
-    }
-
     const std::string& GetKey() const
     {
         return(m_strKey);
@@ -93,15 +89,8 @@ protected:
     bool Rc5Decrypt(const std::string& strSrc, std::string& strDest);
     bool AesEncrypt(const std::string& strSrc, std::string& strDest);
     bool AesDecrypt(const std::string& strSrc, std::string& strDest);
-
 public:
-    void SetLogger(log4cplus::Logger logger)
-    {
-        m_oLogger = logger;
-    }
-
 private:
-    log4cplus::Logger m_oLogger;
     std::string m_strKey;       // 密钥
 //    util::Aes m_oAes;
 };

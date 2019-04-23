@@ -9,35 +9,42 @@
 ******************************************************************************/
 #ifndef NETDEFINE_HPP_
 #define NETDEFINE_HPP_
-#include <time.h>
-#include <sys/time.h>
-#include <memory.h>
-#include "log4cplus/logger.h"
-#include "log4cplus/fileappender.h"
-#include "log4cplus/loggingmacros.h"
+#include "NetUtil.hpp"
 
 #ifndef NODE_BEAT
 #define NODE_BEAT 1.0
 #endif
 
-#define LOG4_FATAL(args...) LOG4CPLUS_FATAL_FMT(GetLogger(), ##args)
-#define LOG4_ERROR(args...) LOG4CPLUS_ERROR_FMT(GetLogger(), ##args)
-#define LOG4_WARN(args...) LOG4CPLUS_WARN_FMT(GetLogger(), ##args)
-#define LOG4_INFO(args...) LOG4CPLUS_INFO_FMT(GetLogger(), ##args)
-#define LOG4_DEBUG(args...) LOG4CPLUS_DEBUG_FMT(GetLogger(), ##args)
-#define LOG4_TRACE(args...) LOG4CPLUS_TRACE_FMT(GetLogger(), ##args)
+#ifndef PROXY_NODE
+#define PROXY_NODE "PROXYSSDB"
+#endif
+
+#ifndef SAFE_DELETE
+#define SAFE_DELETE(p) {if (p) {delete p;p = NULL;}}
+#endif
+
+#define MUDULE_CREATE(Module) \
+extern "C" { \
+net::Cmd* create() \
+{\
+    return new Module();\
+}\
+}
+
+//是否使用Nagle算法(否则注释掉)
+#define ENABLE_NAGLE
+//框架日志都使用本系列日志接口
+#define LOG4_FATAL(args...) LOG4CPLUS_FATAL_FMT(g_pLabor->GetLogger(), ##args)
+#define LOG4_ERROR(args...) LOG4CPLUS_ERROR_FMT(g_pLabor->GetLogger(), ##args)
+#define LOG4_WARN(args...) LOG4CPLUS_WARN_FMT(g_pLabor->GetLogger(), ##args)
+#define LOG4_INFO(args...) LOG4CPLUS_INFO_FMT(g_pLabor->GetLogger(), ##args)
+#define LOG4_DEBUG(args...) LOG4CPLUS_DEBUG_FMT(g_pLabor->GetLogger(), ##args)
+#define LOG4_TRACE(args...) LOG4CPLUS_TRACE_FMT(g_pLabor->GetLogger(), ##args)
+
+#define LOAD_CONFIG(conf,name,member) if (!conf.Get(name, member)) {LOG4_ERROR("config load(%s) failed",name);return false;}
 
 namespace net
 {
-
-typedef char int8;
-typedef unsigned char uint8;
-typedef short int16;
-typedef unsigned short uint16;
-typedef int int32;
-typedef unsigned int uint32;
-typedef long long int int64;
-typedef unsigned long long int uint64;
 
 /** @brief 心跳间隔时间（单位:秒） */
 const int gc_iBeatInterval = NODE_BEAT;
@@ -51,8 +58,8 @@ const int gc_iMaxBuffLen = 65535;
 /** @brief 错误信息缓冲区大小 */
 const int gc_iErrBuffLen = 256;
 
-const uint32 gc_uiMsgHeadSize = 15;
-const uint32 gc_uiClientMsgHeadSize = 14;
+const uint32 gc_uiMsgHeadSize = 15;//内部消息头大小
+const uint32 gc_uiClientMsgHeadSize = 14;//app消息头大小
 
 enum E_CMD_STATUS
 {
@@ -126,178 +133,6 @@ struct tagSequence
 {
     int32 iId;
     uint32 ulSeq;
-};
-
-//函数运行时间计算类
-class RunClock
-{
-public:
-	RunClock()
-    {
-		Reset();
-    }
-	~RunClock()
-	{
-		if (boInit)
-		{
-			gettimeofday(&m_tvTotalEndClock,NULL);
-			float useTime=1000000*(m_tvTotalEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+ m_tvTotalEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
-			LOG4CPLUS_INFO_FMT(m_logger,"%s() RunClock use time(%lf) ms",__FUNCTION__,useTime/1000);
-		}
-	}
-	void Reset()
-	{
-		boInit = boStart = false;
-		gettimeofday(&m_tvTotalBeginClock,NULL);
-		m_tvRunBeginClock = m_tvRunEndClock = m_tvTotalEndClock = m_tvTotalBeginClock;
-	}
-    void Init(const log4cplus::Logger &logger)
-    {
-    	if (!boInit)
-    	{
-    		m_logger = logger;
-			boInit = true;
-    	}
-    }
-    void StartClock(const char* desc,const log4cplus::Logger &logger)
-    {
-    	snprintf(m_desc,sizeof(m_desc),"%s",desc);
-    	Init(logger);
-    }
-
-    void StartClock(int nStage)
-    {
-    	if(boInit && !boStart)
-		{
-			snprintf(m_desc,sizeof(m_desc),"stage:%d",nStage);
-			StartClock();
-		}
-    }
-    void StartClock()
-    {
-        gettimeofday(&m_tvRunBeginClock,NULL);
-        boStart = true;
-    }
-    void EndClock()
-    {
-        if (boInit && boStart)
-        {
-            gettimeofday(&m_tvRunEndClock,NULL);
-            float useTime=1000000*(m_tvRunEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+m_tvRunEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
-            LOG4CPLUS_INFO_FMT(m_logger,"%s() %s use time(%lf) ms",__FUNCTION__,m_desc,useTime/1000);
-            boStart = false;
-        }
-    }
-    void TotalRunTime()
-    {
-        if (boInit)
-        {
-            gettimeofday(&m_tvTotalEndClock,NULL);
-            float useTime=1000000*(m_tvTotalEndClock.tv_sec-m_tvRunBeginClock.tv_sec)+
-                    m_tvTotalEndClock.tv_usec-m_tvRunBeginClock.tv_usec;
-            useTime/=1000;
-            LOG4CPLUS_INFO_FMT(m_logger,"%s() RunClock use time(%lf) ms",__FUNCTION__,useTime);
-        }
-    }
-    bool boInit;
-    bool boStart;
-    timeval m_tvRunBeginClock;
-    timeval m_tvRunEndClock;
-
-    timeval m_tvTotalBeginClock;
-	timeval m_tvTotalEndClock;
-    char m_desc[32];
-    log4cplus::Logger m_logger;
-};
-
-struct BUFF_RW
-{
-    BUFF_RW(): m_pbuffer(NULL), size(0),indexW(0),indexR(0)
-    {
-    }
-    ~BUFF_RW()
-    {
-        if (m_pbuffer)
-        {
-            ::free(m_pbuffer);
-        }
-    }
-    char* m_pbuffer;
-    uint32 size;
-    uint32 indexW;
-    uint32 indexR;
-    inline void Clear()
-    {
-        indexR = indexW = 0;
-    }
-    inline void Resize(uint32 buffsize)
-    {
-        if (buffsize > 0)
-        {
-            if (size < buffsize)//容量只会扩大
-            {
-                m_pbuffer = (char*) ::realloc(m_pbuffer, buffsize);
-                size = buffsize;
-            }
-        }
-    }
-    inline void Write(const char* data,int dataSize)
-    {
-        if ((indexW + dataSize) > size)
-        {
-            Resize(indexW + dataSize);
-        }
-        memcpy(m_pbuffer + indexW,data,dataSize);
-        indexW += dataSize;
-    }
-    inline bool Read(char* data,unsigned int dataSize)
-    {
-        if ((indexR + dataSize) > indexW)
-        {
-            return false;
-        }
-        memcpy(data,m_pbuffer + indexR,dataSize);
-        indexR += dataSize;
-        return true;
-    }
-    inline char* Getbuff() const
-    {
-        return m_pbuffer;
-    }
-    inline char* GetWriteBuff() const
-    {
-        return m_pbuffer + indexW;
-    }
-    inline char* GetReadBuff() const
-    {
-        return m_pbuffer + indexR;
-    }
-    inline void AdvanceIndexW(uint32 s)
-    {
-        if (indexW + s <= size)
-        {
-            indexW += s;
-        }
-    }
-    void RewindR(uint32 s)
-    {
-        if (s > 0 && indexR > s)
-        {
-            indexR -= s;
-        }
-    }
-
-    uint32 GetIndexW()const {return indexW;}
-    uint32 GetIndexR()const {return indexR;}
-    uint32 GetSize()const {return size;}
-    uint32 ReadDataLen()const
-    {
-        if (indexW > indexR)
-        {
-            return indexW - indexR;
-        }
-        return 0;
-    }
 };
 
 }

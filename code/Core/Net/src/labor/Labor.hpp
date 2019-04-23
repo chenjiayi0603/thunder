@@ -9,76 +9,12 @@
  ******************************************************************************/
 #ifndef SRC_NodeLabor_HPP_
 #define SRC_NodeLabor_HPP_
-#include <string>
-#include <map>
-#include <set>
-#include <netdb.h>
-#include <arpa/inet.h>
-//#include <ares.h>
-
-#include "libev/ev.h"
-#include "log4cplus/loggingmacros.h"
-#include "coroutine/coroutine.h"
-#include "curl/CurlClient.hpp"
-
-#include "../NetDefine.hpp"
-#include "cmd/CW.hpp"
-#include "util/json/CJsonObject.hpp"
-#include "util/CBuffer.hpp"
-#include "protocol/msg.pb.h"
-#include "protocol/http.pb.h"
-#include "storage/DbOperator.hpp"
-#include "storage/MemOperator.hpp"
+#include "Interface.hpp"
 
 struct redisAsyncContext;
 
 namespace net
 {
-
-class Cmd;
-class Module;
-class Step;
-class RedisStep;
-class MysqlStep;
-class HttpStep;
-class Session;
-class Labor;
-
-
-struct tagCoroutineArg//自定义协程参数需要继承tagCoroutineArg
-{
-	Labor* labor;//不在本结构管理
-	bool CoroutineYield();
-	Labor* GetLabor(){return labor;}
-};
-
-struct tagCoroutineSchedule
-{
-	tagCoroutineSchedule():schedule(NULL),coroutineRunIter(0){}
-	tagCoroutineSchedule(const tagCoroutineSchedule& coroutine)
-	{
-		schedule = coroutine.schedule;
-		coroutineIds = coroutine.coroutineIds;
-		coroutineRunIter = coroutine.coroutineRunIter;
-	}
-	const tagCoroutineSchedule& operator = (const tagCoroutineSchedule& coroutine)
-	{
-		schedule = coroutine.schedule;
-		coroutineIds = coroutine.coroutineIds;
-		coroutineRunIter = coroutine.coroutineRunIter;
-		return *this;
-	}
-	util::schedule* schedule;
-	std::set<int> coroutineIds;
-	std::set<int>::iterator coroutineRunIter;
-};
-
-//访问存储回调
-typedef void (*StorageCallbackSession)(const DataMem::MemRsp &oRsp,net::Session*pSession);
-typedef void (*StorageCallbackStep)(const DataMem::MemRsp &oRsp,net::Step*pStep);
-//访问一般节点回调
-typedef void (*StandardCallbackSession)(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data,net::Session*pSession);
-typedef void (*StandardCallbackStep)(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data,net::Step*pStep);
 
 /**
  * @brief 框架层工作者
@@ -161,163 +97,77 @@ public:     // Labor相关设置（由Cmd类或Step类调用这些方法完成La
      * @return 是否可以执行
      */
     virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep) = 0;
-
     /**
      * @brief 设置节点ID
      * @param iNodeId 节点ID
      */
     virtual void SetNodeId(uint32 uiNodeId) = 0;
-
     /**
      * @brief 添加内部通信连接信息
      * @param stMsgShell 消息外壳
      */
     virtual void AddInnerFd(const tagMsgShell& stMsgShell) = 0;
-
     virtual uint32 GetNodeId() const = 0;
-
 public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成数据交互，Worker类必须重新实现这些方法，Manager类可不实现）
     /**
      * @brief 获取序列号
      * @return 序列号
      */
-    virtual uint32 GetSequence()
-    {
-        return(0);
-    }
-
+    virtual uint32 GetSequence(){return(0);}
     /**
      * @brief 获取工作目录
      * @return 工作目录
      */
-    virtual const std::string& GetWorkPath() const
-    {
-        return(m_strNodeTypeTmp);
-    }
-
+    virtual const std::string& GetWorkPath() const{return(m_strNodeTypeTmp);}
     /**
      * @brief 获取日志实例
      * @return 日志实例
      */
-    virtual log4cplus::Logger GetLogger()
-    {
-        log4cplus::Logger oLogger;
-        return (oLogger);
-    }
-
+    virtual log4cplus::Logger GetLogger(){log4cplus::Logger oLogger;return (oLogger);}
     /**
      * @brief 获取节点类型
      * @return 节点类型
      */
-    virtual const std::string& GetNodeType() const
-    {
-        return(m_strNodeTypeTmp);
-    }
-
+    virtual const std::string& GetNodeType() const{return(m_strNodeTypeTmp);}
     /**
      * @brief 获取自定义配置
      * @return 自定义配置
      */
-    virtual const util::CJsonObject& GetCustomConf() const
-    {
-        return(m_oCustomConfTmp);
-    }
-
+    virtual const util::CJsonObject& GetCustomConf() const{return(m_oCustomConfTmp);}
     /**
      * @brief 获取Server间的连接IP
      * @return Server间的连接IP
      */
-    virtual const std::string& GetHostForServer() const
-    {
-        return(m_strHostForServerTmp);
-    }
-
+    virtual const std::string& GetHostForServer() const{return(m_strHostForServerTmp);}
     /**
      * @brief 获取Server间的连接端口
      * @return Server间的连接端口
      */
-    virtual int GetPortForServer() const
-    {
-        return(0);
-    }
-
+    virtual int GetPortForServer() const{return(0);}
     /**
      * @brief 获取Worker进程编号
      * @return Worker进程编号
      */
-    virtual int GetWorkerIndex() const
-    {
-        return(0);
-    }
-
+    virtual int GetWorkerIndex() const{return(0);}
     /**
      * @brief 获取客户端连接心跳时间
      * @return 客户端连接心跳时间
      */
-    virtual int GetClientBeatTime() const
-    {
-        return(300);
-    }
-
-    virtual bool IoTimeout(struct ev_timer* watcher, bool bCheckBeat = true)
-    {
-        return(false);
-    }
-
+    virtual int GetClientBeatTime() const{return(300);}
+    virtual bool IoTimeout(struct ev_timer* watcher, bool bCheckBeat = true){return(false);}
     /**
      * @brief 获取当前时间
      * @note 获取当前时间，比time(NULL)速度快消耗小，不过没有time(NULL)精准，如果对时间精度
      * 要求不是特别高，建议调用GetNowTime()替代time(NULL)
      * @return 当前时间
      */
-    virtual time_t GetNowTime() const
-    {
-        return(time(NULL));
-    }
-
-    /**
-     * @brief 预处理
-     * @note 预处理用于将等待预处理对象与框架建立弱联系，使被处理的对象可以获得框架一些工具，如写日志指针
-     * @param pCmd 等待预处理的Cmd
-     * @return 预处理结果
-     */
-    virtual bool Pretreat(Cmd* pCmd)
-    {
-        return(false);
-    }
-
-    /**
-     * @brief 预处理
-     * @note 预处理用于将等待预处理对象与框架建立弱联系，使被处理的对象可以获得框架一些工具，如写日志指针
-     * @param pStep 等待预处理的Step
-     * @return 预处理结果
-     */
-    virtual bool Pretreat(Step* pStep)
-    {
-        return(false);
-    }
-
-    /**
-     * @brief 预处理
-     * @note 预处理用于将等待预处理对象与框架建立弱联系，使被处理的对象可以获得框架一些工具，如写日志指针
-     * @param pSession 等待预处理的Session
-     * @return 预处理结果
-     */
-    virtual bool Pretreat(Session* pSession)
-    {
-        return(false);
-    }
-
+    virtual time_t GetNowTime() const{return(time(NULL));}
     /**
      * @brief 注册步骤回调
      * @param pStep 步骤回调
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(Step* pStep, double dTimeout = 0.0)
-    {
-        return(false);
-    }
-
+    virtual bool RegisterCallback(Step* pStep, double dTimeout = 0.0){return(false);}
     /**
      * @brief 注册步骤回调
      * @param uiSelfStepSeq 调用注册step的当前step seq
@@ -325,92 +175,50 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param dTimeout 超时时间
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, double dTimeout = 0.0)
-    {
-        return(false);
-    }
-
+    virtual bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, double dTimeout = 0.0){return(false);}
     /**
      * @brief 删除步骤回调
      * @param pStep 步骤回调
      */
-    virtual void DeleteCallback(Step* pStep)
-    {
-    }
-
+    virtual void DeleteCallback(Step* pStep){}
     /**
      * @brief 删除步骤回调
      * @param 执行删除操作的当前步骤seq
      * @param pStep 步骤回调
      */
-    virtual void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
-    {
-    }
-
-    /*
-     * @brief 解除步骤注册
-     * @param pStep 步骤回调
-     * @return 是否成功解除
-    virtual bool UnRegisterCallback(Step* pStep)
-    {
-        return(false);
-    }
-     */
-
+    virtual void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep){}
     /**
      * @brief 注册会话
      * @param pSession 会话
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(Session* pSession)
-    {
-        return(false);
-    }
-
+    virtual bool RegisterCallback(Session* pSession){return(false);}
     /**
      * @brief 删除会话
      * @param pSession 会话
      */
-    virtual void DeleteCallback(Session* pSession)
-    {
-    }
-
+    virtual void DeleteCallback(Session* pSession){}
     /**
      * @brief 注册redis回调
      * @param pRedisContext redis连接上下文
      * @param pRedisStep redis步骤
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep)
-    {
-        return(false);
-    }
-
+    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep){return(false);}
     /**
      * @brief 延迟Step超时时间（重新设置超时时间）
      * @param pStep 被延迟的Step
      * @param watcher Step的定时观察对象
      * @return 是否设置成功
      */
-    virtual bool ResetTimeout(Step* pStep, struct ev_timer* watcher)
-    {
-        return(false);
-    }
-
+    virtual bool ResetTimeout(Step* pStep, struct ev_timer* watcher){return(false);}
     /**
      * @brief 获取Session实例
      * @param uiSessionId 会话ID
      * @return 会话实例（返回NULL表示不存在uiSessionId对应的会话实例）
      */
-    virtual Session* GetSession(uint64 uiSessionId, const std::string& strSessionClass = "net::Session")
-    {
-        return(NULL);
-    }
-    virtual Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session")
-    {
-        return(NULL);
-    }
-
+    virtual Session* GetSession(uint64 uiSessionId, const std::string& strSessionClass = "net::Session"){return(NULL);}
+    virtual Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session"){return(NULL);}
     /**
      * @brief 添加指定标识的消息外壳
      * @note 添加指定标识的消息外壳由Cmd类实例和Step类实例调用，该调用会在Step类中添加一个标识
@@ -419,20 +227,13 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param stMsgShell  消息外壳
      * @return 是否添加成功
      */
-    virtual bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
-    {
-        return(false);
-    }
-
+    virtual bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell){return(false);}
     /**
      * @brief 删除指定标识的消息外壳
      * @note 删除指定标识的消息外壳由Worker类实例调用，在IoError或IoTimeout时调
      * 用。
      */
-    virtual void DelMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
-    {
-    }
-
+    virtual void DelMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell){}
     /**
      * @brief 添加标识的节点类型属性
      * @note 添加标识的节点类型属性，用于以轮询方式向同一节点类型的节点发送数据，以
@@ -441,10 +242,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strNodeType 节点类型
      * @param strIdentify 连接标识符
      */
-    virtual void AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
-    {
-    }
-
+    virtual void AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify){}
     /**
      * @brief 删除标识的节点类型属性
      * @note 删除标识的节点类型属性，当一个节点下线，框架层会自动调用此函数删除标识
@@ -452,28 +250,20 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strNodeType 节点类型
      * @param strIdentify 连接标识符
      */
-    virtual void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
-    {
-    }
+    virtual void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify){}
     /**
      * @brief 获取标识的节点类型属性列表
      * @param strNodeType 节点类型
      * @param strIdentifys 连接标识符列表
      */
-    virtual void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys)
-    {
-    }
+    virtual void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys){}
     /**
      * @brief 注册redis回调
      * @param strIdentify redis节点标识(192.168.16.22:9988形式的IP+端口)
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)
-    {
-        return(false);
-    }
-
+    virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep){return(false);}
     /**
      * @brief 注册redis回调
      * @param strHost redis节点IP
@@ -481,85 +271,40 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)
-    {
-        return(false);
-    }
+    virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep){return(false);}
     /**
      * @brief 添加指定标识的redis context地址
      * @note 添加指定标识的redis context由Worker调用，该调用会在Step类中添加一个标识
      * 和redis context的对应关系。
      */
-    virtual bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx)
-    {
-        return(false);
-    }
-
+    virtual bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx){return(false);}
     /**
      * @brief 删除指定标识的redis context地址
      * @note 删除指定标识的到redis地址的对应关系（此函数被调用时，redis context的资源已被释放或将被释放）
      * 用。
      */
-    virtual void DelRedisContextAddr(const redisAsyncContext* ctx)
-    {
-    }
-
+    virtual void DelRedisContextAddr(const redisAsyncContext* ctx){}
     /**
 	 * @brief 注册mysql回调
 	 * @param pMysqlStep mysql步骤实例
 	 * @return 是否注册成功
 	 */
-	virtual bool RegisterCallback(MysqlStep* pMysqlStep)
-	{
-		return(false);
-	}
-
+	virtual bool RegisterCallback(MysqlStep* pMysqlStep){return(false);}
     /**
      * @brief 获取连接
      * @param strIdentify 连接标识符
      * @param stMsgShell 连接通道
      * @return 连接通道
      */
-    virtual bool GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell)
-    {
-        return(false);
-    }
-
+    virtual bool GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell){return(false);}
     /**
-     * @breif 设置客户端连接相关数据
-     * @param oBuff 客户端连接相关数据
-     * @return 是否设置成功
+     * @breif 客户端连接相关数据
      */
-    virtual bool SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
-    {
-        return(false);
-    }
-
-    /**
-     * @brief 判断是否存在客户端数据
-     * @param stMsgShell 客户端连接通道
-     * @return 是否存在客户端数据
-     */
-    virtual bool HadClientData(const tagMsgShell& stMsgShell)
-    {
-        return(false);
-    }
-
-	virtual bool GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
-	{
-		return(false);
-	}
-
-    virtual std::string GetClientAddr(const tagMsgShell& stMsgShell)
-    {
-        return("");
-    }
-
-    virtual std::string GetConnectIdentify(const tagMsgShell& stMsgShell)
-    {
-        return("");
-    }
-
+    virtual bool SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff){return(false);}
+    virtual bool HadClientData(const tagMsgShell& stMsgShell){return(false);}
+	virtual bool GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff){return(false);}
+    virtual std::string GetClientAddr(const tagMsgShell& stMsgShell){return("");}
+    virtual std::string GetConnectIdentify(const tagMsgShell& stMsgShell){return("");}
     /**
      * @brief 发送数据
      * @note 指定连接标识符将数据发送。此函数先查找与strIdentify匹配的stMsgShell，如果找到就调用
@@ -571,80 +316,42 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param oMsgBody 数据包体
      * @return 是否发送成功
      */
-    virtual bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-    {
-        return(false);
-    }
-
-    virtual bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL)
-    {
-        return(false);
-    }
+    virtual bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return(false);}
+    virtual bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL){return(false);}
+    virtual bool Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in &stAddr,bool boRefresh=false){return false;}
     /*
      * @brief 服务器使用的发送到客户端接口
-     * @note 为支持对不同客户端构造不同响应消息，以及为支持需要用到pb与json转换的消息
+     * @note 为支持对不同客户端构造不同响应消息
      * */
-    virtual bool SendToClient(const tagMsgShell& stMsgShell,MsgHead& oMsgHead,const google::protobuf::Message &message,
-                        const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "")
-    {
-        return(false);
-    }
-    virtual bool SendToClient(const std::string& strIdentify,MsgHead& oMsgHead,const google::protobuf::Message &message,
-                    const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "")
-    {
-        return(false);
-    }
-    virtual bool BuildClientMsg(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,
-                    const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "")
-    {
-        return(false);
-    }
-    virtual bool ParseFromMsg(const MsgBody& oInMsgBody,google::protobuf::Message &message)
-    {
-        return(false);
-    }
-    virtual bool Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in &stAddr,bool boRefresh=false){return false;}
+    virtual bool ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &message){return false;}
+    virtual bool BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "",bool boJsonBody=false){return false;}
+    virtual bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "",bool boJsonBody=false){return false;}
+    virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "",bool boJsonBody=false){return(false);}
+    virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody){return(false);}
+	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::map<std::string,std::string> &heads = std::map<std::string,std::string>()){return(false);}
     /*
      * @brief 异步通用回调接口简化封装
      * */
-    virtual bool SendToProxyCallBack(Session* pSession,const DataMem::MemOperate* pMemOper,
-            StorageCallbackSession callback,bool boPermanentSession,
-            const std::string &nodeType="PROXY",uint32 uiCmd = CMD_REQ_STORATE,int uiModFactor=-1){return false;}
-    virtual bool SendToProxyCallBack(Step* pUpperStep,const DataMem::MemOperate* pMemOper,
-            StorageCallbackStep callback,const std::string &nodeType="PROXY",
-            uint32 uiCmd = CMD_REQ_STORATE,int uiModFactor=-1){return false;}
-    virtual bool SendToCallBack(Session* pSession,uint32 uiCmd,const std::string &strBody,
-            StandardCallbackSession callback,bool boPermanentSession,
-            const std::string &nodeType,int uiModFactor=-1){return false;}
-    virtual bool SendToCallBack(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,
-            StandardCallbackStep callback,const std::string &nodeType,int uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Session* pSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,int64 uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeType,int64 uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const tagMsgShell& stMsgShell,int64 uiModFactor=-1){return false;}
+    virtual bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const tagMsgShell& stMsgShell,int64 uiModFactor=-1){return false;}
     /**
      * @brief 发送数据
      * @param stMsgShell 消息外壳
      * @param oHttpMsg Http数据包
      * @return 是否发送成功
      */
-    virtual bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL)
-    {
-        return(false);
-    }
+    virtual bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL){return(false);}
     virtual bool HttpsGet(const std::string & strUrl, std::string & strResponse,
             const std::string& strUserpwd = "",util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,
-            const std::string& strCaPath= "",int iPort = 0)
-    {
-        return(false);
-    }
+            const std::string& strCaPath= "",int iPort = 0){return(false);}
     virtual bool HttpsPost(const std::string & strUrl, const std::string & strFields,std::string & strResponse,
             const std::string& strUserpwd = "",util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,
-            const std::string& strCaPath= "",int iPort = 0)
-    {
-        return(false);
-    }
-    virtual bool AutoConnect(const std::string& strIdentify)
-    {
-        return(false);
-    }
-
+            const std::string& strCaPath= "",int iPort = 0){return(false);}
+    virtual bool AutoConnect(const std::string& strIdentify){return(false);}
     /**
      * @brief 发送到下一个同一类型的节点
      * @note 发送到下一个同一类型的节点，适用于对同一类型节点做轮询方式发送以达到简单的负载均衡。
@@ -653,11 +360,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param oMsgBody 数据包体
      * @return 是否发送成功
      */
-    virtual bool SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-    {
-        return(false);
-    }
-
+    virtual bool SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return(false);}
     /**
      * @brief 以取模方式选择发送到同一类型节点
      * @note 以取模方式选择发送到同一类型节点，实现简单有要求的负载均衡。
@@ -667,11 +370,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param oMsgBody 数据包体
      * @return 是否发送成功
      */
-    virtual bool SendToWithMod(const std::string& strNodeType, unsigned int uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-    {
-        return(false);
-    }
-
+    virtual bool SendToWithMod(const std::string& strNodeType, uint32 uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return(false);}
     /**
      * @brief 发送到一种类型的节点
      * @note 发送到同一种类型除当前节点之外的所有节点。
@@ -680,33 +379,21 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param oMsgBody 数据包体
      * @return 是否发送成功
      */
-    virtual bool SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-    {
-        return(false);
-    }
-
+    virtual bool SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody){return(false);}
     /**
      * @brief 断开连接
      * @note 当业务层发现连接非法（如客户端登录时无法通过验证），可调用此方法断开连接
      * @param stMsgShell 消息外壳
      * @return 断开连接结果
      */
-    virtual bool Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice = true)
-    {
-        return(false);
-    }
-
+    virtual bool Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice = true){return(false);}
     /**
      * @brief 断开连接
      * @note 当业务层发现连接非法（如客户端登录时无法通过验证），可调用此方法断开连接
      * @param strIdentify 连接标识符
      * @return 断开连接结果
      */
-    virtual bool Disconnect(const std::string& strIdentify, bool bMsgShellNotice = true)
-    {
-        return(false);
-    }
-
+    virtual bool Disconnect(const std::string& strIdentify, bool bMsgShellNotice = true){return(false);}
     /**
      * @brief 放弃已存在的连接
      * @note 放弃已存在连接是告知框架将连接标识符与连接的MsgShell的关系解除掉，并且将连接
@@ -716,11 +403,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strIdentify 已存在连接的连接标识符
      * @return 放弃结果
      */
-    virtual bool AbandonConnect(const std::string& strIdentify)
-    {
-        return(false);
-    }
-
+    virtual bool AbandonConnect(const std::string& strIdentify){return(false);}
     /**
      * @brief 执行下一步
      * @param uiCallerStepSeq  调用者step seq
@@ -729,30 +412,22 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strErrMsg  错误信息
      * @param strErrShow 展示给用户的错误信息
      */
-    virtual void ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,
-                    int iErrno, const std::string& strErrMsg, const std::string& strErrShow){;}
+    virtual bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
+	virtual bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
+	virtual bool ExecStep(Step* pStep,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "",ev_tstamp dTimeout = 0.0){return false;}
+	virtual bool ExecStep(RedisStep* pStep){return false;};
+	virtual Step* GetStep(uint32 uiStepSeq){return NULL;}
 
-    bool CoroutineResumeWithTimes(uint32 nMaxTimes=0);//nMaxTimes每次最大执行协程次数(nMaxTimes=0则执行所有的协程).返回true 还有需要执行的协程，返回false没有还需要执行的协程
-    bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg);//arg在框架回收
-
-    //框架接口
-    int CoroutineNew(util::coroutine_func func,void *ud);
-	bool CoroutineResume();//自定义调用策略,轮流执行规则
-	bool CoroutineResume(int coid);//唤醒指定协程
-	int CoroutineStatus(int coid);
-	bool IsCoroutineEnable();
-	uint32 CoroutineTaskSize();
-	bool CoroutineYield();//在协程函数中放弃协程的本次执行
-	int CoroutineRunning();
+	const std::string& GetWorkerIdentify();
+	std::string m_strWorkerIdentify;
+	Coroutine m_Coroutine;
 private:
     std::string m_strNodeTypeTmp;
     std::string m_strHostForServerTmp;
     util::CJsonObject m_oCustomConfTmp;
-
-    tagCoroutineSchedule m_CoroutineSchedule;
-    std::map<int,tagCoroutineArg*> m_CoroutineScheduleArgs;
 };
 
 } /* namespace net */
+extern net::Labor* g_pLabor;
 
 #endif /* SRC_NodeLabor_HPP_ */

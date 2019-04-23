@@ -16,31 +16,45 @@ namespace net
 
 Step::Step(Step* pNextStep)
     : m_bRegistered(false), m_ulSequence(0), m_dActiveTime(0.0), m_dTimeout(0.5),
-      m_pLabor(0), m_pLogger(0), m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
+      m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
 	m_uiUserId = 0;
 	m_uiCmd = 0;
+	m_data = NULL;
 }
 
-Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep)
-    : m_stReqMsgShell(stReqMsgShell), m_oReqMsgHead(oReqMsgHead), m_oReqMsgBody(oReqMsgBody),
+Step::Step(const tagMsgShell& stReqMsgShell,Step* pNextStep)
+    : m_stReqMsgShell(stReqMsgShell),
       m_bRegistered(false), m_ulSequence(0), m_dActiveTime(0.0), m_dTimeout(0.5),
-      m_pLabor(0), m_pLogger(0), m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
+      m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
-	m_uiUserId = 0;
-	m_uiCmd = 0;
+    m_uiUserId = 0;
+    m_uiCmd = 0;
+    m_data = NULL;
 }
 
 Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, Step* pNextStep)
     : m_stReqMsgShell(stReqMsgShell), m_oReqMsgHead(oReqMsgHead),
       m_bRegistered(false), m_ulSequence(0), m_dActiveTime(0.0), m_dTimeout(0.5),
-      m_pLabor(0), m_pLogger(0), m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
+      m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
     m_uiUserId = 0;
     m_uiCmd = 0;
+    m_data = NULL;
+}
+
+Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep)
+    : m_stReqMsgShell(stReqMsgShell), m_oReqMsgHead(oReqMsgHead), m_oReqMsgBody(oReqMsgBody),
+      m_bRegistered(false), m_ulSequence(0), m_dActiveTime(0.0), m_dTimeout(0.5),
+      m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
+{
+    AddNextStepSeq(pNextStep);
+	m_uiUserId = 0;
+	m_uiCmd = 0;
+	m_data = NULL;
 }
 
 Step::~Step()
@@ -64,12 +78,13 @@ Step::~Step()
     }
     m_setNextStepSeq.clear();
     m_setPreStepSeq.clear();
+    SAFE_DELETE(m_data);
 }
 
 bool Step::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
 {
     bool bRegisterResult = false;
-    bRegisterResult = m_pLabor->RegisterCallback(GetSequence(), pStep, dTimeout);
+    bRegisterResult = g_pLabor->RegisterCallback(GetSequence(), pStep, dTimeout);
     if (bRegisterResult && (m_pNextStep == pStep))
     {
         m_setNextStepSeq.insert(pStep->GetSequence());
@@ -77,152 +92,6 @@ bool Step::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
     return(bRegisterResult);
 }
 
-bool Step::RegisterCallback(MysqlStep* pMysqlStep)
-{
-    return m_pLabor->RegisterCallback(pMysqlStep);
-}
-
-void Step::DeleteCallback(Step* pStep)
-{
-    LOG4_TRACE("Step[%u]::%s()", GetSequence(), __FUNCTION__);
-    m_pLabor->DeleteCallback(GetSequence(), pStep);
-}
-
-bool Step::Pretreat(Step* pStep)
-{
-    return(m_pLabor->Pretreat(pStep));
-}
-
-bool Step::RegisterCallback(Session* pSession)
-{
-    return(m_pLabor->RegisterCallback(pSession));
-}
-
-void Step::DeleteCallback(Session* pSession)
-{
-    return(m_pLabor->DeleteCallback(pSession));
-}
-
-const std::string& Step::GetWorkPath() const
-{
-    return(m_pLabor->GetWorkPath());
-}
-
-uint32 Step::GetNodeId()
-{
-    return(m_pLabor->GetNodeId());
-}
-
-uint32 Step::GetWorkerIndex()
-{
-    return(m_pLabor->GetWorkerIndex());
-}
-
-const std::string& Step::GetWorkerIdentify()
-{
-    if (m_strWorkerIdentify.size() < 5) // IP + port + worker_index长度一定会大于这个数即可，不在乎数值是什么
-    {
-        char szWorkerIdentify[64] = {0};
-        snprintf(szWorkerIdentify, 64, "%s:%d.%d", m_pLabor->GetHostForServer().c_str(),
-                        m_pLabor->GetPortForServer(), m_pLabor->GetWorkerIndex());
-        m_strWorkerIdentify = szWorkerIdentify;
-    }
-    return(m_strWorkerIdentify);
-}
-
-const std::string& Step::GetNodeType() const
-{
-    return(m_pLabor->GetNodeType());
-}
-
-const util::CJsonObject& Step::GetCustomConf() const
-{
-    return(m_pLabor->GetCustomConf());
-}
-
-time_t Step::GetNowTime() const
-{
-    return(m_pLabor->GetNowTime());
-}
-
-Session* Step::GetSession(uint64 uiSessionId, const std::string& strSessionClass)
-{
-    return(m_pLabor->GetSession(uiSessionId, strSessionClass));
-}
-
-Session* Step::GetSession(const std::string& strSessionId, const std::string& strSessionClass)
-{
-    return(m_pLabor->GetSession(strSessionId, strSessionClass));
-}
-
-bool Step::SendTo(const tagMsgShell& stMsgShell)
-{
-    return(m_pLabor->SendTo(stMsgShell));
-}
-
-bool Step::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-{
-    return(m_pLabor->SendTo(stMsgShell, oMsgHead, oMsgBody));
-}
-
-bool Step::SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-{
-    return(m_pLabor->SendTo(strIdentify, oMsgHead, oMsgBody));
-}
-
-bool Step::SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-{
-    return(m_pLabor->SendToNext(strNodeType, oMsgHead, oMsgBody));
-}
-
-bool Step::SendToWithMod(const std::string& strNodeType, unsigned int uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
-{
-    return(m_pLabor->SendToWithMod(strNodeType, uiModFactor, oMsgHead, oMsgBody));
-}
-
-bool Step::AsyncStep(Step* pStep,ev_tstamp dTimeout)
-{
-    if (pStep == NULL)
-    {
-        LOG4CPLUS_ERROR_FMT(GetLogger(),"pStep == NULL!");
-        return(false);
-    }
-    if (!RegisterCallback(pStep,dTimeout))
-    {
-        LOG4CPLUS_ERROR_FMT(GetLogger(),"RegisterCallback(pStep) error!");
-        delete pStep;
-        pStep = NULL;
-        return(false);
-    }
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
-    {
-        DeleteCallback(pStep);
-        return(false);
-    }
-    return true;
-}
-
-bool Step::SendToProxyCallBack(const DataMem::MemOperate* pMemOper,StorageCallbackStep callback,
-                const std::string &nodeType,uint32 uiCmd)
-{
-    return GetLabor()->SendToProxyCallBack(this,pMemOper,callback,nodeType,uiCmd,-1);
-}
-bool Step::SendToProxyModCallBack(const DataMem::MemOperate* pMemOper,StorageCallbackStep callback,int uiModFactor,
-                const std::string &nodeType,uint32 uiCmd)
-{
-    return GetLabor()->SendToProxyCallBack(this,pMemOper,callback,nodeType,uiCmd,uiModFactor);
-}
-
-bool Step::SendToCallBack(uint32 uiCmd,const std::string &strBody,StandardCallbackStep callback,
-                const std::string &nodeType)
-{
-    return GetLabor()->SendToCallBack(this,uiCmd,strBody,callback,nodeType,-1);
-}
-bool Step::SendToModCallBack(uint32 uiCmd,const std::string &strBody,StandardCallbackStep callback,int uiModFactor,
-                const std::string &nodeType)
-{
-    return GetLabor()->SendToCallBack(this,uiCmd,strBody,callback,nodeType,uiModFactor);
-}
 void Step::DelayNextStep()
 {
     if (m_pNextStep)
@@ -262,28 +131,20 @@ bool Step::NextStep(Step* pNextStep, int iErrno, const std::string& strErrMsg, c
 
 bool Step::NextStep(int iErrno, const std::string& strErrMsg, const std::string& strErrClientShow)
 {
-    for (std::set<uint32>::iterator seq_iter = m_setNextStepSeq.begin();
-                    seq_iter != m_setNextStepSeq.end(); ++seq_iter)
+    for (auto seq_iter:m_setNextStepSeq)
     {
-        m_pLabor->ExecStep(GetSequence(), *seq_iter, iErrno, strErrMsg, strErrClientShow);
+        g_pLabor->ExecStep(GetSequence(),seq_iter, iErrno, strErrMsg, strErrClientShow);
     }
     if (m_setNextStepSeq.size() > 0)
     {
         return(true);
     }
-
     LOG4_TRACE("m_pNextStep 0x%x", m_pNextStep);
     if (m_pNextStep)
     {
         if (!m_pNextStep->IsRegistered())
         {
-            for (int i = 0; i < 3; ++i)
-            {
-                if (RegisterCallback(m_pNextStep))
-                {
-                    break;
-                }
-            }
+        	RegisterCallback(m_pNextStep);
         }
         if (m_pNextStep->IsRegistered())
         {
@@ -317,9 +178,9 @@ uint32 Step::GetSequence()
     }
     if (0 == m_ulSequence)
     {
-        if (NULL != m_pLabor)
+        if (NULL != g_pLabor)
         {
-            m_ulSequence = m_pLabor->GetSequence();
+            m_ulSequence = g_pLabor->GetSequence();
         }
     }
     return(m_ulSequence);
@@ -327,9 +188,10 @@ uint32 Step::GetSequence()
 
 void Step::DelayTimeout()
 {
-    if (IsRegistered())
+    if (m_bRegistered)
     {
-        m_pLabor->ResetTimeout(this, m_pTimeoutWatcher);
+    	LOG4_TRACE("step %u DelayTimeout dActiveTime(%lf) dTimeout(%lf)", GetSequence(),m_dActiveTime,m_dTimeout);
+        g_pLabor->ResetTimeout(this, m_pTimeoutWatcher);
     }
     else
     {
@@ -337,67 +199,12 @@ void Step::DelayTimeout()
     }
 }
 
-bool Step::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
-{
-	return(m_pLabor->AddMsgShell(strIdentify, stMsgShell));
-}
-
-void Step::DelMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
-{
-    m_pLabor->DelMsgShell(strIdentify,stMsgShell);
-}
-
-void Step::AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
-{
-    m_pLabor->AddNodeIdentify(strNodeType, strIdentify);
-}
-
-void Step::DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
-{
-    m_pLabor->DelNodeIdentify(strNodeType, strIdentify);
-}
-
-/*
-void Step::AddRedisNodeConf(const std::string strNodeType, const std::string strHost, int iPort)
-{
-    m_pLabor->AddRedisNodeConf(strNodeType, strHost, iPort);
-}
-
-void Step::DelRedisNodeConf(const std::string strNodeType, const std::string strHost, int iPort)
-{
-    m_pLabor->DelRedisNodeConf(strNodeType, strHost, iPort);
-}
-*/
-
-bool Step::AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx)
-{
-    return(m_pLabor->AddRedisContextAddr(strHost, iPort, ctx));
-}
-
-void Step::DelRedisContextAddr(const redisAsyncContext* ctx)
-{
-    m_pLabor->DelRedisContextAddr(ctx);
-}
-
-bool Step::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)
-{
-    return(m_pLabor->RegisterCallback(strIdentify, pRedisStep));
-}
-
-bool Step::RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)
-{
-    return(m_pLabor->RegisterCallback(strHost, iPort, pRedisStep));
-}
-
 void Step::AddNextStepSeq(Step* pStep)
 {
-    if (NULL != pStep && pStep->IsRegistered())
+    if (NULL != pStep && pStep->IsRegistered() && m_bRegistered)
     {
+    	LOG4_DEBUG("step %u AddNextStepSeq %u",GetSequence(),pStep->GetSequence());
         m_setNextStepSeq.insert(pStep->GetSequence());
-//        if (pStep == m_pNextStep)
-//        {
-//            m_pNextStep == NULL;    // 将下一个step的seq加入到m_setNextStepSeq后即将m_pNextStep抹掉，以免重复调用或析构
-//        }
     }
 }
 
@@ -407,6 +214,14 @@ void Step::AddPreStepSeq(Step* pStep)
     {
         m_setPreStepSeq.insert(pStep->GetSequence());
     }
+}
+
+void Step::RemovePreStepSeq(Step* pStep)
+{
+	if (NULL != pStep && pStep->IsRegistered())
+	{
+		m_setPreStepSeq.erase(pStep->GetSequence());
+	}
 }
 
 } /* namespace net */

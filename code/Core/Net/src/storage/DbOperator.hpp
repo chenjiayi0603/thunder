@@ -37,7 +37,8 @@ public:
     virtual ~DbOperator();
 
     virtual DataMem::MemOperate* MakeMemOperate();
-
+    uint32 GetDBFieldSize()const{return m_pDbOperate ? m_pDbOperate->fields_size():0;}
+    void ClearDbFields() {if (m_pDbOperate)m_pDbOperate->clear_fields();}
     /**
      * @brief 添加字段
      * @param strFieldName 字段名
@@ -71,7 +72,6 @@ public:
     virtual bool AddDbField(const std::string& strFieldName, double dFieldValue,
                     const std::string& strColAs = "",
                     bool bGroupBy = false, bool bOrderBy = false, const std::string& strOrder = "DESC");
-
     /**
      * @brief 添加查询条件
      * @note 适用于没有优先级无须分组的条件添加，每一个添加的条件会按添加的先后顺序依次展开

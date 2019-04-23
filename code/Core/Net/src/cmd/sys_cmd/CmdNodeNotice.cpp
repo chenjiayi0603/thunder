@@ -50,7 +50,6 @@ bool CmdNodeNotice::AnyMessage(
                 LOG4_ERROR("error %d: new StepNodeNotice() error!", ERR_NEW);
                 return(STATUS_CMD_FAULT);
             }
-
             if (RegisterCallback(pStep))
             {
                 pStep->Emit(ERR_OK);

@@ -54,7 +54,6 @@ E_CMD_STATUS StepConnectWorker::Callback(
                     LOG4_ERROR("error %d: new StepTellWorker() error!", ERR_NEW);
                     return(STATUS_CMD_FAULT);
                 }
-
                 if (RegisterCallback(pStepTellWorker))
                 {
                     pStepTellWorker->Emit(ERR_OK);

@@ -16,7 +16,7 @@ if [ $# == 1 ]; then
 		    then
 		        target_server=`awk -F'"server_name"' '/server_name/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $3}'`
 		        target_port=`awk -F'"inner_port"' '/inner_port/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $2}'`
-		        target_server_tag=`echo "$target_server" | awk '{print substr($0,0,9)}'`
+		        target_server_tag=`echo "$target_server" | awk '{print substr($0,0,10)}'`
 		        #echo "reload ${target_server_tag} so..."
 		        running_target_server_pid=`netstat -apn 2>>/dev/null | grep -w $target_port | grep $target_server_tag | awk -F/ '/^tcp/{print $1}' | awk '/LISTEN/{print $NF}'`
 		        if [ -n "$running_target_server_pid" ]
@@ -35,7 +35,7 @@ if [ $# == 1 ]; then
 		    then
 		        target_server=`awk -F'"server_name"' '/server_name/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $3}'`
 		        target_port=`awk -F'"inner_port"' '/inner_port/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $2}'`
-		        target_server_tag=`echo "$target_server" | awk '{print substr($0,0,9)}'`
+		        target_server_tag=`echo "$target_server" | awk '{print substr($0,0,10)}'`
 		        running_target_server_pid=`netstat -apn 2>>/dev/null | grep -w $target_port | grep $target_server_tag | awk -F/ '/^tcp/{print $1}' | awk '/LISTEN/{print $NF}'`
 		        if [ -n "$running_target_server_pid" ]
 		        then

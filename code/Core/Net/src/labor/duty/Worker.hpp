@@ -106,26 +106,90 @@ class Worker : public Labor
 public:
     typedef std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > > T_MAP_NODE_TYPE_IDENTIFY;
     Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf);
-    virtual ~Worker();
-    void Run();
-    //事件回调
-    static void TerminatedCallback(struct ev_loop* loop, struct ev_signal* watcher, int revents);
-    static void IdleCallback(struct ev_loop* loop, struct ev_idle* watcher, int revents);
-    static void IoCallback(struct ev_loop* loop, struct ev_io* watcher, int revents);
-    static void IoTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
-    static void PeriodicTaskCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);  // 周期任务回调，用于替换IdleCallback
-    static void StepTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
-    static void SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
-    static void RedisConnectCallback(const redisAsyncContext *c, int status);
-    static void RedisDisconnectCallback(const redisAsyncContext *c, int status);
-    static void RedisCmdCallback(redisAsyncContext *c, void *reply, void *privdata);
-    //redis cluster
-    static void RedisClusterConnectCallback(const redisAsyncContext *c, int status);
-    static void RedisClusterDisconnectCallback(const redisAsyncContext *c, int status);
-    static void RedisClusterCmdCallback(redisClusterAsyncContext *acc, void *r, void *privdata);
-    //回调处理
-    bool IoRead(tagIoWatcherData* pData, struct ev_io* watcher);
-    bool IoWrite(tagIoWatcherData* pData, struct ev_io* watcher);
+    ~Worker();
+    //节点信息
+    uint32 GetSequence(){return (++m_ulSequence > 0 ?m_ulSequence:++m_ulSequence);}// Server长期运行，sequence达到最大正整数又回到0
+    const std::string& GetWorkPath() const {return(m_strWorkPath);}
+    log4cplus::Logger GetLogger() {return(m_oLogger);}
+    const std::string& GetNodeType() const {return(m_strNodeType);}
+    const util::CJsonObject& GetCustomConf() const {return(m_oCustomConf);}
+    uint32 GetNodeId() const {return(m_uiNodeId);}
+    const std::string& GetHostForServer() const {return(m_strHostForServer);}
+    int GetPortForServer() const{return(m_iPortForServer);}
+    int GetWorkerIndex() const{return(m_iWorkerIndex);}
+    int GetClientBeatTime() const{return((int)m_dIoTimeout);}
+    const std::string& GetWorkerIdentify();
+    time_t GetNowTime() const;
+    void CloseSocket(int &s){if (s >= 0){close(s);s = -1;}}
+    //步骤与会话
+    bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0);
+    bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTimeout = 0.0);
+    void DeleteCallback(Step* pStep);
+    void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep);
+    bool RegisterCallback(Session* pSession);
+    void DeleteCallback(Session* pSession);
+    bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep);
+    bool ResetTimeout(Step* pStep, struct ev_timer* watcher);
+    Session* GetSession(uint64 uiSessionId, const std::string& strSessionClass = "net::Session");
+    Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session");
+    bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
+    bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "");
+    bool ExecStep(Step* pStep,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "",ev_tstamp dTimeout = 0.0);
+    bool ExecStep(RedisStep* pStep);
+    Step* GetStep(uint32 uiStepSeq);
+    //发送数据  ,含自动连接成功后，发送待发送数据
+    bool SendTo(const tagMsgShell& stMsgShell);
+    bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool SendToWithMod(const std::string& strNodeType, uint32 uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
+    bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
+    bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify);
+    bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
+    bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
+    bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep);
+    bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep);
+    bool AutoMysqlCmd(MysqlStep* pMysqlStep);
+    bool AutoConnect(const std::string& strIdentify);
+    void SetNodeId(uint32 uiNodeId) {m_uiNodeId = uiNodeId;}
+    bool HttpsGet(const std::string & strUrl, std::string & strResponse,const std::string& strUserpwd = "",
+    		util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,const std::string& strCaPath= "",int iPort = 0);
+    bool HttpsPost(const std::string & strUrl, const std::string & strFields,std::string & strResponse,const std::string& strUserpwd = "",
+    		util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,const std::string& strCaPath= "",int iPort = 0);
+	//返回消息
+	bool BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "",bool boJsonBody=false);
+	bool ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &message);
+	bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
+	bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
+	bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody);
+	bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::map<std::string,std::string> &heads = std::map<std::string,std::string>());
+	//发送消息(nodeType支持节点类型和节点标识符)
+	bool SendToCallback(Session* pSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1);
+	bool SendToCallback(Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1);
+	bool SendToCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,int64 uiModFactor=-1);
+	bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeType,int64 uiModFactor=-1);
+	bool SendToCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const tagMsgShell& stMsgShell,int64 uiModFactor=-1);
+	bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const tagMsgShell& stMsgShell,int64 uiModFactor=-1);
+public:
+	void Run();
+	//事件回调
+	static void TerminatedCallback(struct ev_loop* loop, struct ev_signal* watcher, int revents);
+	static void IdleCallback(struct ev_loop* loop, struct ev_idle* watcher, int revents);
+	static void IoCallback(struct ev_loop* loop, struct ev_io* watcher, int revents);
+	static void IoTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
+	static void PeriodicTaskCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);  // 周期任务回调，用于替换IdleCallback
+	static void StepTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
+	static void SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
+	static void RedisConnectCallback(const redisAsyncContext *c, int status);
+	static void RedisDisconnectCallback(const redisAsyncContext *c, int status);
+	static void RedisCmdCallback(redisAsyncContext *c, void *reply, void *privdata);
+	static void RedisClusterConnectCallback(const redisAsyncContext *c, int status);
+	static void RedisClusterDisconnectCallback(const redisAsyncContext *c, int status);
+	static void RedisClusterCmdCallback(redisClusterAsyncContext *acc, void *r, void *privdata);
+	bool IoRead(tagIoWatcherData* pData, struct ev_io* watcher);
+	bool IoWrite(tagIoWatcherData* pData, struct ev_io* watcher);
 	bool IoError(tagIoWatcherData* pData, struct ev_io* watcher);
 	bool IoTimeout(struct ev_timer* watcher, bool bCheckBeat = true);
 	bool StepTimeout(Step* pStep, struct ev_timer* watcher);
@@ -135,118 +199,38 @@ public:
 	bool OnRedisConnect(const redisAsyncContext *c, int status);
 	bool OnRedisDisconnect(const redisAsyncContext *c, int status);
 	bool OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata);
-	//redis cluster
 	bool OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *r, void *privdata);
-	//process
-    void OnTerminated(struct ev_signal* watcher);
-    bool CheckParent();
-    bool SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody);
-public:
-    //节点信息
-    virtual uint32 GetSequence(){return (++m_ulSequence > 0 ?m_ulSequence:++m_ulSequence);}// Server长期运行，sequence达到最大正整数又回到0
-    virtual const std::string& GetWorkPath() const {return(m_strWorkPath);}
-    virtual log4cplus::Logger GetLogger() {return(m_oLogger);}
-    virtual const std::string& GetNodeType() const {return(m_strNodeType);}
-    virtual const util::CJsonObject& GetCustomConf() const {return(m_oCustomConf);}
-    virtual uint32 GetNodeId() const {return(m_uiNodeId);}
-    virtual const std::string& GetHostForServer() const {return(m_strHostForServer);}
-    virtual int GetPortForServer() const{return(m_iPortForServer);}
-    virtual int GetWorkerIndex() const{return(m_iWorkerIndex);}
-    virtual int GetClientBeatTime() const{return((int)m_dIoTimeout);}
-    virtual const std::string& GetWorkerIdentify();
-    virtual time_t GetNowTime() const;
-    //步骤与会话
-    virtual bool Pretreat(Cmd* pCmd);
-    virtual bool Pretreat(Step* pStep);
-    virtual bool Pretreat(Session* pSession);
-    virtual bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0);
-    virtual bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTimeout = 0.0);
-    virtual void DeleteCallback(Step* pStep);
-    virtual void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep);
-    //virtual bool UnRegisterCallback(Step* pStep);
-    virtual bool RegisterCallback(Session* pSession);
-    virtual void DeleteCallback(Session* pSession);
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep);
-    virtual bool ResetTimeout(Step* pStep, struct ev_timer* watcher);
-    virtual Session* GetSession(uint64 uiSessionId, const std::string& strSessionClass = "net::Session");
-    virtual Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session");
-public:
-    // Worker设置（由专用Cmd处理）
-    virtual bool SetProcessName(const util::CJsonObject& oJsonConf);
-    virtual void ResetLogLevel(log4cplus::LogLevel iLogLevel);
+	//进程
+	void OnTerminated(struct ev_signal* watcher);
+	bool CheckParent();
+	bool SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody);
+    bool SetProcessName(const util::CJsonObject& oJsonConf);
+    void ResetLogLevel(log4cplus::LogLevel iLogLevel);
     //连接
-    virtual bool Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice = true);
-	virtual bool Disconnect(const std::string& strIdentify, bool bMsgShellNotice = true);
-    virtual bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell);
-    virtual void DelMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell);
-    virtual void AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify);
-    virtual void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify);
-    virtual void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys);
-    virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep);
-    virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep);
-    virtual bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx);
-    virtual void DelRedisContextAddr(const redisAsyncContext* ctx);
-	virtual bool RegisterCallback(MysqlStep* pMysqlStep);
-	virtual bool RegisterCallback(util::MysqlAsyncConn* pMysqlContext, MysqlStep* pMysqlStep);
-	virtual bool AddMysqlContextAddr(MysqlStep* pMysqlStep, util::MysqlAsyncConn* ctx);
-	virtual void DelMysqlContextAddr(util::MysqlAsyncConn* ctx);
-public:
-    //发送数据  ,含自动连接成功后，发送待发送数据
-    virtual bool SendTo(const tagMsgShell& stMsgShell);
-    virtual bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool SendToWithMod(const std::string& strNodeType, unsigned int uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
-    virtual bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
-    virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify);
-    virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = NULL);
-    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep);
-    virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep);
-    virtual bool AutoMysqlCmd(MysqlStep* pMysqlStep);
-    virtual bool AutoConnect(const std::string& strIdentify);
-    virtual void SetNodeId(uint32 uiNodeId) {m_uiNodeId = uiNodeId;}
-    virtual bool HttpsGet(const std::string & strUrl, std::string & strResponse,
-            const std::string& strUserpwd = "",util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,
-            const std::string& strCaPath= "",int iPort = 0);
-    virtual bool HttpsPost(const std::string & strUrl, const std::string & strFields,std::string & strResponse,
-            const std::string& strUserpwd = "",util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,
-            const std::string& strCaPath= "",int iPort = 0);
-    //连接符
-    virtual bool Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in &stAddr,bool boRefresh=false);
-    virtual void AddInnerFd(const tagMsgShell& stMsgShell);
-    virtual bool GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell);
-    virtual bool SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff);
-    virtual bool HadClientData(const tagMsgShell& stMsgShell);
-	virtual bool GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff);
-    virtual std::string GetClientAddr(const tagMsgShell& stMsgShell);
-    virtual std::string GetConnectIdentify(const tagMsgShell& stMsgShell);
-    virtual bool AbandonConnect(const std::string& strIdentify);
-    //步骤执行
-    virtual void ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno, const std::string& strErrMsg, const std::string& strErrShow);
-    //接入服务器消息发送、建立、解析
-    virtual bool SendToClient(const tagMsgShell& stMsgShell,MsgHead& oMsgHead,const google::protobuf::Message &message,
-                    const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "");
-    virtual bool SendToClient(const std::string& strIdentify,MsgHead& oMsgHead,const google::protobuf::Message &message,
-                    const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "");
-    virtual bool BuildClientMsg(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,
-                            const std::string& additional = "",uint64 sessionid = 0,const std::string& strSession = "");
-    virtual bool ParseFromMsg(const MsgBody& oInMsgBody,google::protobuf::Message &message);
-    //存储访问消息发送
-    bool SendToProxyCallBack(Session* pSession,const DataMem::MemOperate* pMemOper,
-            StorageCallbackSession callback,bool boPermanentSession,
-            const std::string &nodeType="PROXY",uint32 uiCmd = CMD_REQ_STORATE,int uiModFactor=-1);
-    bool SendToProxyCallBack(Step* pUpperStep,const DataMem::MemOperate* pMemOper,
-            StorageCallbackStep callback,const std::string &nodeType="PROXY",
-            uint32 uiCmd = CMD_REQ_STORATE,int uiModFactor=-1);
-    bool SendToCallBack(Session* pSession,uint32 uiCmd,const std::string &strBody,
-            StandardCallbackSession callback,bool boPermanentSession,
-            const std::string &nodeType,int uiModFactor=-1);
-    bool SendToCallBack(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,
-            StandardCallbackStep callback,const std::string &nodeType,int uiModFactor=-1);
-
+    bool Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice = true);
+	bool Disconnect(const std::string& strIdentify, bool bMsgShellNotice = true);
+    bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell);
+    void DelMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell);
+    void AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify);
+    void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify);
+    void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys);
+    bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep);
+    bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep);
+    bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx);
+    void DelRedisContextAddr(const redisAsyncContext* ctx);
+	bool RegisterCallback(MysqlStep* pMysqlStep);
+	bool RegisterCallback(util::MysqlAsyncConn* pMysqlContext, MysqlStep* pMysqlStep);
+	bool AddMysqlContextAddr(MysqlStep* pMysqlStep, util::MysqlAsyncConn* ctx);
+	void DelMysqlContextAddr(util::MysqlAsyncConn* ctx);
+    bool Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in &stAddr,bool boRefresh=false);
+    void AddInnerFd(const tagMsgShell& stMsgShell);
+    bool GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell);
+    bool SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff);
+    bool HadClientData(const tagMsgShell& stMsgShell);
+	bool GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff);
+    std::string GetClientAddr(const tagMsgShell& stMsgShell);
+    std::string GetConnectIdentify(const tagMsgShell& stMsgShell);
+    bool AbandonConnect(const std::string& strIdentify);
 	bool Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet);
 protected:
 	//初始化
@@ -256,10 +240,10 @@ protected:
     void PreloadCmd();
     void Destroy();
     bool AddPeriodicTaskEvent();
-    //事件修改
-    bool AddIoReadEvent(tagConnectionAttr* ptagConnectionAttr);
-    bool AddIoWriteEvent(tagConnectionAttr* ptagConnectionAttr);
-    bool RemoveIoWriteEvent(tagConnectionAttr* ptagConnectionAttr);
+    //事件
+    bool AddIoReadEvent(tagConnectionAttr* pConn);
+    bool AddIoWriteEvent(tagConnectionAttr* pConn);
+    bool RemoveIoWriteEvent(tagConnectionAttr* pConn);
     bool DelEvents(ev_io** io_watcher_attr);
     bool AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, ev_tstamp dTimeout = 1.0);
     //连接
@@ -279,7 +263,7 @@ protected:
     tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
-    char* m_pErrBuff;
+    char m_pErrBuff[gc_iErrBuffLen];
     uint32 m_ulSequence;
     log4cplus::Logger m_oLogger;
     bool m_bInitLogger;

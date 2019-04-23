@@ -43,6 +43,36 @@ enum E_ERROR_NO
     ERR_APPKEY_AUTHCODE                      = 403,    ///< appkey验证错误
     ERR_SERVER_LOGIC_ERROR                   = 500,    ///< server逻辑错误
 
+	/* 存储代理错误码段  11000~11999 */
+	ERR_INCOMPLET_DATAPROXY_DATA        = 11001,    ///< DataProxy请求数据包不完整
+	ERR_INVALID_REDIS_ROUTE             = 11002,    ///< 无效的redis路由信息
+	ERR_REDIS_NODE_NOT_FOUND            = 11003,    ///< 未找到合适的redis节点
+	ERR_REGISTERCALLBACK_REDIS          = 11004,    ///< 注册RedisStep错误
+	ERR_REDIS_CMD                       = 11005,    ///< redis命令执行出错
+	ERR_UNEXPECTED_REDIS_REPLY          = 11006,    ///< 不符合预期的redis结果
+	ERR_RESULTSET_EXCEED                = 11007,    ///< 数据包超过protobuf最大限制
+	ERR_LACK_CLUSTER_INFO               = 11008,    ///< 缺少集群信息
+	ERR_REDIS_AND_DB_CMD_NOT_MATCH      = 11010,    ///< redis读写操作与DB读写操作不匹配
+	ERR_REDIS_NIL_AND_DB_FAILED         = 11011,    ///< redis结果集为空，但发送DB操作失败
+	ERR_NO_RIGHT                        = 11012,    ///< 数据操作权限不足
+	ERR_QUERY                           = 11013,    ///< 查询出错，如拼写SQL错误
+	ERR_REDIS_STRUCTURE_WITH_DATASET    = 11014,    ///< redis数据结构由DB的各字段值序列化（或串联）而成，请求与存储不符
+	ERR_REDIS_STRUCTURE_WITHOUT_DATASET = 11015,    ///< redis数据结构并非由DB的各字段值序列化（或串联）而成，请求与存储不符
+	ERR_DB_FIELD_NUM                    = 11016,    ///< redis数据结构由DB的各字段值序列化（或串联）而成，请求的字段数量错误
+	ERR_DB_FIELD_ORDER_OR_FIELD_NAME    = 11017,    ///< redis数据结构由DB的各字段值序列化（或串联）而成，请求字段顺序或字段名错误
+	ERR_KEY_FIELD                       = 11018,    ///< redis数据结构由DB的各字段值序列化（或串联）而成，指定的key_field错误或未指定，或未在对应表的数据字典中找到该字段
+	ERR_KEY_FIELD_VALUE                 = 11019,    ///< redis数据结构指定的key_field所对应的值缺失或值为空
+	ERR_JOIN_FIELDS                     = 11020,    ///< redis数据结构由DB字段串联而成，串联的字段错误
+	ERR_LACK_JOIN_FIELDS                = 11021,    ///< redis数据结构由DB字段串联而成，缺失串联字段
+	ERR_REDIS_STRUCTURE_NOT_DEFINE      = 11022,    ///< redis数据结构未在DataProxy的配置中定义
+	ERR_INVALID_CMD_FOR_HASH_DATASET    = 11023,    ///< nosql hash数据结构由DB的各字段值序列化（或串联）而成，而请求中的hash命令不当
+	ERR_DB_TABLE_NOT_DEFINE             = 11024,    ///< 表未在DataProxy的配置中定义
+	ERR_DB_OPERATE_MISSING              = 11025,    ///< redis数据结构存在对应的DB表，但数据请求缺失对数据库表操作
+	ERR_LACK_TABLE_FIELD                = 11027,    ///< 数据库表字段缺失
+	ERR_TABLE_FIELD_NAME_EMPTY          = 11028,    ///< 数据库表字段名为空
+	ERR_UNDEFINE_REDIS_OPERATE          = 11029,    ///< 未定义或不支持的redis数据操作（只支持string和hash的dataset update操作）
+	ERR_REDIS_READ_WRITE_CMD_NOT_MATCH  = 11030,    ///< redis读命令与写命令不对称
+
 
     ///<20000-30000 模块公共错误代码
     // 20000~20199 基础错误码
@@ -126,83 +156,7 @@ enum E_ERROR_NO
     ERR_SERVER_NODE_PRELOGIN_NO_GATE         =  29001,   ///没有合适网关
 };
 
-/*
- ERROR MAPPING
-*/
-/*
- 所有 HTTP 状态代码及其定义。
-　代码  指示
-2xx  成功
-200  正常；请求已完成。
-201  正常；紧接 POST 命令。
-202  正常；已接受用于处理，但处理尚未完成。
-203  正常；部分信息 — 返回的信息只是一部分。
-204  正常；无响应 — 已接收请求，但不存在要回送的信息。
-3xx  重定向
-301  已移动 — 请求的数据具有新的位置且更改是永久的。
-302  已找到 — 请求的数据临时具有不同 URI。
-303  请参阅其它 — 可在另一 URI 下找到对请求的响应，且应使用 GET 方法检索此响应。
-304  未修改 — 未按预期修改文档。
-305  使用代理 — 必须通过位置字段中提供的代理来访问请求的资源。
-306  未使用 — 不再使用；保留此代码以便将来使用。
-4xx  客户机中出现的错误
-400  错误请求 — 请求中有语法问题，或不能满足请求。
-401  未授权 — 未授权客户机访问数据。
-402  需要付款 — 表示计费系统已有效。
-403  禁止 — 即使有授权也不需要访问。
-404  找不到 — 服务器找不到给定的资源；文档不存在。
-407  代理认证请求 — 客户机首先必须使用代理认证自身。
-415  介质类型不受支持 — 服务器拒绝服务请求，因为不支持请求实体的格式。
-5xx  服务器中出现的错误
-500  内部错误 — 因为意外情况，服务器不能完成请求。
-501  未执行 — 服务器不支持请求的工具。
-502  错误网关 — 服务器接收到来自上游服务器的无效响应。
-503  无法获得服务 — 由于临时过载或维护，服务器无法处理请求。
------------------------------------------------------------------------------------------------------------------------
-HTTP 400 - 请求无效
-HTTP 401.1 - 未授权：登录失败
-HTTP 401.2 - 未授权：服务器配置问题导致登录失败
-HTTP 401.3 - ACL 禁止访问资源
-HTTP 401.4 - 未授权：授权被筛选器拒绝
-HTTP 401.5 - 未授权：ISAPI 或 CGI 授权失败
-HTTP 403 - 禁止访问
-HTTP 403 - 对 Internet 服务管理器 (HTML) 的访问仅限于 Localhost
-HTTP 403.1 禁止访问：禁止可执行访问
-HTTP 403.2 - 禁止访问：禁止读访问
-HTTP 403.3 - 禁止访问：禁止写访问
-HTTP 403.4 - 禁止访问：要求 SSL
-HTTP 403.5 - 禁止访问：要求 SSL 128
-HTTP 403.6 - 禁止访问：IP 地址被拒绝
-HTTP 403.7 - 禁止访问：要求客户证书
-HTTP 403.8 - 禁止访问：禁止站点访问
-HTTP 403.9 - 禁止访问：连接的用户过多
-HTTP 403.10 - 禁止访问：配置无效
-HTTP 403.11 - 禁止访问：密码更改
-HTTP 403.12 - 禁止访问：映射器拒绝访问
-HTTP 403.13 - 禁止访问：客户证书已被吊销
-HTTP 403.15 - 禁止访问：客户访问许可过多
-HTTP 403.16 - 禁止访问：客户证书不可信或者无效
-HTTP 403.17 - 禁止访问：客户证书已经到期或者尚未生效
-HTTP 404.1 - 无法找到 Web 站点
-HTTP 404 - 无法找到文件
-HTTP 405 - 资源被禁止
-HTTP 406 - 无法接受
-HTTP 407 - 要求代理身份验证
-HTTP 410 - 永远不可用
-HTTP 412 - 先决条件失败
-HTTP 414 - 请求 - URI 太长
-HTTP 500 - 内部服务器错误
-HTTP 500.100 - 内部服务器错误 - ASP 错误
-HTTP 500-11 服务器关闭
-HTTP 500-12 应用程序重新启动
-HTTP 500-13 - 服务器太忙
-HTTP 500-14 - 应用程序无效
-HTTP 500-15 - 不允许请求 global.asa
-Error 501 - 未实现
-HTTP 502 - 网关错误
- * */
-
-
+//ERROR MAPPING
 inline int http_err_code(int code)
 {
     switch (code)

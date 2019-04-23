@@ -30,7 +30,7 @@ StepHttpRequestState::~StepHttpRequestState()
 
 net::E_CMD_STATUS StepHttpRequestState::State0()
 {
-	LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s last state:%u uiTestVal:%u ResHttpMsg:%s",
+	LOG4_DEBUG("%s last state:%u uiTestVal:%u ResHttpMsg:%s",
 				__FUNCTION__,GetLastState(),++m_uiTestVal,m_oResHttpMsg.DebugString().c_str());
 	if (HttpGet("http://www.baidu.com/"))
 	{
@@ -46,7 +46,7 @@ net::E_CMD_STATUS StepHttpRequestState::State0()
 
 net::E_CMD_STATUS StepHttpRequestState::State1()
 {
-	LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s last state:%u uiTestVal:%u ResHttpMsg:%s",
+	LOG4_DEBUG("%s last state:%u uiTestVal:%u ResHttpMsg:%s",
 			__FUNCTION__,GetLastState(),++m_uiTestVal,m_oResHttpMsg.DebugString().c_str());
 	if (HttpGet("http://www.sogou.com/"))
 	{
@@ -63,7 +63,7 @@ net::E_CMD_STATUS StepHttpRequestState::State1()
 
 net::E_CMD_STATUS StepHttpRequestState::State2()
 {
-	LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s last state:%u uiTestVal:%u ResHttpMsg:%s",
+	LOG4_DEBUG("%s last state:%u uiTestVal:%u ResHttpMsg:%s",
 				__FUNCTION__,GetLastState(),++m_uiTestVal,m_oResHttpMsg.DebugString().c_str());
 	if (HttpGet("http://www.alipay.com/"))
 	{
@@ -80,18 +80,18 @@ net::E_CMD_STATUS StepHttpRequestState::State2()
 
 net::E_CMD_STATUS StepHttpRequestState::State3()
 {
-	LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s last state:%u uiTestVal:%u ResHttpMsg:%s",
+	LOG4_DEBUG("%s last state:%u uiTestVal:%u ResHttpMsg:%s",
 				__FUNCTION__,GetLastState(),++m_uiTestVal,m_oResHttpMsg.DebugString().c_str());
-	LOG4CPLUS_DEBUG_FMT(GetLogger(),"StepState done");
+	LOG4_DEBUG("StepState done");
 	Response(0);
 	return(net::STATUS_CMD_COMPLETED);
 }
 
 net::E_CMD_STATUS StepHttpRequestState::State4()
 {
-	LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s last state:%u uiTestVal:%u ResHttpMsg:%s",
+	LOG4_DEBUG("%s last state:%u uiTestVal:%u ResHttpMsg:%s",
 				__FUNCTION__,GetLastState(),++m_uiTestVal,m_oResHttpMsg.DebugString().c_str());
-	LOG4CPLUS_DEBUG_FMT(GetLogger(),"StepState done");
+	LOG4_DEBUG("StepState done");
 	Response(0);
 	return(net::STATUS_CMD_COMPLETED);
 }
@@ -107,7 +107,7 @@ void StepHttpRequestState::Response(int nCode)
     oRsp.Add("code", nCode);
     oRsp.Add("msg", "ok");
     oHttpMsg.set_body(oRsp.ToString());
-    GetLabor()->SendTo(m_stReqMsgShell, oHttpMsg);
+    g_pLabor->SendTo(m_stReqMsgShell, oHttpMsg);
 }
 
 } /* namespace net */

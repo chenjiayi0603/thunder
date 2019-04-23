@@ -28,17 +28,9 @@ class StepIoTimeout: public Step
 public:
     StepIoTimeout(const tagMsgShell& stMsgShell, struct ev_timer* pWatcher);
     virtual ~StepIoTimeout();
-    virtual E_CMD_STATUS Emit(
-                    int iErrno = 0,
-                    const std::string& strErrMsg = "",
-                    const std::string& strErrShow = "");
-    virtual E_CMD_STATUS Callback(
-                    const tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead,
-                    const MsgBody& oInMsgBody,
-                    void* data = NULL);
+    virtual E_CMD_STATUS Emit(int iErrno = 0,const std::string& strErrMsg = "",const std::string& strErrShow = "");
+    virtual E_CMD_STATUS Callback(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data = NULL);
     virtual E_CMD_STATUS Timeout();
-
 private:
     tagMsgShell m_stMsgShell;
     struct ev_timer* watcher;       ///< 指向IO定时器，分配和析构均不在类体里

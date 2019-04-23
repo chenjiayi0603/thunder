@@ -9,22 +9,13 @@
  ******************************************************************************/
 #ifndef CLIENT_STORAGEOPERATOR_HPP_
 #define CLIENT_STORAGEOPERATOR_HPP_
-
 #include <stdio.h>
 #include <string>
 #include "dataproxy.pb.h"
+#include "NetDefine.hpp"
 
 namespace net
 {
-
-typedef char int8;
-typedef unsigned char uint8;
-typedef short int16;
-typedef unsigned short uint16;
-typedef int int32;
-typedef unsigned int uint32;
-typedef long long int int64;
-typedef unsigned long long int uint64;
 
 class StorageOperator
 {

@@ -27,7 +27,7 @@ net::E_CMD_STATUS StepLocateData::Emit(int iErrno, const std::string& strErrMsg,
     MsgHead oMsgHead;
     MsgBody oMsgBody;
     util::CJsonObject oRequest(m_oInHttpMsg.body());
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s", oRequest.ToString().c_str());
+    LOG4_DEBUG("%s", oRequest.ToString().c_str());
     uint32 uiFactor = 0;
     std::string strTableName;
     std::string strRedisKey;
@@ -62,16 +62,16 @@ net::E_CMD_STATUS StepLocateData::Emit(int iErrno, const std::string& strErrMsg,
     }
     else
     {
-        Response(net::ERR_LACK_CLUSTER_INFO, "tb_name or redis_key must be set!", "tb_name or redis_key must be set!");
+        Response(ERR_LACK_CLUSTER_INFO, "tb_name or redis_key must be set!", "tb_name or redis_key must be set!");
         return(net::STATUS_CMD_FAULT);
     }
     oMsgHead.set_cmd(net::CMD_REQ_LOCATE_STORAGE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "body: %s",oMsgBody.body().c_str());
-    if (!SendToNext("PROXY", oMsgHead, oMsgBody))
+    LOG4_DEBUG("body: %s",oMsgBody.body().c_str());
+    if (!net::SendToNext("PROXY", oMsgHead, oMsgBody))
     {
-        LOG4CPLUS_ERROR(GetLogger(), "send to dataproxy error!");
+        LOG4_ERROR("send to dataproxy error!");
         Response(ERR_SERVERINFO, "send to dataproxy error!", "send to dataproxy error!");
         return(net::STATUS_CMD_FAULT);
     }
@@ -84,27 +84,27 @@ net::E_CMD_STATUS StepLocateData::Callback(
                 const MsgBody& oInMsgBody,
                 void* data)
 {
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     HttpMsg oHttpMsg;
     oHttpMsg.set_type(HTTP_RESPONSE);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_http_major(m_oInHttpMsg.http_major());
     oHttpMsg.set_http_minor(m_oInHttpMsg.http_minor());
     oHttpMsg.set_body(oInMsgBody.body());
-    GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
+    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
     return(net::STATUS_CMD_COMPLETED);
 }
 
 net::E_CMD_STATUS StepLocateData::Timeout()
 {
-    LOG4CPLUS_DEBUG(GetLogger(), "StepTestGet Timeout");
+    LOG4_DEBUG("StepTestGet Timeout");
     HttpMsg oHttpMsg;
     oHttpMsg.set_type(HTTP_RESPONSE);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_http_major(m_oInHttpMsg.http_major());
     oHttpMsg.set_http_minor(m_oInHttpMsg.http_minor());
     oHttpMsg.set_body("timeout");
-    GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
+    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
     return(net::STATUS_CMD_COMPLETED);
 }
 
@@ -119,7 +119,7 @@ bool StepLocateData::Response(int iErrno, const std::string& strErrMsg, const st
     oRsp.Add("code", iErrno);
     oRsp.Add("msg", strErrClientShow.c_str());
     oHttpMsg.set_body(oRsp.ToFormattedString());
-    GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
+    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
     return(net::STATUS_CMD_COMPLETED);
 }
 

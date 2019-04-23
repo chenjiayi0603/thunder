@@ -20,7 +20,7 @@ namespace net
 class CustomMysqlHandler;
 class Worker;
 //通用参数类（可根据需求自定义参数类）
-struct SendToMysqlParam:public StepStateParam
+struct SendToMysqlParam:public StepParam
 {
 	SendToMysqlParam(const std::string &strSql,uint8 uiCmdType):m_strSql(strSql),m_uiCmdType(uiCmdType){}
 	std::string m_strSql;
@@ -46,7 +46,7 @@ public:
 	void SetConf(const util::tagDbConnInfo &dbConnInfo);
 	void SetConf(const std::string& strHost, int iPort,const std::string& dbname,
 			const std::string& user,const std::string& passwd,const std::string &dbcharacterset,uint32 uiTimeOut=3);
-	static bool Launch(Labor* pLabor,MysqlStep *pStep,uint32 uiTimeOutMax=3,uint8 uiToRetry=1,double dTimeout=3.0);//开始步骤
+	static bool Launch(MysqlStep *pStep,uint32 uiTimeOutMax=3,uint8 uiToRetry=1,double dTimeout=3.0);//开始步骤
 	//追加mysql访问任务(注册过的MysqlStep才能追加).追加mysql访问任务后，会异步提交访问并返回结果
 	bool AppendTask(const std::string &strCmd,uint8 uiCmdType);
 	bool AppendTask(uint8 uiCmdType,const char *fmt,...);
@@ -57,10 +57,7 @@ public:
      * @param pReply 执行结果集
      */
     virtual E_CMD_STATUS Callback(util::MysqlAsyncConn *c,util::SqlTask *task,MYSQL_RES *pResultSet);
-    virtual E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")
-    {
-    	return StepState::Emit(iErrno,strErrMsg,strErrShow);
-    }
+    virtual E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return StepState::Emit(iErrno,strErrMsg,strErrShow);}
     /**
      * @brief 超时回调
      * @return 回调状态
@@ -116,18 +113,12 @@ public:
 
 class CustomMysqlHandler: public util::MysqlHandler {
 public:
-	CustomMysqlHandler(MysqlStep* step,Worker* pNodeWorker):m_uiMysqlStepSeq(step->GetSequence()),m_pNodeWorker(pNodeWorker){}
+	CustomMysqlHandler(MysqlStep* step):m_uiMysqlStepSeq(step->GetSequence()){}
 	virtual ~CustomMysqlHandler(){}
 	int on_execsql(util::MysqlAsyncConn *c, util::SqlTask *task);
 	int on_query(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet);
 	uint32 m_uiMysqlStepSeq;
-	Worker* m_pNodeWorker;
 };
-
-//通用注册函数（可根据需求自定义函数）
-bool StateSendToMysql(MysqlStep* state);
-bool StateSendToMysqlCallback(MysqlStep* state);
-
 
 } /* namespace net */
 

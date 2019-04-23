@@ -2,26 +2,6 @@ syntax = "proto2";
 
 
 /**
- * @brief 更新配置文件
- * @note 要更新的配置文件信息，对应系统命令字CMD_REQ_UPDATE_CONFIG_FILE
- */
-message ConfigInfo
-{
-    required string file_name      = 1;    ///< 配置文件名
-    required string file_content   = 2;    ///< 配置文件内容（所有配置文件内容均必须是标准JSON结构）
-}
-
-/**
- * @brief Worker进程负载
- * @note Worker进程负载，对应系统命令字CMD_REQ_UPDATE_WORKER_LOAD
- */
-message WorkerLoad
-{
-    required int32 pid              = 1;    ///< 进程ID
-    required int32 load             = 2;    ///< 负载值
-}
-
-/**
  * @brief 连接Worker信息
  * @note 连接Worker信息，对应系统命令字 CMD_REQ_CONNECT_TO_WORKER
  */

@@ -6,14 +6,11 @@ run_path=${code_path}/../deploy
 
 if [ $# -lt 1 ]; then 
     echo "USAGE: $0 param1" 
-    echo "please input option[install,all,pre]"
+    echo "please input option[core,proto,plugin,pre,compile,install]"
 	exit 1; 
 fi
 
 if [ "$1"x == "compile"x ];then  
-	#清除
-	cd ${run_path}
-	./clear.sh all
 	#编译
 	cd ./core && ./make_libs.sh all
 	cd ${code_path} && ./proto_logic.sh all && ./plugins_logic.sh all
@@ -32,6 +29,10 @@ elif [ "$1"x == "all"x ];then
 	#编译
 	cd ./Core &&  ./core.sh all && cd ..
 	cd ${code_path} && ./proto_logic.sh all && ./plugins_logic.sh all
+elif [ "$1"x == "proto"x ];then 
+	cd ${code_path} && ./proto_logic.sh all
+elif [ "$1"x == "plugin"x ];then 
+	./plugins_logic.sh all
 elif [ "$1"x == "pre"x ];then
 	#准备工作
 	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
