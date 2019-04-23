@@ -10,7 +10,7 @@
 #ifndef SRC_IMERRORMAPPING_H_
 #define SRC_IMERRORMAPPING_H_
 
-#include "OssError.hpp"
+#include "NetError.hpp"
 #include "RobotError.h"
 
 namespace robot

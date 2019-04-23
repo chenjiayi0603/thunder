@@ -19,7 +19,7 @@
 #include "storage/MemOperator.hpp"
 #include "storage/dataproxy.pb.h"
 #include "behaviour_common.pb.h"
-#include "OssError.hpp"
+#include "NetError.hpp"
 #include "RobotError.h"
 #include "RobotErrorMapping.h"
 #include "RobotTableName.h"
