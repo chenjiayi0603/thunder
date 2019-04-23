@@ -18,7 +18,7 @@ namespace net
 class ClientMsgCodec: public StarshipCodec
 {
 public:
-    ClientMsgCodec(util::E_CODEC_TYPE eCodecType, const std::string& strKey = "That's a lizard.");
+    ClientMsgCodec(util::E_CODEC_TYPE eCodecType, const std::string& strKey = "client key");
     virtual ~ClientMsgCodec();
 
     virtual E_CODEC_STATUS Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff);

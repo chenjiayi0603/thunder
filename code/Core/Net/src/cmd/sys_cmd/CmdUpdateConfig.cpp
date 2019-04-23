@@ -59,8 +59,7 @@ bool CmdUpdateConfig::AnyMessage(
 bool CmdUpdateConfig::ReadConfig()
 {
     //配置文件路径查找
-    std::string strConfFile = GetConfigPath()
-                    + m_ReqConfigFileName;
+    std::string strConfFile = GetConfigPath() + m_ReqConfigFileName;
     LOG4_DEBUG("ReqConfigType(%d).CONF FILE = %s.ReqConfigContent(%s).",
                     m_ReqConfigType,strConfFile.c_str(),m_ReqConfigContent.ToString().c_str());
     util::CJsonObject oLocalConfJson;

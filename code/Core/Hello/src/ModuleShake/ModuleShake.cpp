@@ -7,21 +7,10 @@
  * @note
  * Modify history:
  ******************************************************************************/
+#include <time.h>
 #include "ModuleShake.hpp"
 
-#include <time.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create()
-{
-    net::Cmd* pCmd = new core::ModuleShake();
-    return(pCmd);
-}
-#ifdef __cplusplus
-}
-#endif
+MUDULE_CREATE(core::ModuleShake);
 
 namespace core
 {
@@ -40,7 +29,7 @@ bool ModuleShake::Init()
     {
         return true;
     }
-    HelloSession* pSession = GetHelloSession(GetLabor(),GetConfigPath());
+    HelloSession* pSession = GetHelloSession();
     if(!pSession)
     {
         LOG4_ERROR("failed to get GetNodeSession");
@@ -54,7 +43,7 @@ bool ModuleShake::AnyMessage(
                 const net::tagMsgShell& stMsgShell,
                 const HttpMsg& oInHttpMsg)
 {
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     ws_req_t ws_req;
     if(!ParseWebsocketHandshake(oInHttpMsg,ws_req))
     {
@@ -127,7 +116,7 @@ bool ModuleShake::ResponseWebsocketResponseHandshake(const net::tagMsgShell& stM
         header->set_header_value(ws_req.sec_webSocket_protocol);
     }
     LOG4_DEBUG("%s", ToString(oOutHttpMsg).c_str());
-    return GetLabor()->SendTo(stMsgShell, oOutHttpMsg);
+    return g_pLabor->SendTo(stMsgShell, oOutHttpMsg);
 }
 
 std::string ModuleShake::GenerateKey(const std::string &key)
@@ -240,7 +229,7 @@ bool ModuleShake::ParseWebsocketHandshake(HttpMsg oInHttpMsg,ws_req_t &ws_req)
 bool ModuleShake::ResponseHttp(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
                 int iCode,const std::string &msg)
 {
-    LOG4CPLUS_DEBUG_FMT(GetLogger(), "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     HttpMsg oOutHttpMsg;
     oOutHttpMsg.set_type(HTTP_RESPONSE);
     oOutHttpMsg.set_method(HTTP_POST);
@@ -248,7 +237,7 @@ bool ModuleShake::ResponseHttp(const net::tagMsgShell& stMsgShell, const HttpMsg
     oOutHttpMsg.set_http_major(oInHttpMsg.http_major());
     oOutHttpMsg.set_http_minor(oInHttpMsg.http_minor());
     oOutHttpMsg.set_body(msg);
-    GetLabor()->SendTo(stMsgShell, oOutHttpMsg);
+    g_pLabor->SendTo(stMsgShell, oOutHttpMsg);
     return(true);
 }
 

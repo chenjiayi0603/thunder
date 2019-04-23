@@ -48,7 +48,6 @@ bool CmdConnectWorker::Start(const tagMsgShell& stMsgShell, int iWorkerIndex)
             LOG4_ERROR("error %d: new StepConnectWorker() error!", ERR_NEW);
             return(false);
         }
-
         if (RegisterCallback(pStepConnectWorker))
         {
             pStepConnectWorker->Emit(ERR_OK);

@@ -9,17 +9,7 @@
  ******************************************************************************/
 #include "ModuleLocateData.hpp"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create()
-{
-    net::Cmd* pCmd = new core::ModuleLocateData();
-    return(pCmd);
-}
-#ifdef __cplusplus
-}
-#endif
+MUDULE_CREATE(core::ModuleLocateData);
 
 namespace core
 {
@@ -38,9 +28,7 @@ bool ModuleLocateData::Init()
     return(true);
 }
 
-bool ModuleLocateData::AnyMessage(
-                const net::tagMsgShell& stMsgShell,
-                const HttpMsg& oInHttpMsg)
+bool ModuleLocateData::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 /*
 {
@@ -51,7 +39,7 @@ bool ModuleLocateData::AnyMessage(
 }
 */
     pStepLocateData = new StepLocateData (stMsgShell, oInHttpMsg);
-    if (RegisterCallback(pStepLocateData))
+    if (net::RegisterCallback(pStepLocateData))
     {
         if (net::STATUS_CMD_RUNNING == pStepLocateData->Emit(ERR_OK))
         {

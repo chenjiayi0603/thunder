@@ -188,11 +188,12 @@ enum MemOperate_DbOperate_E_QUERY_TYPE {
   MemOperate_DbOperate_E_QUERY_TYPE_UPDATE = 4,
   MemOperate_DbOperate_E_QUERY_TYPE_REPLACE = 5,
   MemOperate_DbOperate_E_QUERY_TYPE_DELETE = 6,
-  MemOperate_DbOperate_E_QUERY_TYPE_CUSTOM = 7
+  MemOperate_DbOperate_E_QUERY_TYPE_CUSTOM = 7,
+  MemOperate_DbOperate_E_QUERY_TYPE_BULK = 8
 };
 bool MemOperate_DbOperate_E_QUERY_TYPE_IsValid(int value);
 const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_MIN = MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_UNKNONW;
-const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_MAX = MemOperate_DbOperate_E_QUERY_TYPE_CUSTOM;
+const MemOperate_DbOperate_E_QUERY_TYPE MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_MAX = MemOperate_DbOperate_E_QUERY_TYPE_BULK;
 const int MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_ARRAYSIZE = MemOperate_DbOperate_E_QUERY_TYPE_E_QUERY_TYPE_MAX + 1;
 
 const ::google::protobuf::EnumDescriptor* MemOperate_DbOperate_E_QUERY_TYPE_descriptor();
@@ -1157,6 +1158,8 @@ class MemOperate_DbOperate : public ::google::protobuf::Message /* @@protoc_inse
     MemOperate_DbOperate_E_QUERY_TYPE_DELETE;
   static const E_QUERY_TYPE CUSTOM =
     MemOperate_DbOperate_E_QUERY_TYPE_CUSTOM;
+  static const E_QUERY_TYPE BULK =
+    MemOperate_DbOperate_E_QUERY_TYPE_BULK;
   static inline bool E_QUERY_TYPE_IsValid(int value) {
     return MemOperate_DbOperate_E_QUERY_TYPE_IsValid(value);
   }

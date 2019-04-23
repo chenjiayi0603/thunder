@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
     m_oLogger.addAppender(append);
     m_oLogger.setLogLevel(log4cplus::DEBUG_LOG_LEVEL);
     //m_oLogger.setLogLevel(log4cplus::INFO_LOG_LEVEL);
-    LOG4CPLUS_INFO_FMT(m_oLogger, "%s begin...", argv[0]);
+    LOG4_INFO( "%s begin...", argv[0]);
 
     int iUidFrom = atoi(argv[3]);
     int iUidTo = atoi(argv[4]);
@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
     snprintf(szIdentify, sizeof(szIdentify), "%s:%s", argv[1], argv[2]);
     for (int i = iUidFrom; i <= iUidTo; ++i)
     {
-        LOG4CPLUS_DEBUG_FMT(m_oLogger, "uid %u", i);
+        LOG4_DEBUG("uid %u", i);
         snprintf(szUid, sizeof(szUid), "%u", i);
         oMsgBody.set_body(szUid);
         oMsgHead.set_cmd(507);
@@ -181,7 +181,7 @@ bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const Msg
 
 tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s(iFd %d, seq %lu, codec %d)", __FUNCTION__, iFd, ulSeq, eCodecType);
+    LOG4_DEBUG("%s(iFd %d, seq %lu, codec %d)", __FUNCTION__, iFd, ulSeq, eCodecType);
     std::map<int, tagConnectionAttr*>::iterator fd_attr_iter;
     fd_attr_iter = g_mapFdAttr.find(iFd);
     if (fd_attr_iter == g_mapFdAttr.end())
@@ -189,28 +189,28 @@ tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodec
         tagConnectionAttr* pConnAttr = new tagConnectionAttr();
         if (pConnAttr == NULL)
         {
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "new pConnAttr for fd %d error!", iFd);
+            LOG4_ERROR( "new pConnAttr for fd %d error!", iFd);
             return(NULL);
         }
         pConnAttr->pRecvBuff = new util::CBuffer();
         if (pConnAttr->pRecvBuff == NULL)
         {
             delete pConnAttr;
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "new pConnAttr->pRecvBuff for fd %d error!", iFd);
+            LOG4_ERROR( "new pConnAttr->pRecvBuff for fd %d error!", iFd);
             return(NULL);
         }
         pConnAttr->pSendBuff = new util::CBuffer();
         if (pConnAttr->pSendBuff == NULL)
         {
             delete pConnAttr;
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "new pConnAttr->pSendBuff for fd %d error!", iFd);
+            LOG4_ERROR( "new pConnAttr->pSendBuff for fd %d error!", iFd);
             return(NULL);
         }
         pConnAttr->pWaitForSendBuff = new util::CBuffer();
         if (pConnAttr->pWaitForSendBuff == NULL)
         {
             delete pConnAttr;
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "new pConnAttr->pWaitForSendBuff for fd %d error!", iFd);
+            LOG4_ERROR( "new pConnAttr->pWaitForSendBuff for fd %d error!", iFd);
             return(NULL);
         }
         pConnAttr->dActiveTime = ev_now(m_loop);
@@ -221,14 +221,14 @@ tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodec
     }
     else
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "fd %d is exist!", iFd);
+        LOG4_ERROR( "fd %d is exist!", iFd);
         return(NULL);
     }
 }
 
 bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     if (iter == g_mapFdAttr.end())
     {
         return(false);
@@ -268,7 +268,7 @@ bool InitLogger(const std::string& strLogFile)
 
 bool AddIoReadEvent(int iFd)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
     std::map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
@@ -308,7 +308,7 @@ bool AddIoReadEvent(int iFd)
 
 bool AddIoWriteEvent(int iFd)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
     std::map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
@@ -348,7 +348,7 @@ bool AddIoWriteEvent(int iFd)
 
 bool RemoveIoWriteEvent(int iFd)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
     std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
@@ -369,7 +369,7 @@ bool RemoveIoWriteEvent(int iFd)
 
 bool DelEvents(ev_io** io_watcher_addr)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     if (io_watcher_addr == NULL)
     {
         return(false);
@@ -418,11 +418,11 @@ void DelMsgShell(const std::string& strIdentify)
 
 bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (iter == g_mapFdAttr.end())
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
+        LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
         return(false);
     }
     else
@@ -434,7 +434,7 @@ bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIde
         }
         else
         {
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "fd %d sequence %lu not match the sequence %lu in m_mapFdAttr",
+            LOG4_ERROR( "fd %d sequence %lu not match the sequence %lu in m_mapFdAttr",
                             stMsgShell.iFd, stMsgShell.ulSeq, iter->second->ulSeq);
             return(false);
         }
@@ -462,22 +462,22 @@ void IoCallback(struct ev_loop* loop, struct ev_io* watcher, int revents)
 
 void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     tagIoWatcherData* pData = (tagIoWatcherData*)watcher->data;
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     int iErrno = 0;
     int iReadLen = 0;
     std::map<int, tagConnectionAttr*>::iterator conn_iter;
     conn_iter = g_mapFdAttr.find(pData->iFd);
     if (conn_iter == g_mapFdAttr.end())
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "no fd attr for %d!", pData->iFd);
+        LOG4_ERROR( "no fd attr for %d!", pData->iFd);
     }
     else
     {
         if (pData->ulSeq != conn_iter->second->ulSeq)
         {
-            LOG4CPLUS_DEBUG_FMT(m_oLogger, "callback seq %lu not match the conn attr seq %lu",
+            LOG4_DEBUG("callback seq %lu not match the conn attr seq %lu",
                             pData->ulSeq, conn_iter->second->ulSeq);
             ev_io_stop(m_loop, watcher);
             delete pData;
@@ -487,7 +487,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
             return;
         }
         iReadLen = conn_iter->second->pRecvBuff->ReadFD(pData->iFd, iErrno);
-        LOG4CPLUS_DEBUG_FMT(m_oLogger, "recv from fd %d data len %d. "
+        LOG4_DEBUG("recv from fd %d data len %d. "
                         "and conn_iter->second->pRecvBuff->ReadableBytes() = %d, read_idx=%d, codec = %d", pData->iFd, iReadLen,
                         conn_iter->second->pRecvBuff->ReadableBytes(), conn_iter->second->pRecvBuff->GetReadIndex(),
                         conn_iter->second->eCodecType);
@@ -502,7 +502,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
                 oInMsgHead.Clear();
                 oInMsgBody.Clear();
                 E_CODEC_STATUS eCodecStatus = g_pCodec->Decode(conn_iter->second->pRecvBuff, oInMsgHead, oInMsgBody);
-//                LOG4CPLUS_DEBUG_FMT(GetLogger(), "eCodecStatus=%d, "
+//                LOG4_DEBUG("eCodecStatus=%d, "
 //                                "conn_iter->second->pRecvBuff->ReadableBytes() = %d, read_idx=%d", eCodecStatus,
 //                                conn_iter->second->pRecvBuff->ReadableBytes(), conn_iter->second->pRecvBuff->GetReadIndex());
                 if (CODEC_STATUS_OK == eCodecStatus)
@@ -553,7 +553,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
                                 conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
                                 if (iErrno != 0)
                                 {
-                                    LOG4CPLUS_ERROR_FMT(m_oLogger, "error %d!", iErrno);
+                                    LOG4_ERROR( "error %d!", iErrno);
                                 }
                             }
                         }
@@ -577,7 +577,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
         }
         else if (iReadLen == 0)
         {
-            LOG4CPLUS_DEBUG_FMT(m_oLogger, "fd %d closed by peer, error %d!",
+            LOG4_DEBUG("fd %d closed by peer, error %d!",
                             pData->iFd, iErrno);
             DestroyConnect(conn_iter);
         }
@@ -585,7 +585,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
         {
             if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
             {
-                LOG4CPLUS_ERROR_FMT(m_oLogger, "recv from fd %d error %d", pData->iFd, iErrno);
+                LOG4_ERROR( "recv from fd %d error %d", pData->iFd, iErrno);
                 DestroyConnect(conn_iter);
             }
         }
@@ -595,7 +595,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
 
 void IoWrite(struct ev_loop* loop, struct ev_io* watcher, int revents)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s()", __FUNCTION__);
+    LOG4_DEBUG("%s()", __FUNCTION__);
     tagIoWatcherData* pData = (tagIoWatcherData*)watcher->data;
     std::map<int, tagConnectionAttr*>::iterator attr_iter =  g_mapFdAttr.find(pData->iFd);
     if (attr_iter == g_mapFdAttr.end())
@@ -606,7 +606,7 @@ void IoWrite(struct ev_loop* loop, struct ev_io* watcher, int revents)
     {
         if (pData->ulSeq != attr_iter->second->ulSeq)
         {
-            LOG4CPLUS_DEBUG_FMT(m_oLogger, "callback seq %lu not match the conn attr seq %lu",
+            LOG4_DEBUG("callback seq %lu not match the conn attr seq %lu",
                             pData->ulSeq, attr_iter->second->ulSeq);
             ev_io_stop(m_loop, watcher);
             delete pData;
@@ -623,7 +623,7 @@ void IoWrite(struct ev_loop* loop, struct ev_io* watcher, int revents)
         {
             if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
             {
-                LOG4CPLUS_ERROR_FMT(m_oLogger, "send to fd %d error %d", pData->iFd, iErrno);
+                LOG4_ERROR( "send to fd %d error %d", pData->iFd, iErrno);
                 DestroyConnect(attr_iter);
             }
             else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
@@ -646,7 +646,7 @@ void IoWrite(struct ev_loop* loop, struct ev_io* watcher, int revents)
         }
         else    // iWriteLen == 0 写缓冲区为空
         {
-//            LOG4CPLUS_DEBUG_FMT(m_oLogger, "pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",
+//            LOG4_DEBUG("pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",
 //                            pData->iFd, watcher->fd, attr_iter->second->pWaitForSendBuff->ReadableBytes());
             if (attr_iter->second->pWaitForSendBuff->ReadableBytes() > 0)    // 存在等待发送的数据，说明本次写事件是connect之后的第一个写事件
             {
@@ -664,17 +664,17 @@ void IoError(struct ev_loop* loop, struct ev_io* watcher, int revents)
 {
     if (revents & EV_READ)
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "EV_ERROR %d", revents);
+        LOG4_ERROR( "EV_ERROR %d", revents);
     }
 }
 
 bool SendTo(const tagMsgShell& stMsgShell)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s(fd %d, seq %lu) pWaitForSendBuff", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
+    LOG4_DEBUG("%s(fd %d, seq %lu) pWaitForSendBuff", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
     std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (iter == g_mapFdAttr.end())
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
+        LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
         return(false);
     }
     else
@@ -694,7 +694,7 @@ bool SendTo(const tagMsgShell& stMsgShell)
                 {
                     if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
                     {
-                        LOG4CPLUS_ERROR_FMT(m_oLogger, "send to fd %d error %d", stMsgShell.iFd, iErrno);
+                        LOG4_ERROR( "send to fd %d error %d", stMsgShell.iFd, iErrno);
                         DestroyConnect(iter);
                         return(false);
                     }
@@ -720,7 +720,7 @@ bool SendTo(const tagMsgShell& stMsgShell)
             }
             else
             {
-                LOG4CPLUS_ERROR_FMT(m_oLogger, "write to send buff error, iWriteLen = %d!", iWriteLen);
+                LOG4_ERROR( "write to send buff error, iWriteLen = %d!", iWriteLen);
                 iter->second->pSendBuff->SetWriteIndex(iWriteIdx);
                 return(false);
             }
@@ -731,11 +731,11 @@ bool SendTo(const tagMsgShell& stMsgShell)
 
 bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s(fd %d, seq %lu)", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
+    LOG4_DEBUG("%s(fd %d, seq %lu)", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
     std::map<int, tagConnectionAttr*>::iterator conn_iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (conn_iter == g_mapFdAttr.end())
     {
-        LOG4CPLUS_ERROR_FMT(m_oLogger, "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
+        LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
         return(false);
     }
     else
@@ -747,26 +747,26 @@ bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBod
             {
                 int iErrno = 0;
                 int iNeedWriteLen = (int)conn_iter->second->pSendBuff->ReadableBytes();
-                LOG4CPLUS_DEBUG_FMT(m_oLogger, "try send cmd[%d] seq[%lu] len %d",
+                LOG4_DEBUG("try send cmd[%d] seq[%lu] len %d",
                                 oMsgHead.cmd(), oMsgHead.seq(), iNeedWriteLen);
                 int iWriteLen = conn_iter->second->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 if (iWriteLen < 0)
                 {
                     if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
                     {
-                        LOG4CPLUS_ERROR_FMT(m_oLogger, "send to fd %d error %d", stMsgShell.iFd, iErrno);
+                        LOG4_ERROR( "send to fd %d error %d", stMsgShell.iFd, iErrno);
                         DestroyConnect(conn_iter);
                         return(false);
                     }
                     else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                     {
-                        LOG4CPLUS_DEBUG_FMT(m_oLogger, "write len %d, error %d", iWriteLen, iErrno);
+                        LOG4_DEBUG("write len %d, error %d", iWriteLen, iErrno);
                         conn_iter->second->dActiveTime = ev_now(m_loop);
                         AddIoWriteEvent(stMsgShell.iFd);
                     }
                     else
                     {
-                        LOG4CPLUS_DEBUG_FMT(m_oLogger, "write len %d, error %d", iWriteLen, iErrno);
+                        LOG4_DEBUG("write len %d, error %d", iWriteLen, iErrno);
                         conn_iter->second->dActiveTime = ev_now(m_loop);
                         AddIoWriteEvent(stMsgShell.iFd);
                     }
@@ -776,13 +776,13 @@ bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBod
                     conn_iter->second->dActiveTime = ev_now(m_loop);
                     if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                     {
-                        LOG4CPLUS_DEBUG_FMT(m_oLogger, "cmd[%d] seq[%lu] need write %d and had written len %d",
+                        LOG4_DEBUG("cmd[%d] seq[%lu] need write %d and had written len %d",
                                         oMsgHead.cmd(), oMsgHead.seq(), iNeedWriteLen, iWriteLen);
                         RemoveIoWriteEvent(stMsgShell.iFd);
                     }
                     else    // 内容未写完，添加或保持监听fd写事件
                     {
-                        LOG4CPLUS_DEBUG_FMT(m_oLogger, "cmd[%d] seq[%lu] need write %d and had written len %d",
+                        LOG4_DEBUG("cmd[%d] seq[%lu] need write %d and had written len %d",
                                         oMsgHead.cmd(), oMsgHead.seq(), iNeedWriteLen, iWriteLen);
                         AddIoWriteEvent(stMsgShell.iFd);
                     }
@@ -796,7 +796,7 @@ bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBod
         }
         else
         {
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "fd %d sequence %lu not match the sequence %lu in m_mapFdAttr",
+            LOG4_ERROR( "fd %d sequence %lu not match the sequence %lu in m_mapFdAttr",
                             stMsgShell.iFd, stMsgShell.ulSeq, conn_iter->second->ulSeq);
             return(false);
         }
@@ -805,11 +805,11 @@ bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBod
 
 bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
+    LOG4_DEBUG("%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
     std::map<std::string, tagMsgShell>::iterator shell_iter = g_mapMsgShell.find(strIdentify);
     if (shell_iter == g_mapMsgShell.end())
     {
-        LOG4CPLUS_DEBUG_FMT(m_oLogger, "no MsgShell match %s.", strIdentify.c_str());
+        LOG4_DEBUG("no MsgShell match %s.", strIdentify.c_str());
         return(AutoSend(strIdentify, oMsgHead, oMsgBody));
     }
     else
@@ -822,7 +822,7 @@ bool Dispose(const std::string& strFromIp, const tagMsgShell& stMsgShell,
                 const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
                 MsgHead& oOutMsgHead, MsgBody& oOutMsgBody)
 {
-    LOG4CPLUS_DEBUG_FMT(m_oLogger, "%s(cmd %u, seq %lu)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
+    LOG4_DEBUG("%s(cmd %u, seq %lu)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
     OrdinaryResponse oRes;
     oOutMsgHead.Clear();
     oOutMsgBody.Clear();
@@ -833,12 +833,12 @@ bool Dispose(const std::string& strFromIp, const tagMsgShell& stMsgShell,
             MsgHead oOutMsgHead = oInMsgHead;
             MsgBody oOutMsgBody = oInMsgBody;
             oOutMsgHead.set_cmd(oInMsgHead.cmd() + 1);
-            LOG4CPLUS_DEBUG_FMT(m_oLogger, "send cmd %d", oOutMsgHead.cmd());
+            LOG4_DEBUG("send cmd %d", oOutMsgHead.cmd());
             SendTo(stMsgShell, oOutMsgHead, oOutMsgBody);
         }
         else
         {
-            LOG4CPLUS_ERROR_FMT(m_oLogger, "no handler to dispose cmd %u!", oInMsgHead.cmd());
+            LOG4_ERROR( "no handler to dispose cmd %u!", oInMsgHead.cmd());
             oRes.set_err_no(ERR_UNKNOW_CMD);
             oRes.set_err_msg("no handler to dispose cmd");
             oOutMsgBody.set_body(oRes.SerializeAsString());
@@ -849,7 +849,7 @@ bool Dispose(const std::string& strFromIp, const tagMsgShell& stMsgShell,
     }
     else    // 回调
     {
-        LOG4CPLUS_DEBUG_FMT(m_oLogger, "receive callback, cmd = %d", oInMsgHead.cmd());
+        LOG4_DEBUG("receive callback, cmd = %d", oInMsgHead.cmd());
     }
     return(true);
 }

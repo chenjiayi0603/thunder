@@ -110,7 +110,7 @@ MysqlStep::~MysqlStep()
 
 E_CMD_STATUS MysqlStep::Callback(util::MysqlAsyncConn *c,util::SqlTask *task,MYSQL_RES *pResultSet)
 {
-	LOG4CPLUS_TRACE_FMT(GetLogger(),"%s()",__FUNCTION__);
+	LOG4_TRACE("%s()",__FUNCTION__);
 	if (0 != task->iErrno)
 	{
 		LOG4_ERROR("%s() mysql error(%d,%s)",__FUNCTION__,task->iErrno,task->errmsg.c_str());
@@ -127,36 +127,35 @@ E_CMD_STATUS MysqlStep::Timeout()
     return StepState::Timeout();
 }
 
-bool MysqlStep::Launch(Labor* pLabor,MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
+bool MysqlStep::Launch(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
 	if (pStep == NULL)
 	{
-		LOG4_ERROR_S(pLabor,"%s() null MysqlStep",__FUNCTION__);
+		LOG4_ERROR("%s() null MysqlStep",__FUNCTION__);
 		return(false);
 	}
 	if (pStep->CurTask().size() == 0)//MysqlStep必须含mysql访问任务
 	{
-		LOG4_ERROR_S(pLabor,"%s() CurTask().size() == 0",__FUNCTION__);
+		LOG4_ERROR("%s() CurTask().size() == 0",__FUNCTION__);
 		return(false);
 	}
 	if (!pStep->IsRegistered())
 	{
-		if (!StepState::Register(pLabor,pStep,uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
+		if (!net::Register(pStep,uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
 		{
-			LOG4_ERROR_S(pLabor,"%s() StepState::Register error",__FUNCTION__);
+			LOG4_ERROR("%s() StepState::Register error",__FUNCTION__);
 			return(false);
 		}
 	}
-	if (!pLabor->RegisterCallback(pStep))//注册mysql访问任务
+	if (!g_pLabor->RegisterCallback(pStep))//注册mysql访问任务
 	{
-		LOG4_ERROR_S(pLabor,"%s() RegisterCallback error",__FUNCTION__);
+		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
 		delete pStep;
 		pStep = NULL;
 		return(false);
 	}
 	pStep->SetStepDesc(std::string("MysqlStep:") + pStep->m_strLastCmd);
-	LOG4_TRACE_S(pLabor,"%s() uiMysqlStepRegisterCounter:%llu RunClock(%d,%d)",__FUNCTION__,++uiMysqlStepRegisterCounter,
-	                pStep->m_RunClock.boInit,pStep->m_RunClock.boStart);
+	LOG4_TRACE("%s() uiMysqlStepRegisterCounter:%llu RunClock(%d)",__FUNCTION__,++uiMysqlStepRegisterCounter,pStep->m_RunClock.boStart);
 	return true;
 }
 
@@ -204,36 +203,15 @@ bool MysqlStep::AppendTask(uint8 uiCmdType,const char *fmt,...)
 static uint64 uiExecTaskCounter = 0;
 int CustomMysqlHandler::on_execsql(util::MysqlAsyncConn *c, util::SqlTask *task) {
 	++uiExecTaskCounter;
-	LOG4_TRACE_S(((CustomMysqlHandler*) task->handler)->m_pNodeWorker,"%s:%d sql: %s done uiExecTaskCounter:%llu",
-			__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
-	((CustomMysqlHandler*) task->handler)->m_pNodeWorker->Dispose(c,task,NULL);
+	LOG4_TRACE("%s:%d sql: %s done uiExecTaskCounter:%llu",__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
+	((net::Worker*)g_pLabor)->Dispose(c,task,NULL);
 	return 0;
 }
 int CustomMysqlHandler::on_query(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet) {
 	++uiExecTaskCounter;
-	LOG4_TRACE_S(((CustomMysqlHandler*) task->handler)->m_pNodeWorker,"%s:%d sql: %s done uiExecTaskCounter:%llu",
-			__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
-	((CustomMysqlHandler*) task->handler)->m_pNodeWorker->Dispose(c,task,pResultSet);
+	LOG4_TRACE("%s:%d sql: %s done uiExecTaskCounter:%llu",__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
+	((net::Worker*)g_pLabor)->Dispose(c,task,pResultSet);
 	return 0;
-}
-
-bool StateSendToMysql(MysqlStep* state)
-{
-	STAGE_TEST_PARAM_LOG(SendToMysqlParam,state,"StateSendToMysql");
-	state->SetTask(pStageParam->m_strSql,pStageParam->m_uiCmdType);
-	return state->GetLabor()->RegisterCallback(state);
-}
-
-bool StateSendToMysqlCallback(MysqlStep* state)
-{
-	SendToMysqlParam* pParam = (SendToMysqlParam*)state->GetData();
-	if (!pParam)
-	{
-		LOG4_WARN_S(state,"StateSendToMsgShellCallback pParam null");
-		return false;
-	}
-	LOG4_TRACE_S(state,"StateSendToMsgShellCallback ok");
-	return true;
 }
 
 } /* namespace net */

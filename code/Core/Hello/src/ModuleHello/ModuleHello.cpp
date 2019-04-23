@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Project:  WebServer
+ * Project:  Hello
  * @file     ModuleHello.cpp
  * @brief 
  * @author   cjy
@@ -17,22 +17,12 @@
 #include "ModuleHello.hpp"
 #include "StepHttpRequestState.hpp"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create()
-{
-    net::Cmd* pCmd = new core::ModuleHello();
-    return(pCmd);
-}
-#ifdef __cplusplus
-}
-#endif
+MUDULE_CREATE(core::ModuleHello);
 
 namespace core
 {
 
-ModuleHello::ModuleHello()
+ModuleHello::ModuleHello():boTests(false)
 {
 }
 
@@ -42,9 +32,19 @@ ModuleHello::~ModuleHello()
 
 bool ModuleHello::Init()
 {
-//    TestJson2pbRepeatedFields();
-//    {
-//        m_RunClock.StartClock("TimeStr2time_t",GetLogger());
+	Tests();
+    return(true);
+}
+
+void ModuleHello::Tests()
+{
+	if (boTests)return;
+	boTests = true;
+	TestJson2pbRepeatedFields();
+	TestCoroutinue();
+	TestCoroutinueAuto();
+	{
+//        m_RunClock.StartClock("TimeStr2time_t");
 //        uint32 time(0);
 //        for(int i = 0;i < 10000;++i)
 //        {
@@ -55,24 +55,29 @@ bool ModuleHello::Init()
 //			TimeStr2time_t 10000 times time(1514735999)
 //			10000 times EndClock() net::RunClock TimeStr2time_t use time(55.188000) ms
 //			10000 times EndClock() net::RunClock TimeStr2time_t use time(65.248001) ms (加上分配uint32 time的时间)
-//    }
-    return(true);
+	}
 }
 
-bool ModuleHello::AnyMessage(
-                const net::tagMsgShell& stMsgShell,
-                const HttpMsg& oInHttpMsg)
+bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 	util::CJsonObject obj;
 	if (!obj.Parse(oInHttpMsg.body()))
 	{
-		LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+		LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 		return false;
 	}
 	std::string strOption;
 	obj.Get("option",strOption);
+	if ("Echo" == strOption)
+	{
+		Response(stMsgShell,oInHttpMsg,0);
+	}
 	//PgAgent
-	if ("PgAgentSetGet" == strOption)
+	else if ("PgAgentInsert" == strOption)
+	{
+		InsertPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
+	}
+	else if ("PgAgentSetGet" == strOption)
 	{
 		SetGetPostgres(stMsgShell,oInHttpMsg,obj("val"),"PGAGENT");
 	}
@@ -108,7 +113,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		std::string sDoc;
@@ -120,7 +125,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		RedisGEOADD(stMsgShell,oInHttpMsg,strVal);
@@ -130,7 +135,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		SetValueFromRedis(stMsgShell,oInHttpMsg,strVal);
@@ -140,7 +145,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		OnlySetValueFromRedis(stMsgShell,oInHttpMsg,strVal);
@@ -150,7 +155,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		OnlyGetValueFromRedis(stMsgShell,oInHttpMsg,strVal);
@@ -160,7 +165,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         SetValueFromRedis(stMsgShell,oInHttpMsg,strVal,"PROXYSSDB");
@@ -170,7 +175,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         OnlySetValueFromRedis(stMsgShell,oInHttpMsg,strVal,"PROXYSSDB");
@@ -180,7 +185,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         OnlyGetValueFromRedis(stMsgShell,oInHttpMsg,strVal,"PROXYSSDB");
@@ -190,7 +195,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		RedisGEORADIUSBYMEMBER(stMsgShell,oInHttpMsg,strVal);
@@ -200,7 +205,7 @@ bool ModuleHello::AnyMessage(
 	    std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         RedisbitmapSETBIT(stMsgShell,oInHttpMsg,strVal,obj("key"));
@@ -210,7 +215,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         RedisbitmapGETBIT(stMsgShell,oInHttpMsg,strVal,obj("key"));
@@ -220,7 +225,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         RedisbitmapBITPOS(stMsgShell,oInHttpMsg,strVal,obj("key"));
@@ -230,7 +235,7 @@ bool ModuleHello::AnyMessage(
 	    std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         RedisbitmapGET(stMsgShell,oInHttpMsg,strVal,obj("key"));
@@ -240,7 +245,7 @@ bool ModuleHello::AnyMessage(
         std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         RedisbitmapGET_GET(stMsgShell,oInHttpMsg,strVal,obj("key"),obj("key2"));
@@ -250,7 +255,7 @@ bool ModuleHello::AnyMessage(
         util::CJsonObject strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         SsdbMsgHset(stMsgShell,oInHttpMsg,strVal.ToString(),obj("key"));
@@ -272,12 +277,12 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))//"https://www.alipay.com"
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		std::string strResponse;
-		GetLabor()->HttpsGet(strVal,strResponse,"");//util::CurlClient::eContentType_gzip
-		LOG4CPLUS_TRACE_FMT(GetLogger(),"HttpsGet %s",strResponse.c_str());
+		g_pLabor->HttpsGet(strVal,strResponse,"");//util::CurlClient::eContentType_gzip
+		LOG4_TRACE("HttpsGet %s",strResponse.c_str());
 		Response(stMsgShell,oInHttpMsg,0);
 	}
 	else if ("HttpsPost" == strOption)
@@ -285,12 +290,12 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))//"https://www.alipay.com"
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		std::string strResponse;
-		GetLabor()->HttpsPost(strVal,"",strResponse);
-		LOG4CPLUS_TRACE_FMT(GetLogger(),"HttpsPost %s",strResponse.c_str());
+		g_pLabor->HttpsPost(strVal,"",strResponse);
+		LOG4_TRACE("HttpsPost %s",strResponse.c_str());
 		Response(stMsgShell,oInHttpMsg,0);
 	}
 	else if ("RSA" == strOption)
@@ -316,7 +321,7 @@ bool ModuleHello::AnyMessage(
 		std::string strVal;
 		if (!obj.Get("val",strVal))
 		{
-			LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
 			return false;
 		}
 		TestHttpRequestStateFuncDataProxy(stMsgShell,oInHttpMsg,strVal);
@@ -326,192 +331,215 @@ bool ModuleHello::AnyMessage(
 	    std::string strVal;
         if (!obj.Get("val",strVal))
         {
-            LOG4CPLUS_WARN_FMT(GetLogger(),"failed to parse %s",oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
         TestStepCoFuncDataProxy(stMsgShell,oInHttpMsg,strVal);
 	}
 	else
 	{
-		LOG4CPLUS_TRACE_FMT(GetLogger(), "no things to do");
+		LOG4_TRACE("no things to do");
 		Response(stMsgShell,oInHttpMsg,0);
 	}
     return(true);
 }
 
-void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,
-        const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+void ModuleHello::InsertPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
 	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
-    struct DataStepCustom:public net::DataStepParam
+	struct DataStepCustom:public net::StepParam
+	{
+		DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
+	{
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			LOG4_TRACE("callback ok %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", 0);
+			oRsp.Add("msg", "ok");
+			pDataStep->SendToClient(oRsp.ToString());
+		}
+		else
+		{
+			LOG4_TRACE("callback failed %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oRsp;
+			oRsp.Add("code", oMemRsp.err_no());
+			oRsp.Add("msg", "failed");
+			pDataStep->SendToClient(oRsp.ToString());
+		}
+	};
+	net::DbOperator oDbOperator(0,PG_TB_TEST,DataMem::MemOperate::DbOperate::INSERT);
+	oDbOperator.AddDbField("name",sValue);
+	LOG4_DEBUG("%s() SetPostgres %s",__FUNCTION__,sValue.c_str());
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
+    struct DataStepCustom:public net::StepParam
     {
         DataStepCustom(const std::string &node):nodeType(node){}
         std::string nodeType;
     };
 	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		net::Labor* pLabor = pStep->GetLabor();
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SetValueFromRedis %s",oRsp.err_msg().c_str());
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("SetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			auto GetValueFromPostgres_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 			{
-				LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromPostgres_callback %s",oMemRsp.err_msg().c_str());
+				net::DataStep* pDataStep = (net::DataStep*)pStep;
+				LOG4_TRACE("GetValueFromPostgres_callback %s",oMemRsp.err_msg().c_str());
 				if (oMemRsp.err_no() == 0)
 				{
-					net::DataStep* pDataStep = (net::DataStep*)pStep;
-					LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback ok %s",oMemRsp.DebugString().c_str());
+					LOG4_TRACE("GetValueFromRedis_callback ok %s",oMemRsp.DebugString().c_str());
 					util::CJsonObject oRsp;
 					oRsp.Add("code", 0);
 					oRsp.Add("msg", "ok");
-					pDataStep->SendBack(oRsp.ToString());
+					pDataStep->SendToClient(oRsp.ToString());
 				}
 				else
 				{
-					net::DataStep* pDataStep = (net::DataStep*)pStep;
-					LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback failed %s",oMemRsp.DebugString().c_str());
+					LOG4_TRACE("GetValueFromRedis_callback failed %s",oMemRsp.DebugString().c_str());
 					util::CJsonObject oRsp;
 					oRsp.Add("code", oMemRsp.err_no());
 					oRsp.Add("msg", "failed");
-					pDataStep->SendBack(oRsp.ToString());
+					pDataStep->SendToClient(oRsp.ToString());
 				}
 			};
 			const std::string &node = ((DataStepCustom*) ((net::DataStep*)pStep)->GetData())->nodeType;
-			net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::SELECT);
+			net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::SELECT);
 			oDbOperator.AddDbField("id");
 			oDbOperator.AddDbField("name");
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"%s() GetValueFromPostgres_callback",__FUNCTION__);
-			if (!pLabor->SendToProxyCallBack(pStep,oDbOperator.MakeMemOperate(),GetValueFromPostgres_callback,node))
+			LOG4_TRACE("%s() GetValueFromPostgres_callback",__FUNCTION__);
+			pDataStep->DelayDel();
+			if (!net::SendToCallback(pDataStep,oDbOperator.MakeMemOperate(),GetValueFromPostgres_callback,node))
 			{
-				LOG4CPLUS_WARN_FMT(pStep->GetLogger(),"%s() SendToProxyCallBack failed",__FUNCTION__);
+				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 			}
 		}
 	};
-	net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::UPDATE);
+	net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::UPDATE);
 	oDbOperator.AddDbField("name",sValue);
-	oDbOperator.AddCondition(
-			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
-			"id",1);
-	LOG4_DEBUG("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
+	LOG4_TRACE("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
 	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
-	struct DataStepCustom:public net::DataStepParam
+	struct DataStepCustom:public net::StepParam
 	{
 		DataStepCustom(){}
 	};
 	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback %s",oMemRsp.err_msg().c_str());
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("GetPostgres_callback %s",oMemRsp.err_msg().c_str());
 		if (oMemRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback ok %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("GetPostgres_callback ok %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 		else
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetPostgres_callback failed %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("GetPostgres_callback failed %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", oMemRsp.err_no());
 			oRsp.Add("msg", "failed");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
-	net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::SELECT);
+	net::DbOperator oDbOperator(0,PG_TB_TEST,DataMem::MemOperate::DbOperate::SELECT);
 	oDbOperator.AddDbField("id");
 	oDbOperator.AddDbField("name");
-	LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() GetPostgres",__FUNCTION__);
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom()),oDbOperator.MakeMemOperate(),callback,nodeType);
+	LOG4_TRACE("%s() GetPostgres",__FUNCTION__);
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom()),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
 	if (sValue.size() == 0){LOG4_DEBUG("%s() sValue.size() == 0",__FUNCTION__);return;}
-	struct DataStepCustom:public net::DataStepParam
+	struct DataStepCustom:public net::StepParam
 	{
 		DataStepCustom(const std::string &node):nodeType(node){}
 		std::string nodeType;
 	};
 	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 	{
-		net::Labor* pLabor = pStep->GetLabor();
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback %s",oMemRsp.err_msg().c_str());
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
 		if (oMemRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback ok %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("callback ok %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 		else
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback failed %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("callback failed %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", oMemRsp.err_no());
 			oRsp.Add("msg", "failed");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
-	net::DbOperator oDbOperator(0, "tb_query",DataMem::MemOperate::DbOperate::UPDATE);
+	net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::UPDATE);
 	oDbOperator.AddDbField("name",sValue);
-	oDbOperator.AddCondition(
-			DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
-			"id",1);
+	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
 	LOG4_DEBUG("%s() SetPostgres %s",__FUNCTION__,sValue.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 
 void ModuleHello::AddUpPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,uint32 id,const std::string &sName,uint32 sum,const std::string &nodeType)
 {
 	if (sName.size() == 0 || sum == 0 || id == 0){LOG4_DEBUG("%s() sName.size() == 0 || sum == 0 || id == 0",__FUNCTION__);return;}
-	struct DataStepCustom:public net::DataStepParam
+	struct DataStepCustom:public net::StepParam
 	{
 		DataStepCustom(const std::string &node):nodeType(node){}
 		std::string nodeType;
 	};
 	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 	{
-		net::Labor* pLabor = pStep->GetLabor();
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback %s",oMemRsp.err_msg().c_str());
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
 		if (oMemRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback ok %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("callback ok %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 		else
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"callback failed %s",oMemRsp.DebugString().c_str());
+			LOG4_TRACE("callback failed %s",oMemRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", oMemRsp.err_no());
 			oRsp.Add("msg", "failed");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::DbOperator oDbOperator(0, "tb_sum",DataMem::MemOperate::DbOperate::CUSTOM);
 	char strSql[512];
-	snprintf(strSql,sizeof(strSql),"INSERT INTO tb_sum(id,name,sum) "
-					"VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",
-					id,sName.c_str(),sum,sum);
+	snprintf(strSql,sizeof(strSql),"INSERT INTO tb_sum(id,name,sum) VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",id,sName.c_str(),sum,sum);
 	oDbOperator.AddDbField(strSql);
 	LOG4_DEBUG("%s() AddUpPostgres %s",__FUNCTION__,sName.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 /*
@@ -529,51 +557,50 @@ Failed transactions:               0
 Longest transaction:            0.12
 Shortest transaction:           0.01
  * */
-void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,
-        const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-    struct DataStepCustom:public net::DataStepParam
+    struct DataStepCustom:public net::StepParam
     {
         DataStepCustom(const std::string &node):nodeType(node){}
         std::string nodeType;
     };
 	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		net::Labor* pLabor = pStep->GetLabor();
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SetValueFromRedis %s",oRsp.err_msg().c_str());
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("SetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 			{
-				LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis %s",oRsp.err_msg().c_str());
+				LOG4_TRACE("GetValueFromRedis %s",oRsp.err_msg().c_str());
 				if (oRsp.err_no() == 0)
 				{
 					net::DataStep* pDataStep = (net::DataStep*)pStep;
-					LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback ok %s",oRsp.DebugString().c_str());
+					LOG4_TRACE("GetValueFromRedis_callback ok %s",oRsp.DebugString().c_str());
 					util::CJsonObject oRsp;
 					oRsp.Add("code", 0);
 					oRsp.Add("msg", "ok");
-					pDataStep->SendBack(oRsp.ToString());
+					pDataStep->SendToClient(oRsp.ToString());
 				}
 			};
 			const std::string &node = ((DataStepCustom*) ((net::DataStep*)pStep)->GetData())->nodeType;
 			char sRedisKey[64];
-			snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+			snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 			net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"%s() GetValueFromRedis",__FUNCTION__);
-			if (!pLabor->SendToProxyCallBack(pStep,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,node))
+			LOG4_TRACE("%s() GetValueFromRedis",__FUNCTION__);
+			pDataStep->DelayDel();
+			if (!net::SendToCallback(pDataStep,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,node))
 			{
-				LOG4CPLUS_WARN_FMT(pStep->GetLogger(),"%s() SendToProxyCallBack failed",__FUNCTION__);
+				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 			}
 		}
 	};
 	char sRedisKey[64];
-	snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
 	oRedisOperator.AddRedisField("",sValue);
 	LOG4_DEBUG("%s() SetValueFromRedis %s",__FUNCTION__,sValue.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),
-	                oRedisOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oRedisOperator.MakeMemOperate(),callback,nodeType);
 }
 /*
 ssdb write
@@ -595,26 +622,26 @@ void ModuleHello::OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,
 {
 	auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"OnlySetValueFromRedis %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("OnlySetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"OnlySetValueFromRedis ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("OnlySetValueFromRedis ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisKey[64];
-	snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
 	oRedisOperator.AddRedisField("",sValue);
 	LOG4_DEBUG("%s() OnlySetValueFromRedis %s",__FUNCTION__,sValue.c_str());
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			SetValueFromRedis_callback,nodeType))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -631,30 +658,29 @@ Failed transactions:               0
 Longest transaction:            0.07
 Shortest transaction:           0.00
  * */
-void ModuleHello::OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,
-        const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+void ModuleHello::OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
 	auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"OnlyGetValueFromRedis %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("OnlyGetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"OnlyGetValueFromRedis ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("OnlyGetValueFromRedis ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisKey[64];
-	snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 	net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
 	LOG4_DEBUG("%s() OnlyGetValueFromRedis",__FUNCTION__);
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			SetValueFromRedis_callback,nodeType))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -675,15 +701,15 @@ void ModuleHello::RedisearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg
 	 * */
 	auto RedisearchAdd_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchAdd_callback %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("RedisearchAdd_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisWriteCmd[128];
@@ -695,10 +721,10 @@ void ModuleHello::RedisearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg
 	oRedisOperator.AddRedisField("FIELDS","txt");
 	oRedisOperator.AddRedisField("",sValue);
 
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			RedisearchAdd_callback))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -728,25 +754,25 @@ void ModuleHello::RedisearchSearch(const net::tagMsgShell& stMsgShell,const Http
 	 * */
 	auto RedisearchSearch_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchSearch_callback %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("RedisearchSearch_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchSearch_callback ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("RedisearchSearch_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisReadCmd[128];
 	snprintf(sRedisReadCmd,sizeof(sRedisReadCmd),"FT.SEARCH");
 	net::RedisOperator oRedisOperator(0, "IDX","",sRedisReadCmd);
 	oRedisOperator.AddRedisField("",sValue);
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			RedisearchSearch_callback))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -788,15 +814,15 @@ void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 {
 	auto RedisGEOADD_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisGEOADD_callback %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("RedisGEOADD_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisGEOADD_callback ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("RedisGEOADD_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisCmd[128];
@@ -805,10 +831,10 @@ void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	oRedisOperator.AddRedisField("",113.2278442);
 	oRedisOperator.AddRedisField("",23.1255978);
 	oRedisOperator.AddRedisField("",sValue);
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			RedisGEOADD_callback))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -828,15 +854,15 @@ void ModuleHello::RedisGEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,cons
 {
 	auto RedisGEORADIUSBYMEMBER_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchAdd_callback %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("RedisearchAdd_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisCmd[128];
@@ -846,10 +872,10 @@ void ModuleHello::RedisGEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,cons
 	oRedisOperator.AddRedisField("200","km");
 	oRedisOperator.AddRedisField("","withdist");//返回距离
 
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
 			RedisGEORADIUSBYMEMBER_callback))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 /*
@@ -904,64 +930,64 @@ void ModuleHello::RedisbitmapSETBIT(const net::tagMsgShell& stMsgShell,const Htt
 {
 	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapSETBIT %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("RedisbitmapSETBIT %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapSETBIT ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("RedisbitmapSETBIT ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"SETBIT");
 	oRedisOperator.AddRedisField("",sValue);//10001
 	oRedisOperator.AddRedisField("",1);
 	LOG4_DEBUG("%s() RedisbitmapSETBIT %s",__FUNCTION__,sValue.c_str());
-	SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 //GETBIT 4:4:SETBIT 10001
 void ModuleHello::RedisbitmapGETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapGETBIT %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("RedisbitmapGETBIT %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapGETBIT ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("RedisbitmapGETBIT ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"GETBIT");
     oRedisOperator.AddRedisField("",sValue);//10001
     LOG4_DEBUG("%s() RedisbitmapGETBIT %s",__FUNCTION__,sValue.c_str());
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 //BITPOS 4:4:SETBIT 1
 void ModuleHello::RedisbitmapBITPOS(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapBITPOS %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("RedisbitmapBITPOS %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapBITPOS ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("RedisbitmapBITPOS ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"BITPOS");
     oRedisOperator.AddRedisField("",1);//1
     LOG4_DEBUG("%s() RedisbitmapBITPOS %s",__FUNCTION__,sValue.c_str());
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 /*
 获取2011年11月1日活跃用户列表
@@ -1001,50 +1027,50 @@ void ModuleHello::RedisbitmapGET(const net::tagMsgShell& stMsgShell,const HttpMs
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapGET %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("RedisbitmapGET %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapGET ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("RedisbitmapGET ok %s",oRsp.DebugString().c_str());
             if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
             {
                 const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"RedisbitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
+                LOG4_TRACE("RedisbitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
                 std::vector<uint32> usersData;
-                ModuleHello::String2UserData(col_value,usersData,pDataStep->GetLogger());
+                ModuleHello::String2UserData(col_value,usersData);
 //                计算总数count （相当于bitcount）
                 {
-                    LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"count %d",usersData.size());
+                    LOG4_TRACE("count %d",usersData.size());
                 }
 //                获取其中的用户列表(从小到大顺序获取)
                 {
                     for(auto imid:usersData)
-                    LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"user imid:%u",imid);
+                    LOG4_TRACE("user imid:%u",imid);
                 }
 //                如果需要指定数量（或者指定分页，则只要使用usersData.size() 来控制）
                 {
                     for(uint32 i = 0;i < 10 && i < usersData.size();++i)
-                    LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"user imid:%u",usersData[i]);
+                    LOG4_TRACE("user imid:%u",usersData[i]);
                 }
             }
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"","GET");
     LOG4_DEBUG("%s() RedisbitmapGET",__FUNCTION__);
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,
                 const std::string &sValue,const std::string &sKey1,const std::string &sKey2,const std::string &sNode)
 {
-    struct DataStepCustom:public net::DataStepParam
+    struct DataStepCustom:public net::StepParam
     {
-        DataStepCustom(const std::string &sK2,const std::string& node,log4cplus::Logger logger):
-            sKey2(sK2),strNode(node){m_RunClock.StartClock("net::RunClock RedisbitmapGET_GET",logger);}
+        DataStepCustom(const std::string &sK2,const std::string& node):
+            sKey2(sK2),strNode(node){m_RunClock.StartClock("net::RunClock RedisbitmapGET_GET");}
         ~DataStepCustom(){m_RunClock.EndClock();}//EndClock() net::RunClock net::RunClock RedisbitmapGET_GET use time(4.998000) ms
         std::string sKey2;
         std::string strNode;
@@ -1056,52 +1082,53 @@ void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const Ht
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
         net::DataStep* pDataStep = (net::DataStep*)pStep;
-        LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"RedisbitmapGET %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("RedisbitmapGET %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
-            LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"RedisbitmapGET ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("RedisbitmapGET ok %s",oRsp.DebugString().c_str());
             if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
             {
                 const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"RedisbitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
-                ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData1,pDataStep->GetLogger());
+                LOG4_TRACE("RedisbitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
+                ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData1);
 
                 auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
                 {
                     net::DataStep* pDataStep = (net::DataStep*)pStep;
-                    LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"RedisbitmapGET %s",oRsp.err_msg().c_str());
+                    LOG4_TRACE("RedisbitmapGET %s",oRsp.err_msg().c_str());
                     if (oRsp.err_no() == 0)
                     {
                         net::DataStep* pDataStep = (net::DataStep*)pStep;
-                        LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"RedisbitmapGET ok %s",oRsp.DebugString().c_str());
+                        LOG4_TRACE("RedisbitmapGET ok %s",oRsp.DebugString().c_str());
                         if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
                         {
                             const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                            ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData2,pDataStep->GetLogger());
+                            ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData2);
                             const std::vector<uint32>& usersData1 = ((DataStepCustom*) pDataStep->GetData())->usersData1;
                             const std::vector<uint32>& usersData2 = ((DataStepCustom*) pDataStep->GetData())->usersData2;
-                            ModuleHello::OPUserData(usersData1,usersData2,pDataStep->GetLogger());
+                            ModuleHello::OPUserData(usersData1,usersData2);
                             util::CJsonObject oRsp;
                             oRsp.Add("code", 0);
                             oRsp.Add("msg", "ok");
-                            pDataStep->SendBack(oRsp.ToString());
+                            pDataStep->SendToClient(oRsp.ToString());
                         }
                     }
                 };
                 net::RedisOperator oRedisOperator(0, ((DataStepCustom*) pDataStep->GetData())->sKey2,"","GET");
-                LOG4CPLUS_TRACE_FMT(pDataStep->GetLogger(),"%s() RedisbitmapGET usersData2",__FUNCTION__);
-                pDataStep->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),callback,((DataStepCustom*) pDataStep->GetData())->strNode);
+                LOG4_TRACE("%s() RedisbitmapGET usersData2",__FUNCTION__);
+                pDataStep->DelayDel();
+                net::SendToCallback(pDataStep,oRedisOperator.MakeMemOperate(),callback,((DataStepCustom*) pDataStep->GetData())->strNode);
             }
         }
     };
 
     net::RedisOperator oRedisOperator(0, sKey1.size() > 0?sKey1:SETBIT_KEY,"","GET");
     LOG4_DEBUG("%s() RedisbitmapGET usersData1",__FUNCTION__);
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(sKey2.size() > 0?sKey2:SETBIT_KEY,sNode,GetLogger())),
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(sKey2.size() > 0?sKey2:SETBIT_KEY,sNode)),
                     oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint32>& usersData,log4cplus::Logger logger)
+void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint32>& usersData)
 {
    int len = col_value.size();
    const char *data = col_value.data();
@@ -1110,14 +1137,14 @@ void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint
        int pos = col_value.size() - len;
        if (*(data + pos))
        {
-           LOG4CPLUS_TRACE_FMT(logger,"pos %u",pos);
+           LOG4_TRACE("pos %u",pos);
            char c = * (data + pos);
            for(int i =7;i > -1;--i)
            {
                if (c & (1<<i))
                {
                    usersData.push_back(pos * 8 + (7 - i));
-                   LOG4CPLUS_TRACE_FMT(logger,"usersData %u",pos * 8 + (7 - i));
+                   LOG4_TRACE("usersData %u",pos * 8 + (7 - i));
                }
            }
 
@@ -1125,11 +1152,11 @@ void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint
    }
 }
 
-void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::vector<uint32>& usersData2,log4cplus::Logger logger)
+void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::vector<uint32>& usersData2)
 {
     //usersData1  usersData2
-    for(auto i:usersData1)LOG4CPLUS_TRACE_FMT(logger,"usersData1 %u",i);
-    for(auto i:usersData2)LOG4CPLUS_TRACE_FMT(logger,"usersData2 %u",i);
+    for(auto i:usersData1)LOG4_TRACE("usersData1 %u",i);
+    for(auto i:usersData2)LOG4_TRACE("usersData2 %u",i);
 
     //union  usersData1|usersData2 需要排好序,usersData1和usersData2并集
     {
@@ -1137,7 +1164,7 @@ void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::ve
         usersDataUnion.resize(usersData1.size() + usersData2.size(),0);
         std::vector<uint32>::iterator set_unionEnd = std::set_union(usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersDataUnion.begin());
         usersDataUnion.resize(set_unionEnd - usersDataUnion.begin());
-        for(auto i:usersDataUnion)LOG4CPLUS_TRACE_FMT(logger,"usersDataUnion %u",i);
+        for(auto i:usersDataUnion)LOG4_TRACE("usersDataUnion %u",i);
     }
     //Intersection  usersData1&usersData2 需要排好序,usersData1和usersData2交集
     {
@@ -1145,7 +1172,7 @@ void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::ve
         usersIntersection.resize(usersData1.size() + usersData2.size(),0);
         std::vector<uint32>::iterator set_intersectionEnd = std::set_intersection (usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersIntersection.begin());
         usersIntersection.resize(set_intersectionEnd - usersIntersection.begin());
-        for(auto i:usersIntersection)LOG4CPLUS_TRACE_FMT(logger,"usersIntersection %u",i);
+        for(auto i:usersIntersection)LOG4_TRACE("usersIntersection %u",i);
     }
     //Intersection 需要排好序,usersData1有但usersData2没有的
     {
@@ -1153,7 +1180,7 @@ void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::ve
         usersDifference.resize(usersData1.size() + usersData2.size(),0);
         std::vector<uint32>::iterator set_differenceEnd = std::set_difference(usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersDifference.begin());
         usersDifference.resize(set_differenceEnd - usersDifference.begin());
-        for(auto i:usersDifference)LOG4CPLUS_TRACE_FMT(logger,"usersDifference %u",i);
+        for(auto i:usersDifference)LOG4_TRACE("usersDifference %u",i);
     }
 }
 
@@ -1161,61 +1188,61 @@ void ModuleHello::SsdbMsgHset(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsg %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("SsdbMsg %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsg ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("SsdbMsg ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     char strStorageKey[64];
     snprintf(strStorageKey,sizeof(strStorageKey),"%s?%u",sKey.size() > 0?sKey.c_str():MSG_KEY,util::GetDateUint32(::time(NULL)));//1:11:MSG?20111101
     net::RedisOperator oRedisOperator(0, strStorageKey,"HSET");
-    oRedisOperator.AddRedisField("",util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+    oRedisOperator.AddRedisField("",util::GetUniqueId(net::GetNodeId(),net::GetWorkerIndex()));
     oRedisOperator.AddRedisField("",sValue);// 1:11:MSG   {json}
     LOG4_DEBUG("%s() SsdbMsgHset %s,%s",__FUNCTION__,strStorageKey,sValue.c_str());
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::SsdbMsgHsetall(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sKey,const std::string &sNode)
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsgHsetall %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("SsdbMsgHsetall %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsgHsetall ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("SsdbMsgHsetall ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     char strStorageKey[64];
     snprintf(strStorageKey,sizeof(strStorageKey),"%s?%u",sKey.size() > 0?sKey.c_str():MSG_KEY,util::GetDateUint32(::time(NULL)));//1:11:MSG?20111101
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:MSG_KEY,"HGETALL");
     LOG4_DEBUG("%s() SsdbMsgHsetall %s",__FUNCTION__,strStorageKey);
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::SsdbMsgHscan(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &key_start,const std::string &sKey,const std::string &sNode)
 {
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsgHscan %s",oRsp.err_msg().c_str());
+        LOG4_TRACE("SsdbMsgHscan %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SsdbMsg ok %s",oRsp.DebugString().c_str());
+            LOG4_TRACE("SsdbMsg ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendBack(oRsp.ToString());
+            pDataStep->SendToClient(oRsp.ToString());
         }
     };
     //hscan 1:11:MSG?20111101 "" "" 10
@@ -1226,7 +1253,7 @@ void ModuleHello::SsdbMsgHscan(const net::tagMsgShell& stMsgShell,const HttpMsg&
     oRedisOperator.AddRedisField("","");
     oRedisOperator.AddRedisField("",10);
     LOG4_DEBUG("%s() SsdbMsgHscan %s,%s",__FUNCTION__,strStorageKey,key_start.c_str());
-    SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::TestDBSELECT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
@@ -1243,24 +1270,24 @@ void ModuleHello::TestDBSELECT(const net::tagMsgShell& stMsgShell,const HttpMsg&
 
 	auto TestDBSELECT_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"TestDBSELECT_callback %s",oRsp.err_msg().c_str());
+		LOG4_TRACE("TestDBSELECT_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			net::DataStep* pDataStep = (net::DataStep*)pStep;
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"TestDBSELECT_callback ok %s",oRsp.DebugString().c_str());
+			LOG4_TRACE("TestDBSELECT_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendBack(oRsp.ToString());
+			pDataStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::DbOperator oDbOper(0, strTableName, DataMem::MemOperate::DbOperate::SELECT);
 	oDbOper.AddDbField("ip");
 	oDbOper.AddCondition(DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,strfield,strvalue);
-	if (!SendToProxyCallBack(new net::DataStep(stMsgShell,oInHttpMsg),oDbOper.MakeMemOperate(),
+	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oDbOper.MakeMemOperate(),
 			TestDBSELECT_callback))
 	{
-		LOG4_WARN("%s() SendToProxyCallBack failed",__FUNCTION__);
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
 }
 
@@ -1329,36 +1356,64 @@ void ModuleHello::TestRSA()
 		}
 	}
 }
-
+int g_TestCoroutinueTimes = 100000;
 void ModuleHello::TestCoroutinue()//用于分隔逻辑
 {
-	LOG4CPLUS_TRACE_FMT(GetLogger(), "TestCoroutinue");
-	struct Param:public net::tagCoroutineArg { Param(int a,int b):m_a(a),m_b(b){} int m_a;int m_b;};
-
+	LOG4_TRACE("TestCoroutinue");
+	struct Param:public net::tagCoroutineArg {Param(int a1):m_start1(a1){} int m_start1;};
 	auto testcoroutinue = []  (void *ud) {
 		Param *arg = (Param*)ud;
-		int start = arg->m_a;
-		for (int i=0;i<3;i++)
+		int i=0;
+		for (;i<g_TestCoroutinueTimes;i++)
 		{
-			LOG4CPLUS_TRACE_FMT(arg->GetLabor()->GetLogger(),"coroutine running(%d),arg n(%d) tid(%u)",
-					arg->GetLabor()->CoroutineRunning() , start + i,pthread_self());
-
-			arg->CoroutineYield();
+			LOG4_TRACE("TestCoroutinue running id(%d),arg n(%d) tid(%u)",net::CoroutineRunning() , arg->m_start1 + i,pthread_self());
+			net::CoroutineYield();
 		}
+		if (i == g_TestCoroutinueTimes)
+		LOG4_INFO("TestCoroutinue running id(%d),arg n(%d) tid(%u)",net::CoroutineRunning() , arg->m_start1 + i,pthread_self());
 	};
 	//两个协程任务，在两个任务之间切换
-	CoroutineNewWithArg(testcoroutinue,new Param(0,10));
-	CoroutineNewWithArg(testcoroutinue,new Param(100,110));
+	net::CoroutineNewWithArg(testcoroutinue,new Param(0));
+	net::CoroutineNewWithArg(testcoroutinue,new Param(100));
 
-	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
-	CoroutineResumeWithTimes(3);
+	LOG4_INFO("%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
+	m_RunClock.StartClock();
+	net::CoroutineResumeWithTimes(g_TestCoroutinueTimes*2);
+	m_RunClock.EndClock();
+	//20w use time(305.894989) qps 66w
+	LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)",__FUNCTION__,pthread_self(),m_RunClock.LastUseTime());
+}
 
-	LOG4CPLUS_TRACE_FMT(GetLogger(), "%s Coroutine end!tid(%u)",__FUNCTION__,pthread_self());
+void ModuleHello::TestCoroutinueAuto()
+{
+	LOG4_TRACE("TestCoroutinue");
+	struct Param:public net::tagCoroutineArg {Param(int a1):m_start1(a1){} int m_start1;};
+	auto testcoroutinue = []  (void *ud) {
+		Param *arg = (Param*)ud;
+		int i=0;
+		for (;i<g_TestCoroutinueTimes;i++)
+		{
+			LOG4_TRACE("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",net::CoroutineRunning() , arg->m_start1 + i,pthread_self());
+			net::CoroutineYield();
+		}
+		if (i == g_TestCoroutinueTimes)
+		LOG4_INFO("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",net::CoroutineRunning() , arg->m_start1 + i,pthread_self());
+	};
+	//两个协程任务，在两个任务之间切换
+	net::CoroutineNewWithArg(testcoroutinue,new Param(200));
+	net::CoroutineNewWithArg(testcoroutinue,new Param(300));
+
+	LOG4_INFO("%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
+	m_RunClock.StartClock();
+	net::CoroutineResumeWithTimes();
+	m_RunClock.EndClock();
+	//20w use time(305.053986) qps 66w
+	LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)",__FUNCTION__,pthread_self(),m_RunClock.LastUseTime());
 }
 
 void ModuleHello::TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &str)
 {
-    struct StateParam:public net::StepStateParam
+    struct StateParam:public net::StepParam
     {
         StateParam(const std::string &s,const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg):
             str(s),shell(stMsgShell),msg(oInHttpMsg){}
@@ -1371,60 +1426,59 @@ void ModuleHello::TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,con
         {
             auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
             {
-                LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SetValueFromRedis_callback %s",oRsp.DebugString().c_str());
+                LOG4_TRACE("SetValueFromRedis_callback %s",oRsp.DebugString().c_str());
             };
             char sRedisKey[64];
             snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testStepCo");
             net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
             oRedisOperator.AddRedisField("",((StateParam*)state->GetData())->str);
-            LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-            if (!state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback,"PROXYSSDB"))return;
+            LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
+            if (!net::SendToCallback(state,oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback,"PROXYSSDB"))return;
         }
         state->CoroutineYield();//放弃执行，记录状态
         {
             auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
             {
-                LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback %s",oRsp.DebugString().c_str());
+                LOG4_TRACE("GetValueFromRedis_callback %s",oRsp.DebugString().c_str());
             };
             char sRedisKey[64];
             snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testStepCo");
             net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
-            LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-            if (!state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,"PROXYSSDB"))return;
+            LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
+            if (!net::SendToCallback(state,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,"PROXYSSDB"))return;
         }
     };
     net::StepCo* pstep = new net::StepCo(stMsgShell,oInHttpMsg);
     pstep->AddCoroutinueFunc(stateFunc0);
     pstep->SetSuccFunc([] (net::StepCo* state)
                     {
-                        LOG4CPLUS_TRACE_FMT(state->GetLogger(),"stateFuncOnSucc");
+                        LOG4_TRACE("stateFuncOnSucc");
                         util::CJsonObject oRsp;
                         oRsp.Add("code", 0);
                         oRsp.Add("msg", "succ");
-                        state->SendBack(oRsp.ToString());
+                        state->SendToClient(oRsp.ToString());
                     });
     pstep->SetData(new StateParam(str,stMsgShell,oInHttpMsg));
-    net::StepCo::Launch(GetLabor(),pstep);
+    net::Launch(pstep);
 }
 
-void ModuleHello::Response(const net::tagMsgShell& stMsgShell,
-                const HttpMsg& oInHttpMsg,int iCode)
+void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode)
 {
     util::CJsonObject oRsp;
     oRsp.Add("code", iCode);
     oRsp.Add("msg", "ok");
-    SendBack(stMsgShell,oRsp.ToString(),200);//,true
+    net::SendToClient(stMsgShell,oInHttpMsg,oRsp.ToString());
 }
 
 bool ModuleHello::TestHttpRequestState(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
      // HttpState
-    return net::StepState::Launch(GetLabor(),new StepHttpRequestState(stMsgShell,oInHttpMsg));
+    return net::Launch(new StepHttpRequestState(stMsgShell,oInHttpMsg));
 }
 
 bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-	struct StateParam:public net::StepStateParam
+	struct StateParam:public net::StepParam
 	{
 		StateParam():val(3){ for (uint32 i = 1;i <=val;++i)m.insert(std::make_pair(i,i));}
 	    uint32 val;
@@ -1434,7 +1488,7 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,co
 
 	auto stateFunc0= [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                        ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    return state->HttpGet("http://www.baidu.com/");//return bool
@@ -1442,7 +1496,7 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,co
 
 	auto stateFunc1= [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                        ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    return state->HttpGet("http://www.baidu.com/") && state->SetNextState(3);
@@ -1450,37 +1504,37 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,co
 
 	auto stateFunc2= [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                        ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    return state->HttpGet("http://www.baidu.com/");
 	};
 	auto stateFunc3 = [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                        ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    return state->HttpGet("http://www.baidu.com/");
 	};
 	auto  stateFuncOnSucc = [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                        ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    util::CJsonObject oRsp;
 	    oRsp.Add("code", 0);
 	    oRsp.Add("msg", "ok");
-	    state->SendBack(oRsp.ToString());
+	    state->SendToClient(oRsp.ToString());
 	};
 	auto stateFuncOnFail = [] (net::StepState* state)
 	{
-	    LOG4CPLUS_DEBUG_FMT(state->GetLogger(), "%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	    LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
 	                        __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
 	                    ((StateParam*)state->GetData())->Inc(),((StateParam*)state->GetData())->m.size());
 	    util::CJsonObject oRsp;
 	    oRsp.Add("code", 1);
 	    oRsp.Add("msg", "fail");
-	    state->SendBack(oRsp.ToString());
+	    state->SendToClient(oRsp.ToString());
 	};
     net::StepState* pstep = new net::StepState(stMsgShell,oInHttpMsg);
     pstep->AddStateFunc(stateFunc0);
@@ -1490,12 +1544,12 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,co
     pstep->SetSuccFunc(stateFuncOnSucc);
     pstep->SetFailFunc(stateFuncOnFail);
     pstep->SetData(new StateParam());
-    return net::StepState::Launch(GetLabor(),pstep);
+    return net::Launch(pstep);
 }
 
 bool ModuleHello::TestHttpRequestStateFuncDataProxy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &str)
 {
-	struct StateParam:public net::StepStateParam
+	struct StateParam:public net::StepParam
 	{
 		StateParam(const std::string &s,const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg):
 			str(s),shell(stMsgShell),msg(oInHttpMsg){}
@@ -1507,42 +1561,42 @@ bool ModuleHello::TestHttpRequestStateFuncDataProxy(const net::tagMsgShell& stMs
 	{
 		auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 		{
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"SetValueFromRedis_callback %d:%s",oRsp.err_no(),oRsp.err_msg().c_str());
+			LOG4_TRACE("SetValueFromRedis_callback %d:%s",oRsp.err_no(),oRsp.err_msg().c_str());
 		};
 		char sRedisKey[64];
-		snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+		snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 		net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
 		oRedisOperator.AddRedisField("",((StateParam*)state->GetData())->str);
-		LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-		return state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback);
+		LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
+		return net::SendToCallback(state,oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback);
 	};
 	auto stateFunc1= [] (net::StepState* state)
 	{
 		auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 		{
-			LOG4CPLUS_TRACE_FMT(pStep->GetLogger(),"GetValueFromRedis_callback %d:%s",oRsp.err_no(),oRsp.err_msg().c_str());
+			LOG4_TRACE("GetValueFromRedis_callback %d:%s",oRsp.err_no(),oRsp.err_msg().c_str());
 		};
 		char sRedisKey[64];
-		snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testkey");
+		snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 		net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
-		LOG4CPLUS_TRACE_FMT(state->GetLogger(),"%s() stateFunc1 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
-		return state->SendToProxyCallBack(oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback);
+		LOG4_TRACE("%s() stateFunc1 %s",__FUNCTION__,((StateParam*)state->GetData())->str.c_str());
+		return net::SendToCallback(state,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback);
 	};
 	auto stateFuncOnSucc= [] (net::StepState* state)
 	{
-		LOG4CPLUS_TRACE_FMT(state->GetLogger(),"stateFuncOnSucc");
+		LOG4_TRACE("stateFuncOnSucc");
 		util::CJsonObject oRsp;
 		oRsp.Add("code", 0);
 		oRsp.Add("msg", "succ");
-		state->SendBack(oRsp.ToString());
+		state->SendToClient(oRsp.ToString());
 	};
 	auto stateFuncOnFail = [] (net::StepState* state)
 	{
-		LOG4CPLUS_TRACE_FMT(state->GetLogger(),"stateFuncOnFail");
+		LOG4_TRACE("stateFuncOnFail");
 		util::CJsonObject oRsp;
 		oRsp.Add("code", 1);
 		oRsp.Add("msg", "fail");
-		state->SendBack(oRsp.ToString());
+		state->SendToClient(oRsp.ToString());
 	};
 	net::StepState* pstep = new net::StepState(stMsgShell,oInHttpMsg);
 	pstep->AddStateFunc(stateFunc0);
@@ -1550,7 +1604,7 @@ bool ModuleHello::TestHttpRequestStateFuncDataProxy(const net::tagMsgShell& stMs
 	pstep->SetSuccFunc(stateFuncOnSucc);
 	pstep->SetFailFunc(stateFuncOnFail);
 	pstep->SetData(new StateParam(str,stMsgShell,oInHttpMsg));
-	return net::StepState::Launch(GetLabor(),pstep);
+	return net::Launch(pstep);
 }
 
 void ModuleHello::Base64Encode(const char* data,unsigned int datalen,std::string &strEncode)
@@ -2210,7 +2264,7 @@ void ModuleHello::TestJson2pbRepeatedFields()
         //"testFoo3":[3,33],"testFoo4":["4","44"],
         //"testFoo5":[{"testBar1":1,"testBar2":"2","testBar3":"3","testbar4":"NA==","testBar5":5,"testBar6":"6","testBar7":7},
         //{"testBar1":11,"testBar2":"22","testBar3":"33","testbar4":"NDQ=","testBar5":55,"testBar6":"66","testBar7":7.700000}]}
-        m_RunClock.StartClock("pb to json",GetLogger());
+        m_RunClock.StartClock("pb to json");
         std::string strTmpJson;
         for(int i = 0;i < 10000;++i)
         {
@@ -2305,7 +2359,7 @@ void ModuleHello::TestJson2pbRepeatedFields()
         //  repeated uint64 test_foo4 = 4;
         //  repeated .test_bar test_foo5 = 5;
         //}
-        m_RunClock.StartClock("json 2 pb",GetLogger());
+        m_RunClock.StartClock("json 2 pb");
         for(int i = 0;i < 10000;++i)
         {
         	server::test_proto3 testProto1;

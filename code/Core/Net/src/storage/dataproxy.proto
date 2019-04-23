@@ -52,6 +52,7 @@ message MemOperate
 			REPLACE                       = 5;              ///< replace覆盖插入
 			DELETE                        = 6;              ///< delete删除
 			CUSTOM 						  = 7;				///< 自定义
+			BULK 						  = 8;				///< 批量
 		}
 
 		message Condition                                   ///< where条件

@@ -21,7 +21,7 @@ StepNodeNotice::StepNodeNotice(const tagMsgShell& stMsgShell,
 {
     if (!m_jsonData.Parse(oInMsgBody.body()))
     {
-        LOG4CPLUS_DEBUG_FMT(GetLogger(), "StepNodeNotice::Start!  m_jsonData.Parse fail");
+        LOG4_DEBUG("StepNodeNotice::Start!  m_jsonData.Parse fail");
     }
 }
 
@@ -53,8 +53,8 @@ E_CMD_STATUS StepNodeNotice::Emit(
             {
                 memset(strIdentify,0,50);
                 sprintf(strIdentify,"%s:%d.%d",node_ip.c_str(),node_port,j);
-                Step::AddNodeIdentify(node_type,string(strIdentify));
-                LOG4CPLUS_DEBUG_FMT(GetLogger(), "Step::AddNodeIdentify(%s,%s)",node_type.c_str(),strIdentify);
+                net::AddNodeIdentify(node_type,string(strIdentify));
+                LOG4_DEBUG("Step::AddNodeIdentify(%s,%s)",node_type.c_str(),strIdentify);
             }
         }
     }
@@ -72,8 +72,8 @@ E_CMD_STATUS StepNodeNotice::Emit(
             {
                 memset(strIdentify,0,50);
                 sprintf(strIdentify,"%s:%d.%d",node_ip.c_str(),node_port,j);
-                Step::DelNodeIdentify(node_type,string(strIdentify));
-                LOG4CPLUS_DEBUG_FMT(GetLogger(), "Step::DelNodeIdentify(%s,%s)",node_type.c_str(),strIdentify);
+                net::DelNodeIdentify(node_type,string(strIdentify));
+                LOG4_DEBUG("Step::DelNodeIdentify(%s,%s)",node_type.c_str(),strIdentify);
             }
         }
     }
@@ -81,11 +81,7 @@ E_CMD_STATUS StepNodeNotice::Emit(
     return(STATUS_CMD_COMPLETED);
 }
 
-E_CMD_STATUS StepNodeNotice::Callback(
-                    const tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead,
-                    const MsgBody& oInMsgBody,
-                    void* data)
+E_CMD_STATUS StepNodeNotice::Callback(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data)
 {
     return(STATUS_CMD_COMPLETED);
 }

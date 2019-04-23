@@ -24,16 +24,16 @@ bool HelloSession::Init(const util::CJsonObject& conf)
         m_ValidTimeDelay = 60;
     }
     LOG4_INFO("%s valid time delay:%d",__FUNCTION__,m_ValidTimeDelay);
-    LOG4CPLUS_DEBUG_FMT(GetLogger(),"%s() objModuleLocateDataRequest(%s)",
+    LOG4_DEBUG("%s() objModuleLocateDataRequest(%s)",
                         __FUNCTION__,m_objModuleLocateDataRequest.ToString().c_str());
     SetCurrentTime();
     boInit = true;
     return true;
 }
 
-HelloSession* GetHelloSession(net::Labor* pLabor,const std::string &configPath)
+HelloSession* GetHelloSession()
 {
-    HelloSession* pSess = (HelloSession*) pLabor->GetSession(HELLO_SESSIN_ID);
+    HelloSession* pSess = (HelloSession*) net::GetSession(HELLO_SESSIN_ID);
     if (pSess)
     {
         return (pSess);
@@ -41,56 +41,30 @@ HelloSession* GetHelloSession(net::Labor* pLabor,const std::string &configPath)
     pSess = new HelloSession();
     if (pSess == NULL)
     {
-        LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(), "error %d: new HelloSession() error!",
-                        net::ERR_NEW);
+        LOG4_ERROR("error %d: new HelloSession() error!",ERR_NEW);
         return (NULL);
     }
     util::CJsonObject   oCurrentConf;
-    {
-        std::string strConfFile = configPath + std::string("/HelloCmd.json");
-        LOG4CPLUS_DEBUG_FMT(pLabor->GetLogger(), "CONF FILE = %s.", strConfFile.c_str());
-
-        std::ifstream fin(strConfFile.c_str());
-        if (fin.good())
-        {
-            std::stringstream ssContent;
-            ssContent << fin.rdbuf();
-            if (!oCurrentConf.Parse(ssContent.str()))
-            {
-                LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(),
-                                "Read conf (%s) error,it's maybe not a json file!",
-                                strConfFile.c_str());
-                ssContent.str("");
-                fin.close();
-                delete pSess;
-                pSess = NULL;
-                return (NULL);
-            }
-        }
-        else
-        {
-            LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(), "Open conf (%s) error!",
-                            strConfFile.c_str());
-            delete pSess;
-            pSess = NULL;
-            return (NULL);
-        }
-        pSess->SetConfigPath(configPath);
-    }
-    if (pLabor->RegisterCallback(pSess))
+	if (!net::GetJsonConfigFile(net::GetConfigPath() + std::string("HelloCmd.json"),oCurrentConf))
+	{
+		delete pSess;
+		pSess = NULL;
+		return (NULL);
+	}
+    if (net::RegisterCallback(pSess))
     {
         if (!pSess->Init(oCurrentConf))
         {
-            pLabor->DeleteCallback(pSess);
-            LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(), "HelloSession init error!");
+            g_pLabor->DeleteCallback(pSess);
+            LOG4_ERROR("HelloSession init error!");
             return (NULL);
         }
-        LOG4CPLUS_DEBUG_FMT(pLabor->GetLogger(), "register HelloSession ok!");
+        LOG4_DEBUG("register HelloSession ok!");
         return (pSess);
     }
     else
     {
-        LOG4CPLUS_ERROR_FMT(pLabor->GetLogger(), "register HelloSession error!");
+        LOG4_ERROR("register HelloSession error!");
         delete pSess;
         pSess = NULL;
     }

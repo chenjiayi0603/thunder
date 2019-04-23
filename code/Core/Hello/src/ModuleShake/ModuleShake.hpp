@@ -16,14 +16,6 @@
 #include "util/encrypt/base64.h"
 #include "cmd/Module.hpp"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-net::Cmd* create();
-#ifdef __cplusplus
-}
-#endif
-
 namespace core
 {
 /*

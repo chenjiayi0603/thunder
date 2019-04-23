@@ -26,52 +26,33 @@ public:
     RedisStep(Step* pNextStep = NULL);
     RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep = NULL);
     virtual ~RedisStep();
-
     /**
      * @brief redis步骤回调
      * @param c redis连接上下文
      * @param status 回调状态
      * @param pReply 执行结果集
      */
-    virtual E_CMD_STATUS Callback(
-                    const redisAsyncContext *c,
-                    int status,
-                    redisReply* pReply) = 0;
-
+    virtual E_CMD_STATUS Callback(const redisAsyncContext *c,int status,redisReply* pReply) = 0;
 public:
     /**
      * @brief 从Step派生的回调函数
      * @deprecated RedisStep的Callback与普通Step的Callback不一样
      * @note 从Step派生的回调函数在reids回调中不需要，所以直接返回
      */
-    virtual E_CMD_STATUS Callback(
-                    const tagMsgShell& stMsgShell,
-                    const MsgHead& oInMsgHead,
-                    const MsgBody& oInMsgBody,
-                    void* data = NULL)
+    virtual E_CMD_STATUS Callback(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data = NULL)
     {
         return(STATUS_CMD_COMPLETED);
     }
-
     /**
      * @brief 超时回调
      * @note redis step 暂时不启用超时机制
      * @return 回调状态
      */
     virtual E_CMD_STATUS Timeout(){return(STATUS_CMD_FAULT);}
-
 public:
-    util::RedisCmd* RedisCmd()
-    {
-        return(m_pRedisCmd);
-    }
-
+    util::RedisCmd* RedisCmd(){return(m_pRedisCmd);}
 public:
-    const util::RedisCmd* GetRedisCmd()
-    {
-        return(m_pRedisCmd);
-    }
-
+    const util::RedisCmd* GetRedisCmd(){return(m_pRedisCmd);}
 private:
     util::RedisCmd* m_pRedisCmd;
 };
@@ -96,26 +77,14 @@ struct tagRedisAttr
     ~tagRedisAttr()
     {
         //freeReplyObject(pReply);  redisProcessCallbacks()函数中有自动回收
-
-        for (std::list<RedisStep*>::iterator step_iter = listData.begin();
-                        step_iter != listData.end(); ++step_iter)
+		for (auto& iter:listData)
         {
-            if (*step_iter != NULL)
-            {
-                delete (*step_iter);
-                *step_iter = NULL;
-            }
+			SAFE_DELETE(iter);
         }
         listData.clear();
-
-        for (std::list<RedisStep*>::iterator step_iter = listWaitData.begin();
-                        step_iter != listWaitData.end(); ++step_iter)
+        for (auto& iter:listWaitData)
         {
-            if (*step_iter != NULL)
-            {
-                delete (*step_iter);
-                *step_iter = NULL;
-            }
+        	SAFE_DELETE(iter);
         }
         listWaitData.clear();
     }

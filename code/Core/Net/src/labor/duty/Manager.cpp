@@ -109,11 +109,11 @@ void Manager::WaitToExitTaskCallback(struct ev_loop* loop, struct ev_timer* watc
     #ifndef NODE_TYPE_CENTER
         if(CMD_REQ_NODE_STOP == pData->cmd)
         {
-            pManager->CheckWorkerLoadNullExit(pData,watcher);//等待工作者负载为空时退出节点
+            pManager->CheckWorkersLoadEmptyExit(pData,watcher);//等待工作者负载为空时退出节点
         }
         else if (CMD_REQ_NODE_RESTART_WORKERS == pData->cmd)
         {
-            pManager->CheckWorkerLoadNullRestartWorkers(pData,watcher);//等待工作者负载为空时退出节点重启工作者
+            pManager->CheckWorkersLoadEmptyRestart(pData,watcher);//等待工作者负载为空时退出节点重启工作者
         }
     #endif
     }
@@ -130,9 +130,9 @@ void Manager::ClientConnFrequencyTimeoutCallback(struct ev_loop* loop, struct ev
 }
 
 Manager::Manager(const std::string& strConfFile)
-    : m_ulSequence(0), m_pErrBuff(NULL), m_bInitLogger(false), m_dIoTimeout(480), m_strConfFile(strConfFile),
-      m_uiNodeId(0), m_iPortForServer(9988), m_iPortForClient(0), m_iGatewayIp(0), m_uiWorkerNum(10),
-      m_eCodec(util::CODEC_PROTOBUF), m_dAddrStatInterval(60.0), m_iAddrPermitNum(10),
+    : m_ulSequence(0), m_bInitLogger(false), m_dIoTimeout(480), m_strConfFile(strConfFile),
+      m_uiNodeId(0), m_iPortForServer(9988), m_iPortForClient(0), m_iGatewayPort(0), m_uiWorkerNum(10),
+      m_eCodec(util::CODEC_PROTOBUF), m_dAddrStatInterval(60.0), m_iAddrPermitNum(1000000),
       m_iLogLevel(log4cplus::INFO_LOG_LEVEL), m_iWorkerBeat(11), m_iRefreshInterval(60), m_iLastRefreshCalc(0),
       m_iS2SListenFd(-1), m_iC2SListenFd(-1), m_loop(NULL), m_pPeriodicTaskWatcher(NULL),m_iWaitToExitCounter(0),nPid(0)//, m_pCmdConnect(NULL)
 {
@@ -142,21 +142,22 @@ Manager::Manager(const std::string& strConfFile)
         exit(1);
     }
 
-    if (!GetConf())
+    if (!LoadConf())
     {
-        std::cerr << "GetConf() error!" << std::endl;
+        std::cerr << "LoadConf() error!" << std::endl;
         exit(-1);
     }
-    m_pErrBuff = new char[gc_iErrBuffLen];
     ngx_setproctitle(m_oCurrentConf("server_name").c_str());
     process_daemonize(m_strWorkPath.c_str());
     InstallSignal();
     nPid = getpid();
     Init();
 #ifdef WORKER_OVERDUE
-    m_iWorkerBeat = WORKER_OVERDUE > ((gc_iBeatInterval << 1) + 1) ? WORKER_OVERDUE:((gc_iBeatInterval << 1) + 1);
+    int iWorkerBeat = WORKER_OVERDUE > ((gc_iBeatInterval << 1) + 1) ? WORKER_OVERDUE:((gc_iBeatInterval << 1) + 1);
+    if (iWorkerBeat > m_iWorkerBeat) m_iWorkerBeat = iWorkerBeat;
 #else
-    m_iWorkerBeat = (gc_iBeatInterval << 1) + 1;
+    int iWorkerBeat = (gc_iBeatInterval << 1) + 1;
+    if (iWorkerBeat > m_iWorkerBeat) m_iWorkerBeat = iWorkerBeat;
 #endif
     LOG4_DEBUG("%s() m_iWorkerBeat:%d gc_iBeatInterval:%d,NODE_BEAT:%f", __FUNCTION__,m_iWorkerBeat,gc_iBeatInterval,NODE_BEAT);
     CreateEvents();
@@ -215,12 +216,10 @@ bool Manager::IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 #endif
         return(AcceptServerConn(watcher->fd));
     }
-#ifdef NODE_TYPE_GATE
-    else if (watcher->fd == m_iC2SListenFd)//网关对外的连接
+    else if (m_iC2SListenFd >= 0 && watcher->fd == m_iC2SListenFd)//网关对外的连接
     {
         return(FdTransfer(watcher->fd));
     }
-#endif
     else
     {
         return(RecvDataAndDispose(pData, watcher));
@@ -262,12 +261,14 @@ bool Manager::FdTransfer(int iFd)
         {
             LOG4_WARN("setsockopt fail to set TCP_KEEPCNT");
         }
+#ifndef ENABLE_NAGLE
         if (setsockopt(iAcceptFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
         {
             LOG4_WARN("setsockopt fail to set TCP_NODELAY");
         }
+#endif
     }
-    std::map<in_addr_t, uint32>::iterator iter = m_mapClientConnFrequency.find(stClientAddr.sin_addr.s_addr);
+    auto iter = m_mapClientConnFrequency.find(stClientAddr.sin_addr.s_addr);
     if (iter == m_mapClientConnFrequency.end())
     {
         m_mapClientConnFrequency.insert(std::pair<in_addr_t, uint32>(stClientAddr.sin_addr.s_addr, 1));
@@ -276,7 +277,6 @@ bool Manager::FdTransfer(int iFd)
     else
     {
         iter->second++;
-#ifdef NODE_TYPE_GATE
         if (iter->second > (uint32)m_iAddrPermitNum)
         {
             LOG4_WARN("addrPermitNum error:client addr %d had been connected more than %u times in %f seconds, it's not permitted",
@@ -284,7 +284,6 @@ bool Manager::FdTransfer(int iFd)
             ::close(iAcceptFd);
             return(false);
         }
-#endif
     }
 
     std::pair<int, int> worker_pid_fd = GetMinLoadWorkerDataFd();
@@ -346,10 +345,12 @@ bool Manager::AcceptServerConn(int iFd)
 			{
 				LOG4_WARN("fail to set SO_KEEPALIVE");
 			}
+#ifndef ENABLE_NAGLE
 			if (setsockopt(iAcceptFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
 			{
 				LOG4_WARN("fail to set TCP_NODELAY");
 			}
+#endif
     	}
         uint32 ulSeq = GetSequence();
         x_sock_set_block(iAcceptFd, 0);
@@ -384,19 +385,17 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
     LOG4_DEBUG("fd %d, seq %llu", pData->iFd, pData->ulSeq);
     int iErrno = 0;
     int iReadLen = 0;
-    std::map<int, tagConnectionAttr*>::iterator conn_iter;
-    conn_iter = m_mapFdAttr.find(pData->iFd);
+    auto conn_iter = m_mapFdAttr.find(pData->iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd attr for %d!", pData->iFd);
     }
     else
     {
-    	tagConnectionAttr* ptagConnectionAttr = conn_iter->second;
-        if (pData->ulSeq != ptagConnectionAttr->ulSeq)
+    	tagConnectionAttr* pConn = conn_iter->second;
+        if (pData->ulSeq != pConn->ulSeq)
         {
-            LOG4_DEBUG("callback seq %llu not match the conn attr seq %llu",
-                            pData->ulSeq, conn_iter->second->ulSeq);
+            LOG4_DEBUG("callback seq %llu not match the conn attr seq %llu",pData->ulSeq, conn_iter->second->ulSeq);
             ev_io_stop(m_loop, watcher);
             pData->pManager = NULL;
             delete pData;
@@ -405,32 +404,20 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
             watcher = NULL;
             return(false);
         }
-        iReadLen = ptagConnectionAttr->pRecvBuff->ReadFD(pData->iFd, iErrno);
-        LOG4_TRACE("recv from fd %d data len %d. "
-                        "and conn_iter->second->pRecvBuff->ReadableBytes() = %d", pData->iFd, iReadLen,
-                        conn_iter->second->pRecvBuff->ReadableBytes());
+        iReadLen = pConn->pRecvBuff->ReadFD(pData->iFd, iErrno);
+        LOG4_TRACE("recv from fd %d data len %d. and conn_iter->second->pRecvBuff->ReadableBytes() = %d", pData->iFd, iReadLen,conn_iter->second->pRecvBuff->ReadableBytes());
         if (iReadLen > 0)
         {
-            while (ptagConnectionAttr->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize)
+            while (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize)
             {
-                LOG4_TRACE("ptagConnectionAttr->pRecvBuff->ReadableBytes() = %d",
-                		ptagConnectionAttr->pRecvBuff->ReadableBytes());
-                //optional fixed32 cmd = 1;
-                //optional fixed32 msgbody_len = 2;
-                //optional fixed32 seq = 3;
-                //optional fixed32 checksum = 4;
+                LOG4_TRACE("pConn->pRecvBuff->ReadableBytes() = %d",pConn->pRecvBuff->ReadableBytes());
                 MsgHead oInMsgHead;
-                bool bResult = oInMsgHead.ParseFromArray(
-                		ptagConnectionAttr->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
+                bool bResult = oInMsgHead.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
                 if (bResult)
                 {
-//                    MsgHead oInMsgHead;
-//                    oInMsgHead.set_cmd(oSwitchMsgHead.cmd() & 0x7FFFFFFF);//为了兼容pb3处理
-//                    oInMsgHead.set_msgbody_len(oSwitchMsgHead.msgbody_len() & 0x7FFFFFFF);
-//                    oInMsgHead.set_seq(oSwitchMsgHead.seq() & 0x7FFFFFFF);
                     LOG4_DEBUG("%s() oInMsgHead(%s)",__FUNCTION__,oInMsgHead.DebugString().c_str());
                     MsgBody oInMsgBody;
-                    if (ptagConnectionAttr->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize + oInMsgHead.msgbody_len())
+                    if (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize + oInMsgHead.msgbody_len())
                     {
                         if (0 == oInMsgHead.msgbody_len())  // 无包体的数据包
                         {
@@ -438,41 +425,40 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
                         }
                         else
                         {
-                            bResult = oInMsgBody.ParseFromArray(
-                            		ptagConnectionAttr->pRecvBuff->GetRawReadBuffer() + gc_uiMsgHeadSize, oInMsgHead.msgbody_len());
+                            bResult = oInMsgBody.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer() + gc_uiMsgHeadSize, oInMsgHead.msgbody_len());
                         }
                         if (bResult)
                         {
-                        	ptagConnectionAttr->dActiveTime = ev_now(m_loop);
+                        	pConn->dActiveTime = ev_now(m_loop);
                             bool bContinue = false;     // 是否继续解析下一个数据包
                             tagMsgShell stMsgShell;
                             stMsgShell.iFd = pData->iFd;
-                            stMsgShell.ulSeq = ptagConnectionAttr->ulSeq;
+                            stMsgShell.ulSeq = pConn->ulSeq;
 
-                            std::map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(watcher->fd);
+                            auto worker_fd_iter = m_mapWorkerFdPid.find(watcher->fd);
                             if (worker_fd_iter == m_mapWorkerFdPid.end())   // 其他Server发过来要将连接传送到某个指定Worker进程信息
                             {
 //                                LOG4_TRACE("strIdentify: %s, m_mapCenterMsgShell.size()=%d",
 //                                                conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
-                                std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(ptagConnectionAttr->strIdentify);
+                                auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
                                 if (center_iter == m_mapCenterMsgShell.end())       // 非与center连接
                                 {
 //                                    LOG4_TRACE("center_iter == m_mapCenterMsgShell.end()");
-                                    bContinue = DisposeDataAndTransferFd(stMsgShell, oInMsgHead, oInMsgBody, ptagConnectionAttr->pSendBuff);
+                                    bContinue = DisposeDataAndTransferFd(stMsgShell, oInMsgHead, oInMsgBody, pConn->pSendBuff);
                                 }
                                 else
                                 {
 //                                    LOG4_TRACE("center_iter == m_mapCenterMsgShell.end()   else");
-                                    bContinue = DisposeDataFromCenter(stMsgShell, oInMsgHead, oInMsgBody,ptagConnectionAttr);
+                                    bContinue = DisposeDataFromCenter(stMsgShell, oInMsgHead, oInMsgBody,pConn);
                                 }
                             }
                             else    // Worker进程发过来的消息
                             {
-                                bContinue = DisposeDataFromWorker(stMsgShell, oInMsgHead, oInMsgBody, ptagConnectionAttr->pSendBuff);
+                                bContinue = DisposeDataFromWorker(stMsgShell, oInMsgHead, oInMsgBody, pConn->pSendBuff);
                             }
-                            ptagConnectionAttr->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
-                            ptagConnectionAttr->pRecvBuff->Compact(32784);   // 超过32KB则重新分配内存
-                            ptagConnectionAttr->pSendBuff->Compact(32784);
+                            pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
+                            pConn->pRecvBuff->Compact(32784);   // 超过32KB则重新分配内存
+                            pConn->pSendBuff->Compact(32784);
                             if (!bContinue)
                             {
                                 DestroyConnect(conn_iter);
@@ -502,16 +488,14 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
         }
         else if (iReadLen == 0)
         {
-            LOG4_DEBUG("fd %d closed by peer, error %d %s!",
-                            pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+            LOG4_DEBUG("fd %d closed by peer, error %d %s!",pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
             DestroyConnect(conn_iter);
         }
         else
         {
             if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
             {
-                LOG4_ERROR("recv from fd %d error %d: %s",
-                                pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+                LOG4_ERROR("recv from fd %d error %d: %s",pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                 DestroyConnect(conn_iter);
             }
         }
@@ -529,11 +513,10 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     }
     else
     {
-    	tagConnectionAttr* ptagConnectionAttr = attr_iter->second;
-        if ((pData->ulSeq != ptagConnectionAttr->ulSeq) || (pData->iFd != ptagConnectionAttr->iFd))
+    	tagConnectionAttr* pConn = attr_iter->second;
+        if ((pData->ulSeq != pConn->ulSeq) || (pData->iFd != pConn->iFd))
         {
-            LOG4_DEBUG("callback seq %llu or ifd(%d) not match the conn attr seq %llu or ifd(%d)",
-                            pData->ulSeq, pData->iFd,ptagConnectionAttr->ulSeq,ptagConnectionAttr->iFd);
+            LOG4_DEBUG("callback seq %llu or ifd(%d) not match the conn attr seq %llu or ifd(%d)",pData->ulSeq, pData->iFd,pConn->ulSeq,pConn->iFd);
             ev_io_stop(m_loop, watcher);
             pData->pManager = NULL;
             delete pData;
@@ -544,52 +527,49 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         int iErrno = 0;
         int iWriteLen = 0;
-        iWriteLen = ptagConnectionAttr->pSendBuff->WriteFD(pData->iFd, iErrno);
-        LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,
-                        pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+        iWriteLen = pConn->pSendBuff->WriteFD(pData->iFd, iErrno);
+        LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
         if (iWriteLen < 0)
         {
             if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
             {
-                LOG4_ERROR("send to fd %d error %d: %s",
-                                pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+                LOG4_ERROR("send to fd %d error %d: %s",pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                 DestroyConnect(attr_iter);
             }
             else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
             {
-            	ptagConnectionAttr->dActiveTime = ev_now(m_loop);
-                AddIoWriteEvent(ptagConnectionAttr);
+            	pConn->dActiveTime = ev_now(m_loop);
+                AddIoWriteEvent(pConn);
             }
         }
         else if (iWriteLen > 0)
         {
-        	ptagConnectionAttr->dActiveTime = ev_now(m_loop);
+        	pConn->dActiveTime = ev_now(m_loop);
             if (iWriteLen == (int)attr_iter->second->pSendBuff->ReadableBytes())  // 已无内容可写，取消监听fd写事件
             {
-                RemoveIoWriteEvent(ptagConnectionAttr);
+                RemoveIoWriteEvent(pConn);
             }
             else    // 内容未写完，添加或保持监听fd写事件
             {
-                AddIoWriteEvent(ptagConnectionAttr);
+                AddIoWriteEvent(pConn);
             }
         }
         else    // iWriteLen == 0 写缓冲区为空
         {
-//            LOG4_TRACE("pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",
-//                            pData->iFd, watcher->fd, attr_iter->second->pWaitForSendBuff->ReadableBytes());
-            if (ptagConnectionAttr->pWaitForSendBuff->ReadableBytes() > 0)    // 存在等待发送的数据，说明本次写事件是connect之后的第一个写事件
+        	//LOG4_TRACE("pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",pData->iFd, watcher->fd, attr_iter->second->pWaitForSendBuff->ReadableBytes());
+            if (pConn->pWaitForSendBuff->ReadableBytes() > 0)    // 存在等待发送的数据，说明本次写事件是connect之后的第一个写事件
             {
-                std::map<uint32, int>::iterator index_iter = m_mapSeq2WorkerIndex.find(ptagConnectionAttr->ulSeq);
+                std::map<uint32, int>::iterator index_iter = m_mapSeq2WorkerIndex.find(pConn->ulSeq);
                 if (index_iter != m_mapSeq2WorkerIndex.end())
                 {
                     tagMsgShell stMsgShell;
                     stMsgShell.iFd = pData->iFd;
-                    stMsgShell.ulSeq = ptagConnectionAttr->ulSeq;
+                    stMsgShell.ulSeq = pConn->ulSeq;
                     //AddInnerFd(stMsgShell); 只有Worker需要
-                    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(ptagConnectionAttr->strIdentify);
+                    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
                     if (center_iter == m_mapCenterMsgShell.end())
                     {
-                        m_mapCenterMsgShell.insert(std::pair<std::string, tagMsgShell>(ptagConnectionAttr->strIdentify, stMsgShell));
+                        m_mapCenterMsgShell.insert(std::pair<std::string, tagMsgShell>(pConn->strIdentify, stMsgShell));
                     }
                     else
                     {
@@ -627,8 +607,7 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     {
         if (pData->ulSeq != iter->second->ulSeq || pData->iFd != iter->second->iFd)
         {
-            LOG4_DEBUG("callback seq %llu not match the conn attr seq %llu",
-                            pData->ulSeq, iter->second->ulSeq);
+            LOG4_DEBUG("callback seq %llu not match the conn attr seq %llu",pData->ulSeq, iter->second->ulSeq);
             ev_io_stop(m_loop, watcher);
             pData->pManager = NULL;
             delete pData;
@@ -639,7 +618,6 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         DestroyConnect(iter);
     }
-
     std::map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(pData->iFd);
     if (worker_fd_iter != m_mapWorkerFdPid.end())
     {
@@ -676,7 +654,7 @@ bool Manager::IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher
             }
             else    // IO已超时，关闭文件描述符并清理相关资源
             {
-                LOG4_DEBUG("%s()", __FUNCTION__);
+                LOG4_WARN("%s()", __FUNCTION__);
                 DestroyConnect(iter);
             }
             bRes = true;
@@ -696,7 +674,7 @@ bool Manager::ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct
 {
     //LOG4_TRACE("%s()", __FUNCTION__);
     bool bRes = false;
-    std::map<in_addr_t, uint32>::iterator iter = m_mapClientConnFrequency.find(pData->iAddr);
+    auto iter = m_mapClientConnFrequency.find(pData->iAddr);
     if (iter == m_mapClientConnFrequency.end())
     {
         bRes = false;
@@ -746,8 +724,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
         oJsonConf.Get("max_log_file_num", iMaxLogFileNum);
         oJsonConf.Get("log_level", iLogLevel);
         log4cplus::initialize();
-        log4cplus::SharedAppenderPtr file_append(new log4cplus::RollingFileAppender(
-                        strLogname, iMaxLogFileSize, iMaxLogFileNum));
+        log4cplus::SharedAppenderPtr file_append(new log4cplus::RollingFileAppender(strLogname, iMaxLogFileSize, iMaxLogFileNum));
         file_append->setName(strLogname);
         std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
         file_append->setLayout(layout);
@@ -757,8 +734,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
         m_oLogger.addAppender(file_append);
         if (oJsonConf.Get("socket_logging_host", strLoggingHost) && oJsonConf.Get("socket_logging_port", iLoggingPort))
         {
-            log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(
-                            strLoggingHost, iLoggingPort, ssServerName.str()));
+            log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(strLoggingHost, iLoggingPort, ssServerName.str()));
             socket_append->setName(ssServerName.str());
             socket_append->setLayout(layout);
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
@@ -768,17 +744,6 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
         m_bInitLogger = true;
         return(true);
     }
-}
-
-bool Manager::SetProcessName(const util::CJsonObject& oJsonConf)
-{
-    ngx_setproctitle(oJsonConf("server_name").c_str());
-    return(true);
-}
-
-void Manager::ResetLogLevel(log4cplus::LogLevel iLogLevel)
-{
-    m_oLogger.setLogLevel(iLogLevel);
 }
 
 bool Manager::SendTo(const tagMsgShell& stMsgShell)
@@ -791,32 +756,31 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
     }
     else
     {
-    	tagConnectionAttr* ptagConnectionAttr = iter->second;
-        if (ptagConnectionAttr->ulSeq == stMsgShell.ulSeq && ptagConnectionAttr->iFd == stMsgShell.iFd)
+    	tagConnectionAttr* pConn = iter->second;
+        if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             int iErrno = 0;
             int iWriteLen = 0;
-            int iNeedWriteLen = (int)(ptagConnectionAttr->pWaitForSendBuff->ReadableBytes());
-            int iWriteIdx = ptagConnectionAttr->pSendBuff->GetWriteIndex();
-            iWriteLen = ptagConnectionAttr->pSendBuff->Write(
-            		ptagConnectionAttr->pWaitForSendBuff, ptagConnectionAttr->pWaitForSendBuff->ReadableBytes());
+            int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
+            int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
+            iWriteLen = pConn->pSendBuff->Write(
+            		pConn->pWaitForSendBuff, pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)ptagConnectionAttr->pSendBuff->ReadableBytes();
+                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
                 iWriteLen = iter->second->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 if (iWriteLen < 0)
                 {
                     if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
                     {
-                        LOG4_ERROR("send to fd %d error %d: %s",
-                                        stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+                        LOG4_ERROR("send to fd %d error %d: %s",stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                         DestroyConnect(iter);
                         return(false);
                     }
                     else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                     {
                         iter->second->dActiveTime = ev_now(m_loop);
-                        AddIoWriteEvent(ptagConnectionAttr);
+                        AddIoWriteEvent(pConn);
                     }
                 }
                 else if (iWriteLen > 0)
@@ -824,11 +788,11 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
                     iter->second->dActiveTime = ev_now(m_loop);
                     if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                     {
-                        RemoveIoWriteEvent(ptagConnectionAttr);
+                        RemoveIoWriteEvent(pConn);
                     }
                     else    // 内容未写完，添加或保持监听fd写事件
                     {
-                        AddIoWriteEvent(ptagConnectionAttr);
+                        AddIoWriteEvent(pConn);
                     }
                 }
                 return(true);
@@ -836,14 +800,14 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
             else
             {
                 LOG4_ERROR("write to send buff error, iWriteLen = %d!", iWriteLen);
-                ptagConnectionAttr->pSendBuff->SetWriteIndex(iWriteIdx);
+                pConn->pSendBuff->SetWriteIndex(iWriteIdx);
                 return(false);
             }
         }
         else
         {
-        	LOG4_ERROR("ptagConnectionAttr iFd(%d) ulSeq(%llu) stMsgShell iFd(%d) ulSeq(%llu) not match!",
-        			ptagConnectionAttr->iFd,ptagConnectionAttr->ulSeq,stMsgShell.iFd,stMsgShell.ulSeq);
+        	LOG4_ERROR("pConn iFd(%d) ulSeq(%llu) stMsgShell iFd(%d) ulSeq(%llu) not match!",
+        			pConn->iFd,pConn->ulSeq,stMsgShell.iFd,stMsgShell.ulSeq);
         }
     }
     return(false);
@@ -860,8 +824,8 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
     }
     else
     {
-    	tagConnectionAttr* ptagConnectionAttr = iter->second;
-        if (ptagConnectionAttr->ulSeq == stMsgShell.ulSeq && ptagConnectionAttr->iFd == stMsgShell.iFd)
+    	tagConnectionAttr* pConn = iter->second;
+        if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             int iErrno = 0;
             int iWriteLen = 0;
@@ -871,23 +835,23 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
 //            oSwitchMsgHead.set_msgbody_len(oMsgHead.msgbody_len() | 0x80000000);
 //            oSwitchMsgHead.set_seq(oMsgHead.seq() | 0x80000000);
             int iNeedWriteLen = oMsgHead.ByteSize();
-            int iWriteIdx = ptagConnectionAttr->pSendBuff->GetWriteIndex();
-            iWriteLen = ptagConnectionAttr->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
+            int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
+            iWriteLen = pConn->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
             LOG4_TRACE("iWriteLen = %d,oSwitchMsgHead size(%u),oMsgHead(%s)",
                             iWriteLen,oMsgHead.ByteSize(),oMsgHead.DebugString().c_str());
             if (iWriteLen != iNeedWriteLen)
             {
                 LOG4_ERROR("write to send buff error, iWriteLen = %d!", iWriteLen);
-                ptagConnectionAttr->pSendBuff->SetWriteIndex(iWriteIdx);
+                pConn->pSendBuff->SetWriteIndex(iWriteIdx);
                 return(false);
             }
             iNeedWriteLen = oMsgBody.ByteSize();
-            iWriteLen = ptagConnectionAttr->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
+            iWriteLen = pConn->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
             LOG4_TRACE("iWriteLen = %d,oMsgBody size(%u)", iWriteLen,oMsgBody.ByteSize());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)ptagConnectionAttr->pSendBuff->ReadableBytes();
-                iWriteLen = ptagConnectionAttr->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
+                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,
                                 stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                 if (iWriteLen < 0)
@@ -902,7 +866,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
                     else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                     {
                         iter->second->dActiveTime = ev_now(m_loop);
-                        AddIoWriteEvent(ptagConnectionAttr);
+                        AddIoWriteEvent(pConn);
                     }
                 }
                 else if (iWriteLen > 0)
@@ -910,11 +874,11 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
                     iter->second->dActiveTime = ev_now(m_loop);
                     if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                     {
-                        RemoveIoWriteEvent(ptagConnectionAttr);
+                        RemoveIoWriteEvent(pConn);
                     }
                     else    // 内容未写完，添加或保持监听fd写事件
                     {
-                        AddIoWriteEvent(ptagConnectionAttr);
+                        AddIoWriteEvent(pConn);
                     }
                 }
                 return(true);
@@ -922,7 +886,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
             else
             {
                 LOG4_ERROR("write to send buff error!");
-                ptagConnectionAttr->pSendBuff->SetWriteIndex(iWriteIdx);
+                pConn->pSendBuff->SetWriteIndex(iWriteIdx);
                 return(false);
             }
         }
@@ -991,14 +955,16 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 		{
 			LOG4_WARN("fail to set SO_REUSEADDR");
 		}
+#ifndef ENABLE_NAGLE
 		if (setsockopt(iFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
 		{
 			LOG4_WARN("fail to set TCP_NODELAY");
 		}
+#endif
     }
     uint32 ulSeq = GetSequence();
-    tagConnectionAttr* ptagConnectionAttr = CreateFdAttr(iFd, ulSeq);
-    if (ptagConnectionAttr)
+    tagConnectionAttr* pConn = CreateFdAttr(iFd, ulSeq);
+    if (pConn)
     {
         if(!AddIoTimeout(iFd, ulSeq, 1.5))
         {
@@ -1006,26 +972,26 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 			DestroyConnect(m_mapFdAttr.find(iFd));
 			return(false);
         }
-        if (!AddIoReadEvent(ptagConnectionAttr))
+        if (!AddIoReadEvent(pConn))
 		{
 			LOG4_ERROR("AddIoReadEvent error");
 			DestroyConnect(m_mapFdAttr.find(iFd));
 			return(false);
 		}
-		if (!AddIoWriteEvent(ptagConnectionAttr))
+		if (!AddIoWriteEvent(pConn))
 		{
 			LOG4_ERROR("AddIoWriteEvent error");
 			DestroyConnect(m_mapFdAttr.find(iFd));
 			return(false);
 		}
-		ptagConnectionAttr->pWaitForSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
+		pConn->pWaitForSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
 		LOG4_TRACE("%s(),write oMsgHead size(%u)", __FUNCTION__,oMsgHead.ByteSize());
-		ptagConnectionAttr->pWaitForSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
+		pConn->pWaitForSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
 		LOG4_TRACE("%s(),write oMsgBody size(%u)", __FUNCTION__,oMsgBody.ByteSize());
-		ptagConnectionAttr->strIdentify = strIdentify;
+		pConn->strIdentify = strIdentify;
 		LOG4_TRACE("fd %d seq %u identify %s."
 						"iter->second->pWaitForSendBuff->ReadableBytes()=%u", iFd, ulSeq, strIdentify.c_str(),
-						ptagConnectionAttr->pWaitForSendBuff->ReadableBytes());
+						pConn->pWaitForSendBuff->ReadableBytes());
 		m_mapSeq2WorkerIndex.insert(std::pair<uint32, int>(ulSeq, iWorkerIndex));
 		std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(strIdentify);
 		if (center_iter != m_mapCenterMsgShell.end())
@@ -1043,7 +1009,7 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
     }
 }
 
-bool Manager::GetConf()
+bool Manager::LoadConf()
 {
     char szFilePath[256] = {0};
     //char szFileName[256] = {0};
@@ -1052,7 +1018,6 @@ bool Manager::GetConf()
         if (getcwd(szFilePath, sizeof(szFilePath)))
         {
             m_strWorkPath = szFilePath;
-            //std::cout << "work dir: " << m_strWorkPath << std::endl;
         }
         else
         {
@@ -1060,152 +1025,124 @@ bool Manager::GetConf()
         }
     }
     m_oLastConf = m_oCurrentConf;
-    //snprintf(szFileName, sizeof(szFileName), "%s/%s", m_strWorkPath.c_str(), m_strConfFile.c_str());
     std::ifstream fin(m_strConfFile.c_str());
-    if (fin.good())
-    {
-        std::stringstream ssContent;
-        ssContent << fin.rdbuf();
-        if (!m_oCurrentConf.Parse(ssContent.str()))
-        {
-            ssContent.str("");
-            fin.close();
-            m_oCurrentConf = m_oLastConf;
-            return(false);
-        }
-        ssContent.str("");
-        fin.close();
-    }
-    else
-    {
-        return(false);
-    }
-
-    if (m_oLastConf.ToString() != m_oCurrentConf.ToString())
-    {
-        m_oCurrentConf.Get("io_timeout", m_dIoTimeout);
-        m_oCurrentConf.Get("refresh_interval", m_iRefreshInterval);
-        if (m_oLastConf.ToString().length() == 0)
-        {
-            m_uiWorkerNum = strtoul(m_oCurrentConf("process_num").c_str(), NULL, 10);
-            m_oCurrentConf.Get("node_type", m_strNodeType);
-            m_oCurrentConf.Get("inner_host", m_strHostForServer);
-            m_oCurrentConf.Get("inner_port", m_iPortForServer);
-            m_oCurrentConf.Get("access_host", m_strHostForClient);
-            m_oCurrentConf.Get("access_port", m_iPortForClient);
-            m_oCurrentConf.Get("gateway", m_strGateway);
-            m_oCurrentConf.Get("gateway_port", m_iGatewayIp);
-
-        }
-        int32 iCodec;
-        if (m_oCurrentConf.Get("access_codec", iCodec))
-        {
-            m_eCodec = util::E_CODEC_TYPE(iCodec);
-        }
-        m_oCurrentConf["permission"]["addr_permit"].Get("stat_interval", m_dAddrStatInterval);
-        m_oCurrentConf["permission"]["addr_permit"].Get("permit_num", m_iAddrPermitNum);
-        if (m_oCurrentConf.Get("log_level", m_iLogLevel))
-        {
-            switch (m_iLogLevel)
-            {
-                case log4cplus::DEBUG_LOG_LEVEL:
-                    break;
-                case log4cplus::INFO_LOG_LEVEL:
-                    break;
-                case log4cplus::TRACE_LOG_LEVEL:
-                    break;
-                case log4cplus::WARN_LOG_LEVEL:
-                    break;
-                case log4cplus::ERROR_LOG_LEVEL:
-                    break;
-                case log4cplus::FATAL_LOG_LEVEL:
-                    break;
-                default:
-                    m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
-            }
-        }
-        else
-        {
-            m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
-        }
-    }
+	if (fin.good())
+	{
+		std::stringstream ssContent;
+		ssContent << fin.rdbuf();
+		if (!m_oCurrentConf.Parse(ssContent.str()))
+		{
+			//配置文件解析失败
+			ssContent.str("");
+			fin.close();
+			m_oCurrentConf = m_oLastConf;
+			return false;
+		}
+	}
+	else
+	{
+		return false;
+	}
+	if (m_oLastConf.ToString() != m_oCurrentConf.ToString())
+	{
+		m_oCurrentConf.Get("io_timeout", m_dIoTimeout);
+		m_oCurrentConf.Get("refresh_interval", m_iRefreshInterval);
+		m_oCurrentConf.Get("worker_beat", m_iWorkerBeat);
+		if (m_oLastConf.ToString().length() == 0)
+		{
+			m_uiWorkerNum = strtoul(m_oCurrentConf("process_num").c_str(), NULL, 10);
+			m_oCurrentConf.Get("node_type", m_strNodeType);
+			m_oCurrentConf.Get("inner_host", m_strHostForServer);
+			m_oCurrentConf.Get("inner_port", m_iPortForServer);
+			m_oCurrentConf.Get("access_host", m_strHostForClient);
+			m_oCurrentConf.Get("access_port", m_iPortForClient);
+			m_oCurrentConf.Get("gateway", m_strGateway);
+			m_oCurrentConf.Get("gateway_port", m_iGatewayPort);
+		}
+		int32 iCodec;
+		if (m_oCurrentConf.Get("access_codec", iCodec))
+		{
+			m_eCodec = util::E_CODEC_TYPE(iCodec);
+		}
+		m_oCurrentConf["permission"]["addr_permit"].Get("stat_interval", m_dAddrStatInterval);
+		m_oCurrentConf["permission"]["addr_permit"].Get("permit_num", m_iAddrPermitNum);
+		if (m_oCurrentConf.Get("log_level", m_iLogLevel))
+		{
+			switch (m_iLogLevel)
+			{
+				case log4cplus::DEBUG_LOG_LEVEL:break;
+				case log4cplus::INFO_LOG_LEVEL:break;
+				case log4cplus::TRACE_LOG_LEVEL:break;
+				case log4cplus::WARN_LOG_LEVEL:break;
+				case log4cplus::ERROR_LOG_LEVEL:break;
+				case log4cplus::FATAL_LOG_LEVEL:break;
+				default:m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
+			}
+		}
+		else
+		{
+			m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
+		}
+	}
     return(true);
 }
 
 bool Manager::Init()
 {
-    /*
-    char szLogName[256] = {0};
-    snprintf(szLogName, sizeof(szLogName), "%s/log/%s.log", m_strWorkPath.c_str(), getproctitle());
-    std::string strParttern = "[%D,%d{%q}][%p] [%l] %m%n";
-    log4cplus::initialize();
-    log4cplus::SharedAppenderPtr append(new log4cplus::RollingFileAppender(
-                    szLogName, atol(m_oCurrentConf("max_log_file_size").c_str()),
-                    atoi(m_oCurrentConf("max_log_file_num").c_str())));
-    append->setName(szLogName);
-    std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
-    append->setLayout(layout);
-    //log4cplus::Logger::getRoot().addAppender(append);
-    m_oLogger = log4cplus::Logger::getInstance(szLogName);
-    m_oLogger.addAppender(append);
-    m_oLogger.setLogLevel(m_iLogLevel);
-    */
     InitLogger(m_oCurrentConf);
 
     socklen_t addressLen = 0;
     int queueLen = 100;
-#ifdef NODE_TYPE_GATE
-    // 接入节点才需要监听客户端连接
-    struct sockaddr_in stAddrOuter;
-    struct sockaddr *pAddrOuter;
-    stAddrOuter.sin_family = AF_INET;
-    stAddrOuter.sin_port = htons(m_iPortForClient);
-    stAddrOuter.sin_addr.s_addr = inet_addr(m_strHostForClient.c_str());
-    pAddrOuter = (struct sockaddr*)&stAddrOuter;
-    addressLen = sizeof(struct sockaddr);
-    m_iC2SListenFd = socket(pAddrOuter->sa_family, SOCK_STREAM, 0);
-    if (m_iC2SListenFd < 0)
+    if (m_strHostForClient.size() && m_iPortForClient)
     {
-        LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
-        int iErrno = errno;
-        exit(iErrno);
-    }
-    {//socket属性
-    	int reuse = 1;
-		int timeout = 1;
-		int iTcpNoDelay = 1;
-		if (::setsockopt(m_iC2SListenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0)
+    	// 接入节点才需要监听客户端连接
+		struct sockaddr_in stAddrOuter;
+		struct sockaddr *pAddrOuter;
+		stAddrOuter.sin_family = AF_INET;
+		stAddrOuter.sin_port = htons(m_iPortForClient);
+		stAddrOuter.sin_addr.s_addr = inet_addr(m_strHostForClient.c_str());
+		pAddrOuter = (struct sockaddr*)&stAddrOuter;
+		addressLen = sizeof(struct sockaddr);
+		m_iC2SListenFd = socket(pAddrOuter->sa_family, SOCK_STREAM, 0);
+		if (m_iC2SListenFd < 0)
 		{
-			LOG4_WARN("fail to set SO_REUSEADDR");
+			LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
+			int iErrno = errno;
+			exit(iErrno);
 		}
-//		if (::setsockopt(m_iC2SListenFd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(int)) < 0)
-//		{
-//			LOG4_WARN("fail to set TCP_DEFER_ACCEPT");
-//		}
-		if (setsockopt(m_iC2SListenFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
+		{//socket属性
+			int reuse = 1;
+			int timeout = 1;
+			int iTcpNoDelay = 1;
+			if (::setsockopt(m_iC2SListenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0)
+			{
+				LOG4_WARN("fail to set SO_REUSEADDR");
+			}
+	//		if (::setsockopt(m_iC2SListenFd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(int)) < 0)
+	//		{
+	//			LOG4_WARN("fail to set TCP_DEFER_ACCEPT");
+	//		}
+	#ifndef ENABLE_NAGLE
+			if (setsockopt(m_iC2SListenFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
+			{
+				LOG4_WARN("fail to set TCP_NODELAY");
+			}
+	#endif
+		}
+		if (bind(m_iC2SListenFd, pAddrOuter, addressLen) < 0)
 		{
-			LOG4_WARN("fail to set TCP_NODELAY");
+			LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
+			CloseSocket(m_iC2SListenFd);
+			exit(errno);
 		}
+		if (listen(m_iC2SListenFd, queueLen) < 0)
+		{
+			LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
+			CloseSocket(m_iC2SListenFd);
+			exit(errno);
+		}
+		LOG4_INFO("%s() listen on iPortForClient(%d) strHostForClient(%s)",__FUNCTION__,m_iPortForClient,m_strHostForClient.c_str());
     }
-    if (bind(m_iC2SListenFd, pAddrOuter, addressLen) < 0)
-    {
-        LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
-        close(m_iC2SListenFd);
-        m_iC2SListenFd = -1;
-        int iErrno = errno;
-        exit(iErrno);
-    }
-    if (listen(m_iC2SListenFd, queueLen) < 0)
-    {
-        LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, 1024));
-        close(m_iC2SListenFd);
-        m_iC2SListenFd = -1;
-        int iErrno = errno;
-        exit(iErrno);
-    }
-    LOG4_INFO("%s() listen on iPortForClient(%d) strHostForClient(%s)",
-            		__FUNCTION__,m_iPortForClient,m_strHostForClient.c_str());
-#endif
 
     struct sockaddr_in stAddrInner;
     struct sockaddr *pAddrInner;
@@ -1233,10 +1170,12 @@ bool Manager::Init()
 //		{
 //			LOG4_WARN("fail to set TCP_DEFER_ACCEPT");
 //		}
+#ifndef ENABLE_NAGLE
 		if (setsockopt(m_iS2SListenFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
 		{
 			LOG4_WARN("fail to set TCP_NODELAY");
 		}
+#endif
     }
     if (bind(m_iS2SListenFd, pAddrInner, addressLen) < 0)
     {
@@ -1254,16 +1193,14 @@ bool Manager::Init()
         int iErrno = errno;
         exit(iErrno);
     }
-    LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s)",
-        		__FUNCTION__,getpid(),m_iPortForServer,m_strHostForServer.c_str());
+    LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s)",__FUNCTION__,getpid(),m_iPortForServer,m_strHostForServer.c_str());
     // 创建到Center的连接信息
     for (int i = 0; i < m_oCurrentConf["center"].GetArraySize(); ++i)
     {
-        std::string strIdentify = m_oCurrentConf["center"][i]("host") + std::string(":")
-            + m_oCurrentConf["center"][i]("port") + std::string(".0");     // CenterServer只有一个Worker
+    	// CenterServer只有一个Worker
+        std::string strIdentify = m_oCurrentConf["center"][i]("host") + std::string(":") + m_oCurrentConf["center"][i]("port") + std::string(".0");
         tagMsgShell stMsgShell;
-        LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %llu) = %u",
-                        strIdentify.c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
+        LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %llu) = %u",strIdentify.c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
         m_mapCenterMsgShell.insert(std::pair<std::string, tagMsgShell>(strIdentify, stMsgShell));
     }
     return(true);
@@ -1290,7 +1227,6 @@ void Manager::Destroy()
     }
     m_mapFdAttr.clear();
     m_mapClientConnFrequency.clear();
-    m_vecFreeWorkerIdx.clear();
     if (m_pPeriodicTaskWatcher != NULL)
     {
         free(m_pPeriodicTaskWatcher);
@@ -1299,11 +1235,6 @@ void Manager::Destroy()
     {
         ev_loop_destroy(m_loop);
         m_loop = NULL;
-    }
-    if (m_pErrBuff != NULL)
-    {
-        delete[] m_pErrBuff;
-        m_pErrBuff = NULL;
     }
 }
 
@@ -1329,10 +1260,8 @@ void Manager::CreateWorker()
         if (iPid == 0)   // 子进程
         {
             ev_loop_destroy(m_loop);
-            close(m_iS2SListenFd);
-#ifdef NODE_TYPE_GATE
-            close(m_iC2SListenFd);
-#endif
+            CloseSocket(m_iS2SListenFd);
+            CloseSocket(m_iC2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
             x_sock_set_block(iControlFds[1], 0);
@@ -1400,19 +1329,20 @@ bool Manager::CreateEvents()
     			__FUNCTION__,m_iS2SListenFd);
     }
 //    AddIoErrorEvent(m_iS2SListenFd);
-#ifdef NODE_TYPE_GATE
-    tagConnectionAttr* pTagConnectionAttrC2S = CreateFdAttr(m_iC2SListenFd, GetSequence());
-    if (pTagConnectionAttrC2S)
+    if (m_iC2SListenFd >= 0)
     {
-    	AddIoReadEvent(pTagConnectionAttrC2S);
+    	tagConnectionAttr* pTagConnectionAttrC2S = CreateFdAttr(m_iC2SListenFd, GetSequence());
+		if (pTagConnectionAttrC2S)
+		{
+			AddIoReadEvent(pTagConnectionAttrC2S);
+		}
+		else
+		{
+			LOG4_ERROR("%s() failed to create pTagConnectionAttrC2S for m_iC2SListenFd:%d",
+						__FUNCTION__,m_iC2SListenFd);
+		}
+	//    AddIoErrorEvent(m_iC2SListenFd);
     }
-    else
-    {
-    	LOG4_ERROR("%s() failed to create pTagConnectionAttrC2S for m_iC2SListenFd:%d",
-					__FUNCTION__,m_iC2SListenFd);
-    }
-//    AddIoErrorEvent(m_iC2SListenFd);
-#endif
 
     ev_signal* child_signal_watcher = new ev_signal();
     ev_signal_init (child_signal_watcher, SignalCallback, SIGCHLD);
@@ -1502,9 +1432,9 @@ bool Manager::RegisterToCenter()
     {
         oReportData.Add("access_ip", m_strHostForClient);
     }
-    if (m_iGatewayIp > 0)
+    if (m_iGatewayPort > 0)
     {
-        oReportData.Add("access_port", m_iGatewayIp);
+        oReportData.Add("access_port", m_iGatewayPort);
     }
     else
     {
@@ -1596,16 +1526,6 @@ bool Manager::RestartWorker(int iDeathPid)
         if (restart_num_iter != m_mapWorkerRestartNum.end())
         {
             LOG4_INFO("worker %d had been restarted %d times!", iWorkerIndex, restart_num_iter->second);
-            /*
-            if (restart_num_iter->second >= 3)
-            {
-                LOG4_FATAL("worker %d had been restarted %d times, it will not be restart again!",
-                                iWorkerIndex, restart_num_iter->second);
-                m_vecFreeWorkerIdx.push_back(iWorkerIndex);
-                --m_uiWorkerNum;
-                return(false);
-            }
-            */
         }
         //父子进程使用unixsocket通信
         int iControlFds[2];
@@ -1623,10 +1543,8 @@ bool Manager::RestartWorker(int iDeathPid)
         if (iNewPid == 0)   // 子进程
         {
             ev_loop_destroy(m_loop);
-            close(m_iS2SListenFd);
-#ifdef NODE_TYPE_GATE
-            close(m_iC2SListenFd);
-#endif
+            CloseSocket(m_iS2SListenFd);
+            CloseSocket(m_iC2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
             x_sock_set_block(iControlFds[1], 0);
@@ -1737,11 +1655,11 @@ bool Manager::AddWaitToExitTaskEvent(const tagMsgShell& stMsgShell,uint32 cmd,ui
     return(true);
 }
 
-bool Manager::AddIoReadEvent(tagConnectionAttr* ptagConnectionAttr)
+bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 {
-    LOG4_TRACE("%s(fd %d)", __FUNCTION__, ptagConnectionAttr->iFd);
+    LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
     ev_io* io_watcher = NULL;
-	if (NULL == ptagConnectionAttr->pIoWatcher)
+	if (NULL == pConn->pIoWatcher)
 	{
 		io_watcher = new ev_io();
 		if (io_watcher == NULL)
@@ -1756,17 +1674,17 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* ptagConnectionAttr)
 			delete io_watcher;
 			return(false);
 		}
-		pData->iFd = ptagConnectionAttr->iFd;
-		pData->ulSeq = ptagConnectionAttr->ulSeq;
+		pData->iFd = pConn->iFd;
+		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 		ev_io_init (io_watcher, IoCallback, pData->iFd, EV_READ);
-		ptagConnectionAttr->pIoWatcher = io_watcher;
+		pConn->pIoWatcher = io_watcher;
 		io_watcher->data = (void*)pData;
 		ev_io_start (m_loop, io_watcher);
 	}
 	else
 	{
-		io_watcher = ptagConnectionAttr->pIoWatcher;
+		io_watcher = pConn->pIoWatcher;
 		ev_io_stop(m_loop, io_watcher);
 		ev_io_set(io_watcher, io_watcher->fd, io_watcher->events | EV_READ);
 		ev_io_start (m_loop, io_watcher);
@@ -1774,11 +1692,11 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* ptagConnectionAttr)
     return(true);
 }
 
-bool Manager::AddIoWriteEvent(tagConnectionAttr* ptagConnectionAttr)
+bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 {
-    LOG4_TRACE("%s(fd %d)", __FUNCTION__, ptagConnectionAttr->iFd);
+    LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
     ev_io* io_watcher = NULL;
-	if (NULL == ptagConnectionAttr->pIoWatcher)
+	if (NULL == pConn->pIoWatcher)
 	{
 		io_watcher = new ev_io();
 		if (io_watcher == NULL)
@@ -1793,18 +1711,18 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* ptagConnectionAttr)
 			delete io_watcher;
 			return(false);
 		}
-		pData->iFd = ptagConnectionAttr->iFd;
-		pData->ulSeq = ptagConnectionAttr->ulSeq;
+		pData->iFd = pConn->iFd;
+		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 
 		ev_io_init (io_watcher, IoCallback, pData->iFd, EV_WRITE);
-		ptagConnectionAttr->pIoWatcher = io_watcher;
+		pConn->pIoWatcher = io_watcher;
 		io_watcher->data = (void*)pData;
 		ev_io_start (m_loop, io_watcher);
 	}
 	else
 	{
-		io_watcher = ptagConnectionAttr->pIoWatcher;
+		io_watcher = pConn->pIoWatcher;
 		ev_io_stop(m_loop, io_watcher);
 		ev_io_set(io_watcher, io_watcher->fd, io_watcher->events | EV_WRITE);
 		ev_io_start (m_loop, io_watcher);
@@ -1812,18 +1730,18 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* ptagConnectionAttr)
     return(true);
 }
 
-bool Manager::RemoveIoWriteEvent(tagConnectionAttr* ptagConnectionAttr)
+bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s", __FUNCTION__);
     ev_io* io_watcher = NULL;
-	if (ptagConnectionAttr->pIoWatcher)
+	if (pConn->pIoWatcher)
 	{
-		if (ptagConnectionAttr->pIoWatcher->events & EV_WRITE)
+		if (pConn->pIoWatcher->events & EV_WRITE)
 		{
-			io_watcher = ptagConnectionAttr->pIoWatcher;
+			io_watcher = pConn->pIoWatcher;
 			ev_io_stop(m_loop, io_watcher);
 			ev_io_set(io_watcher, io_watcher->fd, io_watcher->events & (~EV_WRITE));
-			ev_io_start (m_loop, ptagConnectionAttr->pIoWatcher);
+			ev_io_start (m_loop, pConn->pIoWatcher);
 		}
 	}
     return(true);
@@ -2044,18 +1962,13 @@ bool Manager::CheckWorker()
     {
         return(true);
     }
-
-    std::map<int, tagWorkerAttr>::iterator worker_iter;
-    for (worker_iter = m_mapWorker.begin();
-                    worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter:m_mapWorker)
     {
-        LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",
-                        ev_now(m_loop), worker_iter->second.dBeatTime, m_iWorkerBeat);
-        if ((ev_now(m_loop) - worker_iter->second.dBeatTime) > m_iWorkerBeat)
+        LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime,m_iWorkerBeat);
+        if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
         {
-            LOG4CPLUS_INFO_FMT(m_oLogger, "worker_%d pid %d is unresponsive, "
-                            "terminate it.", worker_iter->second.iWorkerIndex, worker_iter->first);
-            kill(worker_iter->first, SIGKILL); //SIGINT);
+            LOG4_INFO( "worker_%d pid %d is unresponsive, terminate it.", worker_iter.second.iWorkerIndex, worker_iter.first);
+            kill(worker_iter.first, SIGKILL); //SIGINT);
 //            RestartWorker(worker_iter->first);
         }
     }
@@ -2065,40 +1978,34 @@ bool Manager::CheckWorker()
 bool Manager::RestartWorkers()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagWorkerAttr>::iterator worker_iter;
-    for (worker_iter = m_mapWorker.begin();
-                    worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter:m_mapWorker)
     {
-        LOG4_TRACE("RestartWorkers:now %lf, worker's dBeatTime %lf, worker_beat %d",
-                        ev_now(m_loop), worker_iter->second.dBeatTime, m_iWorkerBeat);
+        LOG4_TRACE("RestartWorkers:now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime, m_iWorkerBeat);
         {
-            LOG4CPLUS_INFO_FMT(m_oLogger, "terminate worker_%d pid %d",
-                            worker_iter->second.iWorkerIndex, worker_iter->first);
-            kill(worker_iter->first, SIGKILL); //SIGINT);
+            LOG4_INFO( "terminate worker_%d pid %d",worker_iter.second.iWorkerIndex, worker_iter.first);
+            kill(worker_iter.first, SIGKILL); //SIGINT);
         }
     }
     return(true);
 }
 
-bool Manager::CheckWorkerLoadNullExit(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher)
+bool Manager::CheckWorkersLoadEmptyExit(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher)
 {
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
-    LOG4CPLUS_INFO_FMT(m_oLogger,"CheckWorkerLoadAndExit:m_mapWorker size(%u)",m_mapWorker.size());
+    LOG4_INFO("CheckWorkerLoadAndExit:m_mapWorker size(%u)",m_mapWorker.size());
     bool boCanExit(true);
-    for (; worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter:m_mapWorker)
     {
-        LOG4CPLUS_INFO_FMT(m_oLogger,"iLoad(%d),iConnect(%d)",worker_iter->second.iLoad,worker_iter->second.iConnect);
-        if(worker_iter->second.iLoad != worker_iter->second.iConnect)
+        LOG4_INFO("iLoad(%d),iConnect(%d)",worker_iter.second.iLoad,worker_iter.second.iConnect);
+        if(worker_iter.second.iLoad != worker_iter.second.iConnect)
         {
 //            oJsonLoad.Add("load", int32(m_mapFdAttr.size() + m_mapCallbackStep.size()));
 //            oJsonLoad.Add("connect", int32(m_mapFdAttr.size()));
-            LOG4CPLUS_INFO_FMT(m_oLogger,"iLoad(%d),iConnect(%d),need iLoad == iConnect,continue to wait",
-                            worker_iter->second.iLoad,worker_iter->second.iConnect);
+            LOG4_INFO("iLoad(%d),iConnect(%d),need iLoad == iConnect,continue to wait",worker_iter.second.iLoad,worker_iter.second.iConnect);
             boCanExit = false;
             break;
         }
     }
-    if (boCanExit)//只有其他类型节点才可能被关闭
+    if (boCanExit)//可以关闭
     {
         m_iWaitToExitCounter = 0;
         MsgHead oOutMsgHead;
@@ -2147,20 +2054,18 @@ bool Manager::CheckWorkerLoadNullExit(tagManagerWaitExitWatcherData* pData,struc
     return boCanExit;
 }
 
-bool Manager::CheckWorkerLoadNullRestartWorkers(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher)
+bool Manager::CheckWorkersLoadEmptyRestart(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher)
 {
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
-    LOG4CPLUS_INFO_FMT(m_oLogger,"CheckWorkerLoadNullRestartWorkers:m_mapWorker size(%u)",m_mapWorker.size());
+    LOG4_INFO("CheckWorkersLoadEmptyRestart:m_mapWorker size(%u)",m_mapWorker.size());
     bool boCanRestart(true);
-    for (; worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter: m_mapWorker)
     {
-        LOG4CPLUS_INFO_FMT(m_oLogger,"iLoad(%d),iConnect(%d)",worker_iter->second.iLoad,worker_iter->second.iConnect);
-        if(worker_iter->second.iLoad != worker_iter->second.iConnect)
+        LOG4_INFO("iLoad(%d),iConnect(%d)",worker_iter.second.iLoad,worker_iter.second.iConnect);
+        if(worker_iter.second.iLoad != worker_iter.second.iConnect)
         {
 //            oJsonLoad.Add("load", int32(m_mapFdAttr.size() + m_mapCallbackStep.size()));
 //            oJsonLoad.Add("connect", int32(m_mapFdAttr.size()));
-            LOG4CPLUS_INFO_FMT(m_oLogger,"iLoad(%d),iConnect(%d),need iLoad == iConnect,continue to wait",
-                            worker_iter->second.iLoad,worker_iter->second.iConnect);
+            LOG4_INFO("iLoad(%d),iConnect(%d),need iLoad == iConnect,continue to wait",worker_iter.second.iLoad,worker_iter.second.iConnect);
             boCanRestart = false;
             break;
         }
@@ -2191,7 +2096,7 @@ bool Manager::CheckWorkerLoadNullRestartWorkers(tagManagerWaitExitWatcherData* p
     }
     if(m_iWaitToExitCounter < 6)
     {
-        LOG4_INFO("CheckWorkerLoadNullRestartWorkers: m_iWaitToExitCounter(%d)",m_iWaitToExitCounter);
+        LOG4_INFO("CheckWorkersLoadEmptyRestart: m_iWaitToExitCounter(%d)",m_iWaitToExitCounter);
         ++m_iWaitToExitCounter;
         ev_timer_stop (m_loop, watcher);
         ev_timer_set (watcher, 1.0 + ev_time() - ev_now(m_loop), 0);
@@ -2199,7 +2104,7 @@ bool Manager::CheckWorkerLoadNullRestartWorkers(tagManagerWaitExitWatcherData* p
     }
     else
     {
-        LOG4_WARN("CheckWorkerLoadNullRestartWorkers:ev_timer_stop,m_iWaitToExitCounter(%d)",m_iWaitToExitCounter);
+        LOG4_WARN("CheckWorkersLoadEmptyRestart:ev_timer_stop,m_iWaitToExitCounter(%d)",m_iWaitToExitCounter);
         m_iWaitToExitCounter = 0;
         MsgHead oOutMsgHead;
         MsgBody oOutMsgBody;
@@ -2233,7 +2138,7 @@ void Manager::RefreshServer(bool boForce)
 		}
     }
     m_iLastRefreshCalc = 0;
-    if (GetConf())
+    if (LoadConf())
     {
         if (m_oLastConf("log_level") != m_oCurrentConf("log_level")||boForce)
         {
@@ -2245,8 +2150,6 @@ void Manager::RefreshServer(bool boForce)
             oLogLevel.set_log_level(m_iLogLevel);
             oMsgBody.set_body(oLogLevel.SerializeAsString());
             oMsgHead.set_cmd(CMD_REQ_SET_LOG_LEVEL);
-//            oMsgHead.set_seq(GetSequence()| 0x80000000);//设置头比特
-//            oMsgHead.set_msgbody_len(oMsgBody.ByteSize()| 0x80000000);
             SendToWorker(oMsgHead, oMsgBody);
         }
         // 更新动态库配置或重新加载动态库
@@ -2265,8 +2168,6 @@ void Manager::RefreshServer(bool boForce)
             {
             	oMsgHead.set_cmd(CMD_REQ_RELOAD_SO);
             }
-//            oMsgHead.set_seq(GetSequence()| 0x80000000);//设置头比特
-//            oMsgHead.set_msgbody_len(oMsgBody.ByteSize()| 0x80000000);
             SendToWorker(oMsgHead, oMsgBody);
         }
         if (m_oLastConf["module"].ToString() != m_oCurrentConf["module"].ToString()|| boForce)
@@ -2284,14 +2185,12 @@ void Manager::RefreshServer(bool boForce)
             {
             	oMsgHead.set_cmd(CMD_REQ_RELOAD_MODULE);
             }
-//            oMsgHead.set_seq(GetSequence()| 0x80000000);//设置头比特
-//            oMsgHead.set_msgbody_len(oMsgBody.ByteSize()| 0x80000000);
             SendToWorker(oMsgHead, oMsgBody);
         }
     }
     else
     {
-        LOG4_INFO("GetConf() error, please check the config file.", "");
+        LOG4_INFO("LoadConf() error, please check the config file.", "");
     }
 }
 
@@ -2343,9 +2242,9 @@ bool Manager::ReportToCenter()
     {
         oReportData.Add("access_ip", m_strHostForClient);
     }
-    if (m_iGatewayIp > 0)
+    if (m_iGatewayPort > 0)
     {
-        oReportData.Add("access_port", m_iGatewayIp);
+        oReportData.Add("access_port", m_iGatewayPort);
     }
     else
     {
@@ -2355,24 +2254,24 @@ bool Manager::ReportToCenter()
     oReportData.Add("active_time", ev_now(m_loop));
     oReportData.Add("node", util::CJsonObject("{}"));
     oReportData.Add("worker", util::CJsonObject("[]"));
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
-    for (; worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter:m_mapWorker)
     {
-        iLoad += worker_iter->second.iLoad;
-        iConnect += worker_iter->second.iConnect;
-        iRecvNum += worker_iter->second.iRecvNum;
-        iRecvByte += worker_iter->second.iRecvByte;
-        iSendNum += worker_iter->second.iSendNum;
-        iSendByte += worker_iter->second.iSendByte;
-        iClientNum += worker_iter->second.iClientNum;
+    	const tagWorkerAttr& oTagWorkerAttr = worker_iter.second;
+        iLoad += oTagWorkerAttr.iLoad;
+        iConnect += oTagWorkerAttr.iConnect;
+        iRecvNum += oTagWorkerAttr.iRecvNum;
+        iRecvByte += oTagWorkerAttr.iRecvByte;
+        iSendNum += oTagWorkerAttr.iSendNum;
+        iSendByte += oTagWorkerAttr.iSendByte;
+        iClientNum += oTagWorkerAttr.iClientNum;
         oMember.Clear();
-        oMember.Add("load", worker_iter->second.iLoad);
-        oMember.Add("connect", worker_iter->second.iConnect);
-        oMember.Add("recv_num", worker_iter->second.iRecvNum);
-        oMember.Add("recv_byte", worker_iter->second.iRecvByte);
-        oMember.Add("send_num", worker_iter->second.iSendNum);
-        oMember.Add("send_byte", worker_iter->second.iSendByte);
-        oMember.Add("client", worker_iter->second.iClientNum);
+        oMember.Add("load", oTagWorkerAttr.iLoad);
+        oMember.Add("connect", oTagWorkerAttr.iConnect);
+        oMember.Add("recv_num", oTagWorkerAttr.iRecvNum);
+        oMember.Add("recv_byte", oTagWorkerAttr.iRecvByte);
+        oMember.Add("send_num", oTagWorkerAttr.iSendNum);
+        oMember.Add("send_byte", oTagWorkerAttr.iSendByte);
+        oMember.Add("client", oTagWorkerAttr.iClientNum);
         oReportData["worker"].Add(oMember);
     }
     oReportData["node"].Add("load", iLoad);
@@ -2388,20 +2287,19 @@ bool Manager::ReportToCenter()
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     LOG4_TRACE("%s():%s", __FUNCTION__, oReportData.ToString().c_str());
 
-    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.begin();
-    for (; center_iter != m_mapCenterMsgShell.end(); ++center_iter)
+    for (auto center_iter:m_mapCenterMsgShell)
     {
-        if (center_iter->second.iFd == 0)
+        if (center_iter.second.iFd == 0)
         {
             oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
             LOG4_TRACE("%s() cmd %d", __FUNCTION__, oMsgHead.cmd());
-            AutoSend(center_iter->first, oMsgHead, oMsgBody);
+            AutoSend(center_iter.first, oMsgHead, oMsgBody);
         }
         else
         {
             oMsgHead.set_cmd(CMD_REQ_NODE_STATUS_REPORT);
             LOG4_TRACE("%s() cmd %d", __FUNCTION__, oMsgHead.cmd());
-            SendTo(center_iter->second, oMsgHead, oMsgBody);
+            SendTo(center_iter.second, oMsgHead, oMsgBody);
         }
     }
     return(true);
@@ -2413,29 +2311,27 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
     int iWriteLen = 0;
     int iNeedWriteLen = 0;
     std::map<int, tagConnectionAttr*>::iterator worker_conn_iter;
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
-    for (; worker_iter != m_mapWorker.end(); ++worker_iter)
+    for (auto worker_iter = m_mapWorker.begin(); worker_iter != m_mapWorker.end(); ++worker_iter)
     {
         worker_conn_iter = m_mapFdAttr.find(worker_iter->second.iControlFd);
         if (worker_conn_iter != m_mapFdAttr.end())
         {
-        	tagConnectionAttr* ptagConnectionAttr = worker_conn_iter->second;
-        	ptagConnectionAttr->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
-        	ptagConnectionAttr->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
-            iNeedWriteLen = ptagConnectionAttr->pSendBuff->ReadableBytes();
+        	tagConnectionAttr* pConn = worker_conn_iter->second;
+        	pConn->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
+        	pConn->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
+            iNeedWriteLen = pConn->pSendBuff->ReadableBytes();
             LOG4_DEBUG("send cmd %d seq %llu to worker %d", oMsgHead.cmd(), oMsgHead.seq(), worker_iter->second.iWorkerIndex);
-            iWriteLen = ptagConnectionAttr->pSendBuff->WriteFD(worker_conn_iter->first, iErrno);
+            iWriteLen = pConn->pSendBuff->WriteFD(worker_conn_iter->first, iErrno);
             if (iWriteLen < 0)
             {
                 if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
                 {
-                    LOG4_ERROR("send to fd %d error %d: %s",
-                                    worker_conn_iter->first, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+                    LOG4_ERROR("send to fd %d error %d: %s",worker_conn_iter->first, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                 }
                 else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                 {
                     worker_conn_iter->second->dActiveTime = ev_now(m_loop);
-                    AddIoWriteEvent(ptagConnectionAttr);
+                    AddIoWriteEvent(pConn);
                 }
             }
             else if (iWriteLen > 0)
@@ -2443,13 +2339,12 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
                 worker_conn_iter->second->dActiveTime = ev_now(m_loop);
                 if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                 {
-                    LOG4_DEBUG("send to worker %d success, data len %d, cmd %d seq %llu",
-                                    worker_iter->second.iWorkerIndex, iWriteLen, oMsgHead.cmd(), oMsgHead.seq());
-                    RemoveIoWriteEvent(ptagConnectionAttr);
+                    LOG4_DEBUG("send to worker %d success, data len %d, cmd %d seq %llu",worker_iter->second.iWorkerIndex, iWriteLen, oMsgHead.cmd(), oMsgHead.seq());
+                    RemoveIoWriteEvent(pConn);
                 }
                 else    // 内容未写完，添加或保持监听fd写事件
                 {
-                    AddIoWriteEvent(ptagConnectionAttr);
+                    AddIoWriteEvent(pConn);
                 }
             }
             worker_conn_iter->second->pSendBuff->Compact(32784);
@@ -2458,38 +2353,36 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
     return(true);
 }
 
-bool Manager::SendToWorkerWithMod(unsigned int uiModFactor,const MsgHead& oMsgHead, const MsgBody& oMsgBody)
+bool Manager::SendToWorkerWithMod(uint32 uiModFactor,const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     int iErrno = 0;
     int iWriteLen = 0;
     int iNeedWriteLen = 0;
-    std::map<int, tagConnectionAttr*>::iterator worker_conn_iter;
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
     int target_identify = uiModFactor % m_mapWorker.size();
+    auto worker_iter = m_mapWorker.begin();
     for (int i = 0; worker_iter != m_mapWorker.end(); ++worker_iter)
     {
         if (i == target_identify)
         {
-            worker_conn_iter = m_mapFdAttr.find(worker_iter->second.iControlFd);
+            auto worker_conn_iter = m_mapFdAttr.find(worker_iter->second.iControlFd);
             if (worker_conn_iter != m_mapFdAttr.end())
             {
-            	tagConnectionAttr* ptagConnectionAttr = worker_conn_iter->second;
-            	ptagConnectionAttr->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
-            	ptagConnectionAttr->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
-                iNeedWriteLen = ptagConnectionAttr->pSendBuff->ReadableBytes();
+            	tagConnectionAttr* pConn = worker_conn_iter->second;
+            	pConn->pSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
+            	pConn->pSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
+                iNeedWriteLen = pConn->pSendBuff->ReadableBytes();
                 LOG4_DEBUG("send cmd %d seq %llu to worker %d", oMsgHead.cmd(), oMsgHead.seq(), worker_iter->second.iWorkerIndex);
-                iWriteLen = ptagConnectionAttr->pSendBuff->WriteFD(worker_conn_iter->first, iErrno);
+                iWriteLen = pConn->pSendBuff->WriteFD(worker_conn_iter->first, iErrno);
                 if (iWriteLen < 0)
                 {
                     if (EAGAIN != iErrno && EINTR != iErrno)    // 对非阻塞socket而言，EAGAIN不是一种错误;EINTR即errno为4，错误描述Interrupted system call，操作也应该继续。
                     {
-                        LOG4_ERROR("send to fd %d error %d: %s",
-                                        worker_conn_iter->first, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+                        LOG4_ERROR("send to fd %d error %d: %s",worker_conn_iter->first, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
                     }
                     else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                     {
-                    	ptagConnectionAttr->dActiveTime = ev_now(m_loop);
-                        AddIoWriteEvent(ptagConnectionAttr);
+                    	pConn->dActiveTime = ev_now(m_loop);
+                        AddIoWriteEvent(pConn);
                     }
                 }
                 else if (iWriteLen > 0)
@@ -2497,16 +2390,15 @@ bool Manager::SendToWorkerWithMod(unsigned int uiModFactor,const MsgHead& oMsgHe
                     worker_conn_iter->second->dActiveTime = ev_now(m_loop);
                     if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                     {
-                        LOG4_DEBUG("send to worker %d success, data len %d, cmd %d seq %llu",
-                                        worker_iter->second.iWorkerIndex, iWriteLen, oMsgHead.cmd(), oMsgHead.seq());
-                        RemoveIoWriteEvent(ptagConnectionAttr);
+                        LOG4_DEBUG("send to worker %d success, data len %d, cmd %d seq %llu",worker_iter->second.iWorkerIndex, iWriteLen, oMsgHead.cmd(), oMsgHead.seq());
+                        RemoveIoWriteEvent(pConn);
                     }
                     else    // 内容未写完，添加或保持监听fd写事件
                     {
-                        AddIoWriteEvent(ptagConnectionAttr);
+                        AddIoWriteEvent(pConn);
                     }
                 }
-                ptagConnectionAttr->pSendBuff->Compact(32784);
+                pConn->pSendBuff->Compact(32784);
             }
             return(true);
         }
@@ -2649,15 +2541,11 @@ bool Manager::DisposeDataAndTransferFd(const tagMsgShell& stMsgShell, const MsgH
     return(false);
 }
 
-bool Manager::DisposeDataFromCenter(
-                const tagMsgShell& stMsgShell,
-                const MsgHead& oInMsgHead,
-                const MsgBody& oInMsgBody,
-				tagConnectionAttr* ptagConnectionAttr)
+bool Manager::DisposeDataFromCenter(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,tagConnectionAttr* pConn)
 {
     LOG4_DEBUG("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
-    util::CBuffer* pSendBuff = ptagConnectionAttr->pSendBuff;
-	util::CBuffer* pWaitForSendBuff = ptagConnectionAttr->pWaitForSendBuff;
+    util::CBuffer* pSendBuff = pConn->pSendBuff;
+	util::CBuffer* pWaitForSendBuff = pConn->pWaitForSendBuff;
     int iErrno = 0;
     if (gc_uiCmdReq & oInMsgHead.cmd())    // 新请求，直接转发给Worker，并回复Center已收到请求
     {
@@ -2737,7 +2625,7 @@ bool Manager::DisposeDataFromCenter(
                 oMsgHead.set_seq(oInMsgHead.seq());
                 oMsgHead.set_msgbody_len(oInMsgHead.msgbody_len());
                 SendToWorker(oMsgHead, oInMsgBody);
-                RemoveIoWriteEvent(ptagConnectionAttr);
+                RemoveIoWriteEvent(pConn);
             }
             else
             {
@@ -2775,18 +2663,18 @@ bool Manager::DisposeDataFromCenter(
                 }
                 else if (EAGAIN == iErrno)  // 内容未写完，添加或保持监听fd写事件
                 {
-                    AddIoWriteEvent(ptagConnectionAttr);
+                    AddIoWriteEvent(pConn);
                 }
             }
             else if (iWriteLen > 0)
             {
                 if (iWriteLen == iNeedWriteLen)  // 已无内容可写，取消监听fd写事件
                 {
-                    RemoveIoWriteEvent(ptagConnectionAttr);
+                    RemoveIoWriteEvent(pConn);
                 }
                 else    // 内容未写完，添加或保持监听fd写事件
                 {
-                    AddIoWriteEvent(ptagConnectionAttr);
+                    AddIoWriteEvent(pConn);
                 }
             }
         }

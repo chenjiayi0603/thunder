@@ -100,19 +100,7 @@ E_CODEC_STATUS ProtoCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBo
     if ((int)(pBuff->ReadableBytes()) >= gc_uiMsgHeadSize)
     {
     	oMsgHead.Clear();
-//        MsgHead oSwitchMsgHead;
         bool bResult = oMsgHead.ParseFromArray(pBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
-        if(bResult)
-        {
-            //在Encode中保证oMsgHead.ByteSize() == 15需要处理最高位
-            LOG4_DEBUG("%s() recv oSwitchMsgHead(%s,%u)",
-                                        __FUNCTION__,oMsgHead.DebugString().c_str(),oMsgHead.ByteSize());
-//            oMsgHead.set_cmd(oSwitchMsgHead.cmd() & 0x7FFFFFFF);//为了兼容pb3处理
-//            oMsgHead.set_msgbody_len(oSwitchMsgHead.msgbody_len() & 0x7FFFFFFF);
-//            oMsgHead.set_seq(oSwitchMsgHead.seq() & 0x7FFFFFFF);
-            LOG4_DEBUG("%s() data oMsgHead(%s,%u)",
-                            __FUNCTION__,oMsgHead.DebugString().c_str(),oMsgHead.ByteSize());
-        }
         if (bResult)
         {
             if (0 == oMsgHead.msgbody_len())      // 无包体（心跳包等）

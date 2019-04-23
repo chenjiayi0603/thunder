@@ -40,10 +40,6 @@ public:
     {
         return net::STATUS_CMD_RUNNING;
     }
-    void SetConfigPath(const std::string &configpath)
-    {
-        m_strConfigPath = configpath;
-    }
     void SetCurrentTime()
     {
         m_uiCurrentTime = ::time(NULL);
@@ -79,7 +75,6 @@ private:
        "dbcharacterset":"utf8",
      * */
     uint64 m_uiCurrentTime; //当前时间
-    std::string m_strConfigPath;
 
     util::CJsonObject m_objModuleLocateDataRequest;
     std::string m_AccessControlAllowOrigin;
@@ -89,7 +84,7 @@ private:
     uint32 m_ValidTimeDelay;
 };
 
-HelloSession* GetHelloSession(net::Labor* pLabor,const std::string &configPath);
+HelloSession* GetHelloSession();
 
 }
 ;

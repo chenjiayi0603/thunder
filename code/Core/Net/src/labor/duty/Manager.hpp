@@ -56,7 +56,6 @@ struct tagClientConnWatcherData
 {
     in_addr_t iAddr;
     Manager* pManager;     // 不在结构体析构时回收
-
     tagClientConnWatcherData() : iAddr(0), pManager(NULL)
     {
     }
@@ -67,7 +66,6 @@ struct tagManagerIoWatcherData
     int iFd;
     uint32 ulSeq;
     Manager* pManager;     // 不在结构体析构时回收
-
     tagManagerIoWatcherData() : iFd(0), ulSeq(0), pManager(NULL)
     {
     }
@@ -79,7 +77,6 @@ struct tagManagerWaitExitWatcherData
     uint32 cmd;
     uint32 seq;
     Manager* pManager;     // 不在结构体析构时回收
-
     tagManagerWaitExitWatcherData() : cmd(0),seq(0),pManager(NULL)
     {
     }
@@ -90,6 +87,7 @@ class Manager : public Labor
 public:
     Manager(const std::string& strConfFile);
     virtual ~Manager();
+    void Run();
     //libev回调函数
     static void SignalCallback(struct ev_loop* loop, struct ev_signal* watcher, int revents);
     static void IdleCallback(struct ev_loop* loop, struct ev_idle* watcher, int revents);
@@ -103,36 +101,33 @@ public:
     bool OnChildTerminated(struct ev_signal* watcher);
     //io处理函数
     bool IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher);
-    bool FdTransfer(int iFd);
-    bool AcceptServerConn(int iFd);
-    bool RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher);
-
+    bool FdTransfer(int iFd);
+	bool AcceptServerConn(int iFd);
+	bool RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct ev_timer* watcher);
-    void Run();
-public:
     //配置
     bool InitLogger(const util::CJsonObject& oJsonConf);
-    virtual bool SetProcessName(const util::CJsonObject& oJsonConf);
-    virtual void ResetLogLevel(log4cplus::LogLevel iLogLevel);
+    virtual bool SetProcessName(const util::CJsonObject& oJsonConf){ngx_setproctitle(oJsonConf("server_name").c_str());return true;}
+    virtual void ResetLogLevel(log4cplus::LogLevel iLogLevel){m_oLogger.setLogLevel(iLogLevel);}
     //发送
     virtual bool SendTo(const tagMsgShell& stMsgShell);
     virtual bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
     virtual bool SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody){return false;}
     virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify);
     virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
-    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep){return(true);};
+    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep){return(true);}
+    //属性\负载
     virtual void SetNodeId(uint32 uiNodeId) {m_uiNodeId = uiNodeId;}
     virtual void AddInnerFd(const tagMsgShell& stMsgShell){};
-
     void SetWorkerLoad(int iPid, util::CJsonObject& oJsonLoad);
     void AddWorkerLoad(int iPid, int iLoad = 1);
     const std::map<int, tagWorkerAttr>& GetWorkerAttr() const;
 protected:
     //初始化
-    bool GetConf();
+    bool LoadConf();
     bool Init();
     void Destroy();
     void CreateWorker();
@@ -142,12 +137,12 @@ protected:
     //事件
     bool AddPeriodicTaskEvent();
     bool AddWaitToExitTaskEvent(const tagMsgShell& stMsgShell,uint32 cmd,uint32 seq);
-    bool AddIoReadEvent(tagConnectionAttr* ptagConnectionAttr);
-    bool AddIoWriteEvent(tagConnectionAttr* ptagConnectionAttr);
-    bool RemoveIoWriteEvent(tagConnectionAttr* ptagConnectionAttr);
-    bool DelEvents(ev_io** io_watcher_addr);
+    bool AddIoReadEvent(tagConnectionAttr* pConn);
+    bool AddIoWriteEvent(tagConnectionAttr* pConn);
     bool AddIoTimeout(int iFd, uint32 ulSeq, ev_tstamp dTimeout = 1.0);
     bool AddClientConnFrequencyTimeout(in_addr_t iAddr, ev_tstamp dTimeout = 60.0);
+    bool RemoveIoWriteEvent(tagConnectionAttr* pConn);
+	bool DelEvents(ev_io** io_watcher_addr);
     //连接
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq);
     bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter);
@@ -155,26 +150,27 @@ protected:
     std::pair<int, int> GetMinLoadWorkerDataFd();
     bool CheckWorker();
     bool RestartWorkers();
-    bool CheckWorkerLoadNullExit(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher);
-    bool CheckWorkerLoadNullRestartWorkers(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher);
+    bool CheckWorkersLoadEmptyExit(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher);
+    bool CheckWorkersLoadEmptyRestart(tagManagerWaitExitWatcherData* pData,struct ev_timer* watcher);
     //消息
     void RefreshServer(bool boForce=false);
     bool ReportToCenter();  // 向管理中心上报负载信息
     bool SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody);    // 向Worker发送数据
-    bool SendToWorkerWithMod(unsigned int uiModFactor,const MsgHead& oMsgHead, const MsgBody& oMsgBody);    // 向Worker发送数据
+    bool SendToWorkerWithMod(uint32 uiModFactor,const MsgHead& oMsgHead, const MsgBody& oMsgBody);    // 向Worker发送数据
     bool DisposeDataFromWorker(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, util::CBuffer* pSendBuff);
     bool DisposeDataAndTransferFd(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, util::CBuffer* pSendBuff);
-    bool DisposeDataFromCenter(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* ptagConnectionAttr);
+    bool DisposeDataFromCenter(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     //属性
     uint32 GetSequence(){return (++m_ulSequence > 0 ?m_ulSequence:++m_ulSequence);}// Server长期运行，sequence达到最大正整数又回到0
     log4cplus::Logger GetLogger(){return(m_oLogger);}
     virtual uint32 GetNodeId() const{return(m_uiNodeId);}
+    void CloseSocket(int &s){if (s >= 0){close(s);s = -1;}}
 private:
     util::CJsonObject m_oLastConf;          ///< 上次加载的配置
     util::CJsonObject m_oCurrentConf;       ///< 当前加载的配置
 
     uint32 m_ulSequence;
-    char* m_pErrBuff;
+    char m_pErrBuff[gc_iErrBuffLen];
     log4cplus::Logger m_oLogger;
     bool m_bInitLogger;
     ev_tstamp m_dIoTimeout;             ///< IO超时配置
@@ -188,7 +184,7 @@ private:
     std::string m_strGateway;               ///< 对Client服务的真实IP地址（此ip转发给m_strHostForClient）
     int32 m_iPortForServer;                 ///< Server间通信监听端口，对应 m_iS2SListenFd
     int32 m_iPortForClient;                 ///< 对Client通信监听端口，对应 m_iC2SListenFd
-    int32 m_iGatewayIp;                     ///< 对Client服务的真实端口
+    int32 m_iGatewayPort;                     ///< 对Client服务的真实端口
     uint32 m_uiWorkerNum;                   ///< Worker子进程数量
     util::E_CODEC_TYPE m_eCodec;            ///< 接入端编解码器
     ev_tstamp m_dAddrStatInterval;          ///< IP地址数据统计时间间隔
@@ -213,8 +209,6 @@ private:
     std::map<uint32, int> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
     std::map<in_addr_t, uint32> m_mapClientConnFrequency; ///< 客户端连接频率 (unsigned long,uint32)
     std::map<int32, Cmd*> m_mapCmd;
-
-    std::vector<int> m_vecFreeWorkerIdx;            ///< 空闲进程编号
 
     int nPid;
 };

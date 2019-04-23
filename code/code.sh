@@ -2,7 +2,7 @@
 
 if [ $# -ne 1 ]
 then
-    echo "usage: $0 \$worker_path"
+    echo "usage: $0 all/Net/Core/Logic or  \$worker_path."
     exit 0
 fi
 
@@ -12,8 +12,11 @@ CODE_LINES=0
 function compute_line()
 {
     local file_name=$1
-    local lines=`wc -l $file_name | awk '{print $1}'`
-    CODE_LINES=`expr $CODE_LINES + $lines`
+    local protofile=`echo $file_name |grep .pb.`
+    if [ -z $protofile ]; then
+    	local lines=`wc -l $file_name | awk '{print $1}'`
+    	CODE_LINES=`expr $CODE_LINES + $lines`
+    fi
 }
 
 
@@ -58,8 +61,30 @@ if [ "$1"x == "all"x ]; then
         test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
     done
     echo "all line: $CODE_LINES_ALL"
-elif [ "$1"x == "frame"x ]; then 
-    arr=('Util','Net') 
+elif [ "$1"x == "Net"x ]; then 
+    arr=('Core/Util','Core/Net') 
+    filelist=`ls -t .`
+    #echo "filelist $filelist"
+    for filename in $filelist ; do
+        if echo "${arr[@]}" | grep -w "$filename" &>/dev/null; then
+            CODE_LINES=0
+            test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
+        fi 
+    done
+    echo "all line: $CODE_LINES_ALL"
+elif [ "$1"x == "Core"x ]; then 
+    arr=('Core') 
+    filelist=`ls -t .`
+    #echo "filelist $filelist"
+    for filename in $filelist ; do
+        if echo "${arr[@]}" | grep -w "$filename" &>/dev/null; then
+            CODE_LINES=0
+            test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
+        fi 
+    done
+    echo "all line: $CODE_LINES_ALL"
+elif [ "$1"x == "Logic"x ]; then 
+	arr=('Collect','Session','User') 
     filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do
