@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 syntax = "proto3";
 package logqueue;
 
@@ -15,3 +16,22 @@ message log_ack
 
 
 
+=======
+syntax = "proto3";
+package logqueue;
+
+message log
+{
+	string type= 1;
+	string log_info = 2;
+}
+
+message log_ack
+{
+    uint32 code           = 1;
+    string msg          = 2;
+}
+
+
+
+>>>>>>> branch 'master' of https://gitee.com/chenjiayi/thunder.git

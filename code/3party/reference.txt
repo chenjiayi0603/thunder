@@ -1,2 +1,6 @@
+<<<<<<< HEAD
 Libev 官方文档学习笔记 - 03：常用 watcher 接口
+=======
+Libev 官方文档学习笔记 - 03：常用 watcher 接口
+>>>>>>> branch 'master' of https://gitee.com/chenjiayi/thunder.git
 https://segmentfault.com/a/1190000006679929
