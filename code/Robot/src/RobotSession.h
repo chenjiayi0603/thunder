@@ -39,7 +39,7 @@ public:
     virtual ~RobotSession()
     {
     }
-    bool Init(const lnet::CJsonObject& conf);
+    bool Init(const util::CJsonObject& conf);
     net::E_CMD_STATUS Timeout()
     {
         setCurrentTime();
@@ -121,7 +121,7 @@ private:
     uint32 m_uiLoadBulkQuestionInterval;//全量获取所有问题时间间隔
 };
 
-RobotSession* GetRobotSession(net::OssLabor* pLabor,const std::string &configPath);
+RobotSession* GetRobotSession(net::Labor* pLabor,const std::string &configPath);
 
 }
 ;

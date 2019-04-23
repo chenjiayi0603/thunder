@@ -336,8 +336,8 @@ net::E_CMD_STATUS StepLoadAiEngineQuestions::Callback(
                             aiEngineQuestion.question_type = ::strtoul(oRecord.field_info(4).col_value().c_str(),NULL,10);//value question_type
                             aiEngineQuestion.question = oRecord.field_info(5).col_value();//value question
                             aiEngineQuestion.answer = oRecord.field_info(6).col_value();//value answer
-                            aiEngineQuestion.create_date = lnet::TimeStr2time_t(oRecord.field_info(7).col_value());//value create_date
-                            aiEngineQuestion.update_date = lnet::TimeStr2time_t(oRecord.field_info(8).col_value());//value update_date
+                            aiEngineQuestion.create_date = util::TimeStr2time_t(oRecord.field_info(7).col_value());//value create_date
+                            aiEngineQuestion.update_date = util::TimeStr2time_t(oRecord.field_info(8).col_value());//value update_date
                             LOG4_TRACE("%s() appid(%u) oRecord(%s)",__FUNCTION__,appid,oRecord.DebugString().c_str());
                         }
                         if (m_pSessionAiEngine)

@@ -111,7 +111,7 @@ public:
         m_AiEngineWordsSet.insert(oWord.word);
         if (oWord.dir.size() > 0)
         {
-            m_AiEngineWordsTypeMap.insert(std::make_pair(lnet::HashStrToUint64(oWord.word.c_str(),oWord.word.size()),oWord.dir));
+            m_AiEngineWordsTypeMap.insert(std::make_pair(util::HashStrToUint64(oWord.word.c_str(),oWord.word.size()),oWord.dir));
         }
 //        LOG4CPLUS_TRACE_FMT(GetLogger(),"AddAiEngineKey ok,"
 //                        "m_AiEngineKeysSet size(%u),word(%s)",m_AiEngineWordsSet.size(),
@@ -123,7 +123,7 @@ public:
         m_AiEngineWordsSet.erase(oWord.word);
         if (oWord.dir.size() > 0)
         {
-            m_AiEngineWordsTypeMap.erase(lnet::HashStrToUint64(oWord.word.c_str(),oWord.word.size()));
+            m_AiEngineWordsTypeMap.erase(util::HashStrToUint64(oWord.word.c_str(),oWord.word.size()));
         }
 //        LOG4CPLUS_TRACE_FMT(GetLogger(),"DelAiEngineTipsKey ok"
 //                        "m_AiEngineKeysTipsFraudSet size(%u),word(%s)",
@@ -400,7 +400,7 @@ private:
     WordTypeCounterMap m_wordTypeCounterMap;//wordType -> counter
 };
 
-SessionAiEngine* GetSessionAiEngine(net::OssLabor* pLabor);
+SessionAiEngine* GetSessionAiEngine(net::Labor* pLabor);
 
 
 //搜索引擎在词库 354507个， ai问题 43个 时，占用实际内存为3.6g

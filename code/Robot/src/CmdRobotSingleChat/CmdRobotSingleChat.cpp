@@ -124,8 +124,8 @@ bool CmdRobotSingleChat::AnyMessage(
     }
     LOG4_WARN("no answer for no words");
     robot_session::robot_single_msg_ack oAck;
-//    oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));//在Logic生成msg_id
-    oAck.set_send_time(lnet::GetCurrentTime());
+//    oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));//在Logic生成msg_id
+    oAck.set_send_time(util::GetCurrentTime());
     oAck.set_msg_type(eRobotMsgType_text);
     oAck.set_msg(m_pRobotSession->GetDefaultAnswer());
     Response(ERR_OK,oAck);

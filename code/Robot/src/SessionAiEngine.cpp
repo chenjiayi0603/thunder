@@ -261,7 +261,7 @@ bool SessionAiEngine::init(log4cplus::Logger logger)
         m_AiEngineStopWordsDfa.SetLogger(m_Logger);
     }
     std::string ignore_chars;
-    lnet::CJsonObject customConf = GetCustomConf();
+    util::CJsonObject customConf = GetCustomConf();
     if(customConf.Get("ignore_chars",ignore_chars))
     {
         RemoveFlag(ignore_chars,' ');
@@ -362,13 +362,13 @@ bool SessionAiEngine::CheckWordsFiles()
 {
     LOG4CPLUS_TRACE_FMT(m_Logger,"SessionAiEngine::CheckDataFiles");
     m_WordsfilesNameVec.clear();
-    if (!lnet::IsDirectory(m_ReadWordsFilePath.c_str()))
+    if (!util::IsDirectory(m_ReadWordsFilePath.c_str()))
     {
         LOG4CPLUS_ERROR_FMT(GetLogger(), "%s() m_ReadWordsFilePath(%s) not exist",__FUNCTION__,m_ReadWordsFilePath.c_str());
         return false;
     }
     const char* sFileExt = m_strWordsFileExt.c_str();//".txt";
-    if (lnet::GetDirCommonFilesByExt(m_ReadWordsFilePath.c_str(), sFileExt, 3,
+    if (util::GetDirCommonFilesByExt(m_ReadWordsFilePath.c_str(), sFileExt, 3,
                     m_WordsfilesNameVec,true) == -1)
     {
         LOG4CPLUS_ERROR_FMT(m_Logger, "can't get readfile_path(%s) file for input files,errno(%d),strerror(%s)",
@@ -403,7 +403,7 @@ bool SessionAiEngine::ReadWordsFiles()
             return false;
         }
         char sfileName[32];
-        lnet::ExtractFileNameOnly(it->c_str(),sfileName,sizeof(sfileName));
+        util::ExtractFileNameOnly(it->c_str(),sfileName,sizeof(sfileName));
         bool boStopWords(false);
         char sDirsName[64];
         memset(sDirsName,0,sizeof(sDirsName));
@@ -414,7 +414,7 @@ bool SessionAiEngine::ReadWordsFiles()
         }
         else
         {
-            if (lnet::ExtractFileNearDirectoryName(it->c_str(),sDirsName,sizeof(sDirsName)) > 0)
+            if (util::ExtractFileNearDirectoryName(it->c_str(),sDirsName,sizeof(sDirsName)) > 0)
             {
                 LOG4CPLUS_INFO_FMT(m_Logger,"ExtractFileNearDirectoryName file(%s) sDirsName(%s)",it->c_str(),sDirsName);
             }
@@ -433,7 +433,7 @@ bool SessionAiEngine::ReadWordsFiles()
                     if(m_convertCode)
                     {
                         std::string convertedCode;
-                        int ret = lnet::gbk2utf8(convertedCode,line.c_str());
+                        int ret = util::gbk2utf8(convertedCode,line.c_str());
                         if (ret < 0)
                         {
                             LOG4CPLUS_WARN_FMT(m_Logger,"failed to gbk2utf8,code:%d",ret);
@@ -654,7 +654,7 @@ bool SessionAiEngine::AddAiEngineQuestion(const ai_engine_question& question)
                         __FUNCTION__,question.question.size(),question.index_id);
         return false;
     }
-    //question.index_id = lnet::HashStrToUint64(question.question.c_str(),question.question.size());
+    //question.index_id = util::HashStrToUint64(question.question.c_str(),question.question.size());
     m_AiEngineQuestionsMap.insert(std::make_pair(question.index_id,question));
     LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() AddAiEngineQuestion ok,m_AiEngineQuestionsMap size(%u),question(%s) questionid(%llu)",
                     __FUNCTION__,m_AiEngineQuestionsMap.size(),question.question.c_str(),question.index_id);
@@ -668,7 +668,7 @@ bool SessionAiEngine::DelAiEngineQuestion(const ai_engine_question& question)
         LOG4CPLUS_WARN_FMT(GetLogger(),"%s() question.question.size() == 0",__FUNCTION__);
         return false;
     }
-    uint64 questionid = lnet::HashStrToUint64(question.question.c_str(),question.question.size());
+    uint64 questionid = util::HashStrToUint64(question.question.c_str(),question.question.size());
     m_AiEngineQuestionsMap.erase(questionid);
     LOG4CPLUS_TRACE_FMT(GetLogger(),"%s() DelAiEngineQuestion ok m_AiEngineQuestionsMap size(%u),question(%s) questionid(%llu)",
                     __FUNCTION__,m_AiEngineQuestionsMap.size(),question.question.c_str(),questionid);
@@ -791,7 +791,7 @@ bool SessionAiEngine::BuildQuestionsMap()
                 const std::string& word = words[i];
                 if (word.size() > 0)
                 {
-                    uint64 wordid = lnet::HashStrToUint64(word.c_str(),word.size());
+                    uint64 wordid = util::HashStrToUint64(word.c_str(),word.size());
                     {//该分词对应的问题
                         WordID2AIquestionsMapIter wordID2questionIDMapiter = m_wordID2questionsMap.find(wordid);//分词对应含该分词的问题集合ln2K,k为问题的分词数
                         if (wordID2questionIDMapiter == m_wordID2questionsMap.end())
@@ -833,7 +833,7 @@ bool SessionAiEngine::GetAiQuestionListByReqQuestion(const std::string& strReqQu
             const std::string& word = words[i];
             if (word.size() > 0)
             {
-                uint64 wordid = lnet::HashStrToUint64(word.c_str(),word.size());
+                uint64 wordid = util::HashStrToUint64(word.c_str(),word.size());
                 {//该分词对应的问题
                     WordID2AIquestionsMapIter iter = m_wordID2questionsMap.find(wordid);//分词获取问题lnN,J为请求问题的分词数
                     if (iter != m_wordID2questionsMap.end())
@@ -935,7 +935,7 @@ bool SessionAiEngine::GetClassifyListByReqQuestion(const std::string& strReqQues
             const std::string& word = words[i];
             if (word.size() > 0)
             {
-                uint64 wordid = lnet::HashStrToUint64(word.c_str(),word.size());
+                uint64 wordid = util::HashStrToUint64(word.c_str(),word.size());
                 AiEngineWordsTypeMapIt wordsTypeMapIt = m_AiEngineWordsTypeMap.find(wordid);
                 if (wordsTypeMapIt != m_AiEngineWordsTypeMap.end())
                 {
@@ -1014,7 +1014,7 @@ bool SessionAiEngine::SortSessionMessagesLog(std::vector<session_messages_log> &
                 const std::string& word = words[i];
                 if (word.size() > 0)
                 {
-                    uint64 wordid = lnet::HashStrToUint64(word.c_str(),word.size());
+                    uint64 wordid = util::HashStrToUint64(word.c_str(),word.size());
                     {//该分词对应的问题
                         WordID2AIquestionsMapIter iter = m_wordID2questionsMap.find(wordid);//分词获取问题lnN,J为请求问题的分词数
                         if (iter != m_wordID2questionsMap.end())
@@ -1120,7 +1120,7 @@ bool SessionAiEngine::SortSessionMessagesLog(std::vector<session_messages_log> &
 
 
 
-SessionAiEngine* GetSessionAiEngine(net::OssLabor* pLabor)
+SessionAiEngine* GetSessionAiEngine(net::Labor* pLabor)
 {
     SessionAiEngine* pSessionAiEngine = (SessionAiEngine*) pLabor->GetSession(SESSION_AI_ENGINE_ID,"robot::SessionAiEngine");
     if (pSessionAiEngine)

@@ -71,7 +71,7 @@ auto mysqlCallback = [](net::StepState* state)
 	net::MysqlStep* pMysqlState = (net::MysqlStep*)state;
 	if (pMysqlState->m_pMysqlResSet)
 	{
-		lnet::T_vecResultSet vecRes;
+		util::T_vecResultSet vecRes;
 		if (pMysqlState->m_pMysqlResSet->GetResultSet(vecRes) > 0)
 		{
 			pStageParam->pNodeSession->LoadConfigFiles(vecRes);
@@ -81,7 +81,7 @@ auto mysqlCallback = [](net::StepState* state)
 	return true;
 };
 net::MysqlStep* pstep = new net::MysqlStep(m_dbConnInfo);
-pstep->SetTask(lnet::eSqlTaskOper_select,"select * from %s", NODE_CONFIG_FILES_TABLE);//第一个任务，读取配置
+pstep->SetTask(util::eSqlTaskOper_select,"select * from %s", NODE_CONFIG_FILES_TABLE);//第一个任务，读取配置
 pstep->AddStateFunc(mysqlCallback);//stage 0
 pstep->SetData(new LoadConfigSendToMysqlParam(this));
 if (!net::MysqlStep::Launch(GetLabor(),pstep))

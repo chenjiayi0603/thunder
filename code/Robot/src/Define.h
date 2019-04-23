@@ -18,7 +18,7 @@
 #include "util/json/CJsonObject.hpp"
 #include "storage/MemOperator.hpp"
 #include "storage/dataproxy.pb.h"
-#include "behaviour_common.pb.h"
+//#include "behaviour_common.pb.h"
 #include "NetError.hpp"
 #include "RobotError.h"
 #include "RobotErrorMapping.h"
@@ -104,7 +104,7 @@ struct ai_engine_question
     }
     void CalLevenshtein()
     {
-        nLevenshtein = lnet::Levenshtein(question,strReqQuestion);
+        nLevenshtein = util::Levenshtein(question,strReqQuestion);
     }
     uint32 GetLevenshtein()const
     {

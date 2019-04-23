@@ -23,7 +23,7 @@ CoreSeekMgr::CoreSeekMgr(const std::string& strConfFile):m_bInitLogger(false),m_
     }
 }
 
-bool CoreSeekMgr::SetProcessName(const lnet::CJsonObject& oJsonConf)
+bool CoreSeekMgr::SetProcessName(const util::CJsonObject& oJsonConf)
 {
     char szProcessName[64] = {0};
     snprintf(szProcessName, sizeof(szProcessName), "%s", oJsonConf("server_name").c_str());
@@ -105,7 +105,7 @@ bool CoreSeekMgr::loadServerConf()
     return(true);
 }
 
-bool CoreSeekMgr::InitLogger(const lnet::CJsonObject& oJsonConf)
+bool CoreSeekMgr::InitLogger(const util::CJsonObject& oJsonConf)
 {
     if (m_bInitLogger)  // 已经被初始化过，只修改日志级别
     {

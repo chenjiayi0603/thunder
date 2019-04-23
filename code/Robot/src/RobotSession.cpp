@@ -11,7 +11,7 @@
 namespace robot
 {
 
-bool RobotSession::Init(const lnet::CJsonObject& conf)
+bool RobotSession::Init(const util::CJsonObject& conf)
 {
     if(boInit)
     {
@@ -269,7 +269,7 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
         for (int i=0; i<res->num_matches; i++ )//结果数
         {
             //sphinx_result -> CJsonObject
-            lnet::CJsonObject jObjJson;
+            util::CJsonObject jObjJson;
             jObjJson.Add("id",sphinx_get_id ( res, i ));
             jObjJson.Add("weight",sphinx_get_weight ( res, i));
             LOG4_TRACE("res(id:%s) num_attrs:%d",jObjJson("id").c_str(),res->num_attrs);
@@ -336,7 +336,7 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
 //    char szSql[128];
 //    snprintf(szSql, sizeof(szSql) - 1, "select * from tb_answer where id = %d", answer_id);
 //    LOG4_TRACE(szSql);
-//    lnet::T_vecResultSet vecRes;
+//    util::T_vecResultSet vecRes;
 //    if (0 != m_pMysqlDbi->ExecSql(szSql, vecRes))
 //    {
 //        LOG4_ERROR("loadNodeTypes error,%d:%s",
@@ -353,11 +353,11 @@ bool RobotSession::QuerySphinxAnswer(const std::string& strQuery,const char* ran
 //    }
 //    int nResLen(0);
 //    char tempRes[1024];
-//    for (lnet::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();it = vecRes.end())//只需要一个结果
+//    for (util::T_vecResultSet::iterator it = vecRes.begin(); it != vecRes.end();it = vecRes.end())//只需要一个结果
 //    {
-//        lnet::T_mapRow& valmap = *it;
+//        util::T_mapRow& valmap = *it;
 //        //req
-//        lnet::T_mapRow::iterator mapit = valmap.find("req");
+//        util::T_mapRow::iterator mapit = valmap.find("req");
 //        if (valmap.end() == mapit)
 //        {
 //            LOG4_ERROR("failed to get segment \"req\"");
@@ -492,7 +492,7 @@ void RobotSession::RemoveFlag(std::string &str, char flag)const
     str.erase(it, str.end());
 }
 
-RobotSession* GetRobotSession(net::OssLabor* pLabor,const std::string &configPath)
+RobotSession* GetRobotSession(net::Labor* pLabor,const std::string &configPath)
 {
     RobotSession* pSess = (RobotSession*) pLabor->GetSession(ROBOT_SESSIN_ID,"robot::RobotSession");
     if (pSess)
@@ -506,7 +506,7 @@ RobotSession* GetRobotSession(net::OssLabor* pLabor,const std::string &configPat
                         net::ERR_NEW);
         return (NULL);
     }
-    lnet::CJsonObject   oCurrentConf;       ///< 当前加载的配置
+    util::CJsonObject   oCurrentConf;       ///< 当前加载的配置
     {
         //配置文件路径查找
         std::string strConfFile = configPath + std::string("/RobotCmd.json");

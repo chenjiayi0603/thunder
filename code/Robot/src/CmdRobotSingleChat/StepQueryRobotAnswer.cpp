@@ -53,7 +53,7 @@ net::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestionFromRedis()
                     szRedisKey,
                     "",
                     "HGET");
-    net::uint64 question_id = lnet::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
+    net::uint64 question_id = util::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
     oRedisOper.AddRedisField("",question_id);//0
 
     MsgHead oMsgHead;
@@ -93,7 +93,7 @@ net::E_CMD_STATUS StepQueryRobotAnswer::GetPreQuestion()
                     szRedisKey,
                     "HMSET",
                     "HMGET");
-    net::uint64 question_id = lnet::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
+    net::uint64 question_id = util::HashStrToUint64(m_strFilteredQuestion.c_str(),m_strFilteredQuestion.size());
     oMemOper.AddRedisField("",question_id);//0
     oMemOper.AddDbField("question_id");//0
     oMemOper.AddDbField("appid");//1
@@ -170,8 +170,8 @@ net::E_CMD_STATUS StepQueryRobotAnswer::GetSphinxEngineAnswerId()
         LOG4_TRACE("%s() ok to get nIndexid(%llu) strAnswer(%s) QuerySphinxAnswer",
                         __FUNCTION__,m_nIndexid,m_strAnswer.c_str());
         robot_session::robot_single_msg_ack oAck;
-        oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-        oAck.set_send_time(lnet::GetCurrentTime());
+        oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+        oAck.set_send_time(util::GetCurrentTime());
         oAck.set_msg_type(eRobotMsgType_text);
         oAck.set_msg_template(1);
         oAck.set_msg(m_strAnswer);
@@ -215,8 +215,8 @@ net::E_CMD_STATUS StepQueryRobotAnswer::GetSessionAiEngineQuestion()
          * */
         robot_session::robot_single_msg_ack oAck;
         //logic生成msgid
-        //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-        oAck.set_send_time(lnet::GetCurrentTime());
+        //oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+        oAck.set_send_time(util::GetCurrentTime());
         oAck.set_msg_type(eRobotMsgType_text);
         oAck.set_msg(answer);
         oAck.set_msg_template(ePreQuestionAnswerTemplate_guide);
@@ -332,8 +332,8 @@ void StepQueryRobotAnswer::DefaultResponse()
 {
     robot_session::robot_single_msg_ack oAck;
     //logic生成msgid
-    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-    oAck.set_send_time(lnet::GetCurrentTime());
+    //oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+    oAck.set_send_time(util::GetCurrentTime());
     oAck.set_msg_type(eRobotMsgType_text);
     oAck.set_msg_template(1);
     oAck.set_msg(m_pRobotSession->GetDefaultAnswer());
@@ -371,16 +371,16 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
      * */
     if (question.GetLevenshtein() == 0)
     {
-        lnet::CJsonObject objSubQuestions;
+        util::CJsonObject objSubQuestions;
         objSubQuestions.Add(question.answer);
-        lnet::CJsonObject objAnswerJson;
+        util::CJsonObject objAnswerJson;
         objAnswerJson.Add("title",question.question);
         objAnswerJson.Add("sub_questions",objSubQuestions);
         answer = objAnswerJson.ToString();
     }
     else
     {
-        lnet::CJsonObject objSubQuestions;
+        util::CJsonObject objSubQuestions;
         objSubQuestions.Add(question.question);
         if (aiQuestionVec.size() > 1)
         {
@@ -396,7 +396,7 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
         }
         if (objSubQuestions.GetArraySize() > 1)
         {
-            lnet::CJsonObject objAnswerJson;
+            util::CJsonObject objAnswerJson;
             objAnswerJson.Add("title",m_pRobotSession->GetAiQuestionGuide());
             objAnswerJson.Add("sub_questions",objSubQuestions);
             answer = objAnswerJson.ToString();
@@ -405,7 +405,7 @@ void StepQueryRobotAnswer::BuildAnswer(std::string &answer,const std::vector<ai_
         {
             objSubQuestions.Clear();
             objSubQuestions.Add(question.answer);
-            lnet::CJsonObject objAnswerJson;
+            util::CJsonObject objAnswerJson;
             objAnswerJson.Add("title",question.question);
             objAnswerJson.Add("sub_questions",objSubQuestions);
             answer = objAnswerJson.ToString();
@@ -491,8 +491,8 @@ net::E_CMD_STATUS StepQueryRobotAnswer::Callback(
                      * */
                     robot_session::robot_single_msg_ack oAck;
                     //logic生成msgid
-                    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-                    oAck.set_send_time(lnet::GetCurrentTime());
+                    //oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+                    oAck.set_send_time(util::GetCurrentTime());
                     oAck.set_msg_type(eRobotMsgType_text);
                     oAck.set_msg(oRecord.field_info(4).col_value());
                     oAck.set_msg_template(::strtoul(oRecord.field_info(5).col_value().c_str(),NULL,10));
@@ -550,8 +550,8 @@ net::E_CMD_STATUS StepQueryRobotAnswer::Callback(
                             __FUNCTION__,m_nIndexid,oRecord.field_info(6).col_value().c_str());
                     robot_session::robot_single_msg_ack oAck;
                     //logic生成msgid
-                    //oAck.set_msg_id(lnet::GetUniqueId(GetNodeId(),GetWorkerIndex()));
-                    oAck.set_send_time(lnet::GetCurrentTime());
+                    //oAck.set_msg_id(util::GetUniqueId(GetNodeId(),GetWorkerIndex()));
+                    oAck.set_send_time(util::GetCurrentTime());
                     oAck.set_msg_type(eRobotMsgType_text);
                     oAck.set_msg(oRecord.field_info(6).col_value());
                     RobotAnswerEnginequestionClock();

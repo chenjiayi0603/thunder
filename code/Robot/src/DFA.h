@@ -22,7 +22,7 @@
 #include "util/CodeConvert.h"
 #include "user_basic.pb.h"
 #include "robot_session.pb.h"
-#include "behaviour_common.pb.h"
+//#include "behaviour_common.pb.h"
 #include "Define.h"
 #include "cppjieba/Jieba.hpp"
 
