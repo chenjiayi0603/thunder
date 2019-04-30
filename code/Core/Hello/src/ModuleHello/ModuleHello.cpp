@@ -22,7 +22,7 @@ MUDULE_CREATE(core::ModuleHello);
 namespace core
 {
 
-ModuleHello::ModuleHello():boTests(false)
+ModuleHello::ModuleHello():boTests(true)
 {
 }
 
