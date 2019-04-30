@@ -83,14 +83,16 @@ COMM_C_SRCS = $(foreach dir, $(COMM_PATH), $(wildcard $(dir)/*.c))
 OBJS = $(patsubst %.cpp,%.o,$(CPP_SRCS)) $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cc,%.o,$(CC_SRCS))
 COMM_OBJS = $(patsubst %.cpp,%.o,$(COMM_CPP_SRCS)) $(patsubst %.c,%.o,$(COMM_C_SRCS)) $(patsubst %.cc,%.o,$(COMM_CC_SRCS))
 
-COMPILE_TARGETS = libNet.so #DataProxy
-CORE_TARGETS = #DbAgentW DbAgentR PgAgent
+COMPILE_TARGETS = libNet.so Hello
+#DataProxy
+CORE_TARGETS = 
+#DbAgentW DbAgentR PgAgent
 
 all:$(COMPILE_TARGETS)
-	@for target in $(ORTHER_TARGETS);do cp -vf DataProxy $$target;install -v $$target ${DEPLOY_BIN} ;done
-	@for target in $(CORE_TARGETS);do cp -vf DataProxy $$target;install -v $$target ${DEPLOY_BIN} ;done
+	@for target in $(ORTHER_TARGETS);do cp -vf Hello $$target;install -v $$target ${DEPLOY_BIN} ;done
+	@for target in $(CORE_TARGETS);do cp -vf Hello $$target;install -v $$target ${DEPLOY_BIN} ;done
 
-DataProxy:$(OBJS)
+Hello:$(OBJS)
 	$(CXX) $(CXXFLAG) $(UNITTEST) -o $@ $(OBJS) $(LDFLAGS) $(INC)
 	echo "try to install $@"
 	test  -d ${DEPLOY_BIN} && install -v $@ ${DEPLOY_BIN}
