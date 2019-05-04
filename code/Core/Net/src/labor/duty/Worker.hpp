@@ -104,7 +104,7 @@ struct tagSessionWatcherData
 class Worker : public Labor
 {
 public:
-    typedef std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > > T_MAP_NODE_TYPE_IDENTIFY;
+    typedef std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > > T_MAP_NODE_TYPE_IDENTIFY;
     Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf);
     ~Worker();
     //节点信息
@@ -164,7 +164,7 @@ public:
 	bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
 	bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
 	bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody);
-	bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::map<std::string,std::string> &heads = std::map<std::string,std::string>());
+	bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>());
 	//发送消息(nodeType支持节点类型和节点标识符)
 	bool SendToCallback(Session* pSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1);
 	bool SendToCallback(Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = CMD_REQ_STORATE,int64 uiModFactor=-1);
@@ -248,7 +248,7 @@ protected:
     bool AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, ev_tstamp dTimeout = 1.0);
     //连接
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType = util::CODEC_PROTOBUF);
-    bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice = true);
+    bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice = true);
     //消息
     void MsgShellNotice(const tagMsgShell& stMsgShell, const std::string& strIdentify, util::CBuffer* pClientData);
     bool Dispose(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,MsgHead& oOutMsgHead, MsgBody& oOutMsgBody);
@@ -292,44 +292,44 @@ private:
     struct ev_loop* m_loop;
     CmdConnectWorker* m_pCmdConnect;
 
-    std::map<util::E_CODEC_TYPE, StarshipCodec*> m_mapCodec;   ///< 编解码器
-    std::map<int, tagConnectionAttr*> m_mapFdAttr;   ///< 连接的文件描述符属性
-    std::map<int, uint32> m_mapInnerFd;              ///< 服务端之间连接的文件描述符（用于区分连接是服务内部还是外部客户端接入）
-    std::map<uint32, int> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
+    std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*> m_mapCodec;   ///< 编解码器
+    std::unordered_map<int, tagConnectionAttr*> m_mapFdAttr;   ///< 连接的文件描述符属性
+    std::unordered_map<int, uint32> m_mapInnerFd;              ///< 服务端之间连接的文件描述符（用于区分连接是服务内部还是外部客户端接入）
+    std::unordered_map<uint32, int> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
 
-    std::map<int32, Cmd*> m_mapCmd;                  ///< 预加载逻辑处理命令（一般为系统级命令）
-    std::map<int, tagSo*> m_mapSo;                   ///< 动态加载业务逻辑处理命令
-    std::map<std::string, tagModule*> m_mapModule;   ///< 动态加载的http逻辑处理模块
+    std::unordered_map<int32, Cmd*> m_mapCmd;                  ///< 预加载逻辑处理命令（一般为系统级命令）
+    std::unordered_map<int, tagSo*> m_mapSo;                   ///< 动态加载业务逻辑处理命令
+    std::unordered_map<std::string, tagModule*> m_mapModule;   ///< 动态加载的http逻辑处理模块
 
-    std::map<uint32, Step*> m_mapCallbackStep;
-    std::map<int32, std::list<uint32> > m_mapHttpAttr;       ///< TODO 以类似处理redis回调的方式来处理http回调
-    std::map<redisAsyncContext*, tagRedisAttr*> m_mapRedisAttr;    ///< Redis连接属性
-    std::map<std::string, std::map<std::string, Session*> > m_mapCallbackSession;
+    std::unordered_map<uint32, Step*> m_mapCallbackStep;
+    std::unordered_map<int32, std::list<uint32> > m_mapHttpAttr;       ///< TODO 以类似处理redis回调的方式来处理http回调
+    std::unordered_map<redisAsyncContext*, tagRedisAttr*> m_mapRedisAttr;    ///< Redis连接属性
+    std::unordered_map<std::string, std::unordered_map<std::string, Session*> > m_mapCallbackSession;
 
     //节点连接
-    std::map<std::string, tagMsgShell> m_mapMsgShell;            // key为Identify
-    std::map<std::string, std::string> m_mapIdentifyNodeType;    // key为Identify，value为node_type
+    std::unordered_map<std::string, tagMsgShell> m_mapMsgShell;            // key为Identify
+    std::unordered_map<std::string, std::string> m_mapIdentifyNodeType;    // key为Identify，value为node_type
     T_MAP_NODE_TYPE_IDENTIFY m_mapNodeIdentify;
 
     //redis节点连接
-    // std::map<std::string, std::set<std::string> > m_mapRedisNodeConf;        ///< redis节点配置，key为node_type，value为192.168.16.22:9988形式的IP+端口
-    std::map<std::string, const redisAsyncContext*> m_mapRedisContext;       ///< redis连接，key为identify(192.168.16.22:9988形式的IP+端口)
-    std::map<const redisAsyncContext*, std::string> m_mapContextIdentify;    ///< redis标识，与m_mapRedisContext的key和value刚好对调
+    // std::unordered_map<std::string, std::set<std::string> > m_mapRedisNodeConf;        ///< redis节点配置，key为node_type，value为192.168.16.22:9988形式的IP+端口
+    std::unordered_map<std::string, const redisAsyncContext*> m_mapRedisContext;       ///< redis连接，key为identify(192.168.16.22:9988形式的IP+端口)
+    std::unordered_map<const redisAsyncContext*, std::string> m_mapContextIdentify;    ///< redis标识，与m_mapRedisContext的key和value刚好对调
     //redis cluster连接
-    std::map<std::string,redisClusterAsyncContext*> m_mapRedisClusterContext;
-    std::map<redisClusterAsyncContext*,std::string> m_mapRedisClusterContextIdentify;
-    std::map<redisClusterAsyncContext*, tagRedisAttr*> m_mapRedisClusterAttr;    ///< Redis连接属性
+    std::unordered_map<std::string,redisClusterAsyncContext*> m_mapRedisClusterContext;
+    std::unordered_map<redisClusterAsyncContext*,std::string> m_mapRedisClusterContextIdentify;
+    std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*> m_mapRedisClusterAttr;    ///< Redis连接属性
     //mysql节点连接
-    typedef std::map<std::string, std::pair<std::set<util::MysqlAsyncConn*>::iterator,std::set<util::MysqlAsyncConn*> > > MysqlContextMap;
+    typedef std::unordered_map<std::string, std::pair<std::set<util::MysqlAsyncConn*>::iterator,std::set<util::MysqlAsyncConn*> > > MysqlContextMap;
     MysqlContextMap m_mapMysqlContext;       ///< mysql连接，key为identify(192.168.16.22:9988形式的IP+端口)
-	std::map<util::MysqlAsyncConn*, std::string> m_mapMysqlContextIdentify;    ///< mysql标识，与m_mapMysqlContext的key和value刚好对调
+	std::unordered_map<util::MysqlAsyncConn*, std::string> m_mapMysqlContextIdentify;    ///< mysql标识，与m_mapMysqlContext的key和value刚好对调
 
 	struct tagSockaddr
     {
         unsigned long sockaddr;
         uint32 uiLastTime;
     };
-	std::map<std::string,tagSockaddr> m_mapHosts;//dns host cache
+	std::unordered_map<std::string,tagSockaddr> m_mapHosts;//dns host cache
 };
 
 } /* namespace net */

@@ -103,7 +103,7 @@ void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& 
 
 //返回消息到客户端
 bool SendToClient(const net::tagMsgShell& oInMsgShell,const MsgHead &oInMsgHead,const std::string &strBody);
-bool SendToClient(const net::tagMsgShell& oInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::map<std::string,std::string> &heads = std::map<std::string,std::string>());
+bool SendToClient(const net::tagMsgShell& oInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>());
 bool SendToClient(const tagMsgShell& oInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
 bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",uint64 sessionid = 0,const std::string& stressionid = "",bool boJsonBody=false);
 

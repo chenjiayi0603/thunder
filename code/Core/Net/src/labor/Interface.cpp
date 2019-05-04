@@ -28,7 +28,7 @@ bool SendToClient(const net::tagMsgShell& oInMsgShell,const MsgHead &oInMsgHead,
 {
 	return g_pLabor->SendToClient(oInMsgShell,oInMsgHead,strBody);
 }
-bool SendToClient(const net::tagMsgShell& oInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::map<std::string,std::string> &heads)
+bool SendToClient(const net::tagMsgShell& oInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::unordered_map<std::string,std::string> &heads)
 {
 	return g_pLabor->SendToClient(oInMsgShell,oInHttpMsg,strBody,iCode,heads);
 }

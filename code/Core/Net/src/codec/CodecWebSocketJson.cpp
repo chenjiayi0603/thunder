@@ -454,7 +454,7 @@ E_CODEC_STATUS CodecWebSocketJson::EncodeHandShake(const HttpMsg& oHttpMsg,
         iHadWriteSize += iWriteSize;
     }
     {    //请求字段
-        std::map<std::string, std::string>::iterator h_iter;
+        std::unordered_map<std::string, std::string>::iterator h_iter;
         for (int i = 0; i < oHttpMsg.headers_size(); ++i)
         {
             m_mapAddingHttpHeader.insert(
@@ -621,7 +621,7 @@ E_CODEC_STATUS CodecWebSocketJson::EncodeHttp(const HttpMsg& oHttpMsg,
     }
     bool bIsChunked = false;
     bool bIsGzip = false;   // 是否用gizp压缩传输包
-    std::map<std::string, std::string>::iterator h_iter;
+    std::unordered_map<std::string, std::string>::iterator h_iter;
     for (int i = 0; i < oHttpMsg.headers_size(); ++i)
     {
         if (std::string("Content-Length") != oHttpMsg.headers(i).header_name())

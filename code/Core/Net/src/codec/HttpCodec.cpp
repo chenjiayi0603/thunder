@@ -291,7 +291,7 @@ E_CODEC_STATUS HttpCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
     }
     bool bIsChunked = false;
     bool bIsGzip = false;   // 是否用gizp压缩传输包
-    std::map<std::string, std::string>::iterator h_iter;
+    std::unordered_map<std::string, std::string>::iterator h_iter;
     for (int i = 0; i < oHttpMsg.headers_size(); ++i)
     {
         if (std::string("Content-Length") != oHttpMsg.headers(i).header_name())

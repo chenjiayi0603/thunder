@@ -356,7 +356,7 @@ bool Manager::AcceptServerConn(int iFd)
         x_sock_set_block(iAcceptFd, 0);
         if (CreateFdAttr(iAcceptFd, ulSeq))
         {
-            std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(iAcceptFd);
+            std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(iAcceptFd);
             if(AddIoTimeout(iAcceptFd, ulSeq))     // 为了防止大量连接攻击，初始化连接只有一秒即超时，在正常发送第一个数据包之后才采用正常配置的网络IO超时检查
             {
                 if (!AddIoReadEvent(iter->second))
@@ -506,7 +506,7 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
 bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 {
     LOG4_TRACE("%s(%d)", __FUNCTION__, pData->iFd);
-    std::map<int, tagConnectionAttr*>::iterator attr_iter =  m_mapFdAttr.find(pData->iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter =  m_mapFdAttr.find(pData->iFd);
     if (attr_iter == m_mapFdAttr.end())
     {
         return(false);
@@ -559,14 +559,14 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         	//LOG4_TRACE("pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",pData->iFd, watcher->fd, attr_iter->second->pWaitForSendBuff->ReadableBytes());
             if (pConn->pWaitForSendBuff->ReadableBytes() > 0)    // 存在等待发送的数据，说明本次写事件是connect之后的第一个写事件
             {
-                std::map<uint32, int>::iterator index_iter = m_mapSeq2WorkerIndex.find(pConn->ulSeq);
+                std::unordered_map<uint32, int>::iterator index_iter = m_mapSeq2WorkerIndex.find(pConn->ulSeq);
                 if (index_iter != m_mapSeq2WorkerIndex.end())
                 {
                     tagMsgShell stMsgShell;
                     stMsgShell.iFd = pData->iFd;
                     stMsgShell.ulSeq = pConn->ulSeq;
                     //AddInnerFd(stMsgShell); 只有Worker需要
-                    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
+                    std::unordered_map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
                     if (center_iter == m_mapCenterMsgShell.end())
                     {
                         m_mapCenterMsgShell.insert(std::pair<std::string, tagMsgShell>(pConn->strIdentify, stMsgShell));
@@ -598,7 +598,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(pData->iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(pData->iFd);
     if (iter == m_mapFdAttr.end())
     {
         return(false);
@@ -618,7 +618,7 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         DestroyConnect(iter);
     }
-    std::map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(pData->iFd);
+    std::unordered_map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(pData->iFd);
     if (worker_fd_iter != m_mapWorkerFdPid.end())
     {
         kill(worker_fd_iter->first, SIGINT);
@@ -630,7 +630,7 @@ bool Manager::IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     bool bRes = false;
-    std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(pData->iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(pData->iFd);
     if (iter == m_mapFdAttr.end())
     {
         bRes = false;
@@ -748,7 +748,7 @@ bool Manager::InitLogger(const util::CJsonObject& oJsonConf)
 
 bool Manager::SendTo(const tagMsgShell& stMsgShell)
 {
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -816,7 +816,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
 bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(cmd %u, seq %u)", __FUNCTION__, oMsgHead.cmd(), oMsgHead.seq());
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -902,7 +902,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
 bool Manager::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -942,7 +942,7 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
     bzero(&(stAddr.sin_zero), 8);
     iFd = socket(AF_INET, SOCK_STREAM, 0);
 
-    std::map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(iFd);
+    std::unordered_map<int, int>::iterator worker_fd_iter = m_mapWorkerFdPid.find(iFd);
     if (worker_fd_iter != m_mapWorkerFdPid.end())
     {
         LOG4_TRACE("iFd = %d found in m_mapWorkerFdPid", iFd);
@@ -993,7 +993,7 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 						"iter->second->pWaitForSendBuff->ReadableBytes()=%u", iFd, ulSeq, strIdentify.c_str(),
 						pConn->pWaitForSendBuff->ReadableBytes());
 		m_mapSeq2WorkerIndex.insert(std::pair<uint32, int>(ulSeq, iWorkerIndex));
-		std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(strIdentify);
+		std::unordered_map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(strIdentify);
 		if (center_iter != m_mapCenterMsgShell.end())
 		{
 			center_iter->second.iFd = iFd;
@@ -1209,7 +1209,7 @@ bool Manager::Init()
 void Manager::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    for (std::map<int32, Cmd*>::iterator cmd_iter = m_mapCmd.begin();
+    for (std::unordered_map<int32, Cmd*>::iterator cmd_iter = m_mapCmd.begin();
                     cmd_iter != m_mapCmd.end(); ++cmd_iter)
     {
         delete cmd_iter->second;
@@ -1220,7 +1220,7 @@ void Manager::Destroy()
     m_mapWorker.clear();
     m_mapWorkerFdPid.clear();
     m_mapWorkerRestartNum.clear();
-    for (std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.begin();
+    for (std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.begin();
                     iter != m_mapFdAttr.end(); ++iter)
     {
         DestroyConnect(iter);
@@ -1444,7 +1444,7 @@ bool Manager::RegisterToCenter()
     oReportData.Add("active_time", ev_now(m_loop));
     oReportData.Add("node", util::CJsonObject("{}"));
     oReportData.Add("worker", util::CJsonObject("[]"));
-    std::map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
+    std::unordered_map<int, tagWorkerAttr>::iterator worker_iter = m_mapWorker.begin();
     for (; worker_iter != m_mapWorker.end(); ++worker_iter)
     {
         iLoad += worker_iter->second.iLoad;
@@ -1475,7 +1475,7 @@ bool Manager::RegisterToCenter()
     oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
     oMsgHead.set_seq(GetSequence());
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.begin();
+    std::unordered_map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.begin();
     for (; center_iter != m_mapCenterMsgShell.end(); ++center_iter)
     {
         if (center_iter->second.iFd == 0)
@@ -1498,10 +1498,10 @@ bool Manager::RestartWorker(int iDeathPid)
     LOG4_DEBUG("%s(%d)", __FUNCTION__, iDeathPid);
     int iNewPid = 0;
     char errMsg[1024] = {0};
-    std::map<int, tagWorkerAttr>::iterator worker_iter;
-    std::map<int, int>::iterator fd_iter;
-    std::map<int, tagConnectionAttr*>::iterator conn_iter;
-    std::map<int, int>::iterator restart_num_iter;
+    std::unordered_map<int, tagWorkerAttr>::iterator worker_iter;
+    std::unordered_map<int, int>::iterator fd_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter;
+    std::unordered_map<int, int>::iterator restart_num_iter;
     worker_iter = m_mapWorker.find(iDeathPid);
     if (worker_iter != m_mapWorker.end())
     {
@@ -1820,7 +1820,7 @@ bool Manager::AddClientConnFrequencyTimeout(in_addr_t iAddr, ev_tstamp dTimeout)
 tagConnectionAttr* Manager::CreateFdAttr(int iFd, uint32 ulSeq)
 {
     LOG4_DEBUG("%s(iFd %d, seq %llu)", __FUNCTION__, iFd, ulSeq);
-    std::map<int, tagConnectionAttr*>::iterator fd_attr_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator fd_attr_iter;
     fd_attr_iter = m_mapFdAttr.find(iFd);
     if (fd_attr_iter == m_mapFdAttr.end())
     {
@@ -1854,7 +1854,7 @@ tagConnectionAttr* Manager::CreateFdAttr(int iFd, uint32 ulSeq)
         }
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
-        std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(iFd);
         if (iter == m_mapFdAttr.end())
         {
             m_mapFdAttr.insert(std::pair<int, tagConnectionAttr*>(iFd, pConnAttr));
@@ -1874,7 +1874,7 @@ tagConnectionAttr* Manager::CreateFdAttr(int iFd, uint32 ulSeq)
     }
 }
 
-bool Manager::DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter)
+bool Manager::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter)
 {
     if (iter == m_mapFdAttr.end())
     {
@@ -1882,7 +1882,7 @@ bool Manager::DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter)
     }
     LOG4_DEBUG("%s() iter->second->pIoWatcher = 0x%x, fd %d, data 0x%x", __FUNCTION__,
                     iter->second->pIoWatcher, iter->second->pIoWatcher->fd, iter->second->pIoWatcher->data);
-    std::map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
     if (center_iter != m_mapCenterMsgShell.end())
     {
         center_iter->second.iFd = 0;
@@ -1902,7 +1902,7 @@ std::pair<int, int> Manager::GetMinLoadWorkerDataFd()
     int iMinLoadWorkerFd = 0;
     int iMinLoad = -1;
     std::pair<int, int> worker_pid_fd;
-    std::map<int, tagWorkerAttr>::iterator iter;
+    std::unordered_map<int, tagWorkerAttr>::iterator iter;
     for (iter = m_mapWorker.begin(); iter != m_mapWorker.end(); ++iter)
     {
        if (iter == m_mapWorker.begin())
@@ -1924,7 +1924,7 @@ std::pair<int, int> Manager::GetMinLoadWorkerDataFd()
 void Manager::SetWorkerLoad(int iPid, util::CJsonObject& oJsonLoad)
 {
     //LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagWorkerAttr>::iterator iter;
+    std::unordered_map<int, tagWorkerAttr>::iterator iter;
     iter = m_mapWorker.find(iPid);
     if (iter != m_mapWorker.end())
     {
@@ -1942,7 +1942,7 @@ void Manager::SetWorkerLoad(int iPid, util::CJsonObject& oJsonLoad)
 void Manager::AddWorkerLoad(int iPid, int iLoad)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagWorkerAttr>::iterator iter;
+    std::unordered_map<int, tagWorkerAttr>::iterator iter;
     iter = m_mapWorker.find(iPid);
     if (iter != m_mapWorker.end())
     {
@@ -1950,7 +1950,7 @@ void Manager::AddWorkerLoad(int iPid, int iLoad)
     }
 }
 
-const std::map<int, tagWorkerAttr>& Manager::GetWorkerAttr() const
+const std::unordered_map<int, tagWorkerAttr>& Manager::GetWorkerAttr() const
 {
 	return(m_mapWorker);
 }
@@ -2310,7 +2310,7 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
     int iErrno = 0;
     int iWriteLen = 0;
     int iNeedWriteLen = 0;
-    std::map<int, tagConnectionAttr*>::iterator worker_conn_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator worker_conn_iter;
     for (auto worker_iter = m_mapWorker.begin(); worker_iter != m_mapWorker.end(); ++worker_iter)
     {
         worker_conn_iter = m_mapFdAttr.find(worker_iter->second.iControlFd);
@@ -2411,7 +2411,7 @@ bool Manager::DisposeDataFromWorker(const tagMsgShell& stMsgShell, const MsgHead
     LOG4_DEBUG("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
     if (CMD_REQ_UPDATE_WORKER_LOAD == oInMsgHead.cmd())    // 新请求
     {
-        std::map<int, int>::iterator iter = m_mapWorkerFdPid.find(stMsgShell.iFd);
+        std::unordered_map<int, int>::iterator iter = m_mapWorkerFdPid.find(stMsgShell.iFd);
         if (iter != m_mapWorkerFdPid.end())
         {
             util::CJsonObject oJsonLoad;
@@ -2481,7 +2481,7 @@ bool Manager::DisposeDataAndTransferFd(const tagMsgShell& stMsgShell, const MsgH
     {
         if (oConnWorker.ParseFromString(oInMsgBody.body()))
         {
-            std::map<int, tagWorkerAttr>::iterator worker_iter;
+            std::unordered_map<int, tagWorkerAttr>::iterator worker_iter;
             for (worker_iter = m_mapWorker.begin();
                             worker_iter != m_mapWorker.end(); ++worker_iter)
             {

@@ -287,7 +287,7 @@ bool Worker::CheckParent()
     oMsgHead.set_cmd(CMD_REQ_UPDATE_WORKER_LOAD);
     oMsgHead.set_seq(GetSequence());
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(m_iManagerControlFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(m_iManagerControlFd);
     if (iter != m_mapFdAttr.end())
     {
     	int iErrno = 0;
@@ -308,7 +308,7 @@ bool Worker::CheckParent()
 bool Worker::SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(m_iManagerControlFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(m_iManagerControlFd);
     if (iter != m_mapFdAttr.end())
     {
         int iErrno = 0;
@@ -342,7 +342,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
     LOG4_TRACE("%s()", __FUNCTION__);
     int iErrno = 0;
     int iReadLen = 0;
-    std::map<int, tagConnectionAttr*>::iterator conn_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter;
     conn_iter = m_mapFdAttr.find(pData->iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
@@ -376,7 +376,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
             MsgHead oInMsgHead, oOutMsgHead;
             MsgBody oInMsgBody, oOutMsgBody;
             StarshipCodec* pCodec = NULL;
-            std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
+            std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
             if (codec_iter == m_mapCodec.end())
             {
                 LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
@@ -403,7 +403,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         //切换为http协议
                         LOG4_DEBUG("failed to decode for codec %d,switch to CODEC_HTTP",pConn->eCodecType);
                         conn_iter->second->eCodecType = util::CODEC_HTTP;
-                        std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
+                        std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
                         if (codec_iter == m_mapCodec.end())
                         {
                             LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
@@ -421,7 +421,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         //切换为私有协议编解码（与客户端通信协议） private pb
                         LOG4_DEBUG("failed to decode for codec %d,switch to CODEC_PRIVATE",pConn->eCodecType);
                         conn_iter->second->eCodecType = util::CODEC_PRIVATE;
-                        std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
+                        std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
                         if (codec_iter == m_mapCodec.end())
                         {
                             LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
@@ -1013,7 +1013,7 @@ bool Worker::SessionTimeout(Session* pSession, struct ev_timer* watcher)
 bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
+    std::unordered_map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
     if (attr_iter != m_mapRedisAttr.end())
     {
         if (status == REDIS_OK)
@@ -1070,7 +1070,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
-    std::map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
+    std::unordered_map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
     if (attr_iter != m_mapRedisAttr.end())
     {
         for (std::list<RedisStep *>::iterator step_iter = attr_iter->second->listData.begin();
@@ -1106,13 +1106,13 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
 bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
-    std::map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
+    std::unordered_map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
     if (attr_iter != m_mapRedisAttr.end())
     {
         std::list<RedisStep*>::iterator step_iter = attr_iter->second->listData.begin();
         if (NULL == reply)
         {
-            std::map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(c);
+            std::unordered_map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(c);
             if (identify_iter != m_mapContextIdentify.end())
             {
                 LOG4_ERROR("redis %s error %d: %s", identify_iter->second.c_str(), c->err, c->errstr);
@@ -1157,7 +1157,7 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
 bool Worker::OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *reply, void *privdata)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
-    std::map<redisClusterAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisClusterAttr.find(acc);
+    std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisClusterAttr.find(acc);
     if (attr_iter != m_mapRedisClusterAttr.end())
     {
         LOG4_DEBUG("%s() redisClusterAsyncContext(%s,%d)", __FUNCTION__,acc->cc->ip,acc->cc->port);
@@ -1272,7 +1272,7 @@ bool Worker::RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTime
 
 	if (pStep->m_setNextStepSeq.find(uiSelfStepSeq) != pStep->m_setNextStepSeq.end())// 登记前置step
 	{
-		std::map<uint32, Step*>::iterator callback_iter = m_mapCallbackStep.find(uiSelfStepSeq);
+		std::unordered_map<uint32, Step*>::iterator callback_iter = m_mapCallbackStep.find(uiSelfStepSeq);
 		if (callback_iter != m_mapCallbackStep.end())
 		{
 			callback_iter->second->m_setPreStepSeq.insert(pStep->GetSequence());
@@ -1318,7 +1318,7 @@ void Worker::DeleteCallback(Step* pStep)
     {
         return;
     }
-    std::map<uint32, Step*>::iterator callback_iter;
+    std::unordered_map<uint32, Step*>::iterator callback_iter;
     for (std::set<uint32>::iterator step_seq_iter = pStep->m_setPreStepSeq.begin();
                     step_seq_iter != pStep->m_setPreStepSeq.end(); )
     {
@@ -1354,7 +1354,7 @@ void Worker::DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
     {
         return;
     }
-    std::map<uint32, Step*>::iterator callback_iter;
+    std::unordered_map<uint32, Step*>::iterator callback_iter;
     for (auto step_seq_iter = pStep->m_setPreStepSeq.begin();step_seq_iter != pStep->m_setPreStepSeq.end(); )//检查前面的步骤，有则延长自己
     {
         callback_iter = m_mapCallbackStep.find(*step_seq_iter);
@@ -1406,11 +1406,11 @@ bool Worker::RegisterCallback(Session* pSession)
     pSession->SetRegistered();
     pSession->SetActiveTime(ev_now(m_loop));
 
-    std::pair<std::map<std::string, Session*>::iterator, bool> ret;
-    std::map<std::string, std::map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(pSession->GetSessionClass());
+    std::pair<std::unordered_map<std::string, Session*>::iterator, bool> ret;
+    std::unordered_map<std::string, std::unordered_map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(pSession->GetSessionClass());
     if (name_iter == m_mapCallbackSession.end())
     {
-        std::map<std::string, Session*> mapSession;
+        std::unordered_map<std::string, Session*> mapSession;
         ret = mapSession.insert(std::pair<std::string, Session*>(pSession->GetSessionId(), pSession));
         if(!ret.second)
         {
@@ -1422,7 +1422,7 @@ bool Worker::RegisterCallback(Session* pSession)
             LOG4_TRACE("inserted Session(session_id %s).SessionClass(%s)", pSession->GetSessionId().c_str(),
                             pSession->GetSessionClass().c_str());
         }
-        m_mapCallbackSession.insert(std::pair<std::string, std::map<std::string, Session*> >(pSession->GetSessionClass(), mapSession));
+        m_mapCallbackSession.insert(std::pair<std::string, std::unordered_map<std::string, Session*> >(pSession->GetSessionClass(), mapSession));
     }
     else
     {
@@ -1474,10 +1474,10 @@ void Worker::DeleteCallback(Session* pSession)
     {
         ev_timer_stop (m_loop, pSession->m_pTimeoutWatcher);
     }
-    std::map<std::string, std::map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(pSession->GetSessionClass());
+    std::unordered_map<std::string, std::unordered_map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(pSession->GetSessionClass());
     if (name_iter != m_mapCallbackSession.end())
     {
-        std::map<std::string, Session*>::iterator id_iter = name_iter->second.find(pSession->GetSessionId());
+        std::unordered_map<std::string, Session*>::iterator id_iter = name_iter->second.find(pSession->GetSessionId());
         if (id_iter != name_iter->second.end())
         {
             LOG4_TRACE("delete session(session_id %s)", pSession->GetSessionId().c_str());
@@ -1520,7 +1520,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     ev_timer_start (m_loop, timeout_watcher);
     */
 
-    std::map<redisAsyncContext*, tagRedisAttr*>::iterator iter = m_mapRedisAttr.find((redisAsyncContext*)pRedisContext);
+    std::unordered_map<redisAsyncContext*, tagRedisAttr*>::iterator iter = m_mapRedisAttr.find((redisAsyncContext*)pRedisContext);
     if (iter == m_mapRedisAttr.end())
     {
         LOG4_ERROR("redis attr not exist!");
@@ -1578,7 +1578,7 @@ bool Worker::ResetTimeout(Step* pStep, struct ev_timer* watcher)
 
 Session* Worker::GetSession(uint64 uiSessionId, const std::string& strSessionClass)
 {
-    std::map<std::string, std::map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(strSessionClass);
+    std::unordered_map<std::string, std::unordered_map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(strSessionClass);
     if (name_iter == m_mapCallbackSession.end())
     {
         return(NULL);
@@ -1587,7 +1587,7 @@ Session* Worker::GetSession(uint64 uiSessionId, const std::string& strSessionCla
     {
         char szSession[32] = {0};
         snprintf(szSession, sizeof(szSession), "%llu", uiSessionId);
-        std::map<std::string, Session*>::iterator id_iter = name_iter->second.find(szSession);
+        std::unordered_map<std::string, Session*>::iterator id_iter = name_iter->second.find(szSession);
         if (id_iter == name_iter->second.end())
         {
             LOG4_TRACE("szSession(%s).strSessionClass(%s) not exist",szSession,strSessionClass.c_str());
@@ -1603,14 +1603,14 @@ Session* Worker::GetSession(uint64 uiSessionId, const std::string& strSessionCla
 
 Session* Worker::GetSession(const std::string& strSessionId, const std::string& strSessionClass)
 {
-    std::map<std::string, std::map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(strSessionClass);
+    std::unordered_map<std::string, std::unordered_map<std::string, Session*> >::iterator name_iter = m_mapCallbackSession.find(strSessionClass);
     if (name_iter == m_mapCallbackSession.end())
     {
         return(NULL);
     }
     else
     {
-        std::map<std::string, Session*>::iterator id_iter = name_iter->second.find(strSessionId);
+        std::unordered_map<std::string, Session*>::iterator id_iter = name_iter->second.find(strSessionId);
         if (id_iter == name_iter->second.end())
         {
             return(NULL);
@@ -1625,7 +1625,7 @@ Session* Worker::GetSession(const std::string& strSessionId, const std::string& 
 
 bool Worker::Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice)
 {
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter != m_mapFdAttr.end())
     {
         if (iter->second->ulSeq == stMsgShell.ulSeq)
@@ -1639,7 +1639,7 @@ bool Worker::Disconnect(const tagMsgShell& stMsgShell, bool bMsgShellNotice)
 
 bool Worker::Disconnect(const std::string& strIdentify, bool bMsgShellNotice)
 {
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         return(true);
@@ -1806,7 +1806,7 @@ bool Worker::CreateEvents()
         tagMsgShell stMsgShell;
         stMsgShell.iFd = m_iManagerControlFd;
         stMsgShell.ulSeq = ulSeq;
-        std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(m_iManagerControlFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(m_iManagerControlFd);
         if (!AddIoReadEvent(iter->second))
         {
             LOG4_TRACE("if (!AddIoReadEvent(conn_iter))");
@@ -1832,7 +1832,7 @@ bool Worker::CreateEvents()
         tagMsgShell stMsgShell;
         stMsgShell.iFd = m_iManagerDataFd;
         stMsgShell.ulSeq = ulSeq;
-        std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(m_iManagerDataFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(m_iManagerDataFd);
         if (!AddIoReadEvent(iter->second))
         {
             LOG4_TRACE("if (!AddIoReadEvent(conn_iter))");
@@ -1880,7 +1880,7 @@ void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     m_mapHttpAttr.clear();
-    for (std::map<int32, Cmd*>::iterator cmd_iter = m_mapCmd.begin();
+    for (std::unordered_map<int32, Cmd*>::iterator cmd_iter = m_mapCmd.begin();
                     cmd_iter != m_mapCmd.end(); ++cmd_iter)
     {
         delete cmd_iter->second;
@@ -1888,7 +1888,7 @@ void Worker::Destroy()
     }
     m_mapCmd.clear();
 
-    for (std::map<int, tagSo*>::iterator so_iter = m_mapSo.begin();
+    for (std::unordered_map<int, tagSo*>::iterator so_iter = m_mapSo.begin();
                     so_iter != m_mapSo.end(); ++so_iter)
     {
         delete so_iter->second;
@@ -1896,7 +1896,7 @@ void Worker::Destroy()
     }
     m_mapSo.clear();
 
-    for (std::map<std::string, tagModule*>::iterator module_iter = m_mapModule.begin();
+    for (std::unordered_map<std::string, tagModule*>::iterator module_iter = m_mapModule.begin();
                     module_iter != m_mapModule.end(); ++module_iter)
     {
         delete module_iter->second;
@@ -1904,14 +1904,14 @@ void Worker::Destroy()
     }
     m_mapModule.clear();
 
-    for (std::map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();
+    for (std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();
                     attr_iter != m_mapFdAttr.end(); ++attr_iter)
     {
-        LOG4_TRACE("for (std::map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();");
+        LOG4_TRACE("for (std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();");
         DestroyConnect(attr_iter);
     }
 
-    for (std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.begin();
+    for (std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.begin();
                     codec_iter != m_mapCodec.end(); ++codec_iter)
     {
         delete codec_iter->second;
@@ -1934,7 +1934,7 @@ void Worker::ResetLogLevel(log4cplus::LogLevel iLogLevel)
 bool Worker::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
 {
     LOG4_TRACE("%s(%s, fd %d, seq %u)", __FUNCTION__, strIdentify.c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         m_mapMsgShell.insert(std::pair<std::string, tagMsgShell>(strIdentify, stMsgShell));
@@ -1945,7 +1945,7 @@ bool Worker::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMs
         {
             LOG4_DEBUG("%s() connect to %s was exist, replace old fd %d with new fd %d",
                             __FUNCTION__,strIdentify.c_str(), shell_iter->second.iFd, stMsgShell.iFd);
-            std::map<int, tagConnectionAttr*>::iterator fd_iter = m_mapFdAttr.find(shell_iter->second.iFd);
+            std::unordered_map<int, tagConnectionAttr*>::iterator fd_iter = m_mapFdAttr.find(shell_iter->second.iFd);
             if (GetWorkerIdentify() != strIdentify)//外部连接
             {
 //                DestroyConnect(fd_iter);
@@ -1969,7 +1969,7 @@ bool Worker::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMs
 
 void Worker::DelMsgShell(const std::string& strIdentify,const tagMsgShell& stMsgShell)
 {
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         LOG4_TRACE("%s() strIdentify(%s) don't has stMsgShell",__FUNCTION__,strIdentify.c_str());
@@ -1999,10 +1999,10 @@ void Worker::DelMsgShell(const std::string& strIdentify,const tagMsgShell& stMsg
     }
 
     // 连接虽然断开，但不应清除节点标识符，这样可以保证下次有数据发送时可以重新建立连接
-//    std::map<std::string, std::string>::iterator identify_iter = m_mapIdentifyNodeType.find(strIdentify);
+//    std::unordered_map<std::string, std::string>::iterator identify_iter = m_mapIdentifyNodeType.find(strIdentify);
 //    if (identify_iter != m_mapIdentifyNodeType.end())
 //    {
-//        std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
+//        std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
 //        node_type_iter = m_mapNodeIdentify.find(identify_iter->second);
 //        if (node_type_iter != m_mapNodeIdentify.end())
 //        {
@@ -2020,7 +2020,7 @@ void Worker::DelMsgShell(const std::string& strIdentify,const tagMsgShell& stMsg
 void Worker::AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
 {
     LOG4_TRACE("%s(%s, %s)", __FUNCTION__, strNodeType.c_str(), strIdentify.c_str());
-    std::map<std::string, std::string>::iterator iter = m_mapIdentifyNodeType.find(strIdentify);
+    std::unordered_map<std::string, std::string>::iterator iter = m_mapIdentifyNodeType.find(strIdentify);
     if (iter == m_mapIdentifyNodeType.end())
     {
         m_mapIdentifyNodeType.insert(iter,
@@ -2057,10 +2057,10 @@ void Worker::AddNodeIdentify(const std::string& strNodeType, const std::string& 
 void Worker::DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
 {
     LOG4_TRACE("%s(%s, %s)", __FUNCTION__, strNodeType.c_str(), strIdentify.c_str());
-    std::map<std::string, std::string>::iterator identify_iter = m_mapIdentifyNodeType.find(strIdentify);
+    std::unordered_map<std::string, std::string>::iterator identify_iter = m_mapIdentifyNodeType.find(strIdentify);
     if (identify_iter != m_mapIdentifyNodeType.end())
     {
-        std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
+        std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
         node_type_iter = m_mapNodeIdentify.find(identify_iter->second);
         if (node_type_iter != m_mapNodeIdentify.end())
         {
@@ -2078,7 +2078,7 @@ void Worker::DelNodeIdentify(const std::string& strNodeType, const std::string& 
 void Worker::GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys)
 {
     strIdentifys.clear();
-    //std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >
+    //std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >
     T_MAP_NODE_TYPE_IDENTIFY::iterator node_type_iter;
     node_type_iter = m_mapNodeIdentify.find(strNodeType);
     if (node_type_iter == m_mapNodeIdentify.end())
@@ -2117,7 +2117,7 @@ bool Worker::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisS
     	LOG4_ERROR("strIdentify error: %s", strIdentify.c_str());
         return(false);
     }
-    std::map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(strIdentify);
+    std::unordered_map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(strIdentify);
     if (ctx_iter != m_mapRedisContext.end())
     {
         LOG4_DEBUG("redis context %s", strIdentify.c_str());
@@ -2135,7 +2135,7 @@ bool Worker::RegisterCallback(const std::string& strHost, int iPort, RedisStep* 
     LOG4_TRACE("%s(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     char szIdentify[32] = {0};
     snprintf(szIdentify, sizeof(szIdentify), "%s:%d", strHost.c_str(), iPort);
-    std::map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(szIdentify);
+    std::unordered_map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(szIdentify);
     if (ctx_iter != m_mapRedisContext.end())
     {
         LOG4_TRACE("redis context %s", szIdentify);
@@ -2153,11 +2153,11 @@ bool Worker::AddRedisContextAddr(const std::string& strHost, int iPort, redisAsy
     LOG4_TRACE("%s(%s, %d, 0x%X)", __FUNCTION__, strHost.c_str(), iPort, ctx);
     char szIdentify[32] = {0};
     snprintf(szIdentify, 32, "%s:%d", strHost.c_str(), iPort);
-    std::map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(szIdentify);
+    std::unordered_map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(szIdentify);
     if (ctx_iter == m_mapRedisContext.end())
     {
         m_mapRedisContext.insert(std::pair<std::string, const redisAsyncContext*>(szIdentify, ctx));
-        std::map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(ctx);
+        std::unordered_map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(ctx);
         if (identify_iter == m_mapContextIdentify.end())
         {
             m_mapContextIdentify.insert(std::pair<const redisAsyncContext*, std::string>(ctx, szIdentify));
@@ -2176,10 +2176,10 @@ bool Worker::AddRedisContextAddr(const std::string& strHost, int iPort, redisAsy
 
 void Worker::DelRedisContextAddr(const redisAsyncContext* ctx)
 {
-    std::map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(ctx);
+    std::unordered_map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(ctx);
     if (identify_iter != m_mapContextIdentify.end())
     {
-        std::map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(identify_iter->second);
+        std::unordered_map<std::string, const redisAsyncContext*>::iterator ctx_iter = m_mapRedisContext.find(identify_iter->second);
         if (ctx_iter != m_mapRedisContext.end())
         {
             m_mapRedisContext.erase(ctx_iter);
@@ -2262,7 +2262,7 @@ bool Worker::AddMysqlContextAddr(MysqlStep* pMysqlStep, util::MysqlAsyncConn* ct
     	set.insert(ctx);
     	m_mapMysqlContext.insert(std::pair<std::string, std::pair<std::set<util::MysqlAsyncConn*>::iterator,std::set<util::MysqlAsyncConn*> > >
     	(szIdentify,std::make_pair(set.begin(),set)));
-        std::map<util::MysqlAsyncConn*, std::string>::iterator identify_iter = m_mapMysqlContextIdentify.find(ctx);
+        std::unordered_map<util::MysqlAsyncConn*, std::string>::iterator identify_iter = m_mapMysqlContextIdentify.find(ctx);
         if (identify_iter == m_mapMysqlContextIdentify.end())
         {
         	m_mapMysqlContextIdentify.insert(std::pair<util::MysqlAsyncConn*, std::string>(ctx, szIdentify));
@@ -2283,7 +2283,7 @@ bool Worker::AddMysqlContextAddr(MysqlStep* pMysqlStep, util::MysqlAsyncConn* ct
 
 void Worker::DelMysqlContextAddr(util::MysqlAsyncConn* ctx)
 {
-    std::map<util::MysqlAsyncConn*, std::string>::iterator identify_iter = m_mapMysqlContextIdentify.find(ctx);
+    std::unordered_map<util::MysqlAsyncConn*, std::string>::iterator identify_iter = m_mapMysqlContextIdentify.find(ctx);
     if (identify_iter != m_mapMysqlContextIdentify.end())
     {
     	MysqlContextMap::iterator ctx_iter = m_mapMysqlContext.find(identify_iter->second);
@@ -2298,7 +2298,7 @@ void Worker::DelMysqlContextAddr(util::MysqlAsyncConn* ctx)
 bool Worker::SendTo(const tagMsgShell& stMsgShell)
 {
     LOG4_TRACE("%s(fd %d, seq %lu) pWaitForSendBuff", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -2411,7 +2411,7 @@ bool Worker::SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHe
     oOutMsgHead.set_seq(oInMsgHead.seq());
     oOutMsgHead.set_cmd(oInMsgHead.cmd()+1);
     BuildMsgBody(oOutMsgHead,oMsgBody,message,additional,sessionid,strSession,boJsonBody);//会设置oOutMsgHead.msgbody_len
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         LOG4_TRACE("no tagMsgShell match %s.", strIdentify.c_str());
@@ -2439,7 +2439,7 @@ bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgH
 	return true;
 }
 
-bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::map<std::string,std::string> &heads)
+bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::unordered_map<std::string,std::string> &heads)
 {
 	HttpMsg oHttpMsg;
 	for(const auto & iter:heads)
@@ -2700,7 +2700,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
 {
     LOG4_TRACE("%s(fd %d, fd_seq %lu, cmd %u, msg_seq %u)",
                     __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq, oMsgHead.cmd(), oMsgHead.seq());
-    std::map<int, tagConnectionAttr*>::iterator conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -2711,7 +2711,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
     	tagConnectionAttr* pConn = conn_iter->second;
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
-            std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
+            std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
             if (codec_iter == m_mapCodec.end())
             {
                 LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
@@ -2834,7 +2834,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
 bool Worker::SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         LOG4_TRACE("no tagMsgShell match %s.", strIdentify.c_str());
@@ -2849,7 +2849,7 @@ bool Worker::SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, con
 bool Worker::SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(node_type: %s)", __FUNCTION__, strNodeType.c_str());
-    std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
+    std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
     node_type_iter = m_mapNodeIdentify.find(strNodeType);
     if (node_type_iter == m_mapNodeIdentify.end())
     {
@@ -2885,7 +2885,7 @@ bool Worker::SendToNext(const std::string& strNodeType, const MsgHead& oMsgHead,
 bool Worker::SendToWithMod(const std::string& strNodeType, uint32 uiModFactor, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(nody_type: %s, mod_factor: %u)", __FUNCTION__, strNodeType.c_str(), uiModFactor);
-    std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
+    std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
     node_type_iter = m_mapNodeIdentify.find(strNodeType);
     if (node_type_iter == m_mapNodeIdentify.end())
     {
@@ -2921,7 +2921,7 @@ bool Worker::SendToWithMod(const std::string& strNodeType, uint32 uiModFactor, c
 bool Worker::SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(node_type: %s)", __FUNCTION__, strNodeType.c_str());
-    std::map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
+    std::unordered_map<std::string, std::pair<std::set<std::string>::iterator, std::set<std::string> > >::iterator node_type_iter;
     node_type_iter = m_mapNodeIdentify.find(strNodeType);
     if (node_type_iter == m_mapNodeIdentify.end())
     {
@@ -2952,7 +2952,7 @@ bool Worker::SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgH
 bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep)
 {
     LOG4_TRACE("%s(fd %d, seq %lu)", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
-    std::map<int, tagConnectionAttr*>::iterator conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -2963,7 +2963,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Http
     	tagConnectionAttr* pConn = conn_iter->second;
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
-            std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
+            std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
             if (codec_iter == m_mapCodec.end())
             {
                 LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
@@ -3051,7 +3051,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Http
                 {
                     if (pHttpStep != NULL)
                     {
-                        std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+                        std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
                         if (http_step_iter == m_mapHttpAttr.end())
                         {
                             std::list<uint32> listHttpStepSeq;
@@ -3065,7 +3065,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Http
                     }
                     else
                     {
-                        std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+                        std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
                         if (http_step_iter == m_mapHttpAttr.end())
                         {
                             std::list<uint32> listHttpStepSeq;
@@ -3107,7 +3107,7 @@ bool Worker::SentTo(const std::string& strHost, int iPort, const std::string& st
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, szIdentify);
     return(AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pHttpStep));
     // 向外部发起http请求不复用连接
-//    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(szIdentify);
+//    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(szIdentify);
 //    if (shell_iter == m_mapMsgShell.end())
 //    {
 //        LOG4_TRACE("no tagMsgShell match %s.", szIdentify);
@@ -3128,7 +3128,7 @@ bool Worker::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string
                         __FUNCTION__,stMsgShell.iFd,strIdentify.size());
         return(false);
     }
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         LOG4_ERROR("%s() no fd %d found in m_mapFdAttr",__FUNCTION__, stMsgShell.iFd);
@@ -3201,7 +3201,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
     uint32 ulSeq = GetSequence();
     if (CreateFdAttr(iFd, ulSeq))
     {
-        std::map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(iFd);
         snprintf(conn_iter->second->pRemoteAddr, 32, strIdentify.c_str());
         if(AddIoTimeout(iFd, ulSeq, conn_iter->second, 1.5))
         {
@@ -3219,7 +3219,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
                 DestroyConnect(conn_iter);
                 return(false);
             }
-            std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
+            std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(pConn->eCodecType);
             if (codec_iter == m_mapCodec.end())
             {
                 LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
@@ -3295,7 +3295,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
     {
         pConnAttr->eCodecType = util::CODEC_HTTP;
         snprintf(pConnAttr->pRemoteAddr, 32, strHost.c_str());
-        std::map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(stMsgShell.iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(stMsgShell.iFd);
         if(AddIoTimeout(stMsgShell.iFd, stMsgShell.ulSeq, conn_iter->second, 2.5))
         {
             conn_iter->second->dKeepAlive = 10;
@@ -3312,7 +3312,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
                 DestroyConnect(conn_iter);
                 return(false);
             }
-            std::map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
+            std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
             if (codec_iter == m_mapCodec.end())
             {
                 LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
@@ -3333,7 +3333,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
             connect(stMsgShell.iFd, (struct sockaddr*)&stAddr, sizeof(struct sockaddr));
             if(pHttpStep)
             {
-                std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+                std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
                 if (http_step_iter == m_mapHttpAttr.end())
                 {
                     std::list<uint32> listHttpStepSeq;
@@ -3347,7 +3347,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
             }
             else
             {
-                std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+                std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
                 if (http_step_iter == m_mapHttpAttr.end())
                 {
                     std::list<uint32> listHttpStepSeq;
@@ -3410,7 +3410,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         return false;
     }
     redisClusterAsyncContext *acc(NULL);
-    std::map<std::string,redisClusterAsyncContext*>::iterator it = m_mapRedisClusterContext.find(sAddrList);
+    std::unordered_map<std::string,redisClusterAsyncContext*>::iterator it = m_mapRedisClusterContext.find(sAddrList);
     if (it == m_mapRedisClusterContext.end())
     {
         acc = redisClusterAsyncConnect(sAddrList.c_str(),HIRCLUSTER_FLAG_NULL);
@@ -3449,7 +3449,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         {
             LOG4_DEBUG("succeed in sending redis cmd: %s",pRedisStep->GetRedisCmd()->ToString().c_str());
             tagRedisAttr* ptagRedisAttr(NULL);
-            std::map<redisClusterAsyncContext*, tagRedisAttr*>::iterator acc_iter = m_mapRedisClusterAttr.find(acc);
+            std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*>::iterator acc_iter = m_mapRedisClusterAttr.find(acc);
             if (acc_iter == m_mapRedisClusterAttr.end())
             {
                 ptagRedisAttr = new tagRedisAttr();
@@ -3542,7 +3542,7 @@ bool Worker::AutoConnect(const std::string& strIdentify)
     uint32 ulSeq = GetSequence();
     if (CreateFdAttr(iFd, ulSeq))
     {
-        std::map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter =  m_mapFdAttr.find(iFd);
         if(AddIoTimeout(iFd, ulSeq, conn_iter->second, 1.5))
         {
         	tagConnectionAttr* pConn = conn_iter->second;
@@ -3602,7 +3602,7 @@ bool Worker::Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in 
                 tagSockaddr sockaddr;
                 sockaddr.sockaddr = stAddr.sin_addr.s_addr;
                 sockaddr.uiLastTime = GetNowTime();
-                std::map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
+                std::unordered_map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
                 if (m_mapHosts.end() == iter)
                 {
                     m_mapHosts.insert(std::make_pair(strHost,sockaddr));
@@ -3621,7 +3621,7 @@ bool Worker::Host2Addr(const std::string & strHost,int iPort,struct sockaddr_in 
         }
         else
         {
-            std::map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
+            std::unordered_map<std::string,tagSockaddr>::iterator iter = m_mapHosts.find(strHost);
             if (iter == m_mapHosts.end())
             {
                 struct hostent *he = gethostbyname(strHost.c_str());
@@ -3704,7 +3704,7 @@ void Worker::AddInnerFd(const tagMsgShell& stMsgShell)
 bool Worker::GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell)
 {
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         LOG4_DEBUG("no tagMsgShell match %s.", strIdentify.c_str());
@@ -3720,7 +3720,7 @@ bool Worker::GetMsgShell(const std::string& strIdentify, tagMsgShell& stMsgShell
 bool Worker::SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         return(false);
@@ -3741,7 +3741,7 @@ bool Worker::SetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
 
 bool Worker::HadClientData(const tagMsgShell& stMsgShell)
 {
-    std::map<int, tagConnectionAttr*>::iterator conn_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter;
     conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
@@ -3774,7 +3774,7 @@ bool Worker::HadClientData(const tagMsgShell& stMsgShell)
 bool Worker::GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+	std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
 	if (iter == m_mapFdAttr.end())
 	{
 		return(false);
@@ -3799,7 +3799,7 @@ bool Worker::GetClientData(const tagMsgShell& stMsgShell, util::CBuffer* pBuff)
 std::string Worker::GetClientAddr(const tagMsgShell& stMsgShell)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         return("");
@@ -3820,7 +3820,7 @@ std::string Worker::GetClientAddr(const tagMsgShell& stMsgShell)
 std::string Worker::GetConnectIdentify(const tagMsgShell& stMsgShell)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(stMsgShell.iFd);
     if (iter == m_mapFdAttr.end())
     {
         return("");
@@ -3841,7 +3841,7 @@ std::string Worker::GetConnectIdentify(const tagMsgShell& stMsgShell)
 bool Worker::AbandonConnect(const std::string& strIdentify)
 {
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
-    std::map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(strIdentify);
     if (shell_iter == m_mapMsgShell.end())
     {
         LOG4_DEBUG("no tagMsgShell match %s.", strIdentify.c_str());
@@ -3849,7 +3849,7 @@ bool Worker::AbandonConnect(const std::string& strIdentify)
     }
     else
     {
-        std::map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(shell_iter->second.iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator iter = m_mapFdAttr.find(shell_iter->second.iFd);
         if (iter == m_mapFdAttr.end())
         {
             return(false);
@@ -3875,7 +3875,7 @@ bool Worker::AbandonConnect(const std::string& strIdentify)
 bool Worker::ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
     LOG4_TRACE("%s(caller[%u], called[%u])", __FUNCTION__, uiCallerStepSeq, uiCalledStepSeq);
-    std::map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(uiCalledStepSeq);
+    std::unordered_map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(uiCalledStepSeq);
     if (step_iter == m_mapCallbackStep.end())
     {
         LOG4_WARN("step %u is not in the callback list.", uiCalledStepSeq);
@@ -3903,7 +3903,7 @@ bool Worker::ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno,
 bool Worker::ExecStep(uint32 uiStepSeq,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
-    std::map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(uiStepSeq);
+    std::unordered_map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(uiStepSeq);
     if (step_iter == m_mapCallbackStep.end())
     {
         LOG4_WARN("step %u is not in the callback list.", uiStepSeq);
@@ -3938,7 +3938,7 @@ bool Worker::ExecStep(Step* pStep,int iErrno, const std::string& strErrMsg, cons
 		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,pStep->GetSequence());
 	}
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,pStep->GetSequence());
-    std::map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(pStep->GetSequence());
+    std::unordered_map<uint32, Step*>::iterator step_iter = m_mapCallbackStep.find(pStep->GetSequence());
     if (step_iter == m_mapCallbackStep.end())
     {
         LOG4_WARN("step %u is not in the callback list.", pStep->GetSequence());
@@ -3987,7 +3987,7 @@ void Worker::LoadSo(util::CJsonObject& oSoConf,bool boForce)
     int iVersion = 0;
     bool bIsload = false;
     std::string strSoPath;
-    std::map<int, tagSo*>::iterator cmd_iter;
+    std::unordered_map<int, tagSo*>::iterator cmd_iter;
     tagSo* pSo = NULL;
     for (int i = 0; i < oSoConf.GetArraySize(); ++i)
     {
@@ -4049,7 +4049,7 @@ void Worker::ReloadSo(util::CJsonObject& oCmds)
     int iVersion = 0;
     std::string strSoPath;
     std::string strSymbol;
-    std::map<int, tagSo*>::iterator cmd_iter;
+    std::unordered_map<int, tagSo*>::iterator cmd_iter;
     tagSo* pSo = NULL;
     for (int i = 0; i < oCmds.GetArraySize(); ++i)
     {
@@ -4139,7 +4139,7 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
 void Worker::UnloadSoAndDeleteCmd(int iCmd)
 {
     LOG4_TRACE("%s() iCmd:%d", __FUNCTION__,iCmd);
-    std::map<int, tagSo*>::iterator mapSoIt = m_mapSo.find(iCmd);
+    std::unordered_map<int, tagSo*>::iterator mapSoIt = m_mapSo.find(iCmd);
     if (mapSoIt != m_mapSo.end())
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
@@ -4163,7 +4163,7 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
     int iVersion = 0;
     bool bIsload = false;
     std::string strSoPath;
-    std::map<std::string, tagModule*>::iterator module_iter;
+    std::unordered_map<std::string, tagModule*>::iterator module_iter;
     tagModule* pModule = NULL;
     LOG4_TRACE("oModuleConf.GetArraySize() = %d,oModuleConf(%s)", oModuleConf.GetArraySize(),
                     oModuleConf.ToString().c_str());
@@ -4214,7 +4214,7 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
 void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<std::string, tagModule*>::iterator module_iter;
+    std::unordered_map<std::string, tagModule*>::iterator module_iter;
     tagModule* pModule = NULL;
     LOG4_TRACE("oUrlPaths.GetArraySize() = %d,oUrlPaths(%s)", oUrlPaths.GetArraySize(),
                     oUrlPaths.ToString().c_str());
@@ -4303,7 +4303,7 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
 void Worker::UnloadSoAndDeleteModule(const std::string& strModulePath)
 {
     LOG4_TRACE("%s() strModulePath:%s", __FUNCTION__,strModulePath.c_str());
-    std::map<std::string, tagModule*>::iterator mapMoIt = m_mapModule.find(strModulePath);
+    std::unordered_map<std::string, tagModule*>::iterator mapMoIt = m_mapModule.find(strModulePath);
     if (mapMoIt != m_mapModule.end())
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
@@ -4413,7 +4413,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 //{
 //    LOG4_TRACE("%s()", __FUNCTION__);
 //    ev_io* io_watcher = NULL;
-//    std::map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(iFd);
+//    std::unordered_map<int, tagConnectionAttr*>::iterator iter =  m_mapFdAttr.find(iFd);
 //    if (iter != m_mapFdAttr.end())
 //    {
 //        if (NULL == iter->second->pIoWatcher)
@@ -4530,7 +4530,7 @@ bool Worker::AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, e
 tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType)
 {
     LOG4_DEBUG("%s(fd[%d], seq[%u], codec[%d])", __FUNCTION__, iFd, ulSeq, eCodecType);
-    std::map<int, tagConnectionAttr*>::iterator fd_attr_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator fd_attr_iter;
     fd_attr_iter = m_mapFdAttr.find(iFd);
     if (fd_attr_iter == m_mapFdAttr.end())
     {
@@ -4582,7 +4582,7 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
     }
 }
 
-bool Worker::DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice)
+bool Worker::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice)
 {
     if (iter == m_mapFdAttr.end())
     {
@@ -4605,13 +4605,13 @@ bool Worker::DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter, bo
     tagMsgShell stMsgShell;
     stMsgShell.iFd = iter->first;
     stMsgShell.ulSeq = iter->second->ulSeq;
-    std::map<int, uint32>::iterator inner_iter = m_mapInnerFd.find(iter->first);
+    std::unordered_map<int, uint32>::iterator inner_iter = m_mapInnerFd.find(iter->first);
     if (inner_iter != m_mapInnerFd.end())
     {
         LOG4_TRACE("%s() m_mapInnerFd.size() = %u", __FUNCTION__, m_mapInnerFd.size());
         m_mapInnerFd.erase(inner_iter);
     }
-    std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+    std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
     if (http_step_iter != m_mapHttpAttr.end())
     {
         m_mapHttpAttr.erase(http_step_iter);
@@ -4644,7 +4644,7 @@ bool Worker::DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter, bo
 void Worker::MsgShellNotice(const tagMsgShell& stMsgShell, const std::string& strIdentify, util::CBuffer* pClientData)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::map<int32, tagSo*>::iterator cmd_iter;
+    std::unordered_map<int32, tagSo*>::iterator cmd_iter;
     cmd_iter = m_mapSo.find(CMD_REQ_DISCONNECT);
     if (cmd_iter != m_mapSo.end() && cmd_iter->second != NULL)
     {
@@ -4690,7 +4690,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, co
     if (gc_uiCmdReq & oInMsgHead.cmd())    // 新请求
     {
     	uint32 uiCmd = gc_uiCmdBit & oInMsgHead.cmd();
-        std::map<int32, Cmd*>::iterator cmd_iter;
+        std::unordered_map<int32, Cmd*>::iterator cmd_iter;
         cmd_iter = m_mapCmd.find(uiCmd);
         if (cmd_iter != m_mapCmd.end() && cmd_iter->second != NULL)
         {
@@ -4698,7 +4698,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, co
         }
         else
         {
-            std::map<int, tagSo*>::iterator cmd_so_iter;
+            std::unordered_map<int, tagSo*>::iterator cmd_so_iter;
             cmd_so_iter = m_mapSo.find(uiCmd);
             if (cmd_so_iter != m_mapSo.end() && cmd_so_iter->second != NULL)
             {
@@ -4782,7 +4782,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, co
                 }
                 else
                 {
-                    //std::map<int, uint32>::iterator inner_iter = m_mapInnerFd.find(stMsgShell.iFd);
+                    //std::unordered_map<int, uint32>::iterator inner_iter = m_mapInnerFd.find(stMsgShell.iFd);
                     //if (inner_iter != m_mapInnerFd.end())   // 内部服务往客户端发送  if (std::string("0.0.0.0") == strFromIp)
                     snprintf(m_pErrBuff, gc_iErrBuffLen, "no handler to dispose cmd %u!", oInMsgHead.cmd());
                     LOG4_ERROR(m_pErrBuff);
@@ -4801,7 +4801,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead, co
     }
     else    // 回调
     {
-        std::map<uint32, Step*>::iterator step_iter;
+        std::unordered_map<uint32, Step*>::iterator step_iter;
         step_iter = m_mapCallbackStep.find(oInMsgHead.seq());
         if (step_iter != m_mapCallbackStep.end())   // 步骤回调
         {
@@ -4846,7 +4846,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,
     oOutHttpMsg.Clear();
     if (HTTP_REQUEST == oInHttpMsg.type())    // 新请求
     {
-        std::map<std::string, tagModule*>::iterator module_iter;
+        std::unordered_map<std::string, tagModule*>::iterator module_iter;
         module_iter = m_mapModule.find(oInHttpMsg.path());
         if (module_iter == m_mapModule.end())
         {
@@ -4872,7 +4872,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,
     }
     else
     {
-        std::map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+        std::unordered_map<int32, std::list<uint32> >::iterator http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
         if (http_step_iter == m_mapHttpAttr.end())
         {
             LOG4_ERROR("no callback for http response from %s!", oInHttpMsg.url().c_str());
@@ -4881,7 +4881,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,
         {
             if (http_step_iter->second.begin() != http_step_iter->second.end())
             {
-                std::map<uint32, Step*>::iterator step_iter;
+                std::unordered_map<uint32, Step*>::iterator step_iter;
                 step_iter = m_mapCallbackStep.find(*http_step_iter->second.begin());
                 if (step_iter != m_mapCallbackStep.end() && step_iter->second != NULL)   // 步骤回调
                 {
@@ -4912,7 +4912,7 @@ bool Worker::Dispose(const tagMsgShell& stMsgShell,
 
 bool Worker::Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet)
 {
-	std::map<uint32, Step*>::iterator step_iter;
+	std::unordered_map<uint32, Step*>::iterator step_iter;
 	step_iter = m_mapCallbackStep.find(((CustomMysqlHandler*)task->handler)->m_uiMysqlStepSeq);
 	if (step_iter != m_mapCallbackStep.end() && step_iter->second != NULL)   // 步骤回调
 	{

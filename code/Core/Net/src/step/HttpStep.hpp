@@ -32,7 +32,7 @@ public://子类通过构造函数给父类传参后，使用父类的成员,包�
     virtual E_CMD_STATUS Callback(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data = NULL){return(STATUS_CMD_COMPLETED);}
     //@brief 步骤超时回调
     virtual E_CMD_STATUS Timeout() = 0;
-    bool HttpPost(const std::string& strUrl,const std::string& strBody, const std::map<std::string, std::string>& mapHeaders);
+    bool HttpPost(const std::string& strUrl,const std::string& strBody, const std::unordered_map<std::string, std::string>& mapHeaders);
     bool HttpPost(const std::string& strUrl,const std::string& strBody);
     bool HttpGet(const std::string& strUrl);
     bool SendToClient(const std::string &strBody,int nCode = 200)

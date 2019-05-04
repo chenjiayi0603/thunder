@@ -54,7 +54,7 @@ private:
     http_parser_settings m_parser_setting;
     http_parser m_parser;
     std::string m_strHttpString;
-    std::map<std::string, std::string> m_mapAddingHttpHeader;       ///< encode前添加的http头，encode之后要清空
+    std::unordered_map<std::string, std::string> m_mapAddingHttpHeader;       ///< encode前添加的http头，encode之后要清空
 };
 
 } /* namespace net */

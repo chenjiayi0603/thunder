@@ -18,37 +18,42 @@
 							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.PE" id="cdt.managedbuild.target.gnu.platform.mingw.base.1220980528" name="Debug Platform" osList="win32" superClass="cdt.managedbuild.target.gnu.platform.mingw.base"/>
 							<builder buildPath="${workspace_loc:/analysisServer}/Debug" id="org.eclipse.cdt.build.core.internal.builder.1375547738" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CDT Internal Builder" superClass="org.eclipse.cdt.build.core.internal.builder"/>
 							<tool id="cdt.managedbuild.tool.gnu.assembler.mingw.base.82243543" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.mingw.base">
+								<option id="gnu.both.asm.option.include.paths.150557444" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\backward&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\bits&quot;"/>
+								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1845731266" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.archiver.mingw.base.570062570" name="GCC Archiver" superClass="cdt.managedbuild.tool.gnu.archiver.mingw.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.mingw.base.809758223" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.mingw.base">
-								<option id="gnu.cpp.compiler.option.include.paths.1963324478" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5\mingw32&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5\backward&quot;"/>
+								<option id="gnu.cpp.compiler.option.include.paths.1963324478" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\backward&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\std&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr1&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr2&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include&quot;"/>
 								</option>
-								<option id="gnu.cpp.compiler.option.optimization.level.1282716885" name="Optimization Level" superClass="gnu.cpp.compiler.option.optimization.level" value="gnu.cpp.compiler.optimization.level.none" valueType="enumerated"/>
-								<option id="gnu.cpp.compiler.option.debugging.level.1734727729" name="Debug Level" superClass="gnu.cpp.compiler.option.debugging.level" value="gnu.cpp.compiler.debugging.level.max" valueType="enumerated"/>
-								<option id="gnu.cpp.compiler.option.include.files.2112172157" name="Include files (-include)" superClass="gnu.cpp.compiler.option.include.files"/>
-								<option id="gnu.cpp.compiler.option.dialect.std.373454909" name="Language standard" superClass="gnu.cpp.compiler.option.dialect.std" value="gnu.cpp.compiler.dialect.c++11" valueType="enumerated"/>
+								<option id="gnu.cpp.compiler.option.optimization.level.1282716885" name="Optimization Level" superClass="gnu.cpp.compiler.option.optimization.level" useByScannerDiscovery="false" value="gnu.cpp.compiler.optimization.level.none" valueType="enumerated"/>
+								<option id="gnu.cpp.compiler.option.debugging.level.1734727729" name="Debug Level" superClass="gnu.cpp.compiler.option.debugging.level" useByScannerDiscovery="false" value="gnu.cpp.compiler.debugging.level.max" valueType="enumerated"/>
+								<option id="gnu.cpp.compiler.option.include.files.2112172157" name="Include files (-include)" superClass="gnu.cpp.compiler.option.include.files" useByScannerDiscovery="false"/>
+								<option id="gnu.cpp.compiler.option.dialect.std.373454909" name="Language standard" superClass="gnu.cpp.compiler.option.dialect.std" useByScannerDiscovery="true" value="gnu.cpp.compiler.dialect.c++11" valueType="enumerated"/>
+								<option id="gnu.cpp.compiler.option.preprocessor.def.2115656332" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="_GLIBCXX_VISIBILITY(default)"/>
+								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.503299652" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.c.compiler.mingw.base.693842761" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.mingw.base">
-								<option defaultValue="gnu.c.optimization.level.none" id="gnu.c.compiler.option.optimization.level.617792722" name="Optimization Level" superClass="gnu.c.compiler.option.optimization.level" valueType="enumerated"/>
-								<option id="gnu.c.compiler.option.debugging.level.1598074160" name="Debug Level" superClass="gnu.c.compiler.option.debugging.level" value="gnu.c.debugging.level.max" valueType="enumerated"/>
-								<option id="gnu.c.compiler.option.dialect.std.972105191" name="Language standard" superClass="gnu.c.compiler.option.dialect.std" value="gnu.c.compiler.dialect.default" valueType="enumerated"/>
-								<option id="gnu.c.compiler.option.include.paths.1277778667" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2\libstdc++-v3\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2\libstdc++-v3\include\std&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2\libstdc++-v3\include\tr1&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2\libstdc++-v3\include\c&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;D:\gcc-4.8.2\libstdc++-v3\include\backward&quot;"/>
+								<option defaultValue="gnu.c.optimization.level.none" id="gnu.c.compiler.option.optimization.level.617792722" name="Optimization Level" superClass="gnu.c.compiler.option.optimization.level" useByScannerDiscovery="false" valueType="enumerated"/>
+								<option id="gnu.c.compiler.option.debugging.level.1598074160" name="Debug Level" superClass="gnu.c.compiler.option.debugging.level" useByScannerDiscovery="false" value="gnu.c.debugging.level.max" valueType="enumerated"/>
+								<option id="gnu.c.compiler.option.dialect.std.972105191" name="Language standard" superClass="gnu.c.compiler.option.dialect.std" useByScannerDiscovery="true" value="gnu.c.compiler.dialect.default" valueType="enumerated"/>
+								<option id="gnu.c.compiler.option.include.paths.1277778667" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr2&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr1&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\backward&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.909984034" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>

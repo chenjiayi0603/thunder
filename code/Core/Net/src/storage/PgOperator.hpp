@@ -238,8 +238,8 @@ struct PgUpsertOper
 		return counter;
 	}
 	const std::string strTable;
-	std::map<std::string,FieldValue> mapFields;
-	std::map<std::string,std::vector<FieldValue>> mapBulkFields;//bulk值支持pg批量插入一般类型数据(非hll)
+	std::unordered_map<std::string,FieldValue> mapFields;
+	std::unordered_map<std::string,std::vector<FieldValue>> mapBulkFields;//bulk值支持pg批量插入一般类型数据(非hll)
 	net::MemOperator *oMemOperator;
 	net::DbOperator *oDbOperator;
 	std::string strSql;

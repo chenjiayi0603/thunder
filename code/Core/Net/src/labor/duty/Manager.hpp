@@ -124,7 +124,7 @@ public:
     virtual void AddInnerFd(const tagMsgShell& stMsgShell){};
     void SetWorkerLoad(int iPid, util::CJsonObject& oJsonLoad);
     void AddWorkerLoad(int iPid, int iLoad = 1);
-    const std::map<int, tagWorkerAttr>& GetWorkerAttr() const;
+    const std::unordered_map<int, tagWorkerAttr>& GetWorkerAttr() const;
 protected:
     //初始化
     bool LoadConf();
@@ -145,7 +145,7 @@ protected:
 	bool DelEvents(ev_io** io_watcher_addr);
     //连接
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq);
-    bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter);
+    bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter);
     //子进程管理
     std::pair<int, int> GetMinLoadWorkerDataFd();
     bool CheckWorker();
@@ -200,15 +200,15 @@ private:
     ev_timer* m_pPeriodicTaskWatcher;              ///< 周期任务定时器
     int m_iWaitToExitCounter;                   ///< 优雅等待关闭任务定时器次数
 
-    std::map<int, tagWorkerAttr> m_mapWorker;       ///< 业务逻辑工作进程及进程属性，key为pid
-    std::map<int, int> m_mapWorkerRestartNum;       ///< 进程被重启次数，key为WorkerIdx
-    std::map<int, int> m_mapWorkerFdPid;            ///< 工作进程通信FD对应的进程号
-    std::map<std::string, tagMsgShell> m_mapCenterMsgShell; ///< 到center服务器的连接
+    std::unordered_map<int, tagWorkerAttr> m_mapWorker;       ///< 业务逻辑工作进程及进程属性，key为pid
+    std::unordered_map<int, int> m_mapWorkerRestartNum;       ///< 进程被重启次数，key为WorkerIdx
+    std::unordered_map<int, int> m_mapWorkerFdPid;            ///< 工作进程通信FD对应的进程号
+    std::unordered_map<std::string, tagMsgShell> m_mapCenterMsgShell; ///< 到center服务器的连接
 
-    std::map<int, tagConnectionAttr*> m_mapFdAttr;  ///< 连接的文件描述符属性
-    std::map<uint32, int> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
-    std::map<in_addr_t, uint32> m_mapClientConnFrequency; ///< 客户端连接频率 (unsigned long,uint32)
-    std::map<int32, Cmd*> m_mapCmd;
+    std::unordered_map<int, tagConnectionAttr*> m_mapFdAttr;  ///< 连接的文件描述符属性
+    std::unordered_map<uint32, int> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
+    std::unordered_map<in_addr_t, uint32> m_mapClientConnFrequency; ///< 客户端连接频率 (unsigned long,uint32)
+    std::unordered_map<int32, Cmd*> m_mapCmd;
 
     int nPid;
 };

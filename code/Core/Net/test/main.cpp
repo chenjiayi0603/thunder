@@ -54,13 +54,13 @@ struct tagIoWatcherData
 unsigned int g_uiSeq = 0;
 struct ev_loop *m_loop = EV_DEFAULT;
 log4cplus::Logger m_oLogger;
-std::map<int, tagConnectionAttr*> g_mapFdAttr;
-std::map<std::string, tagMsgShell> g_mapMsgShell;            // key为Identify
+std::unordered_map<int, tagConnectionAttr*> g_mapFdAttr;
+std::unordered_map<std::string, tagMsgShell> g_mapMsgShell;            // key为Identify
 StarshipCodec* g_pCodec;
 
 bool InitLogger(const std::string& strLogFile);
 tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType);
-bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter);
+bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter);
 bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
 bool AddIoReadEvent(int iFd);
 bool AddIoWriteEvent(int iFd);
@@ -159,7 +159,7 @@ bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const Msg
     g_uiSeq++;
     if (CreateFdAttr(iFd, g_uiSeq, util::CODEC_PRIVATE))
     {
-        std::map<int, tagConnectionAttr*>::iterator conn_iter =  g_mapFdAttr.find(iFd);
+        std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter =  g_mapFdAttr.find(iFd);
         if (!AddIoReadEvent(iFd))
         {
             return(false);
@@ -182,7 +182,7 @@ bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const Msg
 tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType)
 {
     LOG4_DEBUG("%s(iFd %d, seq %lu, codec %d)", __FUNCTION__, iFd, ulSeq, eCodecType);
-    std::map<int, tagConnectionAttr*>::iterator fd_attr_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator fd_attr_iter;
     fd_attr_iter = g_mapFdAttr.find(iFd);
     if (fd_attr_iter == g_mapFdAttr.end())
     {
@@ -226,7 +226,7 @@ tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodec
     }
 }
 
-bool DestroyConnect(std::map<int, tagConnectionAttr*>::iterator iter)
+bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     if (iter == g_mapFdAttr.end())
@@ -270,7 +270,7 @@ bool AddIoReadEvent(int iFd)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
-    std::map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
     {
         if (NULL == iter->second->pIoWatcher)
@@ -310,7 +310,7 @@ bool AddIoWriteEvent(int iFd)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
-    std::map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter =  g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
     {
         if (NULL == iter->second->pIoWatcher)
@@ -350,7 +350,7 @@ bool RemoveIoWriteEvent(int iFd)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     ev_io* io_watcher = NULL;
-    std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(iFd);
     if (iter != g_mapFdAttr.end())
     {
         if (NULL != iter->second->pIoWatcher)
@@ -390,7 +390,7 @@ bool DelEvents(ev_io** io_watcher_addr)
 
 bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
 {
-    std::map<std::string, tagMsgShell>::iterator iter = g_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator iter = g_mapMsgShell.find(strIdentify);
     if (iter == g_mapMsgShell.end())
     {
         g_mapMsgShell.insert(std::pair<std::string, tagMsgShell>(strIdentify, stMsgShell));
@@ -405,7 +405,7 @@ bool AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMsgShell)
 
 void DelMsgShell(const std::string& strIdentify)
 {
-    std::map<std::string, tagMsgShell>::iterator shell_iter = g_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = g_mapMsgShell.find(strIdentify);
     if (shell_iter == g_mapMsgShell.end())
     {
         ;
@@ -419,7 +419,7 @@ void DelMsgShell(const std::string& strIdentify)
 bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
-    std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (iter == g_mapFdAttr.end())
     {
         LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -467,7 +467,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
     LOG4_DEBUG("%s()", __FUNCTION__);
     int iErrno = 0;
     int iReadLen = 0;
-    std::map<int, tagConnectionAttr*>::iterator conn_iter;
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter;
     conn_iter = g_mapFdAttr.find(pData->iFd);
     if (conn_iter == g_mapFdAttr.end())
     {
@@ -533,7 +533,7 @@ void IoRead(struct ev_loop* loop, struct ev_io* watcher, int revents)
                             conn_iter->second->ulForeignSeq = oInMsgHead.seq();
                         }
                         bDisposeResult = Dispose(strClientIp, stMsgShell, oInMsgHead, oInMsgBody, oOutMsgHead, oOutMsgBody); // 处理过程有可能会断开连接，所以下面要做连接是否存在检查
-                        std::map<int, tagConnectionAttr*>::iterator dispose_conn_iter = g_mapFdAttr.find(pData->iFd);
+                        std::unordered_map<int, tagConnectionAttr*>::iterator dispose_conn_iter = g_mapFdAttr.find(pData->iFd);
                         if (dispose_conn_iter == g_mapFdAttr.end())     // 连接已断开，资源已回收
                         {
                             return;
@@ -597,7 +597,7 @@ void IoWrite(struct ev_loop* loop, struct ev_io* watcher, int revents)
 {
     LOG4_DEBUG("%s()", __FUNCTION__);
     tagIoWatcherData* pData = (tagIoWatcherData*)watcher->data;
-    std::map<int, tagConnectionAttr*>::iterator attr_iter =  g_mapFdAttr.find(pData->iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter =  g_mapFdAttr.find(pData->iFd);
     if (attr_iter == g_mapFdAttr.end())
     {
         return;
@@ -671,7 +671,7 @@ void IoError(struct ev_loop* loop, struct ev_io* watcher, int revents)
 bool SendTo(const tagMsgShell& stMsgShell)
 {
     LOG4_DEBUG("%s(fd %d, seq %lu) pWaitForSendBuff", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
-    std::map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (iter == g_mapFdAttr.end())
     {
         LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -732,7 +732,7 @@ bool SendTo(const tagMsgShell& stMsgShell)
 bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_DEBUG("%s(fd %d, seq %lu)", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
-    std::map<int, tagConnectionAttr*>::iterator conn_iter = g_mapFdAttr.find(stMsgShell.iFd);
+    std::unordered_map<int, tagConnectionAttr*>::iterator conn_iter = g_mapFdAttr.find(stMsgShell.iFd);
     if (conn_iter == g_mapFdAttr.end())
     {
         LOG4_ERROR( "no fd %d found in m_mapFdAttr", stMsgShell.iFd);
@@ -806,7 +806,7 @@ bool SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, const MsgBod
 bool SendTo(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_DEBUG("%s(identify: %s)", __FUNCTION__, strIdentify.c_str());
-    std::map<std::string, tagMsgShell>::iterator shell_iter = g_mapMsgShell.find(strIdentify);
+    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = g_mapMsgShell.find(strIdentify);
     if (shell_iter == g_mapMsgShell.end())
     {
         LOG4_DEBUG("no MsgShell match %s.", strIdentify.c_str());

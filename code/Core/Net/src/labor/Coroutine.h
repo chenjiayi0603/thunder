@@ -2,6 +2,7 @@
 #define SRC_Coroutine_HPP_
 #include <set>
 #include <map>
+#include <unordered_map>
 #include "coroutine/coroutine.h"
 
 namespace net
@@ -51,7 +52,7 @@ public:
 	int CoroutineRunning();//获取正在进行的协程的id
 private:
 	tagCoroutineSchedule m_CoroutineSchedule;
-	std::map<int,tagCoroutineArg*> m_CoroutineScheduleArgs;
+	std::unordered_map<int,tagCoroutineArg*> m_CoroutineScheduleArgs;
 };
 
 }
