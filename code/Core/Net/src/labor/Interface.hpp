@@ -44,6 +44,7 @@ class HttpStep;
 class StepState;
 class Session;
 class Labor;
+class StepParam;
 
 //访问存储节点回调（Proxy\PgAgent等）
 typedef void (*SessionCallbackMem)(const DataMem::MemRsp &oRsp,net::Session*pSession);
@@ -51,6 +52,7 @@ typedef void (*StepCallbackMem)(const DataMem::MemRsp &oRsp,net::Step*pStep);
 //访问一般节点回调
 typedef void (*SessionCallback)(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data,net::Session*pSession);
 typedef void (*StepCallback)(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data,net::Step*pStep);
+
 /**
  * @brief 获取节点ID
  * @return 节点ID
@@ -116,6 +118,8 @@ bool SendToCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,ne
 bool SendToModCallback(Session* pSession,uint32 uiCmd,const std::string &strBody,net::SessionCallback callback,int64 uiModFactor,const net::tagMsgShell& stMsgShell);
 
 bool SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = net::CMD_REQ_STORATE);
+bool SendToCallback(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,StepParam *data,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = net::CMD_REQ_STORATE);
+bool SendToCallback(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = net::CMD_REQ_STORATE);
 bool SendToModCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,int64 uiModFactor,const std::string &nodeType=PROXY_NODE,uint32 uiCmd = net::CMD_REQ_STORATE);
 bool SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeType);
 bool SendToModCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,int64 uiModFactor,const std::string &nodeType);

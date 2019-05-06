@@ -46,6 +46,7 @@ public:
     Step(const tagMsgShell& stReqMsgShell, Step* pNextStep = NULL);
     Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, Step* pNextStep = NULL);
     Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody,Step* pNextStep = NULL);
+    void Init();
     virtual ~Step();
     /**
      * @brief 提交，发出
@@ -147,8 +148,15 @@ public:
     /*
      * 发送客户端封装(只有构造函数传入shell使用)
      * */
-    bool SendToClient(const std::string &strBody){return net::SendToClient(m_stReqMsgShell,m_oReqMsgHead,strBody);}
-    bool SendToClient(HttpMsg &oInHttpMsg,const std::string &strBody,int iCode){return net::SendToClient(m_stReqMsgShell,oInHttpMsg,strBody,iCode);}
+    bool SendToClient(HttpMsg &oInHttpMsg,const std::string &strBody,int iCode)
+    {
+    	return net::SendToClient(m_stReqMsgShell,oInHttpMsg,strBody,iCode);
+    }
+    bool SendToClient(const std::string &strBody,int nCode = 200)
+	{
+		if (m_oReqMsgHead.cmd() == 0) return net::SendToClient(m_stReqMsgShell,m_oInHttpMsg,strBody,nCode);
+		else return net::SendToClient(m_stReqMsgShell,m_oReqMsgHead,strBody);
+	}
 public:
 	/*
 	 * 步骤管理
@@ -183,6 +191,9 @@ public:  // 请求端的上下文信息，通过Step构造函数初始化，若�
     tagMsgShell m_stReqMsgShell;
     MsgHead m_oReqMsgHead;
     MsgBody m_oReqMsgBody;
+    HttpMsg m_oInHttpMsg;//HttpStep使用
+    Step* DelayDel(){m_boDelayDel = true;return this;}//在回调函数中需要再次发送回调函数，则延迟删除
+    bool m_boDelayDel;//DataStep使用
 private:
     bool m_bRegistered;
     uint32 m_ulSequence;
@@ -196,8 +207,8 @@ private:
 
     friend class Worker;
     friend class DataStep;
-	net::uint32 m_uiUserId;
-	net::uint32 m_uiCmd;
+	uint32 m_uiUserId;
+	uint32 m_uiCmd;
 };
 
 } /* namespace net */

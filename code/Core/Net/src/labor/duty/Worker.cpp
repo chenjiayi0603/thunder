@@ -2535,6 +2535,10 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
 	}
+	else
+	{
+		pUpperStep->DelayDel();//已经注册的需要延迟删除
+	}
 	StepNode* pStep = new StepNode(pMemOper);
     if (pStep == NULL)
     {
@@ -2601,6 +2605,10 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
+	}
+	else
+	{
+		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
 	StepNode* pStep = new StepNode(strBody);
     if (pStep == NULL)
@@ -2670,6 +2678,10 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
+	}
+	else
+	{
+		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
 	StepNode* pStep = new StepNode(strBody);
     if (pStep == NULL)

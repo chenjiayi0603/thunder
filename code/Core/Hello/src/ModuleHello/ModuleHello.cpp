@@ -22,7 +22,7 @@ MUDULE_CREATE(core::ModuleHello);
 namespace core
 {
 
-ModuleHello::ModuleHello():boTests(true)
+ModuleHello::ModuleHello():boTests(false)
 {
 }
 
@@ -354,24 +354,11 @@ void ModuleHello::InsertPostgres(const net::tagMsgShell& stMsgShell,const HttpMs
 	};
 	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 	{
-		net::DataStep* pDataStep = (net::DataStep*)pStep;
-		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
-		if (oMemRsp.err_no() == 0)
-		{
-			LOG4_TRACE("callback ok %s",oMemRsp.DebugString().c_str());
-			util::CJsonObject oRsp;
-			oRsp.Add("code", 0);
-			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
-		}
-		else
-		{
-			LOG4_TRACE("callback failed %s",oMemRsp.DebugString().c_str());
-			util::CJsonObject oRsp;
-			oRsp.Add("code", oMemRsp.err_no());
-			oRsp.Add("msg", "failed");
-			pDataStep->SendToClient(oRsp.ToString());
-		}
+		LOG4_TRACE("callback %s",oMemRsp.DebugString().c_str());
+		util::CJsonObject oRsp;
+		oRsp.Add("code", oMemRsp.err_no());
+		oRsp.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+		pStep->SendToClient(oRsp.ToString());
 	};
 	net::DbOperator oDbOperator(0,PG_TB_TEST,DataMem::MemOperate::DbOperate::INSERT);
 	oDbOperator.AddDbField("name",sValue);
@@ -389,38 +376,23 @@ void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,const HttpMs
     };
 	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		net::DataStep* pDataStep = (net::DataStep*)pStep;
 		LOG4_TRACE("SetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
 			auto GetValueFromPostgres_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 			{
-				net::DataStep* pDataStep = (net::DataStep*)pStep;
-				LOG4_TRACE("GetValueFromPostgres_callback %s",oMemRsp.err_msg().c_str());
-				if (oMemRsp.err_no() == 0)
-				{
-					LOG4_TRACE("GetValueFromRedis_callback ok %s",oMemRsp.DebugString().c_str());
-					util::CJsonObject oRsp;
-					oRsp.Add("code", 0);
-					oRsp.Add("msg", "ok");
-					pDataStep->SendToClient(oRsp.ToString());
-				}
-				else
-				{
-					LOG4_TRACE("GetValueFromRedis_callback failed %s",oMemRsp.DebugString().c_str());
-					util::CJsonObject oRsp;
-					oRsp.Add("code", oMemRsp.err_no());
-					oRsp.Add("msg", "failed");
-					pDataStep->SendToClient(oRsp.ToString());
-				}
+				LOG4_TRACE("GetValueFromPostgres_callback %s",oMemRsp.DebugString().c_str());
+				util::CJsonObject oRsp;
+				oRsp.Add("code", oMemRsp.err_no());
+				oRsp.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+				pStep->SendToClient(oRsp.ToString());
 			};
 			const std::string &node = ((DataStepCustom*) ((net::DataStep*)pStep)->GetData())->nodeType;
 			net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::SELECT);
 			oDbOperator.AddDbField("id");
 			oDbOperator.AddDbField("name");
 			LOG4_TRACE("%s() GetValueFromPostgres_callback",__FUNCTION__);
-			pDataStep->DelayDel();
-			if (!net::SendToCallback(pDataStep,oDbOperator.MakeMemOperate(),GetValueFromPostgres_callback,node))
+			if (!net::SendToCallback(pStep,oDbOperator.MakeMemOperate(),GetValueFromPostgres_callback,node))
 			{
 				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 			}
@@ -430,7 +402,7 @@ void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,const HttpMs
 	oDbOperator.AddDbField("name",sValue);
 	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
 	LOG4_TRACE("%s() SetGetPostgres %s",__FUNCTION__,sValue.c_str());
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
@@ -465,7 +437,7 @@ void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	oDbOperator.AddDbField("id");
 	oDbOperator.AddDbField("name");
 	LOG4_TRACE("%s() GetPostgres",__FUNCTION__);
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom()),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
@@ -478,7 +450,6 @@ void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	};
 	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step* pStep)
 	{
-		net::DataStep* pDataStep = (net::DataStep*)pStep;
 		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
 		if (oMemRsp.err_no() == 0)
 		{
@@ -486,7 +457,7 @@ void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 		else
 		{
@@ -494,14 +465,14 @@ void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 			util::CJsonObject oRsp;
 			oRsp.Add("code", oMemRsp.err_no());
 			oRsp.Add("msg", "failed");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::UPDATE);
 	oDbOperator.AddDbField("name",sValue);
 	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
 	LOG4_DEBUG("%s() SetPostgres %s",__FUNCTION__,sValue.c_str());
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 
@@ -539,7 +510,7 @@ void ModuleHello::AddUpPostgres(const net::tagMsgShell& stMsgShell,const HttpMsg
 	snprintf(strSql,sizeof(strSql),"INSERT INTO tb_sum(id,name,sum) VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",id,sName.c_str(),sum,sum);
 	oDbOperator.AddDbField(strSql);
 	LOG4_DEBUG("%s() AddUpPostgres %s",__FUNCTION__,sName.c_str());
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType),oDbOperator.MakeMemOperate(),callback,nodeType);
 }
 
 /*
@@ -566,7 +537,6 @@ void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,const Htt
     };
 	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
-		net::DataStep* pDataStep = (net::DataStep*)pStep;
 		LOG4_TRACE("SetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
@@ -575,12 +545,11 @@ void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,const Htt
 				LOG4_TRACE("GetValueFromRedis %s",oRsp.err_msg().c_str());
 				if (oRsp.err_no() == 0)
 				{
-					net::DataStep* pDataStep = (net::DataStep*)pStep;
 					LOG4_TRACE("GetValueFromRedis_callback ok %s",oRsp.DebugString().c_str());
 					util::CJsonObject oRsp;
 					oRsp.Add("code", 0);
 					oRsp.Add("msg", "ok");
-					pDataStep->SendToClient(oRsp.ToString());
+					pStep->SendToClient(oRsp.ToString());
 				}
 			};
 			const std::string &node = ((DataStepCustom*) ((net::DataStep*)pStep)->GetData())->nodeType;
@@ -588,8 +557,7 @@ void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,const Htt
 			snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 			net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
 			LOG4_TRACE("%s() GetValueFromRedis",__FUNCTION__);
-			pDataStep->DelayDel();
-			if (!net::SendToCallback(pDataStep,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,node))
+			if (!net::SendToCallback(pStep,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,node))
 			{
 				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 			}
@@ -600,7 +568,7 @@ void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,const Htt
 	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
 	oRedisOperator.AddRedisField("",sValue);
 	LOG4_DEBUG("%s() SetValueFromRedis %s",__FUNCTION__,sValue.c_str());
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oRedisOperator.MakeMemOperate(),callback,nodeType);
+	net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType),oRedisOperator.MakeMemOperate(),callback,nodeType);
 }
 /*
 ssdb write
@@ -617,20 +585,18 @@ Failed transactions:               0
 Longest transaction:            0.08
 Shortest transaction:           0.01
  * */
-void ModuleHello::OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,
-        const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+void ModuleHello::OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
 	auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
 		LOG4_TRACE("OnlySetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("OnlySetValueFromRedis ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisKey[64];
@@ -638,8 +604,7 @@ void ModuleHello::OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,
 	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
 	oRedisOperator.AddRedisField("",sValue);
 	LOG4_DEBUG("%s() OnlySetValueFromRedis %s",__FUNCTION__,sValue.c_str());
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			SetValueFromRedis_callback,nodeType))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),SetValueFromRedis_callback,nodeType))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -660,25 +625,23 @@ Shortest transaction:           0.00
  * */
 void ModuleHello::OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-	auto SetValueFromRedis_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
+	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
 		LOG4_TRACE("OnlyGetValueFromRedis %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("OnlyGetValueFromRedis ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisKey[64];
 	snprintf(sRedisKey,sizeof(sRedisKey),TEST_SSDB_KEY);
 	net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
 	LOG4_DEBUG("%s() OnlyGetValueFromRedis",__FUNCTION__);
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			SetValueFromRedis_callback,nodeType))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,nodeType))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -704,12 +667,11 @@ void ModuleHello::RedisearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg
 		LOG4_TRACE("RedisearchAdd_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisWriteCmd[128];
@@ -721,8 +683,7 @@ void ModuleHello::RedisearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg
 	oRedisOperator.AddRedisField("FIELDS","txt");
 	oRedisOperator.AddRedisField("",sValue);
 
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			RedisearchAdd_callback))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),RedisearchAdd_callback))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -757,20 +718,18 @@ void ModuleHello::RedisearchSearch(const net::tagMsgShell& stMsgShell,const Http
 		LOG4_TRACE("RedisearchSearch_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("RedisearchSearch_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisReadCmd[128];
 	snprintf(sRedisReadCmd,sizeof(sRedisReadCmd),"FT.SEARCH");
 	net::RedisOperator oRedisOperator(0, "IDX","",sRedisReadCmd);
 	oRedisOperator.AddRedisField("",sValue);
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			RedisearchSearch_callback))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),RedisearchSearch_callback))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -812,17 +771,16 @@ from: 1
  * */
 void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue)
 {
-	auto RedisGEOADD_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
+	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
 		LOG4_TRACE("RedisGEOADD_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("RedisGEOADD_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisCmd[128];
@@ -831,8 +789,7 @@ void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& 
 	oRedisOperator.AddRedisField("",113.2278442);
 	oRedisOperator.AddRedisField("",23.1255978);
 	oRedisOperator.AddRedisField("",sValue);
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			RedisGEOADD_callback))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -852,17 +809,16 @@ void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& 
  * */
 void ModuleHello::RedisGEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue)
 {
-	auto RedisGEORADIUSBYMEMBER_callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
+	auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
 	{
 		LOG4_TRACE("RedisearchAdd_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("RedisearchAdd_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	char sRedisCmd[128];
@@ -871,9 +827,7 @@ void ModuleHello::RedisGEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,cons
 	oRedisOperator.AddRedisField("",sValue);//Shenzhen
 	oRedisOperator.AddRedisField("200","km");
 	oRedisOperator.AddRedisField("","withdist");//返回距离
-
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),
-			RedisGEORADIUSBYMEMBER_callback))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}
@@ -933,19 +887,18 @@ void ModuleHello::RedisbitmapSETBIT(const net::tagMsgShell& stMsgShell,const Htt
 		LOG4_TRACE("RedisbitmapSETBIT %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("RedisbitmapSETBIT ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"SETBIT");
 	oRedisOperator.AddRedisField("",sValue);//10001
 	oRedisOperator.AddRedisField("",1);
 	LOG4_DEBUG("%s() RedisbitmapSETBIT %s",__FUNCTION__,sValue.c_str());
-	net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+	net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 //GETBIT 4:4:SETBIT 10001
 void ModuleHello::RedisbitmapGETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
@@ -955,18 +908,17 @@ void ModuleHello::RedisbitmapGETBIT(const net::tagMsgShell& stMsgShell,const Htt
         LOG4_TRACE("RedisbitmapGETBIT %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
-            net::DataStep* pDataStep = (net::DataStep*)pStep;
             LOG4_TRACE("RedisbitmapGETBIT ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
+            pStep->SendToClient(oRsp.ToString());
         }
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"GETBIT");
     oRedisOperator.AddRedisField("",sValue);//10001
     LOG4_DEBUG("%s() RedisbitmapGETBIT %s",__FUNCTION__,sValue.c_str());
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 //BITPOS 4:4:SETBIT 1
 void ModuleHello::RedisbitmapBITPOS(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
@@ -976,18 +928,17 @@ void ModuleHello::RedisbitmapBITPOS(const net::tagMsgShell& stMsgShell,const Htt
         LOG4_TRACE("RedisbitmapBITPOS %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
-            net::DataStep* pDataStep = (net::DataStep*)pStep;
             LOG4_TRACE("RedisbitmapBITPOS ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
+            pStep->SendToClient(oRsp.ToString());
         }
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"BITPOS");
     oRedisOperator.AddRedisField("",1);//1
     LOG4_DEBUG("%s() RedisbitmapBITPOS %s",__FUNCTION__,sValue.c_str());
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 /*
 获取2011年11月1日活跃用户列表
@@ -1061,7 +1012,7 @@ void ModuleHello::RedisbitmapGET(const net::tagMsgShell& stMsgShell,const HttpMs
     };
     net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"","GET");
     LOG4_DEBUG("%s() RedisbitmapGET",__FUNCTION__);
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,
@@ -1081,7 +1032,6 @@ void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const Ht
     };
     auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
     {
-        net::DataStep* pDataStep = (net::DataStep*)pStep;
         LOG4_TRACE("RedisbitmapGET %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
@@ -1090,42 +1040,39 @@ void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,const Ht
             {
                 const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
                 LOG4_TRACE("RedisbitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
-                ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData1);
+                ModuleHello::String2UserData(col_value,((DataStepCustom*) pStep->GetData())->usersData1);
 
                 auto callback = [] (const DataMem::MemRsp &oRsp,net::Step* pStep)
                 {
-                    net::DataStep* pDataStep = (net::DataStep*)pStep;
                     LOG4_TRACE("RedisbitmapGET %s",oRsp.err_msg().c_str());
                     if (oRsp.err_no() == 0)
                     {
-                        net::DataStep* pDataStep = (net::DataStep*)pStep;
                         LOG4_TRACE("RedisbitmapGET ok %s",oRsp.DebugString().c_str());
                         if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
                         {
+                        	DataStepCustom* pDataStepCustom = (DataStepCustom*)pStep->GetData();
                             const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                            ModuleHello::String2UserData(col_value,((DataStepCustom*) pDataStep->GetData())->usersData2);
-                            const std::vector<uint32>& usersData1 = ((DataStepCustom*) pDataStep->GetData())->usersData1;
-                            const std::vector<uint32>& usersData2 = ((DataStepCustom*) pDataStep->GetData())->usersData2;
+                            ModuleHello::String2UserData(col_value,pDataStepCustom->usersData2);
+                            const std::vector<uint32>& usersData1 = pDataStepCustom->usersData1;
+                            const std::vector<uint32>& usersData2 = pDataStepCustom->usersData2;
                             ModuleHello::OPUserData(usersData1,usersData2);
                             util::CJsonObject oRsp;
                             oRsp.Add("code", 0);
                             oRsp.Add("msg", "ok");
-                            pDataStep->SendToClient(oRsp.ToString());
+                            pStep->SendToClient(oRsp.ToString());
                         }
                     }
                 };
-                net::RedisOperator oRedisOperator(0, ((DataStepCustom*) pDataStep->GetData())->sKey2,"","GET");
+                net::RedisOperator oRedisOperator(0, ((DataStepCustom*) pStep->GetData())->sKey2,"","GET");
                 LOG4_TRACE("%s() RedisbitmapGET usersData2",__FUNCTION__);
-                pDataStep->DelayDel();
-                net::SendToCallback(pDataStep,oRedisOperator.MakeMemOperate(),callback,((DataStepCustom*) pDataStep->GetData())->strNode);
+                net::SendToCallback(pStep,oRedisOperator.MakeMemOperate(),callback,((DataStepCustom*) pStep->GetData())->strNode);
             }
         }
     };
 
     net::RedisOperator oRedisOperator(0, sKey1.size() > 0?sKey1:SETBIT_KEY,"","GET");
     LOG4_DEBUG("%s() RedisbitmapGET usersData1",__FUNCTION__);
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(sKey2.size() > 0?sKey2:SETBIT_KEY,sNode)),
-                    oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,new DataStepCustom(sKey2.size() > 0?sKey2:SETBIT_KEY,sNode),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint32>& usersData)
@@ -1205,7 +1152,7 @@ void ModuleHello::SsdbMsgHset(const net::tagMsgShell& stMsgShell,const HttpMsg& 
     oRedisOperator.AddRedisField("",util::GetUniqueId(net::GetNodeId(),net::GetWorkerIndex()));
     oRedisOperator.AddRedisField("",sValue);// 1:11:MSG   {json}
     LOG4_DEBUG("%s() SsdbMsgHset %s,%s",__FUNCTION__,strStorageKey,sValue.c_str());
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::SsdbMsgHsetall(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sKey,const std::string &sNode)
@@ -1215,12 +1162,11 @@ void ModuleHello::SsdbMsgHsetall(const net::tagMsgShell& stMsgShell,const HttpMs
         LOG4_TRACE("SsdbMsgHsetall %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
-            net::DataStep* pDataStep = (net::DataStep*)pStep;
             LOG4_TRACE("SsdbMsgHsetall ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
+            pStep->SendToClient(oRsp.ToString());
         }
     };
     char strStorageKey[64];
@@ -1237,12 +1183,11 @@ void ModuleHello::SsdbMsgHscan(const net::tagMsgShell& stMsgShell,const HttpMsg&
         LOG4_TRACE("SsdbMsgHscan %s",oRsp.err_msg().c_str());
         if (oRsp.err_no() == 0)
         {
-            net::DataStep* pDataStep = (net::DataStep*)pStep;
             LOG4_TRACE("SsdbMsg ok %s",oRsp.DebugString().c_str());
             util::CJsonObject oRsp;
             oRsp.Add("code", 0);
             oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
+            pStep->SendToClient(oRsp.ToString());
         }
     };
     //hscan 1:11:MSG?20111101 "" "" 10
@@ -1253,7 +1198,7 @@ void ModuleHello::SsdbMsgHscan(const net::tagMsgShell& stMsgShell,const HttpMsg&
     oRedisOperator.AddRedisField("","");
     oRedisOperator.AddRedisField("",10);
     LOG4_DEBUG("%s() SsdbMsgHscan %s,%s",__FUNCTION__,strStorageKey,key_start.c_str());
-    net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
+    net::SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
 void ModuleHello::TestDBSELECT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
@@ -1273,19 +1218,17 @@ void ModuleHello::TestDBSELECT(const net::tagMsgShell& stMsgShell,const HttpMsg&
 		LOG4_TRACE("TestDBSELECT_callback %s",oRsp.err_msg().c_str());
 		if (oRsp.err_no() == 0)
 		{
-			net::DataStep* pDataStep = (net::DataStep*)pStep;
 			LOG4_TRACE("TestDBSELECT_callback ok %s",oRsp.DebugString().c_str());
 			util::CJsonObject oRsp;
 			oRsp.Add("code", 0);
 			oRsp.Add("msg", "ok");
-			pDataStep->SendToClient(oRsp.ToString());
+			pStep->SendToClient(oRsp.ToString());
 		}
 	};
 	net::DbOperator oDbOper(0, strTableName, DataMem::MemOperate::DbOperate::SELECT);
 	oDbOper.AddDbField("ip");
 	oDbOper.AddCondition(DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,strfield,strvalue);
-	if (!net::SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oDbOper.MakeMemOperate(),
-			TestDBSELECT_callback))
+	if (!net::SendToCallback(stMsgShell,oInHttpMsg,oDbOper.MakeMemOperate(),TestDBSELECT_callback))
 	{
 		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
 	}

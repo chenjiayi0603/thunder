@@ -63,15 +63,15 @@ private:
     uint32 m_uiUpperStepSeq;
 };
 
-//存储数据步骤
+//存储数据步骤,用来步骤状态
 class DataStep: public net::HttpStep
 {
 public:
-    DataStep(StepParam *data=NULL):m_boDelayDel(false){SetData(data);}
-	DataStep(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,StepParam *data=NULL):net::HttpStep(stMsgShell,oInHttpMsg),m_boDelayDel(false){SetData(data);}
-	DataStep(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,StepParam *data=NULL):net::HttpStep(stMsgShell,oInMsgHead),m_boDelayDel(false){SetData(data);}
+    DataStep(StepParam *data=NULL){SetData(data);}
+	DataStep(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,StepParam *data=NULL):net::HttpStep(stMsgShell,oInHttpMsg){SetData(data);}
+	DataStep(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,StepParam *data=NULL):net::HttpStep(stMsgShell,oInMsgHead){SetData(data);}
     virtual ~DataStep(){}
-    virtual E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return net::STATUS_CMD_COMPLETED;}
+    virtual E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return Timeout();}
 	virtual E_CMD_STATUS Timeout()
 	{
 		if (m_boDelayDel)
@@ -81,9 +81,6 @@ public:
 		}
 		return net::STATUS_CMD_COMPLETED;
 	}
-	void DelayDel(){m_boDelayDel = true;}//在回调函数中需要再次发送回调函数，则延迟删除
-protected:
-    bool m_boDelayDel;
 };
 
 }

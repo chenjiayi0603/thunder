@@ -21,10 +21,10 @@ class HttpStep: public Step
 {
 public://子类通过构造函数给父类传参后，使用父类的成员,包括m_oInHttpMsg,m_stReqMsgShell,m_oReqMsgHead,m_oReqMsgBody
     HttpStep(Step* pNextStep = NULL):net::Step(pNextStep){}
-    HttpStep(const HttpMsg& oInHttpMsg,Step* pNextStep = NULL):net::Step(pNextStep),m_oInHttpMsg(oInHttpMsg){}
+    HttpStep(const HttpMsg& oInHttpMsg,Step* pNextStep = NULL):net::Step(pNextStep){m_oInHttpMsg = oInHttpMsg;}
     HttpStep(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead,Step* pNextStep = NULL):net::Step(stInMsgShell,oInMsgHead,pNextStep){}
     HttpStep(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,Step* pNextStep = NULL):net::Step(stInMsgShell,oInMsgHead,oInMsgBody,pNextStep){}
-    HttpStep(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg,Step* pNextStep = NULL):net::Step(stInMsgShell,pNextStep),m_oInHttpMsg(oInHttpMsg){}
+    HttpStep(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg,Step* pNextStep = NULL):net::Step(stInMsgShell,pNextStep){m_oInHttpMsg = oInHttpMsg;}
     virtual ~HttpStep(){}
     //使用回调函数接口SendToCallback则不需要处理本step的Callback，否则就继承Callback
     virtual E_CMD_STATUS Callback(const tagMsgShell& stMsgShell,const HttpMsg& oHttpMsg,void* data = NULL){return net::STATUS_CMD_COMPLETED;}
@@ -35,14 +35,8 @@ public://子类通过构造函数给父类传参后，使用父类的成员,包�
     bool HttpPost(const std::string& strUrl,const std::string& strBody, const std::unordered_map<std::string, std::string>& mapHeaders);
     bool HttpPost(const std::string& strUrl,const std::string& strBody);
     bool HttpGet(const std::string& strUrl);
-    bool SendToClient(const std::string &strBody,int nCode = 200)
-	{
-		if (m_oReqMsgHead.cmd() == 0) return net::SendToClient(m_stReqMsgShell,m_oInHttpMsg,strBody,nCode);
-		else return Step::SendToClient(strBody);
-	}
     bool HttpRequest(const HttpMsg& oHttpMsg);
     bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
-    HttpMsg m_oInHttpMsg;//HttpStep使用
 };
 
 } /* namespace net */

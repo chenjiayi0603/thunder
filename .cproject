@@ -34,6 +34,9 @@
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr1&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\4.8.2\tr2&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5\backward&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5\mingw32&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;D:\strawberry\c\include\c++\3.4.5&quot;"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.optimization.level.1282716885" name="Optimization Level" superClass="gnu.cpp.compiler.option.optimization.level" useByScannerDiscovery="false" value="gnu.cpp.compiler.optimization.level.none" valueType="enumerated"/>
 								<option id="gnu.cpp.compiler.option.debugging.level.1734727729" name="Debug Level" superClass="gnu.cpp.compiler.option.debugging.level" useByScannerDiscovery="false" value="gnu.cpp.compiler.debugging.level.max" valueType="enumerated"/>

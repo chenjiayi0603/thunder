@@ -11,9 +11,11 @@
 #include "Labor.hpp"
 #include "step/MysqlStep.hpp"
 #include "step/RedisStep.hpp"
+#include "step/StepNode.hpp"
 
 namespace net
 {
+
 uint32 GetNodeId(){return(g_pLabor->GetNodeId());}
 uint32 GetWorkerIndex(){return(g_pLabor->GetWorkerIndex());}
 const std::string& GetNodeType() {return(g_pLabor->GetNodeType());}
@@ -75,6 +77,17 @@ bool SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMemOper,St
 {
     return g_pLabor->SendToCallback(pUpperStep,pMemOper,callback,nodeType,uiCmd,-1);
 }
+
+bool SendToCallback(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,StepParam *data,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType,uint32 uiCmd)
+{
+    return g_pLabor->SendToCallback(new DataStep(stMsgShell,oInHttpMsg,data),pMemOper,callback,nodeType,uiCmd,-1);
+}
+
+bool SendToCallback(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType,uint32 uiCmd)
+{
+    return g_pLabor->SendToCallback(new DataStep(stMsgShell,oInHttpMsg),pMemOper,callback,nodeType,uiCmd,-1);
+}
+
 bool SendToModCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,int64 uiModFactor,const std::string &nodeType,uint32 uiCmd)
 {
     return g_pLabor->SendToCallback(pUpperStep,pMemOper,callback,nodeType,uiCmd,uiModFactor);
@@ -153,10 +166,10 @@ bool CoroutineResumeWithTimes(uint32 nMaxTimes){return g_pLabor->m_Coroutine.Cor
 bool CoroutineNewWithArg(util::coroutine_func func,tagCoroutineArg *arg) {return g_pLabor->m_Coroutine.CoroutineNewWithArg(func,arg);}
 int CoroutineNew(util::coroutine_func func,void *ud) {return g_pLabor->m_Coroutine.CoroutineNew(func,ud);}
 int CoroutineRunning(){return g_pLabor->m_Coroutine.CoroutineRunning();}
-int CoroutineStatus(int coid){g_pLabor->m_Coroutine.CoroutineStatus(coid);}
-bool CoroutineResume(int coid){g_pLabor->m_Coroutine.CoroutineResume(coid);}
-bool CoroutineResume(){g_pLabor->m_Coroutine.CoroutineResume();}
-bool CoroutineYield(){g_pLabor->m_Coroutine.CoroutineYield();}
+int CoroutineStatus(int coid){return g_pLabor->m_Coroutine.CoroutineStatus(coid);}
+bool CoroutineResume(int coid){return g_pLabor->m_Coroutine.CoroutineResume(coid);}
+bool CoroutineResume(){return g_pLabor->m_Coroutine.CoroutineResume();}
+bool CoroutineYield(){return g_pLabor->m_Coroutine.CoroutineYield();}
 
 
 }

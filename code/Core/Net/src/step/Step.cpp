@@ -30,9 +30,7 @@ Step::Step(const tagMsgShell& stReqMsgShell,Step* pNextStep)
       m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
-    m_uiUserId = 0;
-    m_uiCmd = 0;
-    m_data = NULL;
+    Init();
 }
 
 Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, Step* pNextStep)
@@ -41,9 +39,7 @@ Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, Step* p
       m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
-    m_uiUserId = 0;
-    m_uiCmd = 0;
-    m_data = NULL;
+    Init();
 }
 
 Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep)
@@ -52,9 +48,15 @@ Step::Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const M
       m_pTimeoutWatcher(0), m_pNextStep(pNextStep)
 {
     AddNextStepSeq(pNextStep);
+    Init();
+}
+
+void Step::Init()
+{
 	m_uiUserId = 0;
 	m_uiCmd = 0;
 	m_data = NULL;
+	m_boDelayDel = false;
 }
 
 Step::~Step()
