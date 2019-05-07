@@ -1880,42 +1880,33 @@ void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     m_mapHttpAttr.clear();
-    for (std::unordered_map<int32, Cmd*>::iterator cmd_iter = m_mapCmd.begin();
-                    cmd_iter != m_mapCmd.end(); ++cmd_iter)
+    for (auto&& cmd_iter:m_mapCmd)
     {
-        delete cmd_iter->second;
-        cmd_iter->second = NULL;
+    	SAFE_DELETE(cmd_iter.second);
     }
     m_mapCmd.clear();
 
-    for (std::unordered_map<int, tagSo*>::iterator so_iter = m_mapSo.begin();
-                    so_iter != m_mapSo.end(); ++so_iter)
+    for (auto&& so_iter:m_mapSo)
     {
-        delete so_iter->second;
-        so_iter->second = NULL;
+    	SAFE_DELETE(so_iter.second);
     }
     m_mapSo.clear();
 
-    for (std::unordered_map<std::string, tagModule*>::iterator module_iter = m_mapModule.begin();
-                    module_iter != m_mapModule.end(); ++module_iter)
+    for (auto&& module_iter:m_mapModule)
     {
-        delete module_iter->second;
-        module_iter->second = NULL;
+    	SAFE_DELETE(module_iter.second);
     }
     m_mapModule.clear();
 
-    for (std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();
-                    attr_iter != m_mapFdAttr.end(); ++attr_iter)
+    for (auto attr_iter = m_mapFdAttr.begin();attr_iter != m_mapFdAttr.end(); ++attr_iter)
     {
         LOG4_TRACE("for (std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();");
         DestroyConnect(attr_iter);
     }
 
-    for (std::unordered_map<util::E_CODEC_TYPE, StarshipCodec*>::iterator codec_iter = m_mapCodec.begin();
-                    codec_iter != m_mapCodec.end(); ++codec_iter)
+    for (auto&& codec_iter:m_mapCodec)
     {
-        delete codec_iter->second;
-        codec_iter->second = NULL;
+    	SAFE_DELETE(codec_iter.second);
     }
     m_mapCodec.clear();
 
