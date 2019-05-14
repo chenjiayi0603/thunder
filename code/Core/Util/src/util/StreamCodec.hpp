@@ -16,7 +16,6 @@ namespace util
 enum E_CODEC_TYPE
 {
     CODEC_UNKNOW            = 0,        ///< 未知
-    CODEC_TLV               = 1,        ///< TLV编解码
     CODEC_PROTOBUF          = 2,        ///< Protobuf编解码
     CODEC_HTTP              = 3,        ///< HTTP编解码
     CODEC_PRIVATE           = 4,        ///< 私有协议编解码（与客户端通信协议）
