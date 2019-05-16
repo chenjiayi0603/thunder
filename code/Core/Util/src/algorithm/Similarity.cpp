@@ -88,10 +88,10 @@ std::vector<int> KmpGetNext(const std::string &str)
    for(int i=1;i<= str.size();i++)
    {
        int maxLen=0;
-       std::string tmp = str.substr(0,i);//子串计算
-       for(int k = 1;k < tmp.size();++k)//计算前缀后缀的值
+//       std::string tmp = str.substr(0,i);//子串计算
+       for(int k = 1;k < i;++k)//计算前缀后缀的值
        {
-           if(tmp.substr(0,k)==tmp.substr(tmp.size()-k,k))//前缀后缀
+           if(str.substr(0,k)==str.substr(i-k,k))//前缀后缀
            {
                maxLen=k;
            }
