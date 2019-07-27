@@ -47,21 +47,28 @@ bool CmdGetToken::AnyMessage(
     	Response(stMsgShell,oInMsgHead,1);
     	return false;
     }
+
+    std::string strToken = oJson("token");
+    std::string strKey = oJson("key");
+
     std::string strAddress = oJson("address");
-    if (strAddress.size() == 0)
+    if (strAddress.empty() || strToken.empty() || strKey.empty())
     {
-    	LOG4_ERROR("%s()", __FUNCTION__);
+    	LOG4_ERROR("%s() strAddress.empty() || strToken.empty() || strKey.empty()", __FUNCTION__);
 		Response(stMsgShell,oInMsgHead,1);
 		return false;
     }
-    Token token = g_pLogicSession->GenToken(strAddress);
+    Token token = g_pLogicSession->GetToken(strAddress,strToken,strKey);
+    LOG4_INFO("%s() strAddress(%s),token strID(%s) strToken(%s),strKey(%s)",
+        		__FUNCTION__,strAddress.c_str(),token.strID.c_str(),
+        		token.strToken.c_str(),token.strKey.c_str());
     util::CJsonObject oRsp;
 	oRsp.Add("code", 0);
 	oRsp.Add("msg", "ok");
 	oRsp.Add("token",token.strToken);
 	oRsp.Add("time_create",token.m_uiTimeCreate);
 	oRsp.Add("time_out",token.m_uiTimeOut);
-	LOG4_TRACE("%s() oRsp:%s", __FUNCTION__,oRsp.ToString().c_str());
+	LOG4_INFO("%s() oRsp:%s",__FUNCTION__,oRsp.ToString().c_str());
 	return net::SendToClient(stMsgShell,oInMsgHead,oRsp.ToString());
 }
 

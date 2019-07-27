@@ -28,11 +28,14 @@ struct Token
 {
 	Token()
 	{
-		strToken = std::to_string(util::GetUniqueId(net::GetNodeId(),net::GetWorkerIndex()));
+		strID = std::to_string(util::GetUniqueId(net::GetNodeId(),net::GetWorkerIndex()));
 		m_uiTimeCreate = ::time(NULL);
 		m_uiTimeOut = m_uiTimeCreate + 40;
 	}
+	std::string strID;
 	std::string strToken;
+	std::string strKey;
+
 	uint32 m_uiTimeOut;
 	uint32 m_uiTimeCreate;
 };
@@ -48,11 +51,30 @@ public:
     net::E_CMD_STATUS Timeout();
     void setCurrentTime(){m_currenttime = ::time(NULL);}
     uint32 getCurrentTime(){return m_currenttime;}
-    Token GenToken(const std::string& address)
+    Token GetToken(const std::string& strAddress,const std::string& strToken,const std::string& strKey)
     {
-    	auto token = Token();
-    	m_tokenM[address] = token;
-    	return token;
+    	auto iter = m_tokenM.find(strAddress);
+    	if (iter == m_tokenM.end())
+    	{
+    		auto token = Token();
+    		if (strToken.size())
+    		{
+    			token.strToken = strToken;
+				token.strKey = strKey;
+    		}
+			m_tokenM[strAddress] = token;
+			return token;
+    	}
+    	else
+    	{
+    		if (strToken.size())
+    		{
+    			iter->second.strToken = strToken;
+    			iter->second.strKey = strKey;
+    		}
+    		iter->second.m_uiTimeOut = ::time(NULL) + 40;
+    		return iter->second;
+    	}
     }
 private:
     bool boInit;

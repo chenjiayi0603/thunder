@@ -149,6 +149,7 @@ void DecodeParameter(const std::string& strUrl, std::map<std::string, std::strin
 		auto iter = std::find(strParameter.begin(),strParameter.end(),filter);
 		if (iter != strParameter.end())
 		{
+			++iter;
 			strParameter = strParameter.substr(iter - strParameter.begin(),strParameter.end() - iter);
 		}
 	}

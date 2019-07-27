@@ -29,7 +29,7 @@ net::E_CMD_STATUS LogicSession::Timeout()
 	{
 		if (iter->second.m_uiTimeOut <= m_currenttime)
 		{
-			LOG4_DEBUG("strToken(%s) has been time out.(%u,%u)!",
+			LOG4_INFO("strToken(%s) has been time out.(%u,%u)!",
 					iter->second.strToken.c_str(),iter->second.m_uiTimeOut,m_currenttime);
 			m_tokenM.erase(iter++);
 		}
