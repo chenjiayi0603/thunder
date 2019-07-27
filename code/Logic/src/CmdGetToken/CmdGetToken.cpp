@@ -39,7 +39,7 @@ bool CmdGetToken::AnyMessage(
                 const MsgHead& oInMsgHead,
                 const MsgBody& oInMsgBody)
 {
-    LOG4_TRACE("%s() %s", __FUNCTION__,oInMsgHead.DebugString().c_str());
+    LOG4_TRACE("%s() %s", __FUNCTION__,oInMsgBody.DebugString().c_str());
     util::CJsonObject oJson;
     if (!oJson.Parse(oInMsgBody.body()))
     {
@@ -50,7 +50,6 @@ bool CmdGetToken::AnyMessage(
 
     std::string strToken = oJson("token");
     std::string strKey = oJson("key");
-
     std::string strAddress = oJson("address");
     if (strAddress.empty() || strToken.empty() || strKey.empty())
     {
@@ -58,25 +57,36 @@ bool CmdGetToken::AnyMessage(
 		Response(stMsgShell,oInMsgHead,1);
 		return false;
     }
-    Token token = g_pLogicSession->GetToken(strAddress,strToken,strKey);
-    LOG4_INFO("%s() strAddress(%s),token strID(%s) strToken(%s),strKey(%s)",
-        		__FUNCTION__,strAddress.c_str(),token.strID.c_str(),
-        		token.strToken.c_str(),token.strKey.c_str());
-    util::CJsonObject oRsp;
-	oRsp.Add("code", 0);
-	oRsp.Add("msg", "ok");
-	oRsp.Add("token",token.strToken);
-	oRsp.Add("time_create",token.m_uiTimeCreate);
-	oRsp.Add("time_out",token.m_uiTimeOut);
-	LOG4_INFO("%s() oRsp:%s",__FUNCTION__,oRsp.ToString().c_str());
-	return net::SendToClient(stMsgShell,oInMsgHead,oRsp.ToString());
+    std::string veriftkey = oJson("veriftkey");
+    if (oJson("genkey") == "1")
+    {
+    	LOG4_TRACE("%s() genkey", __FUNCTION__);
+    	g_pLogicSession->GenToken(strToken,strKey);
+    	Response(stMsgShell,oInMsgHead,0);
+    }
+    else if (oJson("verifykey") == "1")
+    {
+    	LOG4_TRACE("%s() veriftkey", __FUNCTION__);
+    	bool ret = g_pLogicSession->VerifyTokenPermutation(strToken,strKey);
+    	if (!ret)
+    	{
+    		LOG4_INFO("%s() VerifyTokenPermutation(%s,%s) failed", __FUNCTION__,strToken.c_str(),strKey.c_str());
+    	}
+    	Response(stMsgShell,oInMsgHead,ret ? 0 :1);
+    }
+    else
+    {
+    	LOG4_ERROR("%s() error param", __FUNCTION__);
+		Response(stMsgShell,oInMsgHead,1);
+		return false;
+    }
+    return true;
 }
 
 void CmdGetToken::Response(const net::tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,int code)
 {
     util::CJsonObject oRsp;
     oRsp.Add("code", code);
-    oRsp.Add("msg", "ok");
     net::SendToClient(stMsgShell,oInMsgHead,oRsp.ToString());
 }
 

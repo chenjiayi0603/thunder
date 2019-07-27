@@ -14,8 +14,10 @@
 			"LOGIC":[]
 	    }
     },
-    "redlock":	 [{
-        "host":    "192.168.3.6",
+    "redlock_brief":"redlock为空列表则未开启center热备功能，否则需要启动3个redis实例",
+    "redlock_sample":	 [
+    {
+    	"host":    "192.168.3.6",
         "port":    16379
     },
     {
@@ -25,6 +27,7 @@
     {
         "host":    "192.168.3.6",
         "port":    16381
-    }]
+    }],
+    "redlock":[]
 }
  

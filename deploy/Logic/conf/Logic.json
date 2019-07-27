@@ -17,7 +17,7 @@
     },
     "io_timeout":300.0,
     "step_timeout":1.0,
-    "log_level":0,
+    "log_level":20000,
     "load_so_interval":60.0,
     "so":[
          {"cmd":10001, "so_path":"plugins/Logic/CmdGetToken.so", "entrance_symbol":"create","load":true, "version":1}

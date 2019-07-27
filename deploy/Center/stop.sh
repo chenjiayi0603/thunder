@@ -81,6 +81,6 @@ if [ "$1"x == "1"x ];then
 elif [ "$1"x == "2"x ];then
 	stop_node2
 else
+	#默认启动单个中心节点
 	stop_node1
-	stop_node2
 fi

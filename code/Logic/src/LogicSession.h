@@ -51,29 +51,40 @@ public:
     net::E_CMD_STATUS Timeout();
     void setCurrentTime(){m_currenttime = ::time(NULL);}
     uint32 getCurrentTime(){return m_currenttime;}
-    Token GetToken(const std::string& strAddress,const std::string& strToken,const std::string& strKey)
+    void GenToken(const std::string& strToken,const std::string& strKey)
     {
-    	auto iter = m_tokenM.find(strAddress);
+    	auto token = Token();
+		token.strToken = strToken;
+		token.strKey = strKey;
+		m_tokenM[strToken] = token;
+    }
+    bool VerifyTokenPermutation(const std::string& strToken,const std::string& strKey)
+    {
+    	auto iter = m_tokenM.find(strToken);
     	if (iter == m_tokenM.end())
     	{
-    		auto token = Token();
-    		if (strToken.size())
-    		{
-    			token.strToken = strToken;
-				token.strKey = strKey;
-    		}
-			m_tokenM[strAddress] = token;
-			return token;
+    		return false;
     	}
     	else
     	{
-    		if (strToken.size())
+    		if (strKey.size() != iter->second.strKey.size())
     		{
-    			iter->second.strToken = strToken;
-    			iter->second.strKey = strKey;
+    			return false;
     		}
-    		iter->second.m_uiTimeOut = ::time(NULL) + 40;
-    		return iter->second;
+    		int m[256] = {0};
+    		for(auto c:iter->second.strKey)
+    		{
+    			m[(int)c]++;
+    		}
+    		for(auto c:strKey)
+    		{
+    			if (m[(int)c] == 0)
+    			{
+    				return false;
+    			}
+    			m[(int)c]--;
+    		}
+    		return true;
     	}
     }
 private:

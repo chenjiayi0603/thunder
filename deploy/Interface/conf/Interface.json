@@ -21,12 +21,12 @@
     "io_timeout":300.0,
     "step_timeout":5.0,
     "log_levels":{"FATAL":50000, "ERROR":40000, "WARN":30000, "INFO":20000, "DEBUG":10000, "TRACE":0},
-    "log_level":0,
+    "log_level":20000,
     "load_so_interval":60.0,
     "so":[
     ],
     "module":[
-    {"url_path":"/Interface/interface","so_path":"plugins/Interface/ModuleInterface.so","entrance_symbol":"create", "load":true, "version":1}
+    {"url_path":"/Interface/gentoken","so_path":"plugins/Interface/ModuleInterface.so","entrance_symbol":"create", "load":true, "version":1}
     ]
 }
 

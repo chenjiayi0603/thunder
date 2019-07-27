@@ -22,6 +22,7 @@
 #include "step/HttpStep.hpp"
 #include "RobotError.h"
 #include "../InterfaceSession.h"
+#include "util/CommonUtils.hpp"
 
 namespace robot
 {
@@ -35,6 +36,8 @@ public:
     virtual ~ModuleHello();
     virtual bool Init();
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    void GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    void VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 private:
     void Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode);
 };

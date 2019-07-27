@@ -1,3 +1,7 @@
 lsof -Pni4 | grep LISTEN 
 
-curl 'http://192.168.3.6:27008/Interface/interface?token=edc50cdf-acdd-4358-809a9dfff83ade4d&key=Jy6pEG3H'
+测试保存token和key
+curl 'http://192.168.3.6:27008/Interface/gentoken?token=6718311810077818881&key=6718311810077818882'
+
+curl 'http://192.168.3.6:27008/Interface/gentoken'
+
