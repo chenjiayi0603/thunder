@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     StreamCoder.hpp
  * @brief 
- * @author   bwarliao
+ * @author   chenjiayi
  * @date:    2014年9月10日
  * @note
  * Modify history:
@@ -21,6 +21,7 @@ enum E_CODEC_TYPE
     CODEC_PRIVATE           = 4,        ///< 私有协议编解码（与客户端通信协议）
     CODEC_WEBSOCKET_EX_JS   = 5,        ///< websocket extent Json（与客户端通信协议）
     CODEC_WEBSOCKET_EX_PB   = 6,        ///< websocket extent Protobuf（与客户端通信协议）
+    CODEC_TLV = 7,
 };
 
 class CStreamCodec

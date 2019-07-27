@@ -238,11 +238,9 @@ bool NodeSession::LoadNodeRoute()
 
 bool NodeSession::CheckNodeType(const std::string& nodeType)
 {//检查节点类型
-    NodeTypesVec::const_iterator it = m_vecNodeTypes.begin();
-    NodeTypesVec::const_iterator itEnd = m_vecNodeTypes.end();
-    for (;it != itEnd; ++it)
+    for (auto it:m_vecNodeTypes)
     {
-        if (it->nodetype == nodeType)
+        if (it.nodetype == nodeType)
         {
             return true;
         }
