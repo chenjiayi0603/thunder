@@ -38,8 +38,7 @@ DIRS := $(SUB_DIRS)
 
 INC := $(INC) \
        -I .. \
-       -I $(PLUGIN_PATH)/src \
-       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include  \
+       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include -I $(NET_PATH)/../Proto/src \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
@@ -54,6 +53,7 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -lprotobuf \
            -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -ljemalloc \
+           -L$(3PARTY_PATH)/lib -lsphinxclient \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -ldl -lrt
 

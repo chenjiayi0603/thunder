@@ -6,8 +6,8 @@
 #include <atomic>
 #include <future>
 //#include <condition_variable>
-//#include <thread>
-//#include <functional>
+#include <thread>
+#include <functional>
 #include <stdexcept>
 
 namespace std

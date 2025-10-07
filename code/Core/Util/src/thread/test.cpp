@@ -32,7 +32,7 @@ public:
 	}
 };
 
-int main(){
+int test(){
 	try {
 		std::threadpool executor{ 50 };
 		A a;
