@@ -13,14 +13,14 @@ fi
 if [ "$1"x == "compile"x ];then  
 	#编译
 	cd ./core && ./make_libs.sh all
-	cd ${code_path} && ./proto_logic.sh all && ./plugins_logic.sh all
+	cd "${code_path}" && ./proto_logic.sh all && ./plugins_logic.sh all
 elif [ "$1"x == "install"x ];then 
 	#清除
-	cd ${run_path}
+	cd "${run_path}" || exit
 	./clear.sh all
 	#安装
-	cd ${run_path}
-	./install all
+	cd "${run_path}" || exit
+	./install.sh all
 elif [ "$1"x == "core"x ];then 
 	cd ./Core &&  ./core.sh all && cd ..
 elif [ "$1"x == "all"x ];then 
@@ -29,10 +29,12 @@ elif [ "$1"x == "all"x ];then
 	#拷贝makefile模板到逻辑节点，使用core服务器库需要使用指定统一makefile模板
 	./Core/makefiles/makefilecopy.sh
 	#编译
+	echo "make core "
 	cd ./Core &&  ./core.sh all && cd ..
-	cd ${code_path} && ./proto_logic.sh all && ./plugins_logic.sh all
+
+	cd "${code_path}" && ./proto_logic.sh all && ./plugins_logic.sh all
 elif [ "$1"x == "proto"x ];then 
-	cd ${code_path} && ./proto_logic.sh all
+	cd "${code_path}" && ./proto_logic.sh all
 elif [ "$1"x == "plugin"x ];then 
 	./plugins_logic.sh all
 elif [ "$1"x == "pre"x ];then

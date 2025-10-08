@@ -1,7 +1,7 @@
 #!/bin/bash
 #编译库文件
-MAKE_PATH=`pwd`
-cd ${MAKE_PATH}
+MAKE_PATH=$(pwd)
+cd "${MAKE_PATH}" || exit
 RUN_PATH=${MAKE_PATH}/../../deploy
 
 lib_so=libUtil.so
@@ -15,16 +15,16 @@ fi
 
 function make_Util()
 {
-	if [ -d ${MAKE_PATH}/Util ];then
-		cd ${MAKE_PATH}/Proto/src && chmod +x ./gen_proto.sh && ./gen_proto.sh && cd ${MAKE_PATH}
-		test ! -d ${RUN_PATH}/lib && mkdir ${RUN_PATH}/lib
+	if [ -d "${MAKE_PATH}"/Util ];then
+		cd "${MAKE_PATH}"/Proto/src && chmod +x ./gen_proto.sh && ./gen_proto.sh && cd "${MAKE_PATH}" || exit
+		test ! -d "${RUN_PATH}"/lib && mkdir "${RUN_PATH}"/lib
    		echo "making ${lib_so}"
 	    #libUtil.so
-	    cd ${MAKE_PATH}/Util
+	    cd "${MAKE_PATH}"/Util || exit
 	    make clean
 	    make 
 	    echo "${RUN_PATH}/lib"
-	    ls -l  ${RUN_PATH}/lib
+	    ls -l  "${RUN_PATH}"/lib
    	else
    		echo "make no lib"     
     fi
@@ -32,10 +32,10 @@ function make_Util()
 
 function make_plugins()
 {
-	if [ -f ${MAKE_PATH}/plugins_core.sh ];then
+	if [ -f "${MAKE_PATH}"/plugins_core.sh ];then
    		echo "making plugins"
-   		cd ${MAKE_PATH}
-	    ${MAKE_PATH}/plugins_core.sh all
+   		cd "${MAKE_PATH}" || exit
+	    "${MAKE_PATH}"/plugins_core.sh all
    	else
    		echo "make no plugins"     
     fi
@@ -44,17 +44,17 @@ function make_plugins()
 
 function make_bins_libNet()
 {
-	if [ -d ${MAKE_PATH}/Net/src ];then
+	if [ -d "${MAKE_PATH}"/Net/src ];then
 		echo "making servers's bin   ${core_so}"
 	    echo "cd ${MAKE_PATH}/Net/src"
-	    cd ${MAKE_PATH}/Net/src
+	    cd "${MAKE_PATH}"/Net/src || exit
 	    make clean 
-	    make # && find  ${MAKE_PATH}/Net/src -type f -name "*Server" | xargs -i cp -v {} ${RUN_PATH}/bin && \
-	    cp -v ${MAKE_PATH}/Net/src/${core_so} ${RUN_PATH}/lib 
+	    make && find  "${MAKE_PATH}"/Net/src -type f -name "*Server" | xargs -i cp -v {} "${RUN_PATH}"/bin && \
+	    cp -v "${MAKE_PATH}"/Net/src/${core_so} "${RUN_PATH}"/lib 
 	    echo "${RUN_PATH}/bin"
-	    ls -l ${RUN_PATH}/bin 
+	    ls -l "${RUN_PATH}"/bin 
 	    echo "${RUN_PATH}/lib"
-	    ls -l ${RUN_PATH}/lib 
+	    ls -l "${RUN_PATH}"/lib 
     else
 		echo "make no Net"    
 	fi
@@ -62,10 +62,10 @@ function make_bins_libNet()
 
 function clear_Util()
 {
-	if [ -d ${MAKE_PATH}/Net/src ];then
-		cd ${MAKE_PATH}/Util
+	if [ -d "${MAKE_PATH}"/Net/src ];then
+		cd "${MAKE_PATH}"/Util || exit
 	    make clean
-	    test -f ${RUN_PATH}/lib/libUtil.so && unlink  ${RUN_PATH}/lib/libUtil.so    
+	    test -f "${RUN_PATH}"/lib/libUtil.so && unlink  ${RUN_PATH}/lib/libUtil.so    
     else
 	    echo "clear no lib"
 	fi
@@ -73,18 +73,18 @@ function clear_Util()
 
 function clear_Net()
 {
-	if [ -d ${MAKE_PATH}/Net/src ];then
-		cd ${MAKE_PATH}/Net/src
+	if [ -d "${MAKE_PATH}"/Net/src ];then
+		cd "${MAKE_PATH}"/Net/src || exit
 	    make clean 
-	    test -f ${RUN_PATH}/lib/${core_so} && unlink  ${RUN_PATH}/lib/${core_so}
+	    test -f "${RUN_PATH}"/lib/${core_so} && unlink  "${RUN_PATH}"/lib/${core_so}
     else
     	echo "clear no Net"
 	fi
 }
 
-test ! -d ${MAKE_PATH}/../3party/lib && ln -s ${RUN_PATH}/3lib ${MAKE_PATH}/../3party/lib 
+test ! -d "${MAKE_PATH}"/../3party/lib && ln -s "${RUN_PATH}"/3lib "${MAKE_PATH}"/../3party/lib 
 
-cd ${MAKE_PATH}
+cd "${MAKE_PATH}" || exit
 
 if [ $1 == "all" ];then
     make_Util 

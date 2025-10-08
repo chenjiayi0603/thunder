@@ -1,10 +1,13 @@
-#!/bin/bash 
-#RUN_PATH=`dirname $0`
-RUN_PATH=`pwd`
-cd ${RUN_PATH}
-lib3_path=/app/analysis/analysisServer/deploy/3lib
+#!/usr/bin/env bash
+# auto-switch to bash when run via sh/dash
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 
-SRC_IP=18.78
+#RUN_PATH=`dirname $0`
+RUN_PATH=$(pwd)
+cd "${RUN_PATH}" || exit
+lib3_path=/home/chen/thunder/deploy/3lib
+
+SRC_IP=192.168.3.6
 #不填则自动识别目标物理地址为本物理机地址
 DST_IP=
 
@@ -26,32 +29,28 @@ function check_config()
 function change_config()
 {
 	#FreeBSD/OpenBSD
-	test -z "${DST_IP}" && DST_IP=`ifconfig|grep -E 'inet.[0-9]'|grep -v '127.'|awk '{print $2}'|awk 'NR==1{print}'`
+	test -z "${DST_IP}" && DST_IP=$(ifconfig|grep -E 'inet.[0-9]'|grep -v '127.'|awk '{print $2}'|awk 'NR==1{print}')
 	#linux
-	test -z "${DST_IP}" && DST_IP=`ifconfig |grep "inet addr" |grep "192."|grep -o "addr:[0-9.]\{1,\}"|cut -d: -f2|awk 'NR==1{print}'`
+	test -z "${DST_IP}" && DST_IP=$(ifconfig |grep "inet addr" |grep "192."|grep -o "addr:[0-9.]\{1,\}"|cut -d: -f2|awk 'NR==1{print}')
 	test -z "${DST_IP}" && echo "failed to get DST_IP" && exit 0
 	
 	#输入修改原地址
 	#read -t 30 -p "请输入需要修改的原来的SRC_IP后面两个数字（如18.68）:" SRC_IP
 	test -z "${SRC_IP}" && echo "$SRC_IP empty" && exit 0
-	SRC_IP="192.168.${SRC_IP}"
+	# SRC_IP="192.168.${SRC_IP}"
 	test "${DST_IP}"x == "${SRC_IP}"x && echo "DST_IP:${DST_IP} and SRC_IP:${SRC_IP} are the same"
 	
 	echo "change config from SRC_IP:${SRC_IP} to DST_IP:${DST_IP}"
 	
 	find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/${SRC_IP}/${DST_IP}/g"
-	test -d ../tools && find ../tools -maxdepth 3 -type f -name "*.sh"  |xargs sed -i "s/${SRC_IP}/${DST_IP}/g"
-	test -d ../db/mysql && find ../db/mysql -maxdepth 3 -type f -name "db_*.sql"  |xargs sed -i "s/${SRC_IP}/${DST_IP}/g"
-	
-	#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/5402/5432/g"
 }
 
 function pre_process()
-{
+{	
 	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
-	find ../tools -maxdepth 3 -type f -name "*.sh"  |xargs -i chmod +x {}
+	# find ../tools -maxdepth 3 -type f -name "*.sh"  |xargs -i chmod +x {}
 	#3lib
-	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} ${RUN_PATH}/3lib  && echo "ln 3lib for deploy"
+	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} "${RUN_PATH}"/3lib  && echo "ln 3lib for deploy"
 	#config
 	change_config
 }
@@ -73,8 +72,6 @@ elif [ "$1"x == "release"x ];then
 	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":1,/\"process_num\":3,/g"
 	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":2,/\"process_num\":3,/g"
 	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":10,/\"process_num\":3,/g"
-	find ./PgAgent/conf_online -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":3,/\"process_num\":6,/g"
-	find ./PgAgent/conf_job -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":3,/\"process_num\":1,/g"
 elif [ "$1"x == "debug"x ];then
 	pre_process
 	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/[[:space:]]//g"
