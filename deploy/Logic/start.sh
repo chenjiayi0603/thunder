@@ -1,9 +1,9 @@
 #!/bin/bash
 
-SERVER_HOME=`dirname $0`
-SCRIPT_NAME=`basename $0`
-cd ${SERVER_HOME}
-SERVER_HOME=`pwd`
+SERVER_HOME=$(dirname $0)
+SCRIPT_NAME=$(basename $0)
+cd ${SERVER_HOME} || exit
+SERVER_HOME=$(pwd)
 
 SERVER_BIN=${SERVER_HOME}/bin
 SERVER_CONF=${SERVER_HOME}/conf
@@ -22,7 +22,7 @@ let attachedcpu=1
 function process_attachto_cpu_average()
 {
 	let count=0
-	test ! -z $1 && count=`ps -ef | grep $1 | grep -v "grep" | wc -l`
+	test ! -z $1 && count=$(ps -ef | grep $1 | grep -v "grep" | wc -l)
 	#echo "process $1:$count"
 	if [ $count -gt 0 ]; then 
 		CPUs=$(grep -c processor /proc/cpuinfo)
@@ -45,7 +45,7 @@ function process_attachto_cpu_average()
 function process_attachto_cpu_one()
 {
 	let count=0
-	test ! -z $1 && count=`ps -ef | grep $1 | grep -v "grep" | wc -l`
+	test ! -z $1 && count=$(ps -ef | grep $1 | grep -v "grep" | wc -l)
 	echo "process $1:$count"
 	if [ $count -gt 0 ]; then 
 		CPUs=$(grep -c processor /proc/cpuinfo)
@@ -58,22 +58,22 @@ function process_attachto_cpu_one()
 	fi
 }
 
-server_bin_files=`ls ${SERVER_BIN}/`
+server_bin_files=$(ls ${SERVER_BIN}/)
 for server_bin in $server_bin_files
 do
     if [ -f "${SERVER_CONF}/${server_bin}.json" ]
     then
-        target_server=`awk -F'"server_name"' '/server_name/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $3}'`
+        target_server=$(awk -F'"server_name"' '/server_name/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $3}')
         #echo "target_server:$target_server"
-        target_server_tag=`echo "$target_server" | awk '{print substr($0,0,20)}'`
+        target_server_tag=$(echo "$target_server" | awk '{print substr($0,0,20)}')
         #echo "target_server_tag:$target_server_tag"
-        target_port=`awk -F'"inner_port"' '/inner_port/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $2}'`
+        target_port=$(awk -F'"inner_port"' '/inner_port/{print $2}'  ${SERVER_CONF}/${server_bin}.json | sed 's/ //g' | awk -F'[:",]' '{print $2}')
         #echo "target_port:$target_port"
-        running_target_server_pid=`netstat -apn 2>>/dev/null | grep -w $target_port | grep $target_server_tag | awk -F/ '/^tcp/{print $1}' | awk '/LISTEN/{print $NF}'`
+        running_target_server_pid=$(netstat -apn 2>>/dev/null | grep -w $target_port | grep $target_server_tag | awk -F/ '/^tcp/{print $1}' | awk '/LISTEN/{print $NF}')
         #echo "running_target_server_pid:$running_target_server_pid"
         if [ -z "$running_target_server_pid" ]
         then
-            ${SERVER_BIN}/$server_bin ${SERVER_CONF}/$server_bin.json
+            ${SERVER_BIN}/$server_bin "${SERVER_CONF}"/$server_bin.json
             if [ $? -eq 0 ]
             then
                 info_log "${SERVER_HOME}/bin/$server_bin start successfully."

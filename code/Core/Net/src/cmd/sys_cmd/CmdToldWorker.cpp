@@ -38,7 +38,7 @@ bool CmdToldWorker::AnyMessage(const tagMsgShell& stMsgShell,const MsgHead& oInM
             g_pLabor->AddMsgShell(oInTargetWorker.worker_identify(), stMsgShell);
             g_pLabor->AddNodeIdentify(oInTargetWorker.node_type(), oInTargetWorker.worker_identify());
             g_pLabor->AddInnerFd(stMsgShell);
-            snprintf(m_pErrBuff, gc_iMaxBuffLen, "%s:%d.%d", g_pLabor->GetHostForServer().c_str(),g_pLabor->GetPortForServer(), g_pLabor->GetWorkerIndex());
+            snprintf(m_pErrBuff, sizeof(m_pErrBuff), "%s:%d.%d", g_pLabor->GetHostForServer().c_str(),g_pLabor->GetPortForServer(), g_pLabor->GetWorkerIndex());
             oOutTargetWorker.set_err_no(0);
             oOutTargetWorker.set_worker_identify(m_pErrBuff);
             oOutTargetWorker.set_node_type(g_pLabor->GetNodeType());

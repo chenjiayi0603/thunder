@@ -89,7 +89,6 @@ elif [ "$1"x == "checkprocess"x ];then
 elif [ "$1"x == "core"x ];then
 	find ./ -maxdepth 3 -type f -name "core*"  |xargs -i rm {}
 elif [ "$1"x == "test"x ];then
-	cd ../tools/siege/
 	./siegeHello.sh one
 elif [ "$1"x == "change"x ];then
 	change_config

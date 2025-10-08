@@ -1,8 +1,8 @@
 #!/bin/bash 
 #编译目录
 #MAKE_PATH=`dirname $0`
-MAKE_PATH=`pwd`
-cd ${MAKE_PATH}
+MAKE_PATH=$(pwd)
+cd "${MAKE_PATH}" || exit
 RUN_PATH=${MAKE_PATH}/../../deploy
 
 command="all,clean,Hello,Center"
@@ -15,7 +15,7 @@ fi
 
 while read nodetype src_path dest_path  others
 do
-    test ! -d  ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path}
+    test ! -d  "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}""${dest_path}"
 done < plugins_core.conf
 
 function print_so()
@@ -24,15 +24,15 @@ function print_so()
     while read nodetype src_path dest_path others
     do 
         echo "${nodetype}:"
-        find  ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i ls -l --color=tty {}
+        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {}
     done < plugins_core.conf 
 }
 
 if [ $1 == "all" ];then
-    cd ${MAKE_PATH}
+    cd ${MAKE_PATH} || exit
     while read nodetype src_path dest_path others
     do
-        test ! -d ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path} &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
+        test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}"${dest_path} && echo "mkdir -p ${RUN_PATH}${dest_path}"
         echo "cd ${MAKE_PATH}${src_path}" &&\
         cd ${MAKE_PATH}${src_path} &&\
         make clean && make && find ${MAKE_PATH}${src_path} -type f -name "*.so" | xargs -i cp -v {} ${RUN_PATH}${dest_path}
@@ -47,7 +47,7 @@ elif [ $1 == "clean" ] ;then
         find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}
     done < plugins_core.conf
 else
-    cd ${MAKE_PATH}
+    cd ${MAKE_PATH} || exit
     while read nodetype src_path dest_path others
     do
         test ${nodetype} == $1 &&\
