@@ -86,17 +86,17 @@ test ! -d "${MAKE_PATH}"/../3party/lib && ln -s "${RUN_PATH}"/3lib "${MAKE_PATH}
 
 cd "${MAKE_PATH}" || exit
 
-if [ $1 == "all" ];then
+if [ "$1" == "all" ];then
     make_Util 
     make_bins_libNet
     make_plugins
-elif [ $1 == "Util" ];then
+elif [ "$1" == "Util" ];then
     make_Util
-elif [ $1 == "Plugin" ];then
+elif [ "$1" == "Plugin" ];then
     make_plugins
-elif [ $1 == "Net" ];then
+elif [ "$1" == "Net" ];then
     make_bins_libNet
-elif [ $1 == "Clean" ];then
+elif [ "$1" == "Clean" ];then
     clear_Util
     clear_Net
 else
