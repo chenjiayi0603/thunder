@@ -1,8 +1,8 @@
 #!/bin/bash 
 #cmd so文件安装
 #`dirname $0`
-RUN_PATH=`pwd`
-cd ${RUN_PATH}
+RUN_PATH=$(pwd)
+cd "${RUN_PATH}" || exit
 config_file="server_dir.conf"
 
 if [ $# -lt 1 ]; then 
@@ -17,14 +17,14 @@ function print_so()
     do 
         echo "${nodetype}:"
         #输出安装前文件
-        find  ${RUN_PATH}${src_path} -type f -name "*.so" | xargs -i ls -l --color=tty {}
+        find  "${RUN_PATH}""${src_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {}
         #输出安装后文件
-        find  ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i ls -l --color=tty {}
+        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {}
     done < ${config_file}
 }
 
 if [ "$1"x == "all"x ];then
-    cd ${RUN_PATH}
+    cd ${RUN_PATH} || exit
     while read nodetype dest_path src_path others
     do
     	test ! -d ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path} &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
@@ -33,7 +33,7 @@ if [ "$1"x == "all"x ];then
     done < ${config_file}
     print_so
 elif [ "$1"x == "clean"x ] ;then
-    cd ${RUN_PATH}
+    cd ${RUN_PATH} || exit
     while read nodetype dest_path src_path others
     do
         echo "find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}"
@@ -41,7 +41,7 @@ elif [ "$1"x == "clean"x ] ;then
     done < ${config_file}
 else
 	#安装指定node的库文件
-    cd ${RUN_PATH}
+    cd ${RUN_PATH} || exit
     echo "try to intall $1"
     while read nodetype dest_path src_path others
     do
