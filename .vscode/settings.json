@@ -1,6 +1,7 @@
 {
   "files.associations": {
-    "utility": "cpp"
+    "utility": "cpp",
+    "string": "cpp"
   },
   "editor.tabSize": 4,
   "editor.insertSpaces": true,

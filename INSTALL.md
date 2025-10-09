@@ -92,7 +92,7 @@ deploy/Interface/log/Interface_robot_W0.log
 deploy/Interface/log/Interface_robot.log
 deploy/Interface/log/Interface_robot_W0.log
 
-# 目录结构
+# 运行目录结构
 deploy  运行目录
 deploy/3lib  第三方库
 deploy/Center  中心服务器
@@ -102,6 +102,7 @@ deploy/Center/bin  中心服务器执行文件
 deploy/Interface  网关服务器
 deploy/Logic  逻辑服务器
 
+# 代码目录结构
 code  代码目录
 code/3party  第三方库
 code/Interface  网关服务器
@@ -113,6 +114,15 @@ code/Core/Hello  测试服务器，网关服务器
 code/Core/Net  网络库
 code/Core/Util  工具库
 code/Core/Proto  协议库
+
+网络核心代码目录说明（code/Core/Net/src）：
+cmd 系统指令
+codec 系统指令
+labor 工作者与管理者
+protocol 服务器内部与客户端通用协议
+session 会话对象
+step 异步访问对象
+storage 存储接口对象
 
 # 代码统计 #
 脚本code.sh 
@@ -137,4 +147,4 @@ client=>Interface =>Logic
 curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
 
 测试验证token和key合法性
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7559256691418595329&key=7559256691418595330"
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7559276233519792129&key=7559276233519792130"
