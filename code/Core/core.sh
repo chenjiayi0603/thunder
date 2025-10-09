@@ -41,7 +41,7 @@ function make_plugins()
     fi
     
 }
-
+##&& find  "${MAKE_PATH}"/Net/src -type f -name "*Server" | xargs -i cp -v {} "${RUN_PATH}"/bin 
 function make_bins_libNet()
 {
 	if [ -d "${MAKE_PATH}"/Net/src ];then
@@ -49,7 +49,7 @@ function make_bins_libNet()
 	    echo "cd ${MAKE_PATH}/Net/src"
 	    cd "${MAKE_PATH}"/Net/src || exit
 	    make clean 
-	    make && find  "${MAKE_PATH}"/Net/src -type f -name "*Server" | xargs -i cp -v {} "${RUN_PATH}"/bin && \
+	    make && \
 	    cp -v "${MAKE_PATH}"/Net/src/${core_so} "${RUN_PATH}"/lib 
 	    echo "${RUN_PATH}/bin"
 	    ls -l "${RUN_PATH}"/bin 
@@ -65,7 +65,7 @@ function clear_Util()
 	if [ -d "${MAKE_PATH}"/Net/src ];then
 		cd "${MAKE_PATH}"/Util || exit
 	    make clean
-	    test -f "${RUN_PATH}"/lib/libUtil.so && unlink  ${RUN_PATH}/lib/libUtil.so    
+	    test -f "${RUN_PATH}"/lib/libUtil.so && unlink  "${RUN_PATH}"/lib/libUtil.so    
     else
 	    echo "clear no lib"
 	fi

@@ -38,7 +38,7 @@ DIRS := $(SUB_DIRS)
 
 INC := $(INC) \
        -I .. \
-       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include -I $(NET_PATH)/../Proto/src \
+       -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include -I $(NET_PATH)/../Proto/src -I $(NET_PATH)/../Proto/include \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \

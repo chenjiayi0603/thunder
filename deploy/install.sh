@@ -7,7 +7,7 @@ RUN_PATH=$(pwd)
 cd "${RUN_PATH}" || exit
 lib3_path=/home/chen/thunder/deploy/3lib
 
-SRC_IP=192.168.3.6
+SRC_IP=127.0.0.1
 #不填则自动识别目标物理地址为本物理机地址
 DST_IP=
 

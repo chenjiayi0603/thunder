@@ -1,4 +1,7 @@
-#!/bin/bash 
+#!/usr/bin/env bash
+# auto-switch to bash when run via sh/dash
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+set -euo pipefail
 #编译目录
 #MAKE_PATH=`dirname $0`
 MAKE_PATH=$(pwd)
@@ -24,7 +27,7 @@ function print_so()
     while read nodetype src_path dest_path others
     do 
         echo "${nodetype}:"
-        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {}
+        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -I {} ls -l --color=tty {}
     done < plugins_logic.conf 
 }
 
@@ -32,10 +35,10 @@ if [ "$1" == "all" ];then
     cd "${MAKE_PATH}" || exit
     while read nodetype src_path dest_path others
     do
-        test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}""${dest_path}" &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
+        test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}""${dest_path}" && echo "mkdir -p ${RUN_PATH}${dest_path}"
         echo "cd ${MAKE_PATH}${src_path}" &&\
         cd "${MAKE_PATH}""${src_path}" &&\
-        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -i cp -v {} "${RUN_PATH}""${dest_path}"
+        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -I {} cp -v {} "${RUN_PATH}""${dest_path}"
         cd "${MAKE_PATH}" || exit
     done < plugins_logic.conf
     print_so
@@ -43,8 +46,8 @@ elif [ "$1" == "clean" ] ;then
     cd "${MAKE_PATH}" || exit
     while read nodetype src_path dest_path others
     do
-        echo "find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}"
-        find "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i unlink {}
+        echo "find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -I {} unlink {}"
+        find "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -I {} unlink {}
     done < plugins_logic.conf
 else
     cd "${MAKE_PATH}" || exit
@@ -53,9 +56,9 @@ else
         test "${nodetype}" == "$1" &&\
         echo "cd ${MAKE_PATH}${src_path}" &&\
         cd "${MAKE_PATH}""${src_path}" &&\
-        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -i cp -v {} "${RUN_PATH}""${dest_path}" &&\
+        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -I {} cp -v {} "${RUN_PATH}""${dest_path}" &&\
         echo "${nodetype}:" &&\
-        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
+        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -I {} ls -l --color=tty {} &&\
         echo "done" && exit 0
     done < plugins_logic.conf
     echo "nothings to make"

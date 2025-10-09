@@ -6,26 +6,25 @@
  */
 #include "HelloSession.h"
 
-namespace core
+namespace robot
 {
 
 bool HelloSession::Init(const util::CJsonObject& conf)
 {
-    if(boInit)
+    if (boInit)
     {
         return true;
     }
     conf.Get("module_locate_data_request", m_objModuleLocateDataRequest);
-    conf.Get("access_control_allow_origin",m_AccessControlAllowOrigin);
-    conf.Get("access_control_allow_headers",m_AccessControlAllowHeaders);
-    conf.Get("access_control_allow_methods",m_AccessControlAllowMethods);
+    conf.Get("access_control_allow_origin", m_AccessControlAllowOrigin);
+    conf.Get("access_control_allow_headers", m_AccessControlAllowHeaders);
+    conf.Get("access_control_allow_methods", m_AccessControlAllowMethods);
     if (!conf.Get("valid_time_delay", m_ValidTimeDelay))
     {
         m_ValidTimeDelay = 60;
     }
-    LOG4_INFO("%s valid time delay:%d",__FUNCTION__,m_ValidTimeDelay);
-    LOG4_DEBUG("%s() objModuleLocateDataRequest(%s)",
-                        __FUNCTION__,m_objModuleLocateDataRequest.ToString().c_str());
+    LOG4_INFO("%s valid time delay:%d", __FUNCTION__, m_ValidTimeDelay);
+    LOG4_DEBUG("%s() objModuleLocateDataRequest(%s)", __FUNCTION__, m_objModuleLocateDataRequest.ToString().c_str());
     SetCurrentTime();
     boInit = true;
     return true;
@@ -33,7 +32,7 @@ bool HelloSession::Init(const util::CJsonObject& conf)
 
 HelloSession* GetHelloSession()
 {
-    HelloSession* pSess = (HelloSession*) net::GetSession(HELLO_SESSIN_ID);
+    HelloSession* pSess = (HelloSession*)net::GetSession(HELLO_SESSIN_ID);
     if (pSess)
     {
         return (pSess);
@@ -41,16 +40,16 @@ HelloSession* GetHelloSession()
     pSess = new HelloSession();
     if (pSess == NULL)
     {
-        LOG4_ERROR("error %d: new HelloSession() error!",ERR_NEW);
+        LOG4_ERROR("error %d: new HelloSession() error!", ERR_NEW);
         return (NULL);
     }
-    util::CJsonObject   oCurrentConf;
-	if (!net::GetConfig(oCurrentConf,net::GetConfigPath() + std::string("HelloCmd.json")))
-	{
-		delete pSess;
-		pSess = NULL;
-		return (NULL);
-	}
+    util::CJsonObject oCurrentConf;
+    if (!net::GetConfig(oCurrentConf, net::GetConfigPath() + std::string("HelloCmd.json")))
+    {
+        delete pSess;
+        pSess = NULL;
+        return (NULL);
+    }
     if (net::RegisterCallback(pSess))
     {
         if (!pSess->Init(oCurrentConf))
@@ -71,7 +70,5 @@ HelloSession* GetHelloSession()
     return (NULL);
 }
 
-
-}
-;
-//name space robot
+}; // namespace robot
+// name space robot

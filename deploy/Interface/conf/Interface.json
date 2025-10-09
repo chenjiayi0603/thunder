@@ -1,12 +1,12 @@
 {
     "node_type":"INTERFACE",
-    "access_host":"192.168.3.6",
+    "access_host":"172.17.218.148",
     "access_port":27008,
     "access_codec":3,
-    "inner_host":"192.168.3.6",
+    "inner_host":"172.17.218.148",
     "inner_port":27009,
     "center":[
-        {"host":"192.168.3.6","port":"27000"}],
+        {"host":"172.17.218.148","port":"27000"}],
     "server_name":"Interface_robot",
     "process_num":1,
     "worker_capacity":1000000,

@@ -55,6 +55,7 @@ bool CmdGetToken::AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& 
     {
         LOG4_TRACE("%s() genkey", __FUNCTION__);
         g_pLogicSession->GenToken(strToken, strKey);
+        LOG4_INFO("%s() GenToken (strToken:%s,strKey:%s)", __FUNCTION__, strToken.c_str(), strKey.c_str());
         Response(stMsgShell, oInMsgHead, 0);
     }
     else if (oJson("verifykey") == "1")

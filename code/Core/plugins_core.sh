@@ -5,7 +5,7 @@ MAKE_PATH=$(pwd)
 cd "${MAKE_PATH}" || exit
 RUN_PATH=${MAKE_PATH}/../../deploy
 
-command="all,clean,Hello,Center"
+command="all,clean,Center"
 
 if [ $# -lt 1 ]; then 
     echo "USAGE: $0 param1" 
@@ -34,9 +34,9 @@ if [ "$1" == "all" ];then
     do
         test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}"${dest_path} && echo "mkdir -p ${RUN_PATH}${dest_path}"
         echo "cd ${MAKE_PATH}${src_path}" &&\
-        cd ${MAKE_PATH}${src_path} &&\
-        make clean && make && find ${MAKE_PATH}${src_path} -type f -name "*.so" | xargs -i cp -v {} ${RUN_PATH}${dest_path}
-        cd ${MAKE_PATH} || exit
+        cd "${MAKE_PATH}""${src_path}" &&\
+        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -i cp -v {} ${RUN_PATH}${dest_path}
+        cd "${MAKE_PATH}" || exit
     done < plugins_core.conf
     print_so
 elif [ "$1" == "clean" ] ;then
@@ -53,7 +53,7 @@ else
         test "${nodetype}" == "$1" &&\
         echo "cd ${MAKE_PATH}${src_path}" &&\
         cd "${MAKE_PATH}""${src_path}" &&\
-        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -i cp -v {} ${RUN_PATH}${dest_path} &&\
+        make clean && make && find "${MAKE_PATH}""${src_path}" -type f -name "*.so" | xargs -i cp -v {} "${RUN_PATH}""${dest_path}" &&\
         echo "${nodetype}:" &&\
         find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
         echo "done" && exit 0
