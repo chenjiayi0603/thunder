@@ -1,28 +1,42 @@
 {
-    "node_type":"LOGIC",
-    "inner_host":"172.17.218.148",
-    "inner_port":16068,
-    "center":[
-        {"host":"172.17.218.148","port":"27000"}],
-    "server_name":"Logic_robot",
-    "process_num":1,
-    "worker_capacity":1000000,
-    "config_path":"conf/",
-    "log_path":"log/",
-    "max_log_file_num":5,
-    "max_log_file_size":20480000,
-    "permission":{
-        "addr_permit":{"stat_interval":60.0, "permit_num":100000},
-        "uin_permit":{"stat_interval":60.0, "permit_num":60}
-    },
-    "io_timeout":300.0,
-    "step_timeout":1.0,
-    "log_level":20000,
-    "load_so_interval":60.0,
-    "so":[
-         {"cmd":10001, "so_path":"plugins/Logic/CmdGetToken.so", "entrance_symbol":"create","load":true, "version":1}
+    "node_type": "LOGIC",
+    "inner_host": "127.0.0.1",
+    "inner_port": 16068,
+    "center": [
+        {
+            "host": "127.0.0.1",
+            "port": "27000"
+        }
     ],
-    "module":[
-    ]    
+    "server_name": "Logic_robot",
+    "process_num": 1,
+    "worker_capacity": 1000000,
+    "config_path": "conf/",
+    "log_path": "log/",
+    "max_log_file_num": 5,
+    "max_log_file_size": 20480000,
+    "permission": {
+        "addr_permit": {
+            "stat_interval": 60.0,
+            "permit_num": 100000
+        },
+        "uin_permit": {
+            "stat_interval": 60.0,
+            "permit_num": 60
+        }
+    },
+    "io_timeout": 300.0,
+    "step_timeout": 1.0,
+    "log_level": 20000,
+    "load_so_interval": 60.0,
+    "so": [
+        {
+            "cmd": 10001,
+            "so_path": "plugins/Logic/CmdGetToken.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        }
+    ],
+    "module": []
 }
-

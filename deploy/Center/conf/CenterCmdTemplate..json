@@ -1,7 +1,7 @@
 {
 	"center": [
 		{
-			"center_inner_host": "172.17.218.148",
+			"center_inner_host": "127.0.0.1",
 			"center_inner_port": 27000
 		}
 	],
@@ -18,7 +18,7 @@
 			"HELLO"
 		],
 		"ipwhite": [
-			"172.17.218.148"
+			"127.0.0.1"
 		],
 		"node": {
 			"COLLECT": [

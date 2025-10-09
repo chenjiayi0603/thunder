@@ -24,3 +24,4 @@ deploy/Center/conf2/Center.json
 deploy/Hello/conf/Hello.json
 deploy/Interface/conf/Interface.json
 deploy/Logic/conf/Logic.json
+deploy/Hello/bin/Hello
