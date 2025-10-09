@@ -17,7 +17,7 @@ if [ $# -lt 1 ]; then
 	        echo "cp -f ${makefiles}/makefileserver ./${nodetype}/src/makefile"
 			cp -f ${makefiles}/makefileserver ./${nodetype}/src/makefile
 			#复制makefile
-		 	for file in `ls ./${nodetype}/src`
+		 	for file in $(ls ./"${nodetype}"/src)
 			do 
 				if test -d "./${nodetype}/src/${file}"
 				then
@@ -27,7 +27,7 @@ if [ $# -lt 1 ]; then
 						echo "cp -f ${makefiles}/makefileso ./${nodetype}/src/${file}/Makefile"
 						cp -f ${makefiles}/makefileso ./${nodetype}/src/${file}/Makefile
 					else
-						for subfile in `ls ./${nodetype}/src/${file}`
+						for subfile in $(ls ./"${nodetype}"/src/"${file}")
 						do
 							if test -d "./${nodetype}/src/${file}/${subfile}"
 							then
@@ -55,15 +55,15 @@ else
         echo "cp -f ${makefiles}/makefileserver ./${nodetype}/src/makefile"
 		cp -f ${makefiles}/makefileserver ./${nodetype}/src/makefile
 		#复制makefile
-	 	for file in `ls ./${nodetype}/src`
+	 	for file in $(ls ./"${nodetype}"/src)
 		do 
 			if test -d "./${nodetype}/src/${file}"
 			then
-				if [ "${file:0:3}" == "Cmd" ] || [ ${file:0:6} == "Module" ]
+				if [ "${file:0:3}" == "Cmd" ] || [ "${file:0:6}" == "Module" ]
 				then
 					echo "$file ${file:0:3}"
 					echo "cp -f ${makefiles}/makefileso ./${nodetype}/src/${file}/Makefile"
-					cp -f ${makefiles}/makefileso ./${nodetype}/src/${file}/Makefile
+					cp -f ${makefiles}/makefileso ./"${nodetype}"/src/"${file}"/Makefile
 				fi
 			fi
 		done
