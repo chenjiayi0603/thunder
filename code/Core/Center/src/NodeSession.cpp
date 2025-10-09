@@ -16,7 +16,6 @@ auto defaultCallback = [](const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, 
 
 net::E_CMD_STATUS NodeSession::Timeout()
 { // 定时检查中心活跃状态
-    // CheckCenterActive();
     return net::STATUS_CMD_RUNNING;
 }
 
@@ -135,37 +134,9 @@ bool NodeSession::Init(std::string& err, bool boReload)
                   m_centerNodeType.c_str(),
                   m_centerProcessNum);
     }
-    // {
-    // 	util::CJsonObject redlock;
-    // 	LOAD_CONFIG(conf,"redlock", redlock);
-    // 	m_RedLock.Load(redlock);
-    // }
-    // CheckCenterActive();
     boInit = true;
     return true;
 }
-
-// bool NodeSession::CheckCenterActive()
-// {
-//     m_CenterActive.status = eMasterStatus; // 本节点默认为主节点
-//     if (m_RedLock.ServerSize())
-//     {
-//         if (m_RedLock.ContinueLock())
-//         {
-//             m_CenterActive.status = eMasterStatus;
-//         }
-//         else
-//         {
-//             m_CenterActive.status = eSlaveStatus;
-//         }
-//     }
-//     else
-//     {
-//         LOG4_INFO("RedLock.ServerSize zero");
-//     }
-//     LOG4_INFO("Center is %s", m_CenterActive.status == eMasterStatus ? "eMasterStatus" : "eSlaveStatus");
-//     return true;
-// }
 
 bool NodeSession::LoadNodeRoute()
 {
@@ -702,6 +673,10 @@ int NodeSession::SendOthersToReg(const net::tagMsgShell& stMsgShell, const NodeS
         util::CJsonObject objRegNodes;
         GetNeededNodesStatus(pNodeType->neededServers, objRegNodes); // 获取需要的已注册的服务
         net::SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, objRegNodes.ToString(), defaultCallback, stMsgShell);
+        LOG4_TRACE("%s() send others to RegNodeType(%s) MsgBody(%s)",
+                   __FUNCTION__,
+                   strRegNodeType.c_str(),
+                   objRegNodes.ToString().c_str());
     }
     else
     {
@@ -753,6 +728,11 @@ int NodeSession::SendRegToOthers(const NodeStatusInfo& regNodeStatus)
                                             toNoticeMsgBody,
                                             defaultCallback,
                                             info.getNodeKey());
+                        LOG4_TRACE("%s() regNode(%s) to target(%s) MsgBody(%s)",
+                                   __FUNCTION__,
+                                   regNodeStatus.nodeType.c_str(),
+                                   info.getNodeKey().c_str(),
+                                   toNoticeMsgBody.c_str());
                     }
                 }
             }
