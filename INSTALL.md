@@ -105,3 +105,13 @@ code/Core/Proto  协议库
 统计框架代码 code/code.sh Net
 
 统计指定目录代码 code/code.sh ./
+
+# 测试
+查看服务监听端口
+lsof -Pni4 | grep LISTEN 
+
+测试生成token和key
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
+
+测试验证token和key合法性
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7559098009556877317&key=7559098009556877318"

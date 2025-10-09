@@ -1,8 +1,0 @@
-lsof -Pni4 | grep LISTEN 
-
-测试生成token和key
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
-
-测试验证token和key
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7558917449131753479&key=7558917449131753480"
-

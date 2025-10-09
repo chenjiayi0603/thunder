@@ -1,0 +1,45 @@
+{
+	"center": [
+		{
+			"center_inner_host": "192.168.3.6",
+			"center_inner_port": 27000
+		}
+	],
+	"gate": [
+		"INTERFACE"
+	],
+	"route": {
+		"route_brief": "优先使用auto则所有节点之间可以互发消息，否则使用node下的路由",
+		"auto": [
+			"COLLECT",
+			"PGAGENT",
+			"LOGQUEUE",
+			"PROXYSSDB",
+			"HELLO"
+		],
+		"ipwhite": [
+			"192.168.3.6"
+		],
+		"node": {
+			"COLLECT": [
+				"PROXYSSDB",
+				"LOGQUEUE",
+				"STATISTICS"
+			],
+			"PGAGENT": [],
+			"LOGQUEUE": [
+				"PROXYSSDB"
+			],
+			"PROXYSSDB": [
+				"PGAGENT"
+			],
+			"STATISTICS": [
+				"PROXY"
+			],
+			"HELLO": [
+				"PROXYSSDB",
+				"PGAGENT"
+			]
+		}
+	}
+}
