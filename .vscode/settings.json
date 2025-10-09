@@ -1,5 +1,16 @@
 {
-    "files.associations": {
-        "utility": "cpp"
-    }
+  "files.associations": {
+    "utility": "cpp"
+  },
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.formatOnSave": true,
+  "[cpp]": {
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+  "C_Cpp.clang_format_style": "file",
+  "C_Cpp.clang_format_fallbackStyle": "LLVM",
+  "C_Cpp.formatting": "clangFormat"
 }
