@@ -10,7 +10,7 @@
 # global variable $LOG_FILE mush be defined before calling write_log()
 function write_log()
 {
-   local log_time=`date +"%Y-%m-%d %H:%M:%S"`
+   local log_time=$(date +"%Y-%m-%d %H:%M:%S")
    local log_level="INFO"
    local log_msg=$1
    if [ $# -ge 2 ]
