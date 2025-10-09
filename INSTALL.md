@@ -110,6 +110,12 @@ code/Core/Proto  协议库
 查看服务监听端口
 lsof -Pni4 | grep LISTEN 
 
+Interface\Logic\Center 启动后，Interface从Center注册发现Logic
+
+消息流
+client=>Interface =>Logic
+
+测试指令：
 测试生成token和key
 curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
 
