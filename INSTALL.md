@@ -49,12 +49,29 @@ deploy/start_nodes.sh all
 deploy/stop_nodes.sh all
 
 重启所有的服务器
-deploy/restart_nodes.sh
+deploy/restart_nodes.sh all
 
-deploy/server_dir.conf 服务节点插件路径
+启动指定服务器
+deploy/start_nodes.sh Interface
+
+关闭指定服务器
+deploy/stop_nodes.sh Interface
+
+重启指定服务器
+deploy/restart_nodes.sh Interface
+
+配置启动、关闭服务节点
 deploy/server_list.conf 启动、关闭服务节点配置
-deploy/clear.sh清理服务运行文件脚本
 
+配置安装的服务可执行文件的路径
+deploy/server_dir.conf 服务节点插件路径
+
+
+清理可执行文件
+deploy/clear.sh
+
+
+重新加载插件so
 deploy/restart_nodes.sh reload 重新加载所有正在运行的本机节点的插件so。目前只支持重新加载节点的服务配置，不支持重新加载so的逻辑代码。
 
 在节点目录下
@@ -120,4 +137,4 @@ client=>Interface =>Logic
 curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
 
 测试验证token和key合法性
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7559248878873083905&key=7559248878873083906"
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7559256691418595329&key=7559256691418595330"
