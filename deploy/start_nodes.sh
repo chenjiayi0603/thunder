@@ -27,7 +27,10 @@ then
     while read server others
     do
         "${SERVER_HOME}"/"${server}"/start.sh && echo "start ${server} ok"
+        sleep 1s
     done < server_list.conf
+    echo "start all ok"
+    ps -ef |grep robo
 else
     while read server others
     do
