@@ -5,9 +5,9 @@ src_path="/lib"
 dest_path="/lib"
 config_file="server_dir.conf"
 
-proto_so=libanalysis_proto.so
-lib_so=libloss.so
-core_so=libstarship.so
+proto_so=libProto.so
+lib_so=libUtil.so
+core_so=libNet.so
 
 function list_server()
 {
@@ -70,7 +70,7 @@ function r_libs_conf_p2()
     while read nodetype others
     do
     	if [ "$1"x == "clean"x ] ;then
-    		unlink "${RUN_PATH}"${dest_path}/$2 
+    		unlink "${RUN_PATH}"${dest_path}/"$2" 
     	elif [ "$1"x == "all"x ];then #安装指定库到所有节点 如 ./install_libs.sh all ${core_so}
 	        install -vD "${RUN_PATH}"${src_path}/"$2" "${RUN_PATH}"${dest_path}
 	    else #安装指定库到所有节点 如 ./install_libs.sh node ${core_so}

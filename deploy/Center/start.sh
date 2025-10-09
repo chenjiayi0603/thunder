@@ -19,7 +19,7 @@ LOG_FILE="${SERVER_HOME}/log/${SCRIPT_NAME}.log"
 
 function start_node1()
 {
-	server_bin_files=$(ls ${SERVER_BIN}/)
+	server_bin_files=$(ls "${SERVER_BIN}"/)
 	for server_bin in $server_bin_files
 	do
 	    if [ -f "${SERVER_CONF}/${server_bin}.json" ]
