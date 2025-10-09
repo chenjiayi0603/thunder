@@ -28,7 +28,7 @@ function print_so()
     done < plugins_logic.conf 
 }
 
-if [ $1 == "all" ];then
+if [ "$1" == "all" ];then
     cd "${MAKE_PATH}" || exit
     while read nodetype src_path dest_path others
     do

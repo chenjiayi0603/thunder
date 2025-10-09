@@ -24,35 +24,35 @@ function print_so()
 }
 
 if [ "$1"x == "all"x ];then
-    cd ${RUN_PATH} || exit
+    cd "${RUN_PATH}" || exit
     while read nodetype dest_path src_path others
     do
-    	test ! -d ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path} &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
+    	test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}""${dest_path}" && echo "mkdir -p ${RUN_PATH}${dest_path}"
         echo "find ${RUN_PATH}${src_path} -type f -name '*.so' | xargs -i install -vD {} ${RUN_PATH}${dest_path}"
         find ${RUN_PATH}${src_path} -type f -name "*.so" | xargs -i install -vD {} ${RUN_PATH}${dest_path}
     done < ${config_file}
     print_so
 elif [ "$1"x == "clean"x ] ;then
-    cd ${RUN_PATH} || exit
+    cd "${RUN_PATH}" || exit
     while read nodetype dest_path src_path others
     do
         echo "find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}"
-        find ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i unlink {}
+        find "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i unlink {}
     done < ${config_file}
 else
 	#安装指定node的库文件
-    cd ${RUN_PATH} || exit
+    cd "${RUN_PATH}" || exit
     echo "try to intall $1"
     while read nodetype dest_path src_path others
     do
-    	test ! -d ${RUN_PATH}${dest_path} && mkdir -p ${RUN_PATH}${dest_path} &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
+    	test ! -d "${RUN_PATH}""${dest_path}" && mkdir -p "${RUN_PATH}""${dest_path}" &&　echo "mkdir -p ${RUN_PATH}${dest_path}"
         echo "checking ${RUN_PATH}${dest_path}"
-        test ${nodetype} == $1 &&\
+        test "${nodetype}" == "$1" &&\
         echo "install ${RUN_PATH}${src_path} to ${RUN_PATH}${dest_path}" &&\
-        find ${RUN_PATH}${src_path} -type f -name "*.so" | xargs -i install -vD {} ${RUN_PATH}${dest_path} &&\
+        find "${RUN_PATH}""${src_path}" -type f -name "*.so" | xargs -i install -vD {} "${RUN_PATH}""${dest_path}" &&\
         echo "${nodetype}:" &&\
-        find  ${RUN_PATH}${src_path} -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
-        find  ${RUN_PATH}${dest_path} -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
+        find  "${RUN_PATH}""${src_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
+        find  "${RUN_PATH}""${dest_path}" -type f -name "*.so" | xargs -i ls -l --color=tty {} &&\
         echo "done" && exit 0
     done < ${config_file}
     echo "nothings to install"
