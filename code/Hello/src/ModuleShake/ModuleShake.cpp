@@ -2,23 +2,30 @@
  * Project:  WebServer
  * @file     ModuleHello.cpp
  * @brief 	 用于支持websocket的握手协议
- * @author   cjy
+ * @author   Tommy
  * @date:    2016年10月31日
  * @note
  * Modify history:
  ******************************************************************************/
-#include "ModuleShake.hpp"
-#include "ProtoError.h"
+#define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <time.h>
+#include "ModuleShake.hpp"
+#include "cryptopp/default.h"
+#include "cryptopp/cryptlib.h"
+#include "cryptopp/base64.h"
+#include "cryptopp/sha.h"
+#include "cryptopp/hex.h"
+#include "cryptopp/aes.h"
+#include "cryptopp/modes.h"
+#include "cryptopp/filters.h"
+#include "cryptopp/md5.h"
+#include "cryptopp/des.h"
+#include "ProtoError.h"
 
-MUDULE_CREATE(robot::ModuleShake);
+MUDULE_CREATE(im::ModuleShake);
 
-namespace robot
+namespace im
 {
-
-ModuleShake::ModuleShake() : m_boInit(false) {}
-
-ModuleShake::~ModuleShake() {}
 
 bool ModuleShake::Init()
 {
@@ -27,7 +34,7 @@ bool ModuleShake::Init()
         return true;
     }
     HelloSession* pSession = GetHelloSession();
-    if (!pSession)
+    if(!pSession)
     {
         LOG4_ERROR("failed to get GetNodeSession");
         return false;
@@ -36,95 +43,85 @@ bool ModuleShake::Init()
     return true;
 }
 
-bool ModuleShake::AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+bool ModuleShake::AnyMessage(
+                const net::tagMsgShell& stMsgShell,
+                const HttpMsg& oInHttpMsg)
 {
-    LOG4_DEBUG("%s()", __FUNCTION__);
+    LOG4_TRACE("%s()", __FUNCTION__);
     ws_req_t ws_req;
-    if (!ParseWebsocketHandshake(oInHttpMsg, ws_req))
+    if(!ParseWebsocketHandshake(oInHttpMsg,ws_req))
     {
-        LOG4_DEBUG("%s() failed to ParseWebsocketHandshake", __FUNCTION__);
-        return ResponseHttp(stMsgShell, oInHttpMsg, 1000, "failed to ParseWebsocketHandshake");
+        LOG4_TRACE("%s() failed to ParseWebsocketHandshake", __FUNCTION__);
+        return ResponseHttp(stMsgShell,oInHttpMsg,1000,"failed to ParseWebsocketHandshake");
     }
-    if (strcasecmp(ws_req.upgrade.c_str(), "websocket") == 0) // websocket升级握手消息
+    if(strcasecmp(ws_req.upgrade.c_str(),"websocket") == 0)//websocket升级握手消息
     {
-        LOG4_DEBUG("ParseWebsocketHandshake ok");
-        return ResponseWebsocketResponseHandshake(stMsgShell, ws_req, oInHttpMsg);
+        LOG4_TRACE("ParseWebsocketHandshake ok");
+        return ResponseWebsocketResponseHandshake(stMsgShell,ws_req,oInHttpMsg);
     }
-    else // 普通的http消息
+    else//普通的http消息
     {
-        LOG4_DEBUG("ParseWebsocketHandshake other msg");
-        return ResponseHttp(stMsgShell, oInHttpMsg, 1000, "ParseWebsocketHandshake other msg");
+        LOG4_TRACE("ParseWebsocketHandshake other msg");
+        return ResponseHttp(stMsgShell,oInHttpMsg,1000,"ParseWebsocketHandshake other msg");
     }
     return (true);
 }
 
-bool ModuleShake::ResponseWebsocketResponseHandshake(const net::tagMsgShell& stMsgShell,
-                                                     const ws_req_t&         ws_req,
-                                                     const HttpMsg&          oInHttpMsg)
+bool ModuleShake::ResponseWebsocketResponseHandshake(const net::tagMsgShell& stMsgShell,const ws_req_t &ws_req,
+                const HttpMsg& oInHttpMsg)
 {
-    LOG4_DEBUG("WebsocketResponseHandshake");
+    LOG4_TRACE("WebsocketResponseHandshake");
     HttpMsg oOutHttpMsg;
     oOutHttpMsg.set_type(HTTP_RESPONSE);
     oOutHttpMsg.set_status_code(101);
     oOutHttpMsg.set_http_major(oInHttpMsg.http_major());
     oOutHttpMsg.set_http_minor(oInHttpMsg.http_minor());
     oOutHttpMsg.set_url("Switching Protocols");
-    // Connection
-    HttpMsg::Header* header = oOutHttpMsg.add_headers();
-    header->set_header_name("Connection");
-    header->set_header_value("upgrade");
-    // Upgrade
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Upgrade");
-    header->set_header_value("websocket");
-    // Sec-WebSocket-Accept
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Sec-WebSocket-Accept");
-    header->set_header_value(GenerateKey(ws_req.sec_websocket_key));
-    // Access-Control-Allow-Credentials
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Access-Control-Allow-Credentials"); // 是否允许请求带有验证信息
-    header->set_header_value("true");
-    // Access-Control-Allow-Headers
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Access-Control-Allow-Headers"); // 允许自定义的头部
-    header->set_header_value("content-type");
-    // Access-Control-Allow-Origin
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Access-Control-Allow-Headers"); // 允许任何来自任意域的跨域请求,需要以后控制
-    header->set_header_value("*");
-    // Server
-    header = oOutHttpMsg.add_headers();
-    header->set_header_name("Server");
-    header->set_header_value("WebSocketServer");
-    // Origin
-    if (!ws_req.origin.empty()) // 普通的HTTP请求也会带有，在CORS中专门作为Origin信息供后端比对,表明来源域
+    //Connection
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Connection", "upgrade"));
+    //Upgrade
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Upgrade", "websocket"));
+    //Sec-WebSocket-Accept
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Sec-WebSocket-Accept", GenerateKey(ws_req.sec_websocket_key)));
+    //Access-Control-Allow-Credentials//是否允许请求带有验证信息
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Access-Control-Allow-Credentials", "true"));
+    //Access-Control-Allow-Headers//允许自定义的头部
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Access-Control-Allow-Headers", "content-type"));
+    //Access-Control-Allow-Origin//允许任何来自任意域的跨域请求,需要以后控制
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Access-Control-Allow-Headers", "*"));
+    //Server
+    oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Server", "WebSocketServer"));
+    //Origin
+    if (!ws_req.origin.empty())//普通的HTTP请求也会带有，在CORS中专门作为Origin信息供后端比对,表明来源域
     {
-        header = oOutHttpMsg.add_headers();
-        header->set_header_name("Origin");
-        header->set_header_value(ws_req.origin);
+    	oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Origin", ws_req.origin));
     }
-    // Sec-WebSocket-Protocol
+    //Sec-WebSocket-Protocol
     if (!ws_req.sec_webSocket_protocol.empty())
     {
-        header = oOutHttpMsg.add_headers();
-        header->set_header_name("Sec-WebSocket-Protocol");
-        header->set_header_value(ws_req.sec_webSocket_protocol);
+    	oOutHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>("Sec-WebSocket-Protocol", ws_req.sec_webSocket_protocol));
     }
-    LOG4_DEBUG("%s", ToString(oOutHttpMsg).c_str());
-    return g_pLabor->SendTo(stMsgShell, oOutHttpMsg);
+    LOG4_TRACE("%s", ToString(oOutHttpMsg).c_str());
+    return GetLabor()->SendTo(stMsgShell, oOutHttpMsg);
 }
 
-std::string ModuleShake::GenerateKey(const std::string& key)
+std::string ModuleShake::GenerateKey(const std::string &key)//https://blog.csdn.net/ecrisraul/article/details/88042012
 {
-    // sha-1
-    std::string   tmp        = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    unsigned char digest[20] = { 0 };
-    SHA1((const unsigned char*)tmp.c_str(), tmp.length(), digest);
-    // base64 encode
-    char szToBase64[128] = { 0 };
-    Base64encode(szToBase64, (const char*)digest, 20);
-    return std::string(szToBase64);
+    //sha-1
+    std::string text = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+//    unsigned char digest[20] = {0};
+//    CryptoPP::SHA1((const unsigned char*)tmp.c_str(), tmp.length(), digest);
+//    //base64 encode
+//    char szToBase64[128] = {0};
+//    Base64encode(szToBase64, (const char*)digest, 20);
+//    return std::string(szToBase64);
+	std::string hash;
+	CryptoPP::SHA1 sha1;
+	CryptoPP::HashFilter hashfilter(sha1);
+	hashfilter.Attach(new CryptoPP::HexEncoder(new CryptoPP::StringSink(hash), false));
+	hashfilter.Put(reinterpret_cast<const unsigned char*>(text.c_str()), text.length());
+	hashfilter.MessageEnd();
+	return hash;
 }
 
 const std::string& ModuleShake::ToString(const HttpMsg& oHttpMsg)
@@ -156,11 +153,11 @@ const std::string& ModuleShake::ToString(const HttpMsg& oHttpMsg)
             m_strHttpString += tmp;
         }
     }
-    for (int i = 0; i < oHttpMsg.headers_size(); ++i)
+    for (auto iter = oHttpMsg.headers().begin(); iter != oHttpMsg.headers().end(); ++iter)
     {
-        m_strHttpString += oHttpMsg.headers(i).header_name();
+        m_strHttpString += iter->first;
         m_strHttpString += ":";
-        m_strHttpString += oHttpMsg.headers(i).header_value();
+        m_strHttpString += iter->second;
         m_strHttpString += "\r\n";
     }
     m_strHttpString += "\r\n";
@@ -170,10 +167,10 @@ const std::string& ModuleShake::ToString(const HttpMsg& oHttpMsg)
         m_strHttpString += oHttpMsg.body();
         m_strHttpString += "\r\n\r\n";
     }
-    return (m_strHttpString);
+    return(m_strHttpString);
 }
 
-bool ModuleShake::ParseWebsocketHandshake(HttpMsg oInHttpMsg, ws_req_t& ws_req)
+bool ModuleShake::ParseWebsocketHandshake(HttpMsg oInHttpMsg,ws_req_t &ws_req)
 {
     /*最初的握手http包，如：
     GET /chat HTTP/1.1
@@ -185,49 +182,47 @@ bool ModuleShake::ParseWebsocketHandshake(HttpMsg oInHttpMsg, ws_req_t& ws_req)
     Sec-WebSocket-Protocol: chat, superchat
     Sec-WebSocket-Version: 13
     * */
-    for (int i = 0; i < oInHttpMsg.headers_size(); ++i)
+    for (auto iter = oInHttpMsg.headers().end(); iter != oInHttpMsg.headers().end(); ++iter)
     {
-        if (std::string("Connection") == oInHttpMsg.headers(i).header_name())
+        if (std::string("Connection") == iter->first)
         {
-            ws_req.connection = oInHttpMsg.headers(i).header_value();
+            ws_req.connection = iter->second;
         }
-        else if (std::string("Upgrade") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Upgrade") == iter->first)
         {
-            ws_req.upgrade = oInHttpMsg.headers(i).header_value();
+            ws_req.upgrade = iter->second;
         }
-        else if (std::string("Host") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Host") == iter->first)
         {
-            ws_req.host = oInHttpMsg.headers(i).header_value();
+            ws_req.host = iter->second;
         }
-        else if (std::string("Origin") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Origin") == iter->first)
         {
-            ws_req.origin = oInHttpMsg.headers(i).header_value();
+            ws_req.origin = iter->second;
         }
-        else if (std::string("Cookie") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Cookie") == iter->first)
         {
-            ws_req.cookie = oInHttpMsg.headers(i).header_value();
+            ws_req.cookie = iter->second;
         }
-        else if (std::string("Sec-WebSocket-Key") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Sec-WebSocket-Key") == iter->first)
         {
-            ws_req.sec_websocket_key = oInHttpMsg.headers(i).header_value();
+            ws_req.sec_websocket_key = iter->second;
         }
-        else if (std::string("Sec-WebSocket-Version") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Sec-WebSocket-Version") == iter->first)
         {
-            ws_req.sec_websocket_version = oInHttpMsg.headers(i).header_value();
+            ws_req.sec_websocket_version = iter->second;
         }
-        else if (std::string("Sec-WebSocket-Protocol") == oInHttpMsg.headers(i).header_name())
+        else if (std::string("Sec-WebSocket-Protocol") == iter->first)
         {
-            ws_req.sec_webSocket_protocol = oInHttpMsg.headers(i).header_value();
+            ws_req.sec_webSocket_protocol = iter->second;
         }
     }
     return true;
 }
-bool ModuleShake::ResponseHttp(const net::tagMsgShell& stMsgShell,
-                               const HttpMsg&          oInHttpMsg,
-                               int                     iCode,
-                               const std::string&      msg)
+bool ModuleShake::ResponseHttp(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
+                int iCode,const std::string &msg)
 {
-    LOG4_DEBUG("%s()", __FUNCTION__);
+    LOG4_TRACE("%s()", __FUNCTION__);
     HttpMsg oOutHttpMsg;
     oOutHttpMsg.set_type(HTTP_RESPONSE);
     oOutHttpMsg.set_method(HTTP_POST);
@@ -235,8 +230,12 @@ bool ModuleShake::ResponseHttp(const net::tagMsgShell& stMsgShell,
     oOutHttpMsg.set_http_major(oInHttpMsg.http_major());
     oOutHttpMsg.set_http_minor(oInHttpMsg.http_minor());
     oOutHttpMsg.set_body(msg);
-    g_pLabor->SendTo(stMsgShell, oOutHttpMsg);
-    return (true);
+    GetLabor()->SendTo(stMsgShell, oOutHttpMsg);
+    return(true);
 }
 
-} // namespace robot
+
+
+
+
+} /* namespace core */

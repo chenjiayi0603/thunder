@@ -1,0 +1,55 @@
+/*******************************************************************************
+ * Project:  Net
+ * @file     StepConnectWorker.hpp
+ * @brief 
+ * @author   Tommy
+ * @date:    2019年8月14日
+ * @note
+ * Modify history:
+ ******************************************************************************/
+#ifndef SRC_STEP_SYS_STEP_STEPCONNECTWORKER_HPP_
+#define SRC_STEP_SYS_STEP_STEPCONNECTWORKER_HPP_
+
+#include "step/Step.hpp"
+#include "StepTellWorker.hpp"
+
+namespace net
+{
+
+class Step;
+
+/**
+ * @brief 系统内部连接步骤
+ * @note 系统内部自动建立连接时，发送连接对方节点的工作者请求
+ */
+class StepConnectWorker : public Step
+{
+public:
+    StepConnectWorker(const tagMsgShell& stMsgShell,
+                    const MsgHead& oInMsgHead,
+                    const MsgBody& oInMsgBody);
+    virtual ~StepConnectWorker() = default;
+    virtual E_CMD_STATUS Emit(
+                    int iErrno = 0,
+                    const std::string& strErrMsg = "",
+                    const std::string& strErrShow = "");
+    virtual E_CMD_STATUS Callback(
+                    const tagMsgShell& stMsgShell,
+                    const MsgHead& oInMsgHead,
+                    const MsgBody& oInMsgBody,
+                    void* data = nullptr);
+    virtual E_CMD_STATUS Timeout();
+
+private:
+    int m_iTimeoutNum;          ///< 超时次数
+    tagMsgShell m_stMsgShell;
+    MsgHead m_oConnectMsgHead;
+    MsgBody m_oConnectMsgBody;
+
+public:
+    StepTellWorker* pStepTellWorker;        ///< 仅为了生成可读性高的类图，构造函数中不分配空间，析构函数中也不回收空间
+};
+
+} /* namespace net */
+
+#endif /* SRC_STEP_SYS_STEP_STEPCONNECTWORKER_HPP_ */

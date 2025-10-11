@@ -23,6 +23,8 @@ enum E_REDIS_TYPE
 enum E_REDIS_ROBOT_DATA
 {
     /*属性型数据 */
+    IM_DATA_TEST              	 = 1000,    ///< 测试
+    
     IM_DATA_DOMAIN               = 1,    ///< app域名
     IM_DATA_ACCOUNT              = 2,    ///< account数据
     IM_DATA_CREATE_USERID        = 3,    ///< 创建账号，userid生成

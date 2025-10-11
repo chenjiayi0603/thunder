@@ -1,23 +1,59 @@
-#!/usr/bin/env bash
-# auto-switch to bash when run via sh/dash
-if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+#!/bin/bash 
+: << !
+安装所有文件
+./install.sh all
 
-#RUN_PATH=`dirname $0`
-RUN_PATH=$(pwd)
-cd "${RUN_PATH}" || exit
-lib3_path=/home/chen/thunder/deploy/3lib
+第一次安装所有文件（会解压第三方库）
+./install.sh first
 
-SRC_IP=127.0.0.1
+安装所有plugin
+./install.sh plugin
+
+安装所有系统动态库
+./install.sh libs
+
+安装所有bin
+./install_bins.sh all
+
+安装所有plugin
+./install_plugins.sh all
+
+安装所有系统动态库
+./install_libs.sh all
+
+修改服务器IP配置
+./install.sh change
+
+!
+
+RUN_PATH=`pwd`
+cd ${RUN_PATH}
+lib3_path=/app/thunder/deploy/3lib
+config_file="server_dir.conf"
+server_file="server_list.conf"
+
+SRC_IP=172.17.218.148
 #不填则自动识别目标物理地址为本物理机地址
 DST_IP=
 
+function Usage()
+{
+	echo -e "configure server_dir.conf  and  server_list.conf  before installation"
+    echo -e "Usage: ./`basename $0` [OPTION]"
+    echo -e "OPTION: [-h|--help/all/clean/check/change"
+    while read server others
+    do 
+    	echo "/${server}"
+    done < ${server_file}
+    echo -e "]"
+}
+
 if [ $# -lt 1 ]; then 
-    echo "USAGE: $0 param1" 
-    echo "please input option[all,plugin,lib]"
+    Usage
 	exit 1; 
 fi
 
-function check_config()
+function CheckConfig()
 {
 	echo "IP:"
 	find ../ -maxdepth 5 ! -path "../code/*" ! -name install.sh -type f -name "*.json" -o -name "*.sql" -o -name "*.sh"|xargs grep -rin --color "192.168"
@@ -26,79 +62,10 @@ function check_config()
 	find ../ -maxdepth 5 ! -path "../code/*" -type f -name "*.json"|xargs grep -rin --color "access_port"
 }
 
-function change_config()
+function CheckMachine()
 {
-	#FreeBSD/OpenBSD
-	test -z "${DST_IP}" && DST_IP=$(ifconfig|grep -E 'inet.[0-9]'|grep -v '127.'|awk '{print $2}'|awk 'NR==1{print}')
-	#linux
-	test -z "${DST_IP}" && DST_IP=$(ifconfig |grep "inet addr" |grep "192."|grep -o "addr:[0-9.]\{1,\}"|cut -d: -f2|awk 'NR==1{print}')
-	test -z "${DST_IP}" && echo "failed to get DST_IP" && exit 0
-	
-	#输入修改原地址
-	#read -t 30 -p "请输入需要修改的原来的SRC_IP后面两个数字（如18.68）:" SRC_IP
-	test -z "${SRC_IP}" && echo "$SRC_IP empty" && exit 0
-	# SRC_IP="192.168.${SRC_IP}"
-	test "${DST_IP}"x == "${SRC_IP}"x && echo "DST_IP:${DST_IP} and SRC_IP:${SRC_IP} are the same"
-	
-	echo "change config from SRC_IP:${SRC_IP} to DST_IP:${DST_IP}"
-	
-	find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/${SRC_IP}/${DST_IP}/g"
-}
-
-function pre_process()
-{	
-	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
-	# find ../tools -maxdepth 3 -type f -name "*.sh"  |xargs -i chmod +x {}
-	#3lib
-	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} "${RUN_PATH}"/3lib  && echo "ln 3lib for deploy"
-	#config
-	change_config
-}
-
-if [ "$1"x == "all"x ];then
-	./install_bins.sh all && ./install_libs.sh all && ./install_plugins.sh all
-elif [ "$1"x == "plugin"x ];then
-	./install_plugins.sh all
-elif [ "$1"x == "lib"x ];then
-	./install_libs.sh all
-elif [ "$1"x == "pre"x ];then
-	pre_process
-elif [ "$1"x == "release"x ];then
-	pre_process
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/[[:space:]]//g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":0,/\"log_level\":20000,/g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":10000,/\"log_level\":20000,/g"
-	
-	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":1,/\"process_num\":3,/g"
-	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":2,/\"process_num\":3,/g"
-	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":10,/\"process_num\":3,/g"
-elif [ "$1"x == "debug"x ];then
-	pre_process
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/[[:space:]]//g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":20000,/\"log_level\":0,/g"
-	
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":10,/\"process_num\":1,/g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":6,/\"process_num\":1,/g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":3,/\"process_num\":1,/g"
-	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":2,/\"process_num\":1,/g"
-elif [ "$1"x == "checkprocess"x ];then
-	#查看占内存最大的10 个进程
-	ps aux|head -1;ps aux|grep -v PID|sort -rn -k +4|head
-	#查看占cpu最多的10 个进程
-	ps aux|head -1;ps aux|grep -v PID|sort -rn -k +3|head
-elif [ "$1"x == "core"x ];then
-	find ./ -maxdepth 3 -type f -name "core*"  |xargs -i rm {}
-elif [ "$1"x == "test"x ];then
-	./siegeHello.sh one
-elif [ "$1"x == "change"x ];then
-	change_config
-elif [ "$1"x == "check"x ];then
-	check_config
-elif [ "$1"x == "machine"x ];then
 	#cpu
-	# 总核数 = 物理CPU个数 X 每颗物理CPU的核数 
-	# 总逻辑CPU数 = 物理CPU个数 X 每颗物理CPU的核数 X 超线程数
-	# 查看物理CPU个数
+	# 总核数 = 物理CPU个数 X 每颗物理CPU的核数 .   总逻辑CPU数 = 物理CPU个数 X 每颗物理CPU的核数 X 超线程数 .查看物理CPU个数
 	echo "CPU physical number"
 	cat /proc/cpuinfo| grep "physical id"| sort| uniq| wc -l
 	# 查看每个物理CPU中core的个数(即核数)
@@ -109,15 +76,113 @@ elif [ "$1"x == "machine"x ];then
 	cat /proc/cpuinfo| grep "processor"| wc -l
 	#mem
 	echo "free -m"&& free -m
-	#echo "cat /proc/meminfo" && cat /proc/meminfo
-	#disk
-	#echo "disk: lsblk" && lsblk
 	df -h
 	#network
-	#echo "network: 查看网卡硬件信息 lspci | grep -i 'eth'" && lspci | grep -i 'eth'
-	#echo "查看系统的所有网络接口 ifconfig -a" && ifconfig -a
-	#echo "ip link show" && 	ip link show
 	echo "sudo ethtool eth0" &&	sudo ethtool eth0
-else
-	echo "do nothings"
-fi
+}
+
+function ChangeConfig()
+{
+	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
+	#FreeBSD/OpenBSD
+	test -z "${DST_IP}" && DST_IP=`ifconfig|grep -E 'inet.[0-9]'|grep -v '127.'|awk '{print $2}'|awk 'NR==1{print}'`
+	#linux
+	test -z "${DST_IP}" && DST_IP=`ifconfig |grep "inet addr" |grep "192."|grep -o "addr:[0-9.]\{1,\}"|cut -d: -f2|awk 'NR==1{print}'`
+	test -z "${DST_IP}" && echo "failed to get DST_IP" && exit 0
+	
+	#输入修改原地址
+	#read -t 30 -p "请输入需要修改的原来的SRC_IP后面两个数字（如18.68）:" SRC_IP
+	test -z "${SRC_IP}" && echo "$SRC_IP empty" && exit 0
+	
+	echo "change config from SRC_IP:${SRC_IP} to DST_IP:${DST_IP}"
+	find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/${SRC_IP}/${DST_IP}/g"
+}
+
+function PreProcess()
+{
+	rar x -A ./3lib.rar
+	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
+	#3lib
+	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} ${RUN_PATH}/3lib  && echo "ln 3lib for deploy"
+	#config
+	change_config
+}
+
+function DebugConfig()
+{
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":30000,/\"log_level\":0,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":20000,/\"log_level\":0,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":10,/\"process_num\":1,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":6,/\"process_num\":1,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":3,/\"process_num\":1,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":2,/\"process_num\":1,/g"
+}
+
+#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_num\":5,/\"max_log_file_num\":10,/g"
+#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_size\":20480000,/\"max_log_file_size\":102400000,/g"
+#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_size\":81920000,/\"max_log_file_size\":102400000,/g"
+
+function ReleaseConfig()
+{
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":0,/\"log_level\":20000,/g"
+	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"log_level\":10000,/\"log_level\":20000,/g"
+	find ./ -maxdepth 5 ! -path "./Center/*" -type f -name "*.json"  |xargs sed -i "s/\"process_num\":1,/\"process_num\":3,/g"
+}
+
+function InstallAll()
+{
+	./install_bins.sh all && ./install_libs.sh all && ./install_plugins.sh all
+}
+
+
+while  true :
+do
+    case "$1" in
+        -h|--help)
+            Usage
+            break
+            ;;
+        all)
+            InstallAll  
+            break
+            ;;
+        plugin)
+            ./install_plugins.sh all
+            break
+            ;;
+        libs)
+            ./install_libs.sh all
+            break
+            ;;
+        first)
+        	PreProcess
+        	InstallAll
+            break
+            ;;
+        debug)
+            PreProcess
+            DebugConfig
+            break
+            ;;
+        release)
+            PreProcess
+			ReleaseConfig
+            break
+            ;;
+        check)
+            CheckConfig
+            CheckMachine
+            break
+            ;;
+        change)
+            ChangeConfig
+            break
+            ;;
+        *)
+        	echo "do nothings"
+        	Usage
+            break
+            ;;
+    esac
+done
+ 

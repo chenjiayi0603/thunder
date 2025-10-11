@@ -1,18 +1,16 @@
 /*******************************************************************************
  * Project:  Hello
  * @file     StepLocateData.cpp
- * @brief
- * @author   cjy
+ * @brief 
+ * @author   Tommy
  * @date:    2016年4月19日
  * @note
  * Modify history:
  ******************************************************************************/
 #include "StepLocateData.hpp"
-// #include "ProtoError.h"
-#include "RobotError.h"
 #include "util/HashCalc.hpp"
 
-namespace robot
+namespace im
 {
 
 StepLocateData::StepLocateData(const net::tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg)
@@ -20,15 +18,17 @@ StepLocateData::StepLocateData(const net::tagMsgShell& stInMsgShell, const HttpM
 {
 }
 
-StepLocateData::~StepLocateData() {}
+StepLocateData::~StepLocateData()
+{
+}
 
 net::E_CMD_STATUS StepLocateData::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrClientShow)
 {
-    MsgHead           oMsgHead;
-    MsgBody           oMsgBody;
+    MsgHead oMsgHead;
+    MsgBody oMsgBody;
     util::CJsonObject oRequest(m_oInHttpMsg.body());
-    LOG4_DEBUG("%s", oRequest.ToString().c_str());
-    uint32      uiFactor = 0;
+    LOG4_TRACE("%s", oRequest.ToString().c_str());
+    uint32 uiFactor = 0;
     std::string strTableName;
     std::string strRedisKey;
     /*
@@ -45,7 +45,9 @@ net::E_CMD_STATUS StepLocateData::Emit(int iErrno, const std::string& strErrMsg,
     }
     if (oRequest.Get("tb_name", strTableName) && oRequest.Get("redis_key", strRedisKey))
     {
-        net::MemOperator oMemOper(uiFactor, strTableName, DataMem::MemOperate::DbOperate::SELECT, strRedisKey, "get");
+        net::MemOperator oMemOper(uiFactor,
+                        strTableName, DataMem::MemOperate::DbOperate::SELECT,
+                        strRedisKey, "get");
         oMsgBody.set_body(oMemOper.MakeMemOperate()->SerializeAsString());
     }
     else if (oRequest.Get("tb_name", strTableName))
@@ -60,64 +62,64 @@ net::E_CMD_STATUS StepLocateData::Emit(int iErrno, const std::string& strErrMsg,
     }
     else
     {
-        Response(11008, "tb_name or redis_key must be set!", "tb_name or redis_key must be set!");
-        return (net::STATUS_CMD_FAULT);
+        Response(robot::ERR_LACK_CLUSTER_INFO, "tb_name or redis_key must be set!", "tb_name or redis_key must be set!");
+        return(net::STATUS_CMD_FAULT);
     }
     oMsgHead.set_cmd(net::CMD_REQ_LOCATE_STORAGE);
     oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
     oMsgHead.set_seq(GetSequence());
-    LOG4_DEBUG("body: %s", oMsgBody.body().c_str());
-    if (!net::SendToNext("PROXY", oMsgHead, oMsgBody))
+    LOG4_TRACE("body: %s",oMsgBody.body().c_str());
+    if (!GetLabor()->SendToNext(REDISAGENT_NODE, oMsgHead, oMsgBody))
     {
         LOG4_ERROR("send to dataproxy error!");
-        Response(ERR_SERVERINFO, "send to dataproxy error!", "send to dataproxy error!");
-        return (net::STATUS_CMD_FAULT);
+        Response(robot::ERR_SERVERINFO, "send to dataproxy error!", "send to dataproxy error!");
+        return(net::STATUS_CMD_FAULT);
     }
-    return (net::STATUS_CMD_RUNNING);
+    return(net::STATUS_CMD_RUNNING);
 }
 
-net::E_CMD_STATUS StepLocateData::Callback(const net::tagMsgShell& stMsgShell,
-                                           const MsgHead&          oInMsgHead,
-                                           const MsgBody&          oInMsgBody,
-                                           void*                   data)
+net::E_CMD_STATUS StepLocateData::Callback(
+                const net::tagMsgShell& stMsgShell,
+                const MsgHead& oInMsgHead,
+                const MsgBody& oInMsgBody,
+                void* data)
 {
-    LOG4_DEBUG("%s()", __FUNCTION__);
+    LOG4_TRACE("%s()", __FUNCTION__);
     HttpMsg oHttpMsg;
     oHttpMsg.set_type(HTTP_RESPONSE);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_http_major(m_oInHttpMsg.http_major());
     oHttpMsg.set_http_minor(m_oInHttpMsg.http_minor());
     oHttpMsg.set_body(oInMsgBody.body());
-    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
-    return (net::STATUS_CMD_COMPLETED);
+    GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
+    return(net::STATUS_CMD_COMPLETED);
 }
 
 net::E_CMD_STATUS StepLocateData::Timeout()
 {
-    LOG4_DEBUG("StepTestGet Timeout");
+    LOG4_TRACE("StepTestGet Timeout");
     HttpMsg oHttpMsg;
     oHttpMsg.set_type(HTTP_RESPONSE);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_http_major(m_oInHttpMsg.http_major());
     oHttpMsg.set_http_minor(m_oInHttpMsg.http_minor());
     oHttpMsg.set_body("timeout");
-    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
-    return (net::STATUS_CMD_COMPLETED);
+    GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
+    return(net::STATUS_CMD_COMPLETED);
 }
 
 bool StepLocateData::Response(int iErrno, const std::string& strErrMsg, const std::string& strErrClientShow)
 {
-    HttpMsg           oHttpMsg;
-    util::CJsonObject oRsp;
+    HttpMsg oHttpMsg;
+    util::CJsonObject oJsonObj;
     oHttpMsg.set_type(HTTP_RESPONSE);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_http_major(m_oInHttpMsg.http_major());
     oHttpMsg.set_http_minor(m_oInHttpMsg.http_minor());
-    oRsp.Add("code", iErrno);
-    oRsp.Add("msg", strErrClientShow.c_str());
-    oHttpMsg.set_body(oRsp.ToFormattedString());
-    g_pLabor->SendTo(m_stInMsgShell, oHttpMsg);
-    return (net::STATUS_CMD_COMPLETED);
+    oJsonObj.Add("code", iErrno);
+    oJsonObj.Add("msg", strErrClientShow.c_str());
+    oHttpMsg.set_body(oJsonObj.ToFormattedString());
+    return GetLabor()->SendTo(m_stInMsgShell, oHttpMsg);
 }
 
-} // namespace robot
+} /* namespace net */

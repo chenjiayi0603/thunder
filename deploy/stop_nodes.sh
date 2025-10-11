@@ -6,31 +6,27 @@ cd ${SERVER_HOME}
 SERVER_HOME=`pwd`
 
 if [ $# -lt 1 ]; then 
-    echo "USAGE: $0 param1(servername)" 
-    while read server others
-    do 
-    	echo "${server}"
-    done < server_list.conf
-    echo "All"
+    echo "USAGE: $0 all/force/nodetype" 
     exit 1; 
 fi
 
-server_name=_robot
-
-if [ $1 == "all" ]
+#server_name=_im
+#ps -ef |grep _im|grep -v grep|awk '{print $2}'|xargs kill -9  #pkill -9 presureClient
+if [ "$1"x == "all"x ]
 then
     while read server others
     do
         ${SERVER_HOME}/${server}/stop.sh "yes"
     done < server_list.conf
-elif [ "$1"x == "kill"x ];then
-	ps -ef |grep $server_name|grep -v grep|awk '{print $2}'|xargs kill 
-	ps -ef |grep $server_name
+elif [ "$1"x == "force"x ];then
+	server_name=_im
+	ps -ef |grep $server_name|grep -v grep|awk '{print $2}'|xargs kill -9 
+	ps -eo pid,lstart,etime,cmd | grep $server_name
 else
     while read server others
     do
-        test $1 == ${server} &&\
-        ${SERVER_HOME}/$1/stop.sh "yes"&&\
+        test $1 == ${server} && \
+        ${SERVER_HOME}/$1/stop.sh "yes" && \
         echo "stop ${server} ok" && exit 0
     done < server_list.conf
 	echo "USAGE: $0 param1(servername)" 

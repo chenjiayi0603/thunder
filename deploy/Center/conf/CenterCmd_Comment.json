@@ -1,0 +1,23 @@
+{
+	"//need_leadership":"中心是否选举主节点",
+	"need_leadership":true,
+	"//center_beat":"中心之间心跳时间（秒）",
+	"center_beat":3,
+	"//center_beat":"接入白名单",
+	"ipwhite":["10.1.3.75"],
+	"//center_beat":"中心集群配置",
+	"centers":["10.1.3.75:27000","10.1.3.75:27022","10.1.3.75:27032"],
+	"//node_types":"节点订阅发布关系",
+	"node_types":[
+		{"node_type":"HELLO", "subscribe":["LOGIC", "ROUTER"]},
+		{"node_type":"ACCESS", "subscribe":["LOGIC", "ROUTER"]},
+		{"node_type":"API", "subscribe":["ROUTER"]},
+		{"node_type":"ROUTER", "subscribe":["LOGIN", "NOTICE", "MSG","GROUP","OFFICAL"]},
+		{"node_type":"LOGIN", "subscribe":["ACCESS", "REDISAGENT","GROUP","DBAGENT","MSG","MONGOAGENT","NOTICE"]},
+		{"node_type":"MSG", "subscribe":["ACCESS", "REDISAGENT", "DBAGENT","MONGOAGENT", "API","MSG"]}, 
+		{"node_type":"HELLO", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT"]},
+		{"node_type":"NOTICE", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT","API"]},
+		{"node_type":"GROUP", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT","API","GROUP"]},
+		{"node_type":"OFFICAL", "subscribe":["REDISAGENT","MONGOAGENT","API","ACCESS","DBAGENT"]}
+	]
+}

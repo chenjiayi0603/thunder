@@ -28,7 +28,7 @@ struct Token
 {
 	Token()
 	{
-		strID = std::to_string(util::GetUniqueId(net::GetNodeId(),net::GetWorkerIndex()));
+		strID = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
 		m_uiTimeCreate = ::time(NULL);
 		m_uiTimeOut = m_uiTimeCreate + 40;
 	}

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-SERVER_HOME=$(dirname "$0")
-SCRIPT_NAME=$(basename "$0")
-cd "${SERVER_HOME}" || exit
-SERVER_HOME=$(pwd)
+SERVER_HOME=`dirname $0`
+SCRIPT_NAME=`basename $0`
+cd ${SERVER_HOME}
+SERVER_HOME=`pwd`
 
 function list_server()
 {
@@ -26,16 +26,13 @@ if [ "$1"x == "all"x ]
 then
     while read server others
     do
-        "${SERVER_HOME}"/"${server}"/start.sh && echo "start ${server} ok"
-        sleep 1s
+        ${SERVER_HOME}/${server}/start.sh
     done < server_list.conf
-    echo "start all ok"
-    ps -ef |grep robo
 else
     while read server others
     do
-        test "$1" == "${server}" &&\
-        "${SERVER_HOME}"/"$1"/start.sh &&\
+        test $1 == ${server} &&\
+        ${SERVER_HOME}/$1/start.sh &&\
         echo "start ${server} ok" && exit 0
     done < server_list.conf
 	list_server

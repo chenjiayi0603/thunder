@@ -1,41 +1,26 @@
 {
-    "center": [
-        {
-            "center_inner_host": "127.0.0.1",
-            "center_inner_port": 27000
-        }
+    "need_leadership": true,
+    "center_beat": 3,
+    "ipwhite": [
+        "172.17.218.148"
     ],
-    "gate": [],
-    "route": {
-        "route_brief": "优先使用auto则所有节点之间可以互发消息，否则使用node下的路由",
-        "auto": [
-            "INTERFACE",
-            "LOGIC"
-        ],
-        "ipwhite": [
-            "127.0.0.1"
-        ],
-        "node": {
-            "INTERFACE": [
+    "centers": [
+        "172.17.218.148:27000",
+        "172.17.218.148:27022",
+        "172.17.218.148:27032"
+    ],
+    "node_types": [
+        {
+            "node_type": "HELLO",
+            "subscribe": [
                 "LOGIC"
-            ],
-            "LOGIC": []
-        }
-    },
-    "redlock_brief": "redlock为空列表则未开启center热备功能，否则需要启动3个redis实例",
-    "redlock_sample": [
-        {
-            "host": "127.0.0.1",
-            "port": 16379
+            ]
         },
         {
-            "host": "127.0.0.1",
-            "port": 16380
-        },
-        {
-            "host": "127.0.0.1",
-            "port": 16381
+            "node_type": "INTERFACE",
+            "subscribe": [
+                "LOGIC"
+            ]
         }
-    ],
-    "redlock": []
+    ]
 }

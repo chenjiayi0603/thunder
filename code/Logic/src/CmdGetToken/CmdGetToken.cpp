@@ -81,7 +81,7 @@ void CmdGetToken::Response(const net::tagMsgShell& stMsgShell, const MsgHead& oI
 {
     util::CJsonObject oRsp;
     oRsp.Add("code", code);
-    net::SendToClient(stMsgShell, oInMsgHead, oRsp.ToString());
+    GetLabor()->SendToClient(stMsgShell, oInMsgHead, oRsp.ToString());
 }
 
 } /* namespace robot */

@@ -18,5 +18,10 @@
 # io事件 #
 支持自定义信号处理等
 
+# 编码解码器 #
+支持多种编码解码器，自定义编码解码器
+
 # 详细配置说明 #
 参考 deploy/Hello/conf/HelloTemplate.json
+
+

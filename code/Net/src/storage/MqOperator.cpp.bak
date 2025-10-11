@@ -1,0 +1,57 @@
+/*******************************************************************************
+ * Project:  MqAgent
+ * @file     MqOperator.cpp
+ * @brief 
+ * @author   Tommy
+ * @date:    2019年11月19日
+ * @note
+ * Modify history:
+ ******************************************************************************/
+#include "MqOperator.hpp"
+
+namespace net
+{
+
+MqOperator::MqOperator(DataMem::MemOperate::MqOperate::E_QUERY_TYPE type)
+{
+	m_pMqOperate = new DataMem::MemOperate::MqOperate();
+	m_pMqOperate->set_query_type(type);
+}
+
+MqOperator::~MqOperator()
+{
+    if (m_pMqMemRequest != nullptr)
+    {
+    	SAFE_DELETE(m_pMqMemRequest);
+    }
+    else
+    {
+    	SAFE_DELETE(m_pMqOperate);
+    }
+}
+
+DataMem::MemOperate* MqOperator::MakeMemOperate()
+{
+    if (m_pMqMemRequest == nullptr)
+    {
+        m_pMqMemRequest = new DataMem::MemOperate();
+    }
+    else
+    {
+        return(m_pMqMemRequest);
+    }
+    if (m_vecPinelineCmds.size() > 0)
+    {
+    	for(auto& cmd:m_vecPinelineCmds)
+    	{
+    		m_pMqOperate->add_msgs()->CopyFrom(cmd);
+    	}
+    	m_vecPinelineCmds.clear();
+    }
+    m_pMqMemRequest->set_section_factor(0);
+    m_pMqMemRequest->set_allocated_mq_operate(m_pMqOperate);
+    return(m_pMqMemRequest);
+}
+
+
+} /* namespace net */

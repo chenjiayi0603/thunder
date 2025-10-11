@@ -44,13 +44,15 @@ net::E_CMD_STATUS LogicSession::Timeout()
 LogicSession* GetLogicSession()
 {
 	if (g_pLogicSession) return g_pLogicSession;
-	std::string strConfigPath = net::GetConfigPath() + std::string("/LogicCmd.json");
+	LOG4_INFO("GetWorkPath(%s) GetConfigPath(%s)!",GetLabor()->GetWorkPath().c_str(),net::GetConfigPath().c_str());
+	std::string strConfigPath = net::GetConfigPath() + std::string("LogicCmd.json");
     util::CJsonObject oCurrentConf;       ///< 当前加载的配置
     if (!net::GetConfig(oCurrentConf,strConfigPath))
     {
     	LOG4_ERROR("Open conf (%s) error!",strConfigPath.c_str());
     	return NULL;
     }
+	LOG4_INFO("Open conf (%s)!",oCurrentConf.ToString().c_str());
     return (g_pLogicSession = net::MakeSession<LogicSession>(ROBOT_SESSIN_ID,std::string("robot::LogicSession"),1.0,oCurrentConf));
 }
 

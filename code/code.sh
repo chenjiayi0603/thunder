@@ -2,7 +2,7 @@
 
 if [ $# -ne 1 ]
 then
-    echo "usage: $0 all/Net/Core/Logic or  \$worker_path."
+    echo "usage: $0 all/Net/Logic or  \$worker_path."
     exit 0
 fi
 
@@ -12,17 +12,19 @@ CODE_LINES=0
 function compute_line()
 {
     local file_name=$1
-    local protofile=$(echo $file_name |grep .pb.)
-    if [ -z $protofile ]; then
-    	local lines=$(wc -l $file_name | awk '{print $1}')
-    	CODE_LINES=$(expr $CODE_LINES + $lines)
+    local protofile=`echo $file_name |grep -v .pb.|grep -v .sh|grep "\."`
+    if [ $protofile ]; then
+    	local lines=`wc -l $file_name | awk '{print $1}'`
+    	CODE_LINES=`expr $CODE_LINES + $lines`
+    	echo "file_name = $file_name $lines"
     fi
 }
 
 
 function rotate_compute_line()
 {
-    local found_files=$(ls -l | grep "^-" | awk '{if (match($NF, ".cpp$") || match($NF, ".h$") || match($NF, ".cc$") || match($NF, ".c$") || match($NF, ".cxx$") || match($NF, ".hpp$") || match($NF, ".hh$") || match($NF, ".hxx$") ) {print $NF}}')
+    #echo `pwd`
+    local found_files=`ls -l | grep "^-" | awk '{if (match($NF, ".cpp$") || match($NF, ".h$") || match($NF, ".cc$") || match($NF, ".c$") || match($NF, ".cxx$") || match($NF, ".hpp$") || match($NF, ".hh$") || match($NF, ".hxx$") ) {print $NF}}'`
     target_files=${found_files}
     #echo "target_files = $target_files"
     for f in $target_files
@@ -33,10 +35,10 @@ function rotate_compute_line()
 
 function rotate_dir()
 {
-    local current_dir=$(pwd)
+    local current_dir=`pwd`
     local target_dir=$1
     cd "$current_dir/$target_dir"
-    local found_dirs=$(ls -l | grep "^d" | awk '{print $NF}')
+    local found_dirs=`ls -l | grep "^d" | awk '{print $NF}'`
     local sub_dirs=${found_dirs}
     #echo "sub_dirs = {${sub_dirs}}"
     if [ -n "${sub_dirs}" ]
@@ -48,43 +50,43 @@ function rotate_dir()
         done
     fi
     rotate_compute_line
-    cd "$current_dir" || exit
+    cd $current_dir
 }
 
 echo "code line:"
 if [ "$1"x == "all"x ]; then  
-    filelist=$(ls -t .)
+    filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do
         CODE_LINES=0
-        test -d "${filename}" && rotate_dir "${filename}" && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
+        test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
     done
     echo "all line: $CODE_LINES_ALL"
 elif [ "$1"x == "Net"x ]; then 
-    arr=('Core/Util','Core/Net') 
-    filelist=$(ls -t .)
+    arr=('Util','Net') 
+    filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do
         if echo "${arr[@]}" | grep -w "$filename" &>/dev/null; then
             CODE_LINES=0
-            test -d "${filename}" && rotate_dir "${filename}" && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
+            test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
         fi 
     done
     echo "all line: $CODE_LINES_ALL"
 elif [ "$1"x == "Core"x ]; then 
     arr=('Core') 
-    filelist=$(ls -t .)
+    filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do
         if echo "${arr[@]}" | grep -w "$filename" &>/dev/null; then
             CODE_LINES=0
-            test -d "${filename}" && rotate_dir "${filename}" && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
+            test -d ${filename} && rotate_dir ${filename} && echo "${filename} : $CODE_LINES" && let CODE_LINES_ALL+=$CODE_LINES
         fi 
     done
     echo "all line: $CODE_LINES_ALL"
 elif [ "$1"x == "Logic"x ]; then 
-	arr=('Logic') 
-    filelist=$(ls -t .)
+	arr=('Collect','Session','User') 
+    filelist=`ls -t .`
     #echo "filelist $filelist"
     for filename in $filelist ; do
         if echo "${arr[@]}" | grep -w "$filename" &>/dev/null; then
@@ -95,8 +97,8 @@ elif [ "$1"x == "Logic"x ]; then
     echo "all line: $CODE_LINES_ALL"
 else
     WORK_PATH=$1
-    test ! -d "$WORK_PATH" && echo "${WORK_PATH} is not dir,please input all,frame,or dir name" && exit 1
-    rotate_dir "$WORK_PATH"
+    test ! -d $WORK_PATH && echo "${WORK_PATH} is not dir,please input all,frame,or dir name" && exit 1
+    rotate_dir $WORK_PATH
     echo "code line: $WORK_PATH : $CODE_LINES"
 fi
     

@@ -1,589 +1,932 @@
 /*******************************************************************************
  * Project:  Hello
  * @file     ModuleHello.cpp
- * @brief
- * @author   cjy
+ * @brief 
+ * @author   Tommy
  * @date:    2017年2月1日
  * @note
  * Modify history:
  ******************************************************************************/
 #include <map>
+#include <chrono>
 // Crypto++ Includes
-#include "cryptopp/osrng.h"
 #include "cryptopp/randpool.h"
+#include "cryptopp/osrng.h"
 #include "cryptopp/rsa.h"
 
-#include "ModuleHello.hpp"
-#include "StepHttpRequestState.hpp"
-#include "util/StringCoder.hpp"
+#include "util/HashCalc.hpp"
 #include "util/UnixTime.hpp"
-
+#include "util/CommonUtils.hpp"
+#include "ModuleHello.hpp"
+#include "util/StringCoder.hpp"
 #include "StepHttpRequestState.hpp"
-// #include "test_proto3.pb.h"
+#include "CustomLogger.hpp"
 
-MUDULE_CREATE(robot::ModuleHello);
+#include "HelloSession.h"
 
-namespace robot
+MUDULE_CREATE(core::ModuleHello);
+
+namespace core
 {
 
-ModuleHello::ModuleHello() : boTests(false) {}
-
-ModuleHello::~ModuleHello() {}
+ModuleHello::~ModuleHello()
+{
+	LOG4_TRACE("%s()",__FUNCTION__);
+}
 
 bool ModuleHello::Init()
 {
-    //	Tests();
-    return (true);
+	LOG4_TRACE("%s() ModuleHello",__FUNCTION__);
+	Tests();
+    return(true);
 }
 
 void ModuleHello::Tests()
 {
-    if (boTests)
-        return;
-    boTests = true;
-    TestJson2pbRepeatedFields();
-    TestCoroutinue();
-    TestCoroutinueAuto();
+//	TestBson();
+//	TestLog();
+//	TestCat();
+	if (boTests)return;
+	boTests = true;
+	im::GetHelloSession();
+}
+/*
+	{
+		"topic": {
+			"group_msg_test":{"instance":"im_mq_instance_1","group_id":"group_msg"}
+		},
+		"//fail_retry_immediate": "失败后立刻重发次数",
+		"fail_retry_immediate":3,
+		"//fail_retry_delay": "失败后延时重发次数",
+		"fail_retry_delay":3
+		"mq_group": {
+			"instance_brief": "每个实例为一个集群",
+			"im_mq_instance_1": {
+				"//identify": "10.1.8.11:9876",
+				"identify": "10.1.8.11:9876"
+			},
+			"im_mq_instance_2": {
+				"//identify": "10.1.8.11:9876",
+				"identify": "10.1.8.11:9876"
+			}
+		}
+	}
+	 * */
+
+void ModuleHello::TestLoadConfigFromCustom()
+{
+	{
+//		const util::CJsonObject& jsonCustom = GetLabor()->GetCustomConf();
+		{
+			std::unordered_map<uint32,double> m_mapCmdsTargetidClientMsgIdUnitMsgIntervalConfig;//cmd limit
+			bool m_boEnableClientmsgProhibitLimit(false);
+			int m_uiUserClientMsgIdUnitMsgLimitCache_ClearTimeConfig(0);
+//			auto m_oLastCustomConf = jsonCustom;
+			GetLabor()->GetCustomConf().Get("enable_clientmsgid_prohibit_limit",m_boEnableClientmsgProhibitLimit);
+			GetLabor()->GetCustomConf().Get("user_clientmsgid_cache_clear_time",m_uiUserClientMsgIdUnitMsgLimitCache_ClearTimeConfig);
+			LOG4_TRACE("%s() enable_clientmsgid_prohibit_limit:%d user_clientmsgid_cache_clear_time:%u",
+								__FUNCTION__,m_boEnableClientmsgProhibitLimit,m_uiUserClientMsgIdUnitMsgLimitCache_ClearTimeConfig);
+
+			//客户端单连接具体指令具体会话id具体消息id请求限流(相同客户端消息id相互间最小时间间隔)
+			util::CJsonObject oCmdsTargetidClientMsgIdUnitMsgIntervalConf;
+			if (GetLabor()->GetCustomConf().Get("cmd_targetid_clientmsgid_unit_msg_interval",oCmdsTargetidClientMsgIdUnitMsgIntervalConf))
+			{
+				LOG4_TRACE("%s() oCmdsTargetidClientMsgIdUnitMsgIntervalConf:%s",
+									__FUNCTION__,oCmdsTargetidClientMsgIdUnitMsgIntervalConf.ToString().c_str());
+				if (!oCmdsTargetidClientMsgIdUnitMsgIntervalConf.IsEmpty())
+				{
+					//"//cmd_targetid_clientmsgid_unit_msg_interval":"客户端单连接具体指令具体会话id具体消息id请求限流(相同客户端消息id相互间最小时间间隔)",
+					//"cmd_targetid_clientmsgid_unit_msg_interval":{"4001":2.0,"4501":2.0},
+
+					std::vector<std::string> vecCmdsTargetidMsgIdUnitMsgLimit;
+					oCmdsTargetidClientMsgIdUnitMsgIntervalConf.GetKeys(vecCmdsTargetidMsgIdUnitMsgLimit);
+					if (vecCmdsTargetidMsgIdUnitMsgLimit.size() > 0)
+					{
+						m_mapCmdsTargetidClientMsgIdUnitMsgIntervalConfig.clear();
+						for(auto& strCmd:vecCmdsTargetidMsgIdUnitMsgLimit)
+						{
+							int iCmd = atoi(strCmd.c_str());
+							if (iCmd > 0)
+							{
+								int dReqLimit(0);
+								LOG4_TRACE("%s() test oCmdsTargetidClientMsgIdUnitMsgIntervalConf:%s",
+															__FUNCTION__,oCmdsTargetidClientMsgIdUnitMsgIntervalConf.ToString().c_str());
+								if (oCmdsTargetidClientMsgIdUnitMsgIntervalConf.Get(strCmd,dReqLimit) && dReqLimit > 0)
+								{
+									LOG4_TRACE("%s() load iCmd(%d) dReqLimit(%d)",__FUNCTION__,iCmd,dReqLimit);
+									m_mapCmdsTargetidClientMsgIdUnitMsgIntervalConfig[iCmd] = dReqLimit;
+								}
+								else
+								{
+									LOG4_WARN("%s() load iCmd(%d) dReqLimit(%d)",__FUNCTION__,iCmd,dReqLimit);
+								}
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				LOG4_WARN("%s() oCmdsTargetidClientMsgIdUnitMsgIntervalConf:%s",
+													__FUNCTION__,oCmdsTargetidClientMsgIdUnitMsgIntervalConf.ToString().c_str());
+			}
+		}
+	}
 }
 
-bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+
+void ModuleHello::TestLog()
 {
-    util::CJsonObject obj;
-    if (!obj.Parse(oInHttpMsg.body()))
-    {
-        LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-        return false;
-    }
-    std::string strOption;
-    obj.Get("option", strOption);
-    if ("Echo" == strOption)
-    {
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    // PgAgent
-    else if ("PgAgentInsert" == strOption)
-    {
-        InsertPostgres(stMsgShell, oInHttpMsg, obj("val"), "PGAGENT");
-    }
-    else if ("PgAgentSetGet" == strOption)
-    {
-        SetGetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PGAGENT");
-    }
-    else if ("PgAgentSet" == strOption)
-    {
-        SetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PGAGENT");
-    }
-    else if ("PgAgentGet" == strOption)
-    {
-        GetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PGAGENT");
-    }
-    else if ("PgAgentAddUp" == strOption)
-    {
-        int id(0);
-        obj.Get("id", id);
-        int sum(0);
-        obj.Get("sum", sum);
-        AddUpPostgres(stMsgShell, oInHttpMsg, id, obj("name"), sum, "PGAGENT");
-    }
-    // Proxy
-    else if ("ProxyPgAgentSetGet" == strOption)
-    {
-        SetGetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PROXYSSDB");
-    }
-    else if ("ProxyPgAgentSet" == strOption)
-    {
-        SetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PROXYSSDB");
-    }
-    else if ("ProxyPgAgentGet" == strOption)
-    {
-        GetPostgres(stMsgShell, oInHttpMsg, obj("val"), "PROXYSSDB");
-    }
-    else if ("RedisearchAdd" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
+	if (boTestLog)
+	{
+		return;
+	}
+	boTestLog = true;
+//	static log4cplus::Logger g_oDataLogger;
+//
+//	LOG4_TRACE("%s() ModuleHelloTestLog",__FUNCTION__);
+//#define TEST_DATA_LOG4_INFO(...) LOG4CPLUS_INFO_FMT(g_oDataLogger, ##__VA_ARGS__)
+//
+//	int64 iMaxLogFileSize = 2048000; // 10 MB
+//	int32 iMaxLogFileNum = 10;
+//	int32 iMaxHistory = 1;
+////	int32 iMaxTryRemoveFile = 3;
+//	int32 iLogLevel = log4cplus::INFO_LOG_LEVEL;
+//	std::string strDataLogPath = "data/";
+//	std::string strParttern = "%m%n";
+//	std::string fileExt = ".data";
+//	std::string strLogPreName = strDataLogPath + std::string("/") + getproctitle() + ".ModuleHelloTestLog.";// + std::string(".data");
+//	uint32 iLogschedule = log4cplus::HOURLY;//enum DailyRollingFileSchedule { MONTHLY, WEEKLY, DAILY, TWICE_DAILY, HOURLY, MINUTELY};
+//	bool bCreateDirs = false;
+//	bool bRollOnClose = false;
+//	bool bImmediateFlush = true;
+//
+//	log4cplus::initialize();
+//	log4cplus::SharedAppenderPtr file_append(new customlog4cplus::FixDailyRollingFileAppender(
+//			strLogPreName,fileExt,
+//			(log4cplus::DailyRollingFileSchedule) iLogschedule ,
+//			iMaxLogFileSize,iMaxLogFileNum,iMaxHistory,
+//			bImmediateFlush,bCreateDirs,bRollOnClose,""));
+//	file_append->setName(strLogPreName);
+//	std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
+//	file_append->setLayout(layout);
+//	//log4cplus::Logger::getRoot().addAppender(file_append);
+//	g_oDataLogger = log4cplus::Logger::getInstance(strLogPreName);
+//	g_oDataLogger.setLogLevel(iLogLevel);
+//	g_oDataLogger.addAppender(file_append);
+//	for (int i = 0;i < 10000;++i)
+//	{
+//		TEST_DATA_LOG4_INFO("%s() mytesting %s %u", __FUNCTION__,"DATA_LOG4_INFO",i);
+//	}
+//	LOG4_INFO("%s() mytesting  done", __FUNCTION__);
+}
+
+void ModuleHello::TestBson()
+{
+	bson_error_t error;
+	{
+		bson_t roles = BSON_INITIALIZER;
+	    BCON_APPEND (&roles, "0", "{", "role", "root", "db", "admin", "}");
+	    char *str = bson_as_json (&roles, NULL);
+	    LOG4_TRACE("roles ToJson %s",str);
+		bson_free(str);
+		bson_destroy(&roles);
+	}
+	{
+		bson_t roles = BSON_INITIALIZER;
+		bson_t roles1 = BSON_INITIALIZER;
+		bson_t roles2 = BSON_INITIALIZER;
+		bson_t roles3 = BSON_INITIALIZER;
+		BCON_APPEND (&roles1, "0", "1");
+		BCON_APPEND (&roles2, "1", "2");
+		BCON_APPEND (&roles3, "2", "3");
+
+		bson_append_document (&roles, "0",strlen("0"), &roles1);
+		bson_append_document (&roles, "1",strlen("1"), &roles1);
+		bson_append_document (&roles, "2",strlen("2"), &roles1);
+
+		char *str = bson_as_json (&roles, NULL);
+		LOG4_TRACE("roles ToJson %s",str);
+		util::CJsonObject oCJsonObject;
+		oCJsonObject.Parse(str);
+		LOG4_TRACE("oCJsonObject roles ToJson %s",oCJsonObject.ToString().c_str());
+		bson_free(str);
+		bson_destroy(&roles);
+		bson_destroy(&roles1);
+		bson_destroy(&roles2);
+		bson_destroy(&roles3);
+	}
+	{
+		bson_t roles = BSON_INITIALIZER;
+		BCON_APPEND (&roles, "0", "1");
+		BCON_APPEND (&roles, "1", "2");
+		BCON_APPEND (&roles, "2", "3");
+
+		char *str = bson_as_json (&roles, NULL);
+		LOG4_TRACE("roles ToJson %s",str);
+		util::CJsonObject oCJsonObject;
+		oCJsonObject.Parse(str);
+		LOG4_TRACE("oCJsonObject roles ToJson %s",oCJsonObject.ToString().c_str());
+		bson_free(str);
+		bson_destroy(&roles);
+	}
+	{
+		util::CJsonObject oCJsonObject;
+		oCJsonObject.Add("1");
+		oCJsonObject.Add("2");
+		oCJsonObject.Add("3");
+		LOG4_TRACE("oCJsonObject %s",oCJsonObject.ToString().c_str());
+		util::CBsonObject oBsonObject(oCJsonObject);
+		LOG4_TRACE("oBsonObject %s",oBsonObject.ToString().c_str());
+		util::CJsonObject oCJsonObject2;
+		oCJsonObject2.Parse(oBsonObject.ToString());
+		LOG4_TRACE("oCJsonObject2 %s",oCJsonObject2.ToString().c_str());
+	}
+	{
+		bson_t opts = BSON_INITIALIZER;
+		bson_t child = BSON_INITIALIZER;
+		bson_append_document_begin (&opts, "sort", -1, &child);
+		BSON_APPEND_INT32 (&child, "filename", 1);
+		BSON_APPEND_INT32 (&child, "filename2", 2);
+		bson_append_document_end (&opts, &child);
+		char *str = bson_as_json (&opts, NULL);
+		LOG4_TRACE("opts ToJson %s",str);
+		bson_free(str);
+		bson_destroy(&opts);
+		bson_destroy(&child);
+	}
+	{
+		util::CBsonObject oBsonObject;
+		oBsonObject.Add ( "0", "foo");
+//		oBsonObject.Add ("1", "bar");
+
+		oBsonObject.Add( "id", 1);
+		oBsonObject.Add("field1", 0);
+		std::string msg = "test message";
+		oBsonObject.Add( "bin1", (const uint8_t*)(msg.c_str()), (uint32_t)(msg.size()));
+		const uint8_t data[] = {1, 2, 3, 4};
+		oBsonObject.Add ( "bin2", data, sizeof(data));
+
+		oBsonObject.Add("numbertest",util::GetBsonDoc("testn","testn1"));
+		std::chrono::milliseconds timeNow = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+//		unsigned long long ullTime = timeNow.count();//1579155560156
+
+		oBsonObject.AddDataTime("date1",timeNow.count());
+		oBsonObject.AddTimeStamp("time2",::time(nullptr));
+
+		util::CJsonObject jsonObj;
+		oBsonObject.ToJson(jsonObj);
+		LOG4_TRACE("CBsonObject ToJson %s",jsonObj.ToString().c_str());
+	}
+	{
+		bson_t bson1 = BSON_INITIALIZER;
+		bson_destroy (&bson1);
+		bson_t* bson2 = bson_new ();
+		SAFE_DESTROY_BSON (bson2);
+	}
+	{
+		bson_t bson = BSON_INITIALIZER;
+		/* BSON array is a normal BSON document with integer values for the keys,
+		* starting with 0 and continuing sequentially
+		*/
+		BSON_APPEND_UTF8 (&bson, "0", "foo");
+//		BSON_APPEND_UTF8 (&bson, "1", "bar");
+
+		BSON_APPEND_INT64(&bson, "id", 1);
+		BSON_APPEND_INT64(&bson, "field1", 0);
+		std::string msg = "test message";
+		{
+			int iEncodeLen = Base64encode_len(msg.size());
+			char* pBufEncoded = (char*)malloc(iEncodeLen);
+			int iEncodeBytes = Base64encode(pBufEncoded, msg.c_str(), msg.size());
+			std::string strContent;
+			strContent.assign(pBufEncoded, iEncodeBytes);
+			free(pBufEncoded);
+			LOG4_TRACE("msg:(%s)(%s)",msg.c_str(),strContent.c_str());
+		}
+		BSON_APPEND_BINARY(&bson, "field2", BSON_SUBTYPE_BINARY, (const uint8_t*)(msg.c_str()), (uint32_t)(msg.size()));
+		const uint8_t data[] = {1, 2, 3, 4};
+		BSON_APPEND_BINARY (&bson, "1", BSON_SUBTYPE_BINARY, data, sizeof(data));
+		{
+			char *str = bson_as_json (&bson, NULL);
+			util::CJsonObject json;
+			if (json.Parse(str))
+			{
+				LOG4_TRACE("bson_as_json: %s",json.ToString().c_str());
+			}
+			else
+			{
+				LOG4_WARN("bson_as_json failed");
+			}
+			bson_free(str);
+
+			bson_t * newdoc = util::GetBsonDoc(json, error);
+			if (!newdoc)
+			{
+				LOG4_WARN( "convert to bson failed(%s)",json.ToString().c_str());
+				return;
+			}
+			char * str2 = bson_as_json (newdoc, NULL);
+			if (json.Parse(str2))
+			{
+				LOG4_TRACE("bson_as_json 2 times: %s",json.ToString().c_str());
+			}
+			else
+			{
+				LOG4_WARN("bson_as_json failed");
+			}
+			util::CBsonObject oBson(str2);
+			if (oBson.GetError().code == 0)
+			{
+				util::CJsonObject jsonObj;
+				oBson.ToJson(jsonObj);
+				LOG4_TRACE("oBson jsonObj.ToString: %s",jsonObj.ToString().c_str());
+				std::string str0;
+				oBson.Get("0",str0);
+				LOG4_TRACE("oBson 0: %s",str0.c_str());
+				std::string binary;
+				if (oBson.GetBinary("1",binary))
+				{
+					LOG4_TRACE ("oBson key 1 binary size(%u) (%d,%d,%d,%d)",binary.size(),(int)binary[0], (int)binary[1], (int)binary[2], (int)binary[3]);
+				}
+				if (oBson.GetBinary("bin2",binary))
+				{
+					LOG4_TRACE ("oBson key bin2 binary size(%u) (%d,%d,%d,%d)",binary.size(),(int)binary[0], (int)binary[1], (int)binary[2], (int)binary[3]);
+				}
+			}
+			bson_free(str2);
+			SAFE_DESTROY_BSON(newdoc);
+		}
+		{
+			char *str = bson_array_as_json (&bson, NULL);
+			/* Prints
+			* [ "foo", "bar" ]
+			*/
+			LOG4_TRACE("bson_array_as_json:%s", str);
+			bson_free (str);
+		}
+		bson_destroy (&bson);
+	}
+	{
+	   bson_t b;
+	   bson_iter_t iter;
+	   bson_init (&b);
+	   BSON_ASSERT (bson_append_int32 (&b, "FOO", -1, 1234));
+	   BSON_ASSERT (bson_iter_init_find_case (&iter, &b, "foo"));
+	   LOG4_TRACE ("bson_iter_int32:%d", bson_iter_int32 (&iter));
+	   bson_destroy (&b);
+	}
+	{
+		bson_subtype_t subtype;
+		uint32_t binary_len;
+		const uint8_t *binary;
+		bson_iter_t iter;
+		bson_t *b = bson_new();
+
+		std::string msg = "test message";
+		BSON_APPEND_BINARY(b, "field2", BSON_SUBTYPE_BINARY, (const uint8_t*)(msg.c_str()), (uint32_t)(msg.size()));
+
+		const uint8_t data[] = {1, 2, 3, 4};
+		BSON_APPEND_BINARY (b, "1", BSON_SUBTYPE_BINARY, data, sizeof(data));
+
+	//		BSON_ASSERT (bson_iter_init (&iter, b));
+	//		BSON_ASSERT (bson_iter_next (&iter));
+		bson_iter_init_find_case (&iter, b, "1");
+		bson_iter_binary (&iter, &subtype, &binary_len, &binary);
+		LOG4_TRACE ("binary_len:%d,subtype:%d,binary:%s", binary_len,subtype,binary);//BSON_SUBTYPE_BINARY
+		LOG4_TRACE ("binary(%d,%d,%d,%d)", (int)binary[0], (int)binary[1], (int)binary[2], (int)binary[3]);
+	//		LOG4_TRACE ("binary_len:%d", bson_iter_int32 (&iter));
+	//		BSON_ASSERT (binary_len == 4);
+	//		BSON_ASSERT (memcmp (binary, "1234", 4) == 0);
+		bson_destroy (b);
+	}
+	{
+		util::CBsonObject oBson1,oBson2,oBson3;
+		{
+			util::CBsonObject oBson;
+			LOG4_TRACE ("oBson IsEmpty:%d", oBson.IsEmpty());
+			oBson.Add("1",1);
+			oBson.Add("2",std::string("a"));
+			oBson.Add("3","a");
+			oBson1.Parse(oBson.GetBson());
+			LOG4_TRACE ("oBson %s", oBson.ToString().c_str());
+			oBson.~CBsonObject();
+		}
+		LOG4_TRACE ("oBson1 %s", oBson1.ToString().c_str());
+		oBson2.Parse(oBson1.GetBson());
+		LOG4_TRACE ("oBson2 %s", oBson1.ToString().c_str());
+
+		oBson3.Parse(oBson1.GetBson());
+		LOG4_TRACE ("oBson3 1 %s", oBson3.ToString().c_str());
+		oBson3.Parse(oBson2.GetBson());
+		LOG4_TRACE ("oBson3 2 %s", oBson3.ToString().c_str());
+	}
+
+}
+
+bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+	util::CJsonObject obj;
+	if (!obj.Parse(oInHttpMsg.body()))
+	{
+		LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+		return false;
+	}
+//	static int dataid = 0;
+//	TEST_DATA_LOG4_INFO("%s() mytesting1 %d", __FUNCTION__,"DATA_LOG4_INFO",++dataid);
+	std::string strOption;
+	obj.Get("option",strOption);
+	if ("Echo" == strOption)
+	{
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	//DbAgent
+	else if ("DbAgent_Insert" == strOption)
+	{
+		DbAgent_Insert(stMsgShell,oInHttpMsg,obj("val"),DBAGENT_NODE);
+	}
+	else if ("DbAgent_SetGet" == strOption)
+	{
+		DbAgent_SetGet(stMsgShell,oInHttpMsg,obj("val"),DBAGENT_NODE);
+	}
+	else if ("DbAgent_Set" == strOption)
+	{
+		DbAgent_Set(stMsgShell,oInHttpMsg,obj("val"),DBAGENT_NODE);
+	}
+	else if ("DbAgent_Get" == strOption)
+	{
+		DbAgent_Get(stMsgShell,oInHttpMsg,obj("val"),DBAGENT_NODE);
+	}
+	else if ("DbAgent_AddUp" == strOption)
+	{
+		int id(0);obj.Get("id",id);
+		int sum(0);obj.Get("sum",sum);
+		DbAgent_AddUp(stMsgShell,oInHttpMsg,id,obj("name"),sum,DBAGENT_NODE);
+	}
+	else if ("DbAgent_SELECT" == strOption)
+	{
+		DbAgent_SELECT(stMsgShell,oInHttpMsg);
+	}
+	//RedisAgent => DbAgent
+	else if ("RedisAgent_DbAgent_SetGet" == strOption)
+	{
+		DbAgent_SetGet(stMsgShell,oInHttpMsg,obj("val"),REDISAGENT_NODE);
+	}
+	else if ("RedisAgent_DbAgent_Set" == strOption)
+	{
+		DbAgent_Set(stMsgShell,oInHttpMsg,obj("val"),REDISAGENT_NODE);
+	}
+	else if ("RedisAgent_DbAgent_Get" == strOption)
+	{
+		DbAgent_Get(stMsgShell,oInHttpMsg,obj("val"),REDISAGENT_NODE);
+	}
+	//RedisAgent
+	else if ("Redis_SearchAdd" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		std::string sDoc;
+		obj.Get("doc",sDoc);
+		Redis_SearchAdd(stMsgShell,oInHttpMsg,sDoc,strVal);
+	}
+	else if ("Redis_GEOADD" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		Redis_GEOADD(stMsgShell,oInHttpMsg,strVal);
+	}
+	else if ("Redis_SetGet" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		Redis_SetGet(stMsgShell,oInHttpMsg,strVal);
+	}
+	else if ("Redis_Set" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		Redis_Set(stMsgShell,oInHttpMsg,strVal);
+	}
+	else if ("Redis_Get" == strOption)
+	{
+		Redis_Get(stMsgShell,oInHttpMsg);
+	}
+	else if ("Redis_GetPineline" == strOption)
+	{
+		Redis_GetPineline(stMsgShell,oInHttpMsg);
+	}
+	else if ("RedisMysql_Step" == strOption)
+	{
+		RedisMysql_Step(stMsgShell,oInHttpMsg);
+	}
+	else if ("Redis_GEORADIUSBYMEMBER" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		Redis_GEORADIUSBYMEMBER(stMsgShell,oInHttpMsg,strVal);
+	}
+	else if ("Redis_bitmapSETBIT" == strOption)
+	{
+	    std::string strVal;
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        std::string sDoc;
-        obj.Get("doc", sDoc);
-        RedisearchAdd(stMsgShell, oInHttpMsg, sDoc, strVal);
-    }
-    else if ("RedisGEOADD" == strOption)
+        Redis_bitmapSETBIT(stMsgShell,oInHttpMsg,strVal,obj("key"));
+	}
+	else if ("Redis_bitmapGETBIT" == strOption)
     {
         std::string strVal;
-        if (!obj.Get("val", strVal))
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        RedisGEOADD(stMsgShell, oInHttpMsg, strVal);
+        Redis_bitmapGETBIT(stMsgShell,oInHttpMsg,strVal,obj("key"));
     }
-    else if ("SetValueFromRedis" == strOption)
+	else if ("Redis_bitmapBITPOS" == strOption)
     {
         std::string strVal;
-        if (!obj.Get("val", strVal))
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        SetValueFromRedis(stMsgShell, oInHttpMsg, strVal);
+        Redis_bitmapBITPOS(stMsgShell,oInHttpMsg,strVal,obj("key"));
     }
-    else if ("OnlySetValueFromRedis" == strOption)
+	else if ("Redis_bitmapGET" == strOption)
+	{
+	    std::string strVal;
+        if (!obj.Get("val",strVal))
+        {
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+            return false;
+        }
+        Redis_bitmapGET(stMsgShell,oInHttpMsg,strVal,obj("key"));
+	}
+	else if ("Redis_bitmapGET_GET" == strOption)
     {
         std::string strVal;
-        if (!obj.Get("val", strVal))
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        OnlySetValueFromRedis(stMsgShell, oInHttpMsg, strVal);
+        Redis_bitmapGET_GET(stMsgShell,oInHttpMsg,strVal,obj("key"),obj("key2"));
     }
-    else if ("OnlyGetValueFromRedis" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        OnlyGetValueFromRedis(stMsgShell, oInHttpMsg, strVal);
-    }
-    else if ("SetValueFromSSDB" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        SetValueFromRedis(stMsgShell, oInHttpMsg, strVal, "PROXYSSDB");
-    }
-    else if ("OnlySetValueFromSSDB" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        OnlySetValueFromRedis(stMsgShell, oInHttpMsg, strVal, "PROXYSSDB");
-    }
-    else if ("OnlyGetValueFromSSDB" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        OnlyGetValueFromRedis(stMsgShell, oInHttpMsg, strVal, "PROXYSSDB");
-    }
-    else if ("RedisGEORADIUSBYMEMBER" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisGEORADIUSBYMEMBER(stMsgShell, oInHttpMsg, strVal);
-    }
-    else if ("RedisbitmapSETBIT" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisbitmapSETBIT(stMsgShell, oInHttpMsg, strVal, obj("key"));
-    }
-    else if ("RedisbitmapGETBIT" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisbitmapGETBIT(stMsgShell, oInHttpMsg, strVal, obj("key"));
-    }
-    else if ("RedisbitmapBITPOS" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisbitmapBITPOS(stMsgShell, oInHttpMsg, strVal, obj("key"));
-    }
-    else if ("RedisbitmapGET" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisbitmapGET(stMsgShell, oInHttpMsg, strVal, obj("key"));
-    }
-    else if ("RedisbitmapGET_GET" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        RedisbitmapGET_GET(stMsgShell, oInHttpMsg, strVal, obj("key"), obj("key2"));
-    }
-    else if ("SsdbMsgHset" == strOption)
+	else if ("Redis_Hset" == strOption)
     {
         util::CJsonObject strVal;
-        if (!obj.Get("val", strVal))
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        SsdbMsgHset(stMsgShell, oInHttpMsg, strVal.ToString(), obj("key"));
+        Redis_Hset(stMsgShell,oInHttpMsg,strVal.ToString(),obj("key"));
     }
-    else if ("SsdbMsgHgetall" == strOption)
+	else if ("Redis_MsgHgetall" == strOption)
     {
-        SsdbMsgHsetall(stMsgShell, oInHttpMsg, obj("key"));
+        Redis_Hsetall(stMsgShell,oInHttpMsg,obj("key"));
     }
-    else if ("SsdbMsgHscan" == strOption)
+	else if ("Redis_Hscan" == strOption)
     {
-        SsdbMsgHscan(stMsgShell, oInHttpMsg, obj("start"), obj("key"));
+        Redis_Hscan(stMsgShell,oInHttpMsg,obj("start"),obj("key"));
     }
-    else if ("TestDBSELECT" == strOption)
-    {
-        TestDBSELECT(stMsgShell, oInHttpMsg);
-    }
-    else if ("HttpsGet" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal)) //"https://www.alipay.com"
+	else if ("Redis_Get_Cat" == strOption)
+	{
+		Redis_Get(stMsgShell,oInHttpMsg);
+	}
+	//mongo
+	else if ("Mongo_Insert" == strOption)
+	{
+		Mongo_Insert(stMsgShell,oInHttpMsg);
+	}
+	else if ("Mongo_Upsert" == strOption)
+	{
+		Mongo_Upsert(stMsgShell,oInHttpMsg);
+	}
+	else if ("Mongo_Step" == strOption)
+	{
+		Mongo_Step(stMsgShell,oInHttpMsg);
+	}
+	//https
+	else if ("HttpsGet" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))//"https://www.alipay.com"
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		std::string strResponse;
+		GetLabor()->HttpsGet(strVal,strResponse,"");//util::CurlClient::eContentType_gzip
+		LOG4_TRACE("HttpsGet %s",strResponse.c_str());
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	else if ("HttpsPost" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))//"https://www.alipay.com"
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		std::string strResponse;
+		GetLabor()->HttpsPost(strVal,"",strResponse);
+		LOG4_TRACE("HttpsPost %s",strResponse.c_str());
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	else if ("hiredis_vip_test" == strOption)
+	{
+		hiredis_vip_test_format_commands();
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	else if ("RSA" == strOption)
+	{
+		TestRSA();
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	else if ("TestCoroutinue" == strOption)
+	{
+		TestCoroutinue();
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+	else if ("TestHttpRequestState" == strOption)
+	{
+		TestHttpRequestState(stMsgShell,oInHttpMsg);
+	}
+	else if ("TestHttpRequestStateFunc" == strOption)
+	{
+		TestHttpRequestStateFunc(stMsgShell,oInHttpMsg);
+	}
+	else if ("TestHttpRequestStateFuncDataRedisAgent" == strOption)
+	{
+		std::string strVal;
+		if (!obj.Get("val",strVal))
+		{
+			LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
+			return false;
+		}
+		TestHttpRequestStateFuncDataRedisAgent(stMsgShell,oInHttpMsg,strVal);
+	}
+	else if ("TestStepCoFuncDataRedisAgent" == strOption)
+	{
+	    std::string strVal;
+        if (!obj.Get("val",strVal))
         {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
+            LOG4_WARN("failed to parse %s",oInHttpMsg.body().c_str());
             return false;
         }
-        std::string strResponse;
-        g_pLabor->HttpsGet(strVal, strResponse, ""); // util::CurlClient::eContentType_gzip
-        LOG4_TRACE("HttpsGet %s", strResponse.c_str());
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    else if ("HttpsPost" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal)) //"https://www.alipay.com"
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        std::string strResponse;
-        g_pLabor->HttpsPost(strVal, "", strResponse);
-        LOG4_TRACE("HttpsPost %s", strResponse.c_str());
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    else if ("RSA" == strOption)
-    {
-        TestRSA();
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    else if ("TestCoroutinue" == strOption)
-    {
-        TestCoroutinue();
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    else if ("TestHttpRequestState" == strOption)
-    {
-        TestHttpRequestState(stMsgShell, oInHttpMsg);
-    }
-    else if ("TestHttpRequestStateFunc" == strOption)
-    {
-        TestHttpRequestStateFunc(stMsgShell, oInHttpMsg);
-    }
-    else if ("TestHttpRequestStateFuncDataProxy" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        TestHttpRequestStateFuncDataProxy(stMsgShell, oInHttpMsg, strVal);
-    }
-    else if ("TestStepCoFuncDataProxy" == strOption)
-    {
-        std::string strVal;
-        if (!obj.Get("val", strVal))
-        {
-            LOG4_WARN("failed to parse %s", oInHttpMsg.body().c_str());
-            return false;
-        }
-        TestStepCoFuncDataProxy(stMsgShell, oInHttpMsg, strVal);
-    }
-    else
-    {
-        LOG4_TRACE("no things to do");
-        Response(stMsgShell, oInHttpMsg, 0);
-    }
-    return (true);
+        TestStepCoFuncDataRedisAgent(stMsgShell,oInHttpMsg,strVal);
+	}
+	else
+	{
+		LOG4_TRACE("no things to do");
+		Response(stMsgShell,oInHttpMsg,0);
+	}
+    return(true);
 }
 
-bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+//	std::string url = oInHttpMsg.url();
+//	auto iter = std::find(url.begin(),url.end(),'?');
+//	if (iter != url.end())
+//	{
+//		url = url.substr(iter - url.begin(),url.end() - iter);
+//	}
+//	std::map<std::string, std::string> mapParameters;
+//	util::DecodeParameter(url,mapParameters);
+bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-    LOG4_DEBUG("body %s oInHttpMsg %s url:%s",
-               oInHttpMsg.body().c_str(),
-               oInHttpMsg.DebugString().c_str(),
-               oInHttpMsg.url().c_str());
-    std::string url  = oInHttpMsg.url();
-    auto        iter = std::find(url.begin(), url.end(), '?');
-    if (iter != url.end())
-    {
-        url = url.substr(iter - url.begin(), url.end() - iter);
-    }
-    std::map<std::string, std::string> mapParameters;
-    util::DecodeParameter(url, mapParameters);
-
-    for (auto p : mapParameters)
-    {
-        LOG4_DEBUG("p(%s,%s)", p.first.c_str(), p.second.c_str());
-    }
-    Response(stMsgShell, oInHttpMsg, 0);
-    return (true);
+	LOG4_TRACE("body %s oInHttpMsg %s url:%s",oInHttpMsg.body().c_str(),oInHttpMsg.DebugString().c_str(),oInHttpMsg.url().c_str());
+	for(auto&& p:oInHttpMsg.params())
+	{
+		LOG4_TRACE("p(%s,%s)",p.first.c_str(),p.second.c_str());
+	}
+	TestMsg(stMsgShell,oInHttpMsg);
+	return(true);
 }
 
-void ModuleHello::InsertPostgres(const net::tagMsgShell& stMsgShell,
-                                 const HttpMsg&          oInHttpMsg,
-                                 const std::string&      sValue,
-                                 const std::string&      nodeType)
+//curl 'http://192.168.3.6:27008/gentoken'
+void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-    if (sValue.size() == 0)
+	std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+	std::string strKey = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+
+	{//返回客户端
+		util::CJsonObject oRsp;
+		oRsp.Add("token", strToken);
+		oRsp.Add("key", strKey);
+		GetLabor()->SendToClient(stMsgShell,oInHttpMsg,oRsp.ToString(),200);
+	}
+	{//发送服务器
+		auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
+		{
+			LOG4_TRACE("callback %s",oInMsgBody.body().c_str());//不需要再返回客户端
+		};
+		util::CJsonObject oJson;
+		std::string address = GetLabor()->GetClientAddr(stMsgShell);
+		oJson.Add("token", strToken);
+		oJson.Add("key", strKey);
+		oJson.Add("genkey", "1");
+
+		oJson.Add("address",address);
+		LOG4_TRACE("oJson(%s)",oJson.ToString().c_str());
+//		int64 mod = util::CalcKeyHash(address.c_str(),address.size());
+		GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
+	}
+}
+
+//curl 'http://192.168.3.6:27008/gentoken?token=6718307704189747201&key=6718307704189747202'
+//curl 'http://192.168.3.6:27008/gentoken?test=echo'
+void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+	std::map<std::string, std::string> mapParameters;
+	util::DecodeParameter(oInHttpMsg.url(),mapParameters,'?');
+	util::CJsonObject oJson;
+	for(auto p:mapParameters)
+	{
+		oJson.Add(p.first,p.second);
+		LOG4_TRACE("Param(%s %s)",p.first.c_str(),p.second.c_str());
+	}
+	std::string strToken = oJson("token");
+	std::string strKey = oJson("key");
+	if (strToken.empty() || strKey.empty())
+	{
+		LOG4_ERROR("%s() strToken.empty() || strKey.empty()", __FUNCTION__);
+		GetLabor()->SendToClient(stMsgShell,oInHttpMsg,"strToken empty or strKey empty",400);
+		return;
+	}
+	//(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
+	auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
+	{
+		LOG4_TRACE("callback %s",oInMsgBody.body().c_str());
+		util::CJsonObject oJson;
+		oJson.Parse(oInMsgBody.body());
+		int code(1);
+		oJson.Get("code",code);
+		pStep->SendToClient(oInMsgBody.body(), code == 0 ? 200 : 401);//https://www.runoob.com/http/http-status-codes.html
+	};
+	oJson.Add("verifykey", "1");
+	std::string address = GetLabor()->GetClientAddr(stMsgShell);
+	oJson.Add("address",address);
+	LOG4_TRACE("oJson(%s)",oJson.ToString().c_str());
+//	int64 mod = util::CalcKeyHash(address.c_str(),address.size());
+	GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
+}
+
+void ModuleHello::DbAgent_Insert(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+	if (sValue.size() == 0){LOG4_TRACE("%s() sValue.size() == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::StepParam
+	{
+		explicit DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	//(const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("callback %s",oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	net::DbOperator oDbOperator(0,PG_TB_TEST,DataMem::MemOperate::DbOperate::INSERT);
+	oDbOperator.AddDbField("name",sValue);
+	LOG4_TRACE("%s() DbAgent_Set %s",__FUNCTION__,sValue.c_str());
+	GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+void ModuleHello::DbAgent_SetGet(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
+{
+	if (sValue.size() == 0){LOG4_TRACE("%s() sValue.size() == 0",__FUNCTION__);return;}
+    struct DataStepCustom:public net::StepParam
     {
-        LOG4_DEBUG("%s() sValue.size() == 0", __FUNCTION__);
-        return;
-    }
-    struct DataStepCustom : public net::StepParam
-    {
-        DataStepCustom(const std::string& node) : nodeType(node) {}
+    	explicit DataStepCustom(const std::string &node):nodeType(node){}
         std::string nodeType;
     };
-    auto callback = [](const DataMem::MemRsp& oMemRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("callback %s", oMemRsp.DebugString().c_str());
-        util::CJsonObject oRsp;
-        oRsp.Add("code", oMemRsp.err_no());
-        oRsp.Add("msg", oMemRsp.err_no() ? "failed" : "ok");
-        pStep->SendToClient(oRsp.ToString());
-    };
-    net::DbOperator oDbOperator(0, PG_TB_TEST, DataMem::MemOperate::DbOperate::INSERT);
-    oDbOperator.AddDbField("name", sValue);
-    LOG4_DEBUG("%s() SetPostgres %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(new net::DataStep(stMsgShell, oInHttpMsg, new DataStepCustom(nodeType)),
-                        oDbOperator.MakeMemOperate(),
-                        callback,
-                        nodeType);
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_SetGet %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			auto GetValueFromDB_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+			{
+				LOG4_TRACE("GetValueFromDB_callback %s",oMemRsp.DebugString().c_str());
+				util::CJsonObject oJsonObj;
+				oJsonObj.Add("code", oMemRsp.err_no());
+				oJsonObj.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+				pStep->SendToClient(oJsonObj.ToString());
+			};
+			const std::string &node = ((DataStepCustom*) data)->nodeType;
+			net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::SELECT);
+			oDbOperator.AddDbField("id");
+			oDbOperator.AddDbField("name");
+			LOG4_TRACE("%s() GetValueFromDB_callback",__FUNCTION__);
+			if (!GetLabor()->SendToCallback(pStep,oDbOperator.MakeMemOperate(),GetValueFromDB_callback,node))
+			{
+				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+			}
+		}
+	};
+	net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::UPDATE);
+	oDbOperator.AddDbField("name",sValue);
+	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
+	LOG4_TRACE("%s() DbAgent_SetGet %s",__FUNCTION__,sValue.c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOperator.MakeMemOperate(),callback,nodeType,"",new DataStepCustom(nodeType));
 }
 
-void ModuleHello::SetGetPostgres(const net::tagMsgShell& stMsgShell,
-                                 const HttpMsg&          oInHttpMsg,
-                                 const std::string&      sValue,
-                                 const std::string&      nodeType)
+void ModuleHello::DbAgent_Get(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-    if (sValue.size() == 0)
-    {
-        LOG4_DEBUG("%s() sValue.size() == 0", __FUNCTION__);
-        return;
-    }
-    struct DataStepCustom : public net::StepParam
-    {
-        DataStepCustom(const std::string& node) : nodeType(node) {}
-        std::string nodeType;
-    };
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("SetValueFromRedis %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            auto GetValueFromPostgres_callback = [](const DataMem::MemRsp& oMemRsp, net::Step* pStep)
-            {
-                LOG4_TRACE("GetValueFromPostgres_callback %s", oMemRsp.DebugString().c_str());
-                util::CJsonObject oRsp;
-                oRsp.Add("code", oMemRsp.err_no());
-                oRsp.Add("msg", oMemRsp.err_no() ? "failed" : "ok");
-                pStep->SendToClient(oRsp.ToString());
-            };
-            const std::string& node = ((DataStepCustom*)((net::DataStep*)pStep)->GetData())->nodeType;
-            net::DbOperator    oDbOperator(0, PG_TB_TEST, DataMem::MemOperate::DbOperate::SELECT);
-            oDbOperator.AddDbField("id");
-            oDbOperator.AddDbField("name");
-            LOG4_TRACE("%s() GetValueFromPostgres_callback", __FUNCTION__);
-            if (!net::SendToCallback(pStep, oDbOperator.MakeMemOperate(), GetValueFromPostgres_callback, node))
-            {
-                LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-            }
-        }
-    };
-    net::DbOperator oDbOperator(0, PG_TB_TEST, DataMem::MemOperate::DbOperate::UPDATE);
-    oDbOperator.AddDbField("name", sValue);
-    oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ, "id", 1);
-    LOG4_TRACE("%s() SetGetPostgres %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell,
-                        oInHttpMsg,
-                        new DataStepCustom(nodeType),
-                        oDbOperator.MakeMemOperate(),
-                        callback,
-                        nodeType);
+	if (sValue.size() == 0){LOG4_TRACE("%s() sValue.size() == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::StepParam
+	{
+		DataStepCustom(){}
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("GetDB_callback %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pDataStep->SendToClient(oJsonObj.ToString());
+	};
+	net::DbOperator oDbOperator(0,PG_TB_TEST,DataMem::MemOperate::DbOperate::SELECT);
+	oDbOperator.AddDbField("id");
+	oDbOperator.AddDbField("name");
+	LOG4_TRACE("%s() DbAgent_Get",__FUNCTION__);
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOperator.MakeMemOperate(),callback,nodeType,"",new DataStepCustom());
 }
 
-void ModuleHello::GetPostgres(const net::tagMsgShell& stMsgShell,
-                              const HttpMsg&          oInHttpMsg,
-                              const std::string&      sValue,
-                              const std::string&      nodeType)
+void ModuleHello::DbAgent_Set(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-    if (sValue.size() == 0)
-    {
-        LOG4_DEBUG("%s() sValue.size() == 0", __FUNCTION__);
-        return;
-    }
-    struct DataStepCustom : public net::StepParam
-    {
-        DataStepCustom() {}
-    };
-    auto callback = [](const DataMem::MemRsp& oMemRsp, net::Step* pStep)
-    {
-        net::DataStep* pDataStep = (net::DataStep*)pStep;
-        LOG4_TRACE("GetPostgres_callback %s", oMemRsp.err_msg().c_str());
-        if (oMemRsp.err_no() == 0)
-        {
-            LOG4_TRACE("GetPostgres_callback ok %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
-        }
-        else
-        {
-            LOG4_TRACE("GetPostgres_callback failed %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", oMemRsp.err_no());
-            oRsp.Add("msg", "failed");
-            pDataStep->SendToClient(oRsp.ToString());
-        }
-    };
-    net::DbOperator oDbOperator(0, PG_TB_TEST, DataMem::MemOperate::DbOperate::SELECT);
-    oDbOperator.AddDbField("id");
-    oDbOperator.AddDbField("name");
-    LOG4_TRACE("%s() GetPostgres", __FUNCTION__);
-    net::SendToCallback(stMsgShell, oInHttpMsg, new DataStepCustom(), oDbOperator.MakeMemOperate(), callback, nodeType);
+	if (sValue.size() == 0){LOG4_TRACE("%s() sValue.size() == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::StepParam
+	{
+		explicit DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	net::DbOperator oDbOperator(0, PG_TB_TEST,DataMem::MemOperate::DbOperate::UPDATE);
+	oDbOperator.AddDbField("name",sValue);
+	oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,"id",1);
+	LOG4_TRACE("%s() DbAgent_Set %s",__FUNCTION__,sValue.c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOperator.MakeMemOperate(),callback,nodeType,"",new DataStepCustom(nodeType));
 }
 
-void ModuleHello::SetPostgres(const net::tagMsgShell& stMsgShell,
-                              const HttpMsg&          oInHttpMsg,
-                              const std::string&      sValue,
-                              const std::string&      nodeType)
-{
-    if (sValue.size() == 0)
-    {
-        LOG4_DEBUG("%s() sValue.size() == 0", __FUNCTION__);
-        return;
-    }
-    struct DataStepCustom : public net::StepParam
-    {
-        DataStepCustom(const std::string& node) : nodeType(node) {}
-        std::string nodeType;
-    };
-    auto callback = [](const DataMem::MemRsp& oMemRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("callback %s", oMemRsp.err_msg().c_str());
-        if (oMemRsp.err_no() == 0)
-        {
-            LOG4_TRACE("callback ok %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-        else
-        {
-            LOG4_TRACE("callback failed %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", oMemRsp.err_no());
-            oRsp.Add("msg", "failed");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    net::DbOperator oDbOperator(0, PG_TB_TEST, DataMem::MemOperate::DbOperate::UPDATE);
-    oDbOperator.AddDbField("name", sValue);
-    oDbOperator.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ, "id", 1);
-    LOG4_DEBUG("%s() SetPostgres %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell,
-                        oInHttpMsg,
-                        new DataStepCustom(nodeType),
-                        oDbOperator.MakeMemOperate(),
-                        callback,
-                        nodeType);
-}
 
-void ModuleHello::AddUpPostgres(const net::tagMsgShell& stMsgShell,
-                                const HttpMsg&          oInHttpMsg,
-                                uint32                  id,
-                                const std::string&      sName,
-                                uint32                  sum,
-                                const std::string&      nodeType)
+void ModuleHello::DbAgent_AddUp(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,uint32 id,const std::string &sName,uint32 sum,const std::string &nodeType)
 {
-    if (sName.size() == 0 || sum == 0 || id == 0)
-    {
-        LOG4_DEBUG("%s() sName.size() == 0 || sum == 0 || id == 0", __FUNCTION__);
-        return;
-    }
-    struct DataStepCustom : public net::StepParam
-    {
-        DataStepCustom(const std::string& node) : nodeType(node) {}
-        std::string nodeType;
-    };
-    auto callback = [](const DataMem::MemRsp& oMemRsp, net::Step* pStep)
-    {
-        net::DataStep* pDataStep = (net::DataStep*)pStep;
-        LOG4_TRACE("callback %s", oMemRsp.err_msg().c_str());
-        if (oMemRsp.err_no() == 0)
-        {
-            LOG4_TRACE("callback ok %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
-        }
-        else
-        {
-            LOG4_TRACE("callback failed %s", oMemRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", oMemRsp.err_no());
-            oRsp.Add("msg", "failed");
-            pDataStep->SendToClient(oRsp.ToString());
-        }
-    };
-    net::DbOperator oDbOperator(0, "tb_sum", DataMem::MemOperate::DbOperate::CUSTOM);
-    char            strSql[512];
-    snprintf(strSql,
-             sizeof(strSql),
-             "INSERT INTO tb_sum(id,name,sum) VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",
-             id,
-             sName.c_str(),
-             sum,
-             sum);
-    oDbOperator.AddDbField(strSql);
-    LOG4_DEBUG("%s() AddUpPostgres %s", __FUNCTION__, sName.c_str());
-    net::SendToCallback(stMsgShell,
-                        oInHttpMsg,
-                        new DataStepCustom(nodeType),
-                        oDbOperator.MakeMemOperate(),
-                        callback,
-                        nodeType);
+	if (sName.size() == 0 || sum == 0 || id == 0){LOG4_TRACE("%s() sName.size() == 0 || sum == 0 || id == 0",__FUNCTION__);return;}
+	struct DataStepCustom:public net::StepParam
+	{
+		explicit DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		net::DataStep* pDataStep = (net::DataStep*)pStep;
+		LOG4_TRACE("callback %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pDataStep->SendToClient(oJsonObj.ToString());
+	};
+	net::DbOperator oDbOperator(0, "tb_sum",DataMem::MemOperate::DbOperate::CUSTOM);
+	char strSql[512];
+	snprintf(strSql,sizeof(strSql),"INSERT INTO tb_sum(id,name,sum) VALUES(%u,'%s',%u) on conflict (id) do update set sum=tb_sum.sum+%u",id,sName.c_str(),sum,sum);
+	oDbOperator.AddDbField(strSql);
+	LOG4_TRACE("%s() DbAgent_AddUp %s",__FUNCTION__,sName.c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOperator.MakeMemOperate(),callback,nodeType,"",new DataStepCustom(nodeType));
 }
 
 /*
@@ -601,55 +944,50 @@ Failed transactions:               0
 Longest transaction:            0.12
 Shortest transaction:           0.01
  * */
-void ModuleHello::SetValueFromRedis(const net::tagMsgShell& stMsgShell,
-                                    const HttpMsg&          oInHttpMsg,
-                                    const std::string&      sValue,
-                                    const std::string&      nodeType)
+void ModuleHello::Redis_SetGet(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-    struct DataStepCustom : public net::StepParam
+    struct DataStepCustom:public net::StepParam
     {
-        DataStepCustom(const std::string& node) : nodeType(node) {}
+    	explicit DataStepCustom(const std::string &node):nodeType(node){}
         std::string nodeType;
     };
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("SetValueFromRedis %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            auto GetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-            {
-                LOG4_TRACE("GetValueFromRedis %s", oRsp.err_msg().c_str());
-                if (oRsp.err_no() == 0)
-                {
-                    LOG4_TRACE("GetValueFromRedis_callback ok %s", oRsp.DebugString().c_str());
-                    util::CJsonObject oRsp;
-                    oRsp.Add("code", 0);
-                    oRsp.Add("msg", "ok");
-                    pStep->SendToClient(oRsp.ToString());
-                }
-            };
-            const std::string& node = ((DataStepCustom*)((net::DataStep*)pStep)->GetData())->nodeType;
-            char               sRedisKey[64];
-            snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-            net::RedisOperator oRedisOperator(0, sRedisKey, "", "GET");
-            LOG4_TRACE("%s() GetValueFromRedis", __FUNCTION__);
-            if (!net::SendToCallback(pStep, oRedisOperator.MakeMemOperate(), GetValueFromRedis_callback, node))
-            {
-                LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-            }
-        }
-    };
-    char sRedisKey[64];
-    snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-    net::RedisOperator oRedisOperator(0, sRedisKey, "SET");
-    oRedisOperator.AddRedisField("", sValue);
-    LOG4_DEBUG("%s() SetValueFromRedis %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell,
-                        oInHttpMsg,
-                        new DataStepCustom(nodeType),
-                        oRedisOperator.MakeMemOperate(),
-                        callback,
-                        nodeType);
+	auto Redis_SetGet_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_SetGet_callback %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+			{
+				LOG4_TRACE("GetValueFromRedis_callback %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+				util::CJsonObject oJsonObj;
+				oJsonObj.Add("code", oMemRsp.err_no());
+				oJsonObj.Add("msg", oMemRsp.err_msg());
+				pStep->SendToClient(oJsonObj.ToString());
+			};
+			const std::string &node = ((DataStepCustom*) ((net::DataStep*)pStep)->GetData())->nodeType;
+			char sRedisKey[64];
+			snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+			net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
+			LOG4_TRACE("%s() GetValueFromRedis",__FUNCTION__);
+			if (!GetLabor()->SendToCallback(pStep,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,node))
+			{
+				LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+			}
+		}
+		else
+		{
+			util::CJsonObject oJsonObj;
+			oJsonObj.Add("code", oMemRsp.err_no());
+			oJsonObj.Add("msg", oMemRsp.err_msg());
+			pStep->SendToClient(oJsonObj.ToString());
+		}
+	};
+	char sRedisKey[64];
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
+	oRedisOperator.AddRedisField("",sValue);
+	LOG4_TRACE("%s() Redis_SetGet %s",__FUNCTION__,sValue.c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),Redis_SetGet_callback,nodeType,"",new DataStepCustom(nodeType));
 }
 /*
 ssdb write
@@ -666,36 +1004,25 @@ Failed transactions:               0
 Longest transaction:            0.08
 Shortest transaction:           0.01
  * */
-void ModuleHello::OnlySetValueFromRedis(const net::tagMsgShell& stMsgShell,
-                                        const HttpMsg&          oInHttpMsg,
-                                        const std::string&      sValue,
-                                        const std::string&      nodeType)
+void ModuleHello::Redis_Set(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &nodeType)
 {
-    auto SetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("OnlySetValueFromRedis %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("OnlySetValueFromRedis ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisKey[64];
-    snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-    net::RedisOperator oRedisOperator(0, sRedisKey, "SET");
-    oRedisOperator.AddRedisField("", sValue);
-    LOG4_DEBUG("%s() OnlySetValueFromRedis %s", __FUNCTION__, sValue.c_str());
-    if (!net::SendToCallback(stMsgShell,
-                             oInHttpMsg,
-                             oRedisOperator.MakeMemOperate(),
-                             SetValueFromRedis_callback,
-                             nodeType))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	auto Redis_SetGet_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_Set %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		util::CJsonObject oJson;
+		oJson.Add("code", (int)oMemRsp.err_no());
+		oJson.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJson.ToString());
+	};
+	char sRedisKey[64];
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+	net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
+	oRedisOperator.AddRedisField("",sValue);
+	LOG4_TRACE("%s() Redis_Set %s",__FUNCTION__,sValue.c_str());
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),Redis_SetGet_callback,nodeType))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
 /*
 Transactions:                  90000 hits
@@ -711,32 +1038,78 @@ Failed transactions:               0
 Longest transaction:            0.07
 Shortest transaction:           0.00
  * */
-void ModuleHello::OnlyGetValueFromRedis(const net::tagMsgShell& stMsgShell,
-                                        const HttpMsg&          oInHttpMsg,
-                                        const std::string&      sValue,
-                                        const std::string&      nodeType)
+void ModuleHello::Redis_Get(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &nodeType)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("OnlyGetValueFromRedis %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("OnlyGetValueFromRedis ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisKey[64];
-    snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-    net::RedisOperator oRedisOperator(0, sRedisKey, "", "GET");
-    LOG4_DEBUG("%s() OnlyGetValueFromRedis", __FUNCTION__);
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, nodeType))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		/*
+		 * err_no: 0
+			err_msg: "OK"
+			record_data {
+			  field_info {
+				col_value: "1:2:testkey"
+			  }
+			}
+			from: 1
+		 * */
+		LOG4_TRACE("Redis_Get %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		if (oMemRsp.record_data_size() && oMemRsp.record_data(0).field_info_size())
+		{
+			oJsonObj.Add("data", oMemRsp.record_data(0).field_info(0).col_value());
+		}
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	char sRedisKey[64];
+	snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+	net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
+	LOG4_TRACE("%s() Redis_Get",__FUNCTION__);
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,nodeType))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
+
+
+void ModuleHello::Redis_GetPineline(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &nodeType)
+{
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		/*
+		 * err_no: 0
+			err_msg: "OK"
+			record_data {
+			  field_info {
+				col_value: "1:2:testkey"
+			  }
+			}
+			from: 1
+		 * */
+		LOG4_TRACE("Redis_Get %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		if (oMemRsp.record_data_size() && oMemRsp.record_data(0).field_info_size())
+		{
+			oJsonObj.Add("data", oMemRsp.record_data(0).field_info(0).col_value());
+		}
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	net::RedisOperator oRedisOperator(0, "","");
+	oRedisOperator.AddPinelineCmd("SET foo bar");
+	oRedisOperator.AddPinelineCmd("GET foo");
+	oRedisOperator.AddPinelineCmd("GET foo11");
+	oRedisOperator.AddPinelineCmd("GET %s","foo12");
+	oRedisOperator.AddPinelineCmd("");
+	oRedisOperator.AddPinelineCmd(" GET ");
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,nodeType))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
+}
+
 /*
 FT.ADD {index} {docId} {score}
   [NOSAVE]
@@ -745,43 +1118,36 @@ FT.ADD {index} {docId} {score}
   [PAYLOAD {payload}]
   FIELDS {field} {value} [{field} {value}...]
  * */
-void ModuleHello::RedisearchAdd(const net::tagMsgShell& stMsgShell,
-                                const HttpMsg&          oInHttpMsg,
-                                const std::string&      sDoc,
-                                const std::string&      sValue)
+void ModuleHello::Redis_SearchAdd(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sDoc,const std::string &sValue)
 {
-    if (sDoc.size() == 0 || sValue.size() == 0)
-        return;
-    /*
-    FT.ADD IDX docCn3 1.0 LANGUAGE chinese FIELDS txt "你好罗朋友"
-    FT.ADD IDX docCn5 0.5 REPLACE LANGUAGE chinese FIELDS txt "你好罗朋友3"
-    FT.SEARCH IDX "你好"
-     * */
-    auto RedisearchAdd_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("RedisearchAdd_callback %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisearchAdd_callback ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisWriteCmd[128];
-    snprintf(sRedisWriteCmd, sizeof(sRedisWriteCmd), "FT.ADD");
-    net::RedisOperator oRedisOperator(0, "IDX", sRedisWriteCmd, "");
-    oRedisOperator.AddRedisField(sDoc, 1.0); // docCn3 1.0
-    oRedisOperator.AddRedisField("REPLACE");
-    oRedisOperator.AddRedisField("LANGUAGE", "chinese"); // LANGUAGE chinese
-    oRedisOperator.AddRedisField("FIELDS", "txt");
-    oRedisOperator.AddRedisField("", sValue);
+	if (sDoc.size() == 0||sValue.size() == 0)return;
+	/*
+	FT.ADD IDX docCn3 1.0 LANGUAGE chinese FIELDS txt "你好罗朋友"
+	FT.ADD IDX docCn5 0.5 REPLACE LANGUAGE chinese FIELDS txt "你好罗朋友3"
+	FT.SEARCH IDX "你好"
+	 * */
+	//(const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	auto Redis_SearchAdd_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_SearchAdd_callback %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	char sRedisWriteCmd[128];
+	snprintf(sRedisWriteCmd,sizeof(sRedisWriteCmd),"FT.ADD");
+	net::RedisOperator oRedisOperator(0, "IDX",sRedisWriteCmd,"");
+	oRedisOperator.AddRedisField(sDoc,1.0);//docCn3 1.0
+	oRedisOperator.AddRedisField("REPLACE");
+	oRedisOperator.AddRedisField("LANGUAGE","chinese");//LANGUAGE chinese
+	oRedisOperator.AddRedisField("FIELDS","txt");
+	oRedisOperator.AddRedisField("",sValue);
 
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), RedisearchAdd_callback))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),Redis_SearchAdd_callback))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
 /*
 FT.SEARCH http://redisearch.io/Commands/
@@ -802,34 +1168,32 @@ FT.SEARCH {index} {query} [NOCONTENT] [VERBATIM] [NOSTOPWORDS] [WITHSCORES] [WIT
   [SORTBY {field} [ASC|DESC]]
   [LIMIT offset num]
  * */
-void ModuleHello::RedisearchSearch(const net::tagMsgShell& stMsgShell,
-                                   const HttpMsg&          oInHttpMsg,
-                                   const std::string&      sValue)
+void ModuleHello::Redis_SearchSearch(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue)
 {
-    /*
-    ./src/redis-cli FT.ADD IDX docCn3 1.0 LANGUAGE chinese FIELDS txt "你好罗朋友"
-    ./src/redis-cli FT.SEARCH IDX "你好"
-     * */
-    auto RedisearchSearch_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("RedisearchSearch_callback %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisearchSearch_callback ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisReadCmd[128];
-    snprintf(sRedisReadCmd, sizeof(sRedisReadCmd), "FT.SEARCH");
-    net::RedisOperator oRedisOperator(0, "IDX", "", sRedisReadCmd);
-    oRedisOperator.AddRedisField("", sValue);
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), RedisearchSearch_callback))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	/*
+	./src/redis-cli FT.ADD IDX docCn3 1.0 LANGUAGE chinese FIELDS txt "你好罗朋友"
+	./src/redis-cli FT.SEARCH IDX "你好"
+	 * */
+	auto Redis_SearchSearch_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_SearchSearch_callback %s",oMemRsp.err_msg().c_str());
+		if (oMemRsp.err_no() == 0)
+		{
+			LOG4_TRACE("Redis_SearchSearch_callback ok %s",oMemRsp.DebugString().c_str());
+			util::CJsonObject oJsonObj;
+			oJsonObj.Add("code", 0);
+			oJsonObj.Add("msg", "ok");
+			pStep->SendToClient(oJsonObj.ToString());
+		}
+	};
+	char sRedisReadCmd[128];
+	snprintf(sRedisReadCmd,sizeof(sRedisReadCmd),"FT.SEARCH");
+	net::RedisOperator oRedisOperator(0, "IDX","",sRedisReadCmd);
+	oRedisOperator.AddRedisField("",sValue);
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),Redis_SearchSearch_callback))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
 /*
 返回结果
@@ -862,34 +1226,31 @@ record_data {  field_info {    col_value: "\344\275\240\345\245\275\347\275\227\
 from: 1
  * */
 
+
 /*
- * ./src/redis-cli -h 192.168.18.68 -p 6379 GEOADD Guangdong-cities 113.2278442 23.1255978 Guangzhou
- * 113.106308 23.0088312 Foshan 113.7943267 22.9761989 Dongguan 114.0538788 22.5551603 Shenzhen
+ * ./src/redis-cli -h 192.168.18.68 -p 6379 GEOADD Guangdong-cities 113.2278442 23.1255978 Guangzhou 113.106308 23.0088312 Foshan 113.7943267 22.9761989 Dongguan 114.0538788 22.5551603 Shenzhen
  * */
-void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, const std::string& sValue)
+void ModuleHello::Redis_GEOADD(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("RedisGEOADD_callback %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisGEOADD_callback ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisCmd[128];
-    snprintf(sRedisCmd, sizeof(sRedisCmd), "GEOADD");
-    net::RedisOperator oRedisOperator(0, "Guangdong-cities", sRedisCmd);
-    oRedisOperator.AddRedisField("", 113.2278442);
-    oRedisOperator.AddRedisField("", 23.1255978);
-    oRedisOperator.AddRedisField("", sValue);
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_GEOADD_callback %s",oMemRsp.err_msg().c_str());
+		LOG4_TRACE("Redis_GEOADD_callback ok %s",oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	char sRedisCmd[128];
+	snprintf(sRedisCmd,sizeof(sRedisCmd),"GEOADD");
+	net::RedisOperator oRedisOperator(0, "Guangdong-cities",sRedisCmd);
+	oRedisOperator.AddRedisField("",113.2278442);
+	oRedisOperator.AddRedisField("",23.1255978);
+	oRedisOperator.AddRedisField("",sValue);
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
 /*
  * ./src/redis-cli -h 192.168.18.68 -p 6379 GEORADIUSBYMEMBER Guangdong-cities Shenzhen 200 km withdist
@@ -904,40 +1265,48 @@ void ModuleHello::RedisGEOADD(const net::tagMsgShell& stMsgShell, const HttpMsg&
 5) 1) "Qingyuan"
    2) "144.2208"
  * */
-void ModuleHello::RedisGEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,
-                                         const HttpMsg&          oInHttpMsg,
-                                         const std::string&      sValue)
+void ModuleHello::Redis_GEORADIUSBYMEMBER(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("RedisearchAdd_callback %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisearchAdd_callback ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    char sRedisCmd[128];
-    snprintf(sRedisCmd, sizeof(sRedisCmd), "GEORADIUSBYMEMBER");
-    net::RedisOperator oRedisOperator(0, "Guangdong-cities", sRedisCmd);
-    oRedisOperator.AddRedisField("", sValue); // Shenzhen
-    oRedisOperator.AddRedisField("200", "km");
-    oRedisOperator.AddRedisField("", "withdist"); // 返回距离
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_SearchAdd_callback %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	char sRedisCmd[128];
+	snprintf(sRedisCmd,sizeof(sRedisCmd),"GEORADIUSBYMEMBER");
+	net::RedisOperator oRedisOperator(0, "Guangdong-cities",sRedisCmd);
+	oRedisOperator.AddRedisField("",sValue);//Shenzhen
+	oRedisOperator.AddRedisField("200","km");
+	oRedisOperator.AddRedisField("","withdist");//返回距离
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
 }
 /*
 返回结果
-[imdev@node3 redis-4.0.9]$ ./src/redis-cli -h 192.168.18.68 -p 6379 GEORADIUSBYMEMBER Guangdong-cities Shenzhen 200 km
-withdist 1) 1) "Shenzhen" 2) "0.0000" 2) 1) "Foshan" 2) "109.4925" 3) 1) "Guangzhou" 2) "105.8068" 4) 1) "Huizhou" 2)
-"105.8068" 5) 1) "Huizhou1" 2) "105.8068" 6) 1) "Huizhou2" 2) "105.8068" 7) 1)
-"\xe6\xa0\xa1\xe9\x95\xbf\xe5\xa5\xbd\xef\xbc\x8c\xe9\xa6\x96\xe9\x95\xbf\xe5\xa5\xbd" 2) "105.8068" 8) 1) "Dongguan" 2)
-"53.8680" 9) 1) "Qingyuan" 2) "144.2208"
+[imdev@node3 redis-4.0.9]$ ./src/redis-cli -h 192.168.18.68 -p 6379 GEORADIUSBYMEMBER Guangdong-cities Shenzhen 200 km withdist
+1) 1) "Shenzhen"
+   2) "0.0000"
+2) 1) "Foshan"
+   2) "109.4925"
+3) 1) "Guangzhou"
+   2) "105.8068"
+4) 1) "Huizhou"
+   2) "105.8068"
+5) 1) "Huizhou1"
+   2) "105.8068"
+6) 1) "Huizhou2"
+   2) "105.8068"
+7) 1) "\xe6\xa0\xa1\xe9\x95\xbf\xe5\xa5\xbd\xef\xbc\x8c\xe9\xa6\x96\xe9\x95\xbf\xe5\xa5\xbd"
+   2) "105.8068"
+8) 1) "Dongguan"
+   2) "53.8680"
+9) 1) "Qingyuan"
+   2) "144.2208"
 
 err_no: 0
 err_msg: "OK"
@@ -955,85 +1324,63 @@ record_data {  field_info {    col_value: "Huizhou1"  }}
 record_data {  field_info {    col_value: "105.8068"  }}
 record_data {  field_info {    col_value: "Huizhou2"  }}
 record_data {  field_info {    col_value: "105.8068"  }}
-record_data {  field_info {    col_value:
-"\346\240\241\351\225\277\345\245\275\357\274\214\351\246\226\351\225\277\345\245\275"  }} record_data {  field_info {
-col_value: "105.8068"  }} record_data {  field_info {    col_value: "Dongguan"  }} record_data {  field_info {
-col_value: "53.8680"  }} record_data {  field_info {    col_value: "Qingyuan"  }} record_data {  field_info { col_value:
-"144.2208"  }} from: 1
+record_data {  field_info {    col_value: "\346\240\241\351\225\277\345\245\275\357\274\214\351\246\226\351\225\277\345\245\275"  }}
+record_data {  field_info {    col_value: "105.8068"  }}
+record_data {  field_info {    col_value: "Dongguan"  }}
+record_data {  field_info {    col_value: "53.8680"  }}
+record_data {  field_info {    col_value: "Qingyuan"  }}
+record_data {  field_info {    col_value: "144.2208"  }}
+from: 1
  * */
 
-// SETBIT 4:4:SETBIT 10001 1
-void ModuleHello::RedisbitmapSETBIT(const net::tagMsgShell& stMsgShell,
-                                    const HttpMsg&          oInHttpMsg,
-                                    const std::string&      sValue,
-                                    const std::string&      sKey,
-                                    const std::string&      sNode)
+//SETBIT 4:4:SETBIT 10001 1
+void ModuleHello::Redis_bitmapSETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("RedisbitmapSETBIT %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisbitmapSETBIT ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : SETBIT_KEY, "SETBIT");
-    oRedisOperator.AddRedisField("", sValue); // 10001
-    oRedisOperator.AddRedisField("", 1);
-    LOG4_DEBUG("%s() RedisbitmapSETBIT %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("Redis_bitmapSETBIT %s",oMemRsp.err_msg().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"SETBIT");
+	oRedisOperator.AddRedisField("",sValue);//10001
+	oRedisOperator.AddRedisField("",1);
+	LOG4_TRACE("%s() Redis_bitmapSETBIT %s",__FUNCTION__,sValue.c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
-// GETBIT 4:4:SETBIT 10001
-void ModuleHello::RedisbitmapGETBIT(const net::tagMsgShell& stMsgShell,
-                                    const HttpMsg&          oInHttpMsg,
-                                    const std::string&      sValue,
-                                    const std::string&      sKey,
-                                    const std::string&      sNode)
+//GETBIT 4:4:SETBIT 10001
+void ModuleHello::Redis_bitmapGETBIT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("RedisbitmapGETBIT %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisbitmapGETBIT ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
+        LOG4_TRACE("Redis_bitmapGETBIT %s",oMemRsp.err_msg().c_str());
+        util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
     };
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : SETBIT_KEY, "GETBIT");
-    oRedisOperator.AddRedisField("", sValue); // 10001
-    LOG4_DEBUG("%s() RedisbitmapGETBIT %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+    net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"GETBIT");
+    oRedisOperator.AddRedisField("",sValue);//10001
+    LOG4_TRACE("%s() Redis_bitmapGETBIT %s",__FUNCTION__,sValue.c_str());
+    GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
-// BITPOS 4:4:SETBIT 1
-void ModuleHello::RedisbitmapBITPOS(const net::tagMsgShell& stMsgShell,
-                                    const HttpMsg&          oInHttpMsg,
-                                    const std::string&      sValue,
-                                    const std::string&      sKey,
-                                    const std::string&      sNode)
+//BITPOS 4:4:SETBIT 1
+void ModuleHello::Redis_bitmapBITPOS(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("RedisbitmapBITPOS %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("RedisbitmapBITPOS ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
+        LOG4_TRACE("Redis_bitmapBITPOS %s",oMemRsp.err_msg().c_str());
+        util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
     };
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : SETBIT_KEY, "BITPOS");
-    oRedisOperator.AddRedisField("", 1); // 1
-    LOG4_DEBUG("%s() RedisbitmapBITPOS %s", __FUNCTION__, sValue.c_str());
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+    net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"BITPOS");
+    oRedisOperator.AddRedisField("",1);//1
+    LOG4_TRACE("%s() Redis_bitmapBITPOS %s",__FUNCTION__,sValue.c_str());
+    GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 /*
 获取2011年11月1日活跃用户列表
@@ -1069,637 +1416,784 @@ tempvalue = value;
 count ++;
 }
  * */
-void ModuleHello::RedisbitmapGET(const net::tagMsgShell& stMsgShell,
-                                 const HttpMsg&          oInHttpMsg,
-                                 const std::string&      sValue,
-                                 const std::string&      sKey,
-                                 const std::string&      sNode)
+void ModuleHello::Redis_bitmapGET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("RedisbitmapGET %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
+        LOG4_TRACE("Redis_bitmapGET %s",oMemRsp.err_msg().c_str());
+        if (oMemRsp.err_no() == 0)
         {
             net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4_TRACE("RedisbitmapGET ok %s", oRsp.DebugString().c_str());
-            if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
+            LOG4_TRACE("Redis_bitmapGET ok %s",oMemRsp.DebugString().c_str());
+            if (oMemRsp.record_data_size() > 0 && oMemRsp.record_data(0).field_info_size() > 0)
             {
-                const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                LOG4_TRACE("RedisbitmapGET col_value %s,size:%u", col_value.c_str(), col_value.size());
+                const std::string& col_value = oMemRsp.record_data(0).field_info(0).col_value();
+                LOG4_TRACE("Redis_bitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
                 std::vector<uint32> usersData;
-                ModuleHello::String2UserData(col_value, usersData);
-                //                计算总数count （相当于bitcount）
+                ModuleHello::String2UserData(col_value,usersData);
+//                计算总数count （相当于bitcount）
                 {
-                    LOG4_TRACE("count %d", usersData.size());
+                    LOG4_TRACE("count %d",usersData.size());
                 }
-                //                获取其中的用户列表(从小到大顺序获取)
+//                获取其中的用户列表(从小到大顺序获取)
                 {
-                    for (auto imid : usersData)
-                        LOG4_TRACE("user imid:%u", imid);
+                    for(auto imid:usersData)
+                    LOG4_TRACE("user imid:%u",imid);
                 }
-                //                如果需要指定数量（或者指定分页，则只要使用usersData.size() 来控制）
+//                如果需要指定数量（或者指定分页，则只要使用usersData.size() 来控制）
                 {
-                    for (uint32 i = 0; i < 10 && i < usersData.size(); ++i)
-                        LOG4_TRACE("user imid:%u", usersData[i]);
+                    for(uint32 i = 0;i < 10 && i < usersData.size();++i)
+                    LOG4_TRACE("user imid:%u",usersData[i]);
                 }
             }
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
+            util::CJsonObject oJsonObj;
+            oJsonObj.Add("code", 0);
+            oJsonObj.Add("msg", "ok");
+            pDataStep->SendToClient(oJsonObj.ToString());
         }
     };
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : SETBIT_KEY, "", "GET");
-    LOG4_DEBUG("%s() RedisbitmapGET", __FUNCTION__);
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+    net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:SETBIT_KEY,"","GET");
+    LOG4_TRACE("%s() Redis_bitmapGET",__FUNCTION__);
+    GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::RedisbitmapGET_GET(const net::tagMsgShell& stMsgShell,
-                                     const HttpMsg&          oInHttpMsg,
-                                     const std::string&      sValue,
-                                     const std::string&      sKey1,
-                                     const std::string&      sKey2,
-                                     const std::string&      sNode)
+void ModuleHello::Redis_bitmapGET_GET(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,
+                const std::string &sValue,const std::string &sKey1,const std::string &sKey2,const std::string &sNode)
 {
-    struct DataStepCustom : public net::StepParam
+    struct DataStepCustom:public net::StepParam
     {
-        DataStepCustom(const std::string& sK2, const std::string& node) : sKey2(sK2), strNode(node)
-        {
-            m_RunClock.StartClock("net::RunClock RedisbitmapGET_GET");
-        }
-        ~DataStepCustom()
-        {
-            m_RunClock.EndClock();
-        } // EndClock() net::RunClock net::RunClock RedisbitmapGET_GET use time(4.998000) ms
+        DataStepCustom(const std::string &sK2,const std::string& node):
+            sKey2(sK2),strNode(node){m_RunClock.StartClock("net::RunClock Redis_bitmapGET_GET");}
+        ~DataStepCustom(){m_RunClock.EndClock();}//EndClock() net::RunClock net::RunClock Redis_bitmapGET_GET use time(4.998000) ms
         std::string sKey2;
         std::string strNode;
 
         std::vector<uint32> usersData1;
         std::vector<uint32> usersData2;
-        net::RunClock       m_RunClock;
+        net::RunClock m_RunClock;
     };
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("RedisbitmapGET %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
+        LOG4_TRACE("Redis_bitmapGET %s",oMemRsp.err_msg().c_str());
+        if (oMemRsp.err_no() == 0)
         {
-            LOG4_TRACE("RedisbitmapGET ok %s", oRsp.DebugString().c_str());
-            if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
+            LOG4_TRACE("Redis_bitmapGET ok %s",oMemRsp.DebugString().c_str());
+            if (oMemRsp.record_data_size() > 0 && oMemRsp.record_data(0).field_info_size() > 0)
             {
-                const std::string& col_value = oRsp.record_data(0).field_info(0).col_value();
-                LOG4_TRACE("RedisbitmapGET col_value %s,size:%u", col_value.c_str(), col_value.size());
-                ModuleHello::String2UserData(col_value, ((DataStepCustom*)pStep->GetData())->usersData1);
+                const std::string& col_value = oMemRsp.record_data(0).field_info(0).col_value();
+                LOG4_TRACE("Redis_bitmapGET col_value %s,size:%u",col_value.c_str(),col_value.size());
+                ModuleHello::String2UserData(col_value,(dynamic_cast<DataStepCustom*>(pStep->GetData()))->usersData1);
 
-                auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+                auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
                 {
-                    LOG4_TRACE("RedisbitmapGET %s", oRsp.err_msg().c_str());
-                    if (oRsp.err_no() == 0)
+                    LOG4_TRACE("Redis_bitmapGET %s",oMemRsp.err_msg().c_str());
+                    if (oMemRsp.err_no() == 0)
                     {
-                        LOG4_TRACE("RedisbitmapGET ok %s", oRsp.DebugString().c_str());
-                        if (oRsp.record_data_size() > 0 && oRsp.record_data(0).field_info_size() > 0)
+                        LOG4_TRACE("Redis_bitmapGET ok %s",oMemRsp.DebugString().c_str());
+                        if (oMemRsp.record_data_size() > 0 && oMemRsp.record_data(0).field_info_size() > 0)
                         {
-                            DataStepCustom*    pDataStepCustom = (DataStepCustom*)pStep->GetData();
-                            const std::string& col_value       = oRsp.record_data(0).field_info(0).col_value();
-                            ModuleHello::String2UserData(col_value, pDataStepCustom->usersData2);
+                        	DataStepCustom* pDataStepCustom = dynamic_cast<DataStepCustom*>(pStep->GetData());
+                            const std::string& col_value = oMemRsp.record_data(0).field_info(0).col_value();
+                            ModuleHello::String2UserData(col_value,pDataStepCustom->usersData2);
                             const std::vector<uint32>& usersData1 = pDataStepCustom->usersData1;
                             const std::vector<uint32>& usersData2 = pDataStepCustom->usersData2;
-                            ModuleHello::OPUserData(usersData1, usersData2);
-                            util::CJsonObject oRsp;
-                            oRsp.Add("code", 0);
-                            oRsp.Add("msg", "ok");
-                            pStep->SendToClient(oRsp.ToString());
+                            ModuleHello::OPUserData(usersData1,usersData2);
+                            util::CJsonObject oJsonObj;
+                            oJsonObj.Add("code", 0);
+                            oJsonObj.Add("msg", "ok");
+                            pStep->SendToClient(oJsonObj.ToString());
                         }
                     }
                 };
-                net::RedisOperator oRedisOperator(0, ((DataStepCustom*)pStep->GetData())->sKey2, "", "GET");
-                LOG4_TRACE("%s() RedisbitmapGET usersData2", __FUNCTION__);
-                net::SendToCallback(pStep,
-                                    oRedisOperator.MakeMemOperate(),
-                                    callback,
-                                    ((DataStepCustom*)pStep->GetData())->strNode);
+                net::RedisOperator oRedisOperator(0, (dynamic_cast<DataStepCustom*>(pStep->GetData()))->sKey2,"","GET");
+                LOG4_TRACE("%s() Redis_bitmapGET usersData2",__FUNCTION__);
+                GetLabor()->SendToCallback(pStep,oRedisOperator.MakeMemOperate(),callback,((DataStepCustom*) data)->strNode);
             }
         }
     };
 
-    net::RedisOperator oRedisOperator(0, sKey1.size() > 0 ? sKey1 : SETBIT_KEY, "", "GET");
-    LOG4_DEBUG("%s() RedisbitmapGET usersData1", __FUNCTION__);
-    net::SendToCallback(stMsgShell,
-                        oInHttpMsg,
-                        new DataStepCustom(sKey2.size() > 0 ? sKey2 : SETBIT_KEY, sNode),
-                        oRedisOperator.MakeMemOperate(),
-                        callback,
-                        sNode);
+    net::RedisOperator oRedisOperator(0, sKey1.size() > 0?sKey1:SETBIT_KEY,"","GET");
+    LOG4_TRACE("%s() Redis_bitmapGET usersData1",__FUNCTION__);
+    auto pStepParam = new DataStepCustom(sKey2.size() > 0?sKey2:SETBIT_KEY,sNode);
+    GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,pStepParam),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::String2UserData(const std::string& col_value, std::vector<uint32>& usersData)
+void ModuleHello::String2UserData(const std::string & col_value,std::vector<uint32>& usersData)
 {
-    int         len  = col_value.size();
-    const char* data = col_value.data();
-    for (; len; len--)
-    {
-        int pos = col_value.size() - len;
-        if (*(data + pos))
-        {
-            LOG4_TRACE("pos %u", pos);
-            char c = *(data + pos);
-            for (int i = 7; i > -1; --i)
-            {
-                if (c & (1 << i))
-                {
-                    usersData.push_back(pos * 8 + (7 - i));
-                    LOG4_TRACE("usersData %u", pos * 8 + (7 - i));
-                }
-            }
-        }
-    }
+   int len = col_value.size();
+   const char *data = col_value.data();
+   for (;len;len--)
+   {
+       int pos = col_value.size() - len;
+       if (*(data + pos))
+       {
+           LOG4_TRACE("pos %u",pos);
+           char c = * (data + pos);
+           for(int i =7;i > -1;--i)
+           {
+               if (c & (1<<i))
+               {
+                   usersData.push_back(pos * 8 + (7 - i));
+                   LOG4_TRACE("usersData %u",pos * 8 + (7 - i));
+               }
+           }
+
+       }
+   }
 }
 
-void ModuleHello::OPUserData(const std::vector<uint32>& usersData1, const std::vector<uint32>& usersData2)
+void ModuleHello::OPUserData(const std::vector<uint32>& usersData1,const std::vector<uint32>& usersData2)
 {
-    // usersData1  usersData2
-    for (auto i : usersData1)
-        LOG4_TRACE("usersData1 %u", i);
-    for (auto i : usersData2)
-        LOG4_TRACE("usersData2 %u", i);
+    //usersData1  usersData2
+    for(auto i:usersData1)LOG4_TRACE("usersData1 %u",i);
+    for(auto i:usersData2)LOG4_TRACE("usersData2 %u",i);
 
-    // union  usersData1|usersData2 需要排好序,usersData1和usersData2并集
+    //union  usersData1|usersData2 需要排好序,usersData1和usersData2并集
     {
         std::vector<uint32> usersDataUnion;
-        usersDataUnion.resize(usersData1.size() + usersData2.size(), 0);
-        std::vector<uint32>::iterator set_unionEnd = std::set_union(usersData1.begin(),
-                                                                    usersData1.end(),
-                                                                    usersData2.begin(),
-                                                                    usersData2.end(),
-                                                                    usersDataUnion.begin());
+        usersDataUnion.resize(usersData1.size() + usersData2.size(),0);
+        std::vector<uint32>::iterator set_unionEnd = std::set_union(usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersDataUnion.begin());
         usersDataUnion.resize(set_unionEnd - usersDataUnion.begin());
-        for (auto i : usersDataUnion)
-            LOG4_TRACE("usersDataUnion %u", i);
+        for(auto i:usersDataUnion)LOG4_TRACE("usersDataUnion %u",i);
     }
-    // Intersection  usersData1&usersData2 需要排好序,usersData1和usersData2交集
+    //Intersection  usersData1&usersData2 需要排好序,usersData1和usersData2交集
     {
         std::vector<uint32> usersIntersection;
-        usersIntersection.resize(usersData1.size() + usersData2.size(), 0);
-        std::vector<uint32>::iterator set_intersectionEnd = std::set_intersection(usersData1.begin(),
-                                                                                  usersData1.end(),
-                                                                                  usersData2.begin(),
-                                                                                  usersData2.end(),
-                                                                                  usersIntersection.begin());
+        usersIntersection.resize(usersData1.size() + usersData2.size(),0);
+        std::vector<uint32>::iterator set_intersectionEnd = std::set_intersection (usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersIntersection.begin());
         usersIntersection.resize(set_intersectionEnd - usersIntersection.begin());
-        for (auto i : usersIntersection)
-            LOG4_TRACE("usersIntersection %u", i);
+        for(auto i:usersIntersection)LOG4_TRACE("usersIntersection %u",i);
     }
-    // Intersection 需要排好序,usersData1有但usersData2没有的
+    //Intersection 需要排好序,usersData1有但usersData2没有的
     {
         std::vector<uint32> usersDifference;
-        usersDifference.resize(usersData1.size() + usersData2.size(), 0);
-        std::vector<uint32>::iterator set_differenceEnd = std::set_difference(usersData1.begin(),
-                                                                              usersData1.end(),
-                                                                              usersData2.begin(),
-                                                                              usersData2.end(),
-                                                                              usersDifference.begin());
+        usersDifference.resize(usersData1.size() + usersData2.size(),0);
+        std::vector<uint32>::iterator set_differenceEnd = std::set_difference(usersData1.begin(),usersData1.end(),usersData2.begin(),usersData2.end(),usersDifference.begin());
         usersDifference.resize(set_differenceEnd - usersDifference.begin());
-        for (auto i : usersDifference)
-            LOG4_TRACE("usersDifference %u", i);
+        for(auto i:usersDifference)LOG4_TRACE("usersDifference %u",i);
     }
 }
 
-void ModuleHello::SsdbMsgHset(const net::tagMsgShell& stMsgShell,
-                              const HttpMsg&          oInHttpMsg,
-                              const std::string&      sValue,
-                              const std::string&      sKey,
-                              const std::string&      sNode)
+void ModuleHello::Redis_Hset(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sValue,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("SsdbMsg %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            net::DataStep* pDataStep = (net::DataStep*)pStep;
-            LOG4_TRACE("SsdbMsg ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pDataStep->SendToClient(oRsp.ToString());
-        }
+    	LOG4_TRACE("Redis_Hset %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
     };
     char strStorageKey[64];
-    snprintf(strStorageKey,
-             sizeof(strStorageKey),
-             "%s?%u",
-             sKey.size() > 0 ? sKey.c_str() : MSG_KEY,
-             util::GetDateUint32(::time(NULL))); // 1:11:MSG?20111101
-    net::RedisOperator oRedisOperator(0, strStorageKey, "HSET");
-    oRedisOperator.AddRedisField("", util::GetUniqueId(net::GetNodeId(), net::GetWorkerIndex()));
-    oRedisOperator.AddRedisField("", sValue); // 1:11:MSG   {json}
-    LOG4_DEBUG("%s() SsdbMsgHset %s,%s", __FUNCTION__, strStorageKey, sValue.c_str());
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+    snprintf(strStorageKey,sizeof(strStorageKey),"%s?%u",sKey.size() > 0?sKey.c_str():MSG_KEY,util::GetDateUint32(::time(NULL)));//1:11:MSG?20111101
+    net::RedisOperator oRedisOperator(0, strStorageKey,"HSET");
+    oRedisOperator.AddRedisField("",util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+    oRedisOperator.AddRedisField("",sValue);// 1:11:MSG   {json}
+    LOG4_TRACE("%s() Redis_Hset %s,%s",__FUNCTION__,strStorageKey,sValue.c_str());
+    GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::SsdbMsgHsetall(const net::tagMsgShell& stMsgShell,
-                                 const HttpMsg&          oInHttpMsg,
-                                 const std::string&      sKey,
-                                 const std::string&      sNode)
+void ModuleHello::Redis_Hsetall(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("SsdbMsgHsetall %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("SsdbMsgHsetall ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
+        LOG4_TRACE("Redis_Hsetall %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
     };
     char strStorageKey[64];
-    snprintf(strStorageKey,
-             sizeof(strStorageKey),
-             "%s?%u",
-             sKey.size() > 0 ? sKey.c_str() : MSG_KEY,
-             util::GetDateUint32(::time(NULL))); // 1:11:MSG?20111101
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : MSG_KEY, "HGETALL");
-    LOG4_DEBUG("%s() SsdbMsgHsetall %s", __FUNCTION__, strStorageKey);
-    net::SendToCallback(new net::DataStep(stMsgShell, oInHttpMsg), oRedisOperator.MakeMemOperate(), callback, sNode);
+    snprintf(strStorageKey,sizeof(strStorageKey),"%s?%u",sKey.size() > 0?sKey.c_str():MSG_KEY,util::GetDateUint32(::time(NULL)));//1:11:MSG?20111101
+    net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:MSG_KEY,"HGETALL");
+    LOG4_TRACE("%s() Redis_Hsetall %s",__FUNCTION__,strStorageKey);
+    GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::SsdbMsgHscan(const net::tagMsgShell& stMsgShell,
-                               const HttpMsg&          oInHttpMsg,
-                               const std::string&      key_start,
-                               const std::string&      sKey,
-                               const std::string&      sNode)
+void ModuleHello::Redis_Hscan(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &key_start,const std::string &sKey,const std::string &sNode)
 {
-    auto callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
+    auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
     {
-        LOG4_TRACE("SsdbMsgHscan %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("SsdbMsg ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
+        LOG4_TRACE("Redis_Hscan %s %s",oMemRsp.err_msg().c_str(),oMemRsp.DebugString().c_str());
+        util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		pStep->SendToClient(oJsonObj.ToString());
     };
-    // hscan 1:11:MSG?20111101 "" "" 10
+    //hscan 1:11:MSG?20111101 "" "" 10
     char strStorageKey[64];
-    snprintf(strStorageKey,
-             sizeof(strStorageKey),
-             "%s?%u",
-             sKey.size() > 0 ? sKey.c_str() : MSG_KEY,
-             util::GetDateUint32(::time(NULL))); // 1:11:MSG?20111101
-    net::RedisOperator oRedisOperator(0, sKey.size() > 0 ? sKey : MSG_KEY, "hscan");
-    oRedisOperator.AddRedisField("", "");
-    oRedisOperator.AddRedisField("", "");
-    oRedisOperator.AddRedisField("", 10);
-    LOG4_DEBUG("%s() SsdbMsgHscan %s,%s", __FUNCTION__, strStorageKey, key_start.c_str());
-    net::SendToCallback(stMsgShell, oInHttpMsg, oRedisOperator.MakeMemOperate(), callback, sNode);
+    snprintf(strStorageKey,sizeof(strStorageKey),"%s?%u",sKey.size() > 0?sKey.c_str():MSG_KEY,util::GetDateUint32(::time(NULL)));//1:11:MSG?20111101
+    net::RedisOperator oRedisOperator(0, sKey.size() > 0?sKey:MSG_KEY,"hscan");
+    oRedisOperator.AddRedisField("","");
+    oRedisOperator.AddRedisField("","");
+    oRedisOperator.AddRedisField("",10);
+    LOG4_TRACE("%s() Redis_Hscan %s,%s",__FUNCTION__,strStorageKey,key_start.c_str());
+    GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oRedisOperator.MakeMemOperate(),callback,sNode);
 }
 
-void ModuleHello::TestDBSELECT(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+void ModuleHello::DbAgent_SELECT(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-    util::CJsonObject oRequest;
-    if (!oRequest.Parse(oInHttpMsg.body()))
-        return;
-    std::string strTableName;
-    std::string strfield;
-    std::string strvalue;
-    oRequest.Get("table", strTableName);
-    oRequest.Get("field", strfield);
-    oRequest.Get("value", strvalue);
-    if (strfield.size() == 0 || strvalue.size() == 0 || strTableName.size() == 0)
-        return;
+	LOG4_TRACE("DbAgent_SELECT %s",oInHttpMsg.DebugString().c_str());
+	util::CJsonObject oRequest;
+	if (!oRequest.Parse(oInHttpMsg.body())) return;
+	std::string strTableName;
+	std::string strSearchfield;
+	std::string strCondfield;
+	std::string strCondValue;
+	oRequest.Get("table",strTableName);
+	oRequest.Get("search_field", strSearchfield);
+	oRequest.Get("cond_field", strCondfield);
+	oRequest.Get("cond_value", strCondValue);
+	if (strTableName.size() == 0)
+	{
+		LOG4_WARN("strTableName.size() == 0");
+		return;
+	}
+	/*
+	 * err_no: 0
+		err_msg: "success"
+		totalcount: 2
+		curcount: 2
+		record_data {
+		  field_info {
+			col_value: "1"
+		  }
+		}
+		record_data {
+		  field_info {
+			col_value: "2"
+		  }
+		}
+		from: 2
+	 * */
+	auto DbAgent_SELECT_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("DbAgent_SELECT ok %s",oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_msg());
+		if (oMemRsp.record_data_size() && oMemRsp.record_data(0).field_info_size())
+		{
+			for(int i = 0; i < oMemRsp.record_data_size();++i)
+			{
+				for(int j = 0; j < oMemRsp.record_data(0).field_info_size();++j)
+				{
+					oJsonObj.Add(std::to_string(i) + "-" + std::to_string(j), oMemRsp.record_data(i).field_info(j).col_value());
+				}
+			}
+		}
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+	net::DbOperator oDbOper(0, strTableName, DataMem::MemOperate::DbOperate::SELECT);
+	if (strSearchfield.size() > 0)
+	{
+		oDbOper.AddDbField(strSearchfield);//搜索的字段
+	}
+	else
+	{
+		oDbOper.AddDbField("id");
+	}
+	if (strCondfield.size() > 0 && strCondValue.size() > 0)
+	{//需要查询的条件，有则加上
+		oDbOper.AddCondition(DataMem::MemOperate::DbOperate::Condition::EQ,strCondfield,strCondValue);
+	}
+	if (!GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOper.MakeMemOperate(),DbAgent_SELECT_callback,"DBAGENT"))
+	{
+		LOG4_WARN("%s() SendToCallback failed",__FUNCTION__);
+	}
+}
 
-    auto TestDBSELECT_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-    {
-        LOG4_TRACE("TestDBSELECT_callback %s", oRsp.err_msg().c_str());
-        if (oRsp.err_no() == 0)
-        {
-            LOG4_TRACE("TestDBSELECT_callback ok %s", oRsp.DebugString().c_str());
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "ok");
-            pStep->SendToClient(oRsp.ToString());
-        }
-    };
-    net::DbOperator oDbOper(0, strTableName, DataMem::MemOperate::DbOperate::SELECT);
-    oDbOper.AddDbField("ip");
-    oDbOper.AddCondition(
-        DataMem::MemOperate::DbOperate::Condition::E_RELATION::MemOperate_DbOperate_Condition_E_RELATION_EQ,
-        strfield,
-        strvalue);
-    if (!net::SendToCallback(stMsgShell, oInHttpMsg, oDbOper.MakeMemOperate(), TestDBSELECT_callback))
-    {
-        LOG4_WARN("%s() SendToCallback failed", __FUNCTION__);
-    }
+void ModuleHello::Mongo_Insert(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &nodeType)
+{
+	struct DataStepCustom:public net::StepParam
+	{
+		explicit DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("callback %s nodeType(%s)",oMemRsp.DebugString().c_str(),((DataStepCustom*) data)->nodeType.c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+
+	util::CJsonObject requestjObj;
+	{
+		/*
+		 db.tb_coordinate_group.update({"group_id":1},{"group_id":1,"coordinate":[100,200],update_time:"2017"},true)
+		 { "_id" : { "$oid" : "54bf1036a310012522417554" }, "group_id" : 137, "coordinate" : [ 113.940885, 22.543072 ],
+			 "update_time" : 11111111 }
+		 * */
+		requestjObj.AddEmptySubArray("coordinate");
+		requestjObj["coordinate"].Add(100.1);
+		requestjObj["coordinate"].Add(200.2);
+		requestjObj.Add("group_id", 1000);
+		requestjObj.Add("update_time", (uint32)::time(nullptr));
+	}
+	net::MongoOperator oDbOperator(0,tb_coordinate,DataMem::MemOperate::MongoOperate::INSERT);
+	oDbOperator.AddVal(requestjObj.ToString());
+	LOG4_TRACE("%s() Mongo_Insert %s",__FUNCTION__,requestjObj.ToString().c_str());
+	GetLabor()->SendToCallback(stMsgShell,oInHttpMsg,oDbOperator.MakeMemOperate(),callback,nodeType,"",new DataStepCustom(nodeType));
+}
+
+void ModuleHello::Mongo_Upsert(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &nodeType)
+{
+	struct DataStepCustom:public net::StepParam
+	{
+		DataStepCustom(const std::string &node):nodeType(node){}
+		std::string nodeType;
+	};
+	auto callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+	{
+		LOG4_TRACE("callback %s",oMemRsp.DebugString().c_str());
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", oMemRsp.err_no());
+		oJsonObj.Add("msg", oMemRsp.err_no() ? "failed":"ok");
+		pStep->SendToClient(oJsonObj.ToString());
+	};
+
+	util::CJsonObject condObj;
+	{
+		condObj.Add("group_id", 1000);
+	}
+	util::CJsonObject requestjObj;
+	{
+		/*
+		 db.tb_coordinate_group.update({"group_id":1},{"group_id":1,"coordinate":[100,200],update_time:"2017"},true)
+		 { "_id" : { "$oid" : "54bf1036a310012522417554" }, "group_id" : 137, "coordinate" : [ 113.940885, 22.543072 ],
+			 "update_time" : 11111111 }
+		 * */
+		requestjObj.AddEmptySubArray("coordinate");
+		requestjObj["coordinate"].Add(100.1);
+		requestjObj["coordinate"].Add(200.2);
+		requestjObj.Add("group_id", 1000);
+		requestjObj.Add("update_time", (uint32)::time(nullptr));
+	}
+	net::MongoOperator oDbOperator(0,tb_coordinate,DataMem::MemOperate::MongoOperate::UPSERT);
+	oDbOperator.AddCond(condObj.ToString());
+	oDbOperator.AddVal(requestjObj.ToString());
+	LOG4_TRACE("%s() Mongo_Insert %s",__FUNCTION__,requestjObj.ToString().c_str());
+	GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg,new DataStepCustom(nodeType)),oDbOperator.MakeMemOperate(),callback,nodeType);
+}
+
+void ModuleHello::Mongo_Step(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+	GetLabor()->ExecStep(new im::StepMongoTest(stMsgShell,oInHttpMsg));
+}
+
+void ModuleHello::RedisMysql_Step(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+	GetLabor()->ExecStep(new im::StepRedisMysqlTest(stMsgShell,oInHttpMsg));
+}
+
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1656] 01 Format command without interpolation:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1659] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1662] 02 Format command with %%s string interpolation:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1665] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1668] 03 Format command with %%s and an empty string:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1671] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1674] 04 Format command with an empty string in between proper interpolations:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1677] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1680] 05 Format command with %%b string interpolation:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1683] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1686] 06 Format command with %%b and an empty string:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1689] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1692] 07 Format command with literal %%:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1695] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1719] 08 Format command with printf-delegation (int):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1719] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1720] 09 Format command with printf-delegation (char):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1720] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1721] 10 Format command with printf-delegation (short):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1721] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1722] 11 Format command with printf-delegation (long):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1722] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1723] 12 Format command with printf-delegation (long long):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1723] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1724] 13 Format command with printf-delegation (unsigned int):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1724] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1725] 14 Format command with printf-delegation (unsigned char):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1725] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1726] 15 Format command with printf-delegation (unsigned short):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1726] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1727] 16 Format command with printf-delegation (unsigned long):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1727] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1728] 17 Format command with printf-delegation (unsigned long long):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1728] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1729] 18 Format command with printf-delegation (float):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1729] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1730] 19 Format command with printf-delegation (double):
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1730] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1732] 20 Format command with invalid printf format:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1734] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1743] 21 Format command by passing argc/argv without lengths:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1746] PASSED
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1749] 22 Format command by passing argc/argv with lengths:
+//[2020-03-11 17:14:43,915][DEBUG] [ModuleHello.cpp:1752] PASSED
+
+//"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"
+void ModuleHello::hiredis_vip_test_format_commands()
+{
+	int tests = 0, fails = 0;
+	#define test(_s) { LOG4_TRACE("%02d %s", ++tests,_s);  }
+	#define test_cond(_c) if(_c) LOG4_TRACE("PASSED"); else {LOG4_TRACE("FAILED"); fails++;}
+	char *cmd;
+	int len;
+
+	test("Format command without interpolation: ");
+	len = redisFormatCommand(&cmd,"SET foo bar");
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(3+2));
+	free(cmd);
+
+	test("Format command with %%s string interpolation: ");
+	len = redisFormatCommand(&cmd,"SET %s %s","foo","bar");
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(3+2));
+	free(cmd);
+
+	test("Format command with %%s and an empty string: ");
+	len = redisFormatCommand(&cmd,"SET %s %s","foo","");
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$0\r\n\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(0+2));
+	free(cmd);
+
+	test("Format command with an empty string in between proper interpolations: ");
+	len = redisFormatCommand(&cmd,"SET %s %s","","foo");
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$0\r\n\r\n$3\r\nfoo\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(0+2)+4+(3+2));
+	free(cmd);
+
+	test("Format command with %%b string interpolation: ");
+	len = redisFormatCommand(&cmd,"SET %b %b","foo",(size_t)3,"b\0r",(size_t)3);
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nb\0r\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(3+2));
+	free(cmd);
+
+	test("Format command with %%b and an empty string: ");
+	len = redisFormatCommand(&cmd,"SET %b %b","foo",(size_t)3,"",(size_t)0);
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$0\r\n\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(0+2));
+	free(cmd);
+
+	test("Format command with literal %%: ");
+	len = redisFormatCommand(&cmd,"SET %% %%");
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$1\r\n%\r\n$1\r\n%\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(1+2)+4+(1+2));
+	free(cmd);
+
+	/* Vararg width depends on the type. These tests make sure that the
+	 * width is correctly determined using the format and subsequent varargs
+	 * can correctly be interpolated. */
+#define INTEGER_WIDTH_TEST(fmt, type) do {                                                \
+	type value = 123;                                                                     \
+	test("Format command with printf-delegation (" #type "): ");                          \
+	len = redisFormatCommand(&cmd,"key:%08" fmt " str:%s", value, "hello");               \
+	test_cond(strncmp(cmd,"*2\r\n$12\r\nkey:00000123\r\n$9\r\nstr:hello\r\n",len) == 0 && \
+		len == 4+5+(12+2)+4+(9+2));                                                       \
+	free(cmd);                                                                            \
+} while(0)
+
+#define FLOAT_WIDTH_TEST(type) do {                                                       \
+	type value = 123.0;                                                                   \
+	test("Format command with printf-delegation (" #type "): ");                          \
+	len = redisFormatCommand(&cmd,"key:%08.3f str:%s", value, "hello");                   \
+	test_cond(strncmp(cmd,"*2\r\n$12\r\nkey:0123.000\r\n$9\r\nstr:hello\r\n",len) == 0 && \
+		len == 4+5+(12+2)+4+(9+2));                                                       \
+	free(cmd);                                                                            \
+} while(0)
+
+	INTEGER_WIDTH_TEST("d", int);
+	INTEGER_WIDTH_TEST("hhd", char);
+	INTEGER_WIDTH_TEST("hd", short);
+	INTEGER_WIDTH_TEST("ld", long);
+	INTEGER_WIDTH_TEST("lld", long long);
+	INTEGER_WIDTH_TEST("u", unsigned int);
+	INTEGER_WIDTH_TEST("hhu", unsigned char);
+	INTEGER_WIDTH_TEST("hu", unsigned short);
+	INTEGER_WIDTH_TEST("lu", unsigned long);
+	INTEGER_WIDTH_TEST("llu", unsigned long long);
+	FLOAT_WIDTH_TEST(float);
+	FLOAT_WIDTH_TEST(double);
+
+	test("Format command with invalid printf format: ");
+	len = redisFormatCommand(&cmd,"key:%08p %b",(void*)1234,"foo",(size_t)3);
+	test_cond(len == -1);
+
+	const char *argv[3];
+	argv[0] = "SET";
+	argv[1] = "foo\0xxx";
+	argv[2] = "bar";
+	size_t lens[3] = { 3, 7, 3 };
+	int argc = 3;
+
+	test("Format command by passing argc/argv without lengths: ");
+	len = redisFormatCommandArgv(&cmd,argc,argv,NULL);
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(3+2)+4+(3+2));
+	free(cmd);
+
+	test("Format command by passing argc/argv with lengths: ");
+	len = redisFormatCommandArgv(&cmd,argc,argv,lens);
+	test_cond(strncmp(cmd,"*3\r\n$3\r\nSET\r\n$7\r\nfoo\0xxx\r\n$3\r\nbar\r\n",len) == 0 &&
+		len == 4+4+(3+2)+4+(7+2)+4+(3+2));
+	free(cmd);
 }
 
 void ModuleHello::TestRSA()
 {
-    // 待加密的字符串
-    std::string message = "http://www.baidu.com";
-    LOG4_TRACE("to deal message = %s, length = %d\n", message.c_str(), strlen(message.c_str()));
-    /*
-    //自动生成随机数据
-    byte seed[600] = "";
-    AutoSeededRandomPool rnd;
-    rnd.GenerateBlock(seed, sizeof(seed));
-    printf("seed = %s\n", (char *)seed, strlen((char *)seed));
+	//待加密的字符串
+	std::string message = "http://www.baidu.com";
+	LOG4_TRACE("to deal message = %s, length = %d\n", message.c_str(), strlen(message.c_str()));
+	/*
+	//自动生成随机数据
+	byte seed[600] = "";
+	AutoSeededRandomPool rnd;
+	rnd.GenerateBlock(seed, sizeof(seed));
+	printf("seed = %s\n", (char *)seed, strlen((char *)seed));
 
-    //生成加密的高质量伪随机字节播种池一体化后的熵
-    RandomPool randPool;
-    randPool.Put(seed, sizeof(seed));
-    */
+	//生成加密的高质量伪随机字节播种池一体化后的熵
+	RandomPool randPool;
+	randPool.Put(seed, sizeof(seed));
+	*/
 
-    CryptoPP::AutoSeededRandomPool  rnd;
-    CryptoPP::InvertibleRSAFunction params;
-    params.GenerateRandomWithKeySize(rnd, 1024);
+	CryptoPP::AutoSeededRandomPool rnd;
+	CryptoPP::InvertibleRSAFunction params;
+	params.GenerateRandomWithKeySize(rnd, 1024);
 
-    LOG4_TRACE("privateKey publicKey");
-    CryptoPP::RSA::PrivateKey privateKey(params);
-    CryptoPP::RSA::PublicKey  publicKey(params);
-    {
-        LOG4_TRACE("使用OAEP模式");
-        // 使用OAEP模式
-        // RSAES_OAEP_SHA_Decryptor pri(randPool, sizeof(seed));
-        // RSAES_OAEP_SHA_Encryptor pub(pri);
+	LOG4_TRACE("privateKey publicKey");
+	CryptoPP::RSA::PrivateKey privateKey(params);
+	CryptoPP::RSA::PublicKey publicKey(params);
+	{
+		LOG4_TRACE("使用OAEP模式");
+		//使用OAEP模式
+		//RSAES_OAEP_SHA_Decryptor pri(randPool, sizeof(seed));
+		//RSAES_OAEP_SHA_Encryptor pub(pri);
 
-        CryptoPP::RSAES_OAEP_SHA_Decryptor pri(privateKey);
-        CryptoPP::RSAES_OAEP_SHA_Encryptor pub(publicKey);
-        LOG4_TRACE("max plaintext Length = %d,%d", pri.FixedMaxPlaintextLength(), pub.FixedMaxPlaintextLength());
-        if (pub.FixedMaxPlaintextLength() > message.length())
-        { // 待加密文本不能大于最大加密长度
-            std::string chilper;
-            CryptoPP::StringSource(message,
-                                   true,
-                                   new CryptoPP::PK_EncryptorFilter(rnd, pub, new CryptoPP::StringSink(chilper)));
-            LOG4_TRACE("PK_EncryptorFilter = %s, length = %d", chilper.c_str(), strlen(chilper.c_str()));
+		CryptoPP::RSAES_OAEP_SHA_Decryptor pri(privateKey);
+		CryptoPP::RSAES_OAEP_SHA_Encryptor pub(publicKey);
+		LOG4_TRACE("max plaintext Length = %d,%d", pri.FixedMaxPlaintextLength(), pub.FixedMaxPlaintextLength());
+		if (pub.FixedMaxPlaintextLength() > message.length())
+		{//待加密文本不能大于最大加密长度
+			std::string chilper;
+			CryptoPP::StringSource(message, true, new CryptoPP::PK_EncryptorFilter(rnd, pub, new CryptoPP::StringSink(chilper)));
+			LOG4_TRACE("PK_EncryptorFilter = %s, length = %d", chilper.c_str(), strlen(chilper.c_str()));
 
-            std::string txt;
-            CryptoPP::StringSource(chilper,
-                                   true,
-                                   new CryptoPP::PK_DecryptorFilter(rnd, pri, new CryptoPP::StringSink(txt)));
-            LOG4_TRACE("PK_DecryptorFilter = %s, length = %d", txt.c_str(), strlen(txt.c_str()));
-        }
-    }
+			std::string txt;
+			CryptoPP::StringSource(chilper, true, new CryptoPP::PK_DecryptorFilter(rnd, pri, new CryptoPP::StringSink(txt)));
+			LOG4_TRACE("PK_DecryptorFilter = %s, length = %d", txt.c_str(), strlen(txt.c_str()));
+		}
+	}
 
-    {
-        LOG4_TRACE("使用PKCS1v15模式");
-        // 使用PKCS1v15模式
-        // RSAES_PKCS1v15_Decryptor pri1(randPool, sizeof(seed));
-        // RSAES_PKCS1v15_Encryptor pub1(pri1);
-        CryptoPP::RSAES_PKCS1v15_Decryptor pri1(privateKey);
-        CryptoPP::RSAES_PKCS1v15_Encryptor pub1(publicKey);
-        LOG4_TRACE("max plaintext Length = %d,%d", pri1.FixedMaxPlaintextLength(), pub1.FixedMaxPlaintextLength());
-        if (pub1.FixedMaxPlaintextLength() > message.length())
-        { // 待加密文本不能大于最大加密长度
-            std::string chilper;
-            CryptoPP::StringSource(message,
-                                   true,
-                                   new CryptoPP::PK_EncryptorFilter(rnd, pub1, new CryptoPP::StringSink(chilper)));
-            LOG4_TRACE("PK_EncryptorFilter = %s, length = %d", chilper.c_str(), strlen(chilper.c_str()));
+	{
+		LOG4_TRACE("使用PKCS1v15模式");
+		//使用PKCS1v15模式
+		//RSAES_PKCS1v15_Decryptor pri1(randPool, sizeof(seed));
+		//RSAES_PKCS1v15_Encryptor pub1(pri1);
+		CryptoPP::RSAES_PKCS1v15_Decryptor pri1(privateKey);
+		CryptoPP::RSAES_PKCS1v15_Encryptor pub1(publicKey);
+		LOG4_TRACE("max plaintext Length = %d,%d", pri1.FixedMaxPlaintextLength(), pub1.FixedMaxPlaintextLength());
+		if (pub1.FixedMaxPlaintextLength() > message.length())
+		{//待加密文本不能大于最大加密长度
+			std::string chilper;
+			CryptoPP::StringSource(message, true, new CryptoPP::PK_EncryptorFilter(rnd, pub1, new CryptoPP::StringSink(chilper)));
+			LOG4_TRACE("PK_EncryptorFilter = %s, length = %d", chilper.c_str(), strlen(chilper.c_str()));
 
-            std::string txt;
-            CryptoPP::StringSource(chilper,
-                                   true,
-                                   new CryptoPP::PK_DecryptorFilter(rnd, pri1, new CryptoPP::StringSink(txt)));
-            LOG4_TRACE("PK_DecryptorFilter = %s, length = %d", txt.c_str(), strlen(txt.c_str()));
-        }
-    }
+			std::string txt;
+			CryptoPP::StringSource(chilper, true, new CryptoPP::PK_DecryptorFilter(rnd, pri1, new CryptoPP::StringSink(txt)));
+			LOG4_TRACE("PK_DecryptorFilter = %s, length = %d", txt.c_str(), strlen(txt.c_str()));
+		}
+	}
 }
-int  g_TestCoroutinueTimes = 100000;
-void ModuleHello::TestCoroutinue() // 用于分隔逻辑
+int g_TestCoroutinueTimes = 100000;
+void ModuleHello::TestCoroutinue()//用于分隔逻辑
 {
-    LOG4_TRACE("TestCoroutinue");
-    struct Param : public net::tagCoroutineArg
-    {
-        Param(int a1) : m_start1(a1) {}
-        int m_start1;
-    };
-    auto testcoroutinue = [](void* ud)
-    {
-        Param* arg = (Param*)ud;
-        int    i   = 0;
-        for (; i < g_TestCoroutinueTimes; i++)
-        {
-            LOG4_TRACE("TestCoroutinue running id(%d),arg n(%d) tid(%u)",
-                       net::CoroutineRunning(),
-                       arg->m_start1 + i,
-                       pthread_self());
-            net::CoroutineYield();
-        }
-        if (i == g_TestCoroutinueTimes)
-            LOG4_INFO("TestCoroutinue running id(%d),arg n(%d) tid(%u)",
-                      net::CoroutineRunning(),
-                      arg->m_start1 + i,
-                      pthread_self());
-    };
-    // 两个协程任务，在两个任务之间切换
-    net::CoroutineNewWithArg(testcoroutinue, new Param(0));
-    net::CoroutineNewWithArg(testcoroutinue, new Param(100));
+#ifdef USE_COROUTINE
+	LOG4_TRACE("TestCoroutinue");
+	struct Param:public net::tagCoroutineArg {explicit Param(int a1):m_start1(a1){} int m_start1;};
+	auto testcoroutinue = []  (void *ud) {
+		Param *arg = static_cast<Param*>(ud);
+		int i=0;
+		for (;i<g_TestCoroutinueTimes;i++)
+		{
+			LOG4_TRACE("TestCoroutinue running id(%d),arg n(%d) tid(%u)",GetLabor()->CoroutineRunning() , arg->m_start1 + i,pthread_self());
+			GetLabor()->CoroutineYield();
+		}
+		if (i == g_TestCoroutinueTimes)
+		LOG4_INFO("TestCoroutinue running id(%d),arg n(%d) tid(%u)",GetLabor()->CoroutineRunning() , arg->m_start1 + i,pthread_self());
+	};
+	//两个协程任务，在两个任务之间切换
+	GetLabor()->CoroutineNewWithArg(testcoroutinue,new Param(0));
+	GetLabor()->CoroutineNewWithArg(testcoroutinue,new Param(100));
 
-    LOG4_INFO("%s Coroutine start! tid(%u)", __FUNCTION__, pthread_self());
-    m_RunClock.StartClock();
-    net::CoroutineResumeWithTimes(g_TestCoroutinueTimes * 2);
-    m_RunClock.EndClock();
-    // 20w use time(305.894989) qps 66w
-    LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)", __FUNCTION__, pthread_self(), m_RunClock.LastUseTime());
+	LOG4_INFO("%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
+	m_RunClock.StartClock();
+	GetLabor()->CoroutineResumeWithTimes(g_TestCoroutinueTimes*2);
+	m_RunClock.EndClock();
+	//20w use time(305.894989) qps 66w
+	LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)",__FUNCTION__,pthread_self(),m_RunClock.LastUseTime());
+#endif
 }
 
 void ModuleHello::TestCoroutinueAuto()
 {
-    LOG4_TRACE("TestCoroutinue");
-    struct Param : public net::tagCoroutineArg
-    {
-        Param(int a1) : m_start1(a1) {}
-        int m_start1;
-    };
-    auto testcoroutinue = [](void* ud)
-    {
-        Param* arg = (Param*)ud;
-        int    i   = 0;
-        for (; i < g_TestCoroutinueTimes; i++)
-        {
-            LOG4_TRACE("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",
-                       net::CoroutineRunning(),
-                       arg->m_start1 + i,
-                       pthread_self());
-            net::CoroutineYield();
-        }
-        if (i == g_TestCoroutinueTimes)
-            LOG4_INFO("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",
-                      net::CoroutineRunning(),
-                      arg->m_start1 + i,
-                      pthread_self());
-    };
-    // 两个协程任务，在两个任务之间切换
-    net::CoroutineNewWithArg(testcoroutinue, new Param(200));
-    net::CoroutineNewWithArg(testcoroutinue, new Param(300));
+#ifdef USE_COROUTINE
+	LOG4_TRACE("TestCoroutinue");
+	struct Param:public net::tagCoroutineArg {explicit Param(int a1):m_start1(a1){} int m_start1;};
+	auto testcoroutinue = []  (void *ud) {
+		Param *arg = static_cast<Param*>(ud);
+		int i=0;
+		for (;i<g_TestCoroutinueTimes;i++)
+		{
+			LOG4_TRACE("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",GetLabor()->CoroutineRunning() , arg->m_start1 + i,pthread_self());
+			GetLabor()->CoroutineYield();
+		}
+		if (i == g_TestCoroutinueTimes)
+		LOG4_INFO("TestCoroutinueAuto running id(%d),arg n(%d) tid(%u)",GetLabor()->CoroutineRunning() , arg->m_start1 + i,pthread_self());
+	};
+	//两个协程任务，在两个任务之间切换
+	GetLabor()->CoroutineNewWithArg(testcoroutinue,new Param(200));
+	GetLabor()->CoroutineNewWithArg(testcoroutinue,new Param(300));
 
-    LOG4_INFO("%s Coroutine start! tid(%u)", __FUNCTION__, pthread_self());
-    m_RunClock.StartClock();
-    net::CoroutineResumeWithTimes();
-    m_RunClock.EndClock();
-    // 20w use time(305.053986) qps 66w
-    LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)", __FUNCTION__, pthread_self(), m_RunClock.LastUseTime());
+	LOG4_INFO("%s Coroutine start! tid(%u)",__FUNCTION__,pthread_self());
+	m_RunClock.StartClock();
+	GetLabor()->CoroutineResumeWithTimes();
+	m_RunClock.EndClock();
+	//20w use time(305.053986) qps 66w
+	LOG4_INFO("%s Coroutine end!tid(%u) use time(%lf)",__FUNCTION__,pthread_self(),m_RunClock.LastUseTime());
+#endif
 }
 
-void ModuleHello::TestStepCoFuncDataProxy(const net::tagMsgShell& stMsgShell,
-                                          const HttpMsg&          oInHttpMsg,
-                                          const std::string&      str)
+void ModuleHello::TestStepCoFuncDataRedisAgent(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &str)
 {
-    struct StateParam : public net::StepParam
+#ifdef USE_COROUTINE
+    struct StateParam:public net::StepParam
     {
-        StateParam(const std::string& s, const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
-            : str(s), shell(stMsgShell), msg(oInHttpMsg)
-        {
-        }
-        std::string      str;
+        StateParam(const std::string &s,const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg):
+            str(s),shell(stMsgShell),msg(oInHttpMsg){}
+        std::string str;
         net::tagMsgShell shell;
-        HttpMsg          msg;
+        HttpMsg msg;
     };
-    auto stateFunc0 = [](net::StepCo* state)
+    auto stateFunc0= [] (net::StepCo* state)
     {
         {
-            auto SetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-            { LOG4_TRACE("SetValueFromRedis_callback %s", oRsp.DebugString().c_str()); };
+            auto Redis_SetGet_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+            {
+                LOG4_TRACE("Redis_SetGet_callback %s",oMemRsp.DebugString().c_str());
+            };
             char sRedisKey[64];
-            snprintf(sRedisKey, sizeof(sRedisKey), "1:2:testStepCo");
-            net::RedisOperator oRedisOperator(0, sRedisKey, "SET");
-            oRedisOperator.AddRedisField("", ((StateParam*)state->GetData())->str);
-            LOG4_TRACE("%s() stateFunc0 %s", __FUNCTION__, ((StateParam*)state->GetData())->str.c_str());
-            if (!net::SendToCallback(state, oRedisOperator.MakeMemOperate(), SetValueFromRedis_callback, "PROXYSSDB"))
-                return;
+            snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testStepCo");
+            net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
+            oRedisOperator.AddRedisField("",(dynamic_cast<StateParam*>(state->GetData()))->str);
+            LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,(dynamic_cast<StateParam*>(state->GetData()))->str.c_str());
+            if (!GetLabor()->SendToCallback(state,oRedisOperator.MakeMemOperate(),Redis_SetGet_callback,REDISAGENT_NODE))return;
         }
-        state->CoroutineYield(); // 放弃执行，记录状态
+        state->CoroutineYield();//放弃执行，记录状态
         {
-            auto GetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-            { LOG4_TRACE("GetValueFromRedis_callback %s", oRsp.DebugString().c_str()); };
+            auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+            {
+                LOG4_TRACE("GetValueFromRedis_callback %s",oMemRsp.DebugString().c_str());
+            };
             char sRedisKey[64];
-            snprintf(sRedisKey, sizeof(sRedisKey), "1:2:testStepCo");
-            net::RedisOperator oRedisOperator(0, sRedisKey, "", "GET");
-            LOG4_TRACE("%s() stateFunc0 %s", __FUNCTION__, ((StateParam*)state->GetData())->str.c_str());
-            if (!net::SendToCallback(state, oRedisOperator.MakeMemOperate(), GetValueFromRedis_callback, "PROXYSSDB"))
-                return;
+            snprintf(sRedisKey,sizeof(sRedisKey),"1:2:testStepCo");
+            net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
+            LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,(dynamic_cast<StateParam*>(state->GetData()))->str.c_str());
+            if (!GetLabor()->SendToCallback(state,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback,REDISAGENT_NODE))return;
         }
     };
-    net::StepCo* pstep = new net::StepCo(stMsgShell, oInHttpMsg);
+    net::StepCo* pstep = new net::StepCo(stMsgShell,oInHttpMsg);
     pstep->AddCoroutinueFunc(stateFunc0);
-    pstep->SetSuccFunc(
-        [](net::StepCo* state)
-        {
-            LOG4_TRACE("stateFuncOnSucc");
-            util::CJsonObject oRsp;
-            oRsp.Add("code", 0);
-            oRsp.Add("msg", "succ");
-            state->SendToClient(oRsp.ToString());
-        });
-    pstep->SetData(new StateParam(str, stMsgShell, oInHttpMsg));
+    pstep->SetSuccFunc([] (net::StepCo* state)
+                    {
+                        LOG4_TRACE("stateFuncOnSucc");
+                        util::CJsonObject oJsonObj;
+                        oJsonObj.Add("code", 0);
+                        oJsonObj.Add("msg", "succ");
+                        state->SendToClient(oJsonObj.ToString());
+                    });
+    pstep->SetData(new StateParam(str,stMsgShell,oInHttpMsg));
     net::Launch(pstep);
+#endif
 }
 
-void ModuleHello::Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode)
+void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode)
 {
-    util::CJsonObject oRsp;
-    oRsp.Add("code", iCode);
-    oRsp.Add("msg", "ok");
-    net::SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString());
+    util::CJsonObject oJsonObj;
+    oJsonObj.Add("code", iCode);
+    oJsonObj.Add("msg", "ok");
+    GetLabor()->SendToClient(stMsgShell,oInHttpMsg,oJsonObj.ToString());
 }
 
-bool ModuleHello::TestHttpRequestState(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+bool ModuleHello::TestHttpRequestState(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-    // HttpState
-    return net::Launch(new StepHttpRequestState(stMsgShell, oInHttpMsg));
+     // HttpState
+    return net::Launch(new StepHttpRequestState(stMsgShell,oInHttpMsg));
 }
 
-bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-    struct StateParam : public net::StepParam
-    {
-        StateParam() : val(3)
-        {
-            for (uint32 i = 1; i <= val; ++i)
-                m.insert(std::make_pair(i, i));
-        }
-        uint32             val;
-        std::map<int, int> m;
-        uint32             Inc()
-        {
-            ++val;
-            m.insert(std::make_pair(val, val));
-            return val;
-        }
-    };
+	struct StateParam:public net::StepParam
+	{
+		StateParam():val(3){ for (uint32 i = 1;i <=val;++i)m.insert(std::make_pair(i,i));}
+	    uint32 val;
+	    std::map<int,int> m;
+	    uint32 Inc(){++val;m.insert(std::make_pair(val,val));return val;}
+	};
 
-    auto stateFunc0 = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        return state->HttpGet("http://www.baidu.com/"); // return bool
-    };
+	auto stateFunc0= [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                        (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    return state->HttpGet("http://www.baidu.com/");//return bool
+	};
 
-    auto stateFunc1 = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        return state->HttpGet("http://www.baidu.com/") && state->SetNextState(3);
-    };
+	auto stateFunc1= [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                        (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    return state->HttpGet("http://www.baidu.com/") && state->SetNextState(3);
+	};
 
-    auto stateFunc2 = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        return state->HttpGet("http://www.baidu.com/");
-    };
-    auto stateFunc3 = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        return state->HttpGet("http://www.baidu.com/");
-    };
-    auto stateFuncOnSucc = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        util::CJsonObject oRsp;
-        oRsp.Add("code", 0);
-        oRsp.Add("msg", "ok");
-        state->SendToClient(oRsp.ToString());
-    };
-    auto stateFuncOnFail = [](net::StepState* state)
-    {
-        LOG4_DEBUG("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
-                   __FUNCTION__,
-                   state->GetLastState(),
-                   state->GetCurrentState(),
-                   ((StateParam*)state->GetData())->Inc(),
-                   ((StateParam*)state->GetData())->m.size());
-        util::CJsonObject oRsp;
-        oRsp.Add("code", 1);
-        oRsp.Add("msg", "fail");
-        state->SendToClient(oRsp.ToString());
-    };
-    net::StepState* pstep = new net::StepState(stMsgShell, oInHttpMsg);
+	auto stateFunc2= [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                        (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    return state->HttpGet("http://www.baidu.com/");
+	};
+	auto stateFunc3 = [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                        (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    return state->HttpGet("http://www.baidu.com/");
+	};
+	auto  stateFuncOnSucc = [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                            __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                        (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    util::CJsonObject oJsonObj;
+	    oJsonObj.Add("code", 0);
+	    oJsonObj.Add("msg", "ok");
+	    state->SendToClient(oJsonObj.ToString());
+	};
+	auto stateFuncOnFail = [] (net::StepState* state)
+	{
+	    LOG4_TRACE("%s GetLastState:%u GetCurrentState(%u) val(%u) m(%u)",
+	                        __FUNCTION__,state->GetLastState(),state->GetCurrentState(),
+	                    (dynamic_cast<StateParam*>(state->GetData()))->Inc(),(dynamic_cast<StateParam*>(state->GetData()))->m.size());
+	    util::CJsonObject oJsonObj;
+	    oJsonObj.Add("code", 1);
+	    oJsonObj.Add("msg", "fail");
+	    state->SendToClient(oJsonObj.ToString());
+	};
+    net::StepState* pstep = new net::StepState(stMsgShell,oInHttpMsg);
     pstep->AddStateFunc(stateFunc0);
     pstep->AddStateFunc(stateFunc1);
     pstep->AddStateFunc(stateFunc2);
@@ -1710,105 +2204,99 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell, c
     return net::Launch(pstep);
 }
 
-bool ModuleHello::TestHttpRequestStateFuncDataProxy(const net::tagMsgShell& stMsgShell,
-                                                    const HttpMsg&          oInHttpMsg,
-                                                    const std::string&      str)
+bool ModuleHello::TestHttpRequestStateFuncDataRedisAgent(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,const std::string &str)
 {
-    struct StateParam : public net::StepParam
-    {
-        StateParam(const std::string& s, const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
-            : str(s), shell(stMsgShell), msg(oInHttpMsg)
-        {
-        }
-        std::string      str;
-        net::tagMsgShell shell;
-        HttpMsg          msg;
-    };
-    auto stateFunc0 = [](net::StepState* state)
-    {
-        auto SetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-        { LOG4_TRACE("SetValueFromRedis_callback %d:%s", oRsp.err_no(), oRsp.err_msg().c_str()); };
-        char sRedisKey[64];
-        snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-        net::RedisOperator oRedisOperator(0, sRedisKey, "SET");
-        oRedisOperator.AddRedisField("", ((StateParam*)state->GetData())->str);
-        LOG4_TRACE("%s() stateFunc0 %s", __FUNCTION__, ((StateParam*)state->GetData())->str.c_str());
-        return net::SendToCallback(state, oRedisOperator.MakeMemOperate(), SetValueFromRedis_callback);
-    };
-    auto stateFunc1 = [](net::StepState* state)
-    {
-        auto GetValueFromRedis_callback = [](const DataMem::MemRsp& oRsp, net::Step* pStep)
-        { LOG4_TRACE("GetValueFromRedis_callback %d:%s", oRsp.err_no(), oRsp.err_msg().c_str()); };
-        char sRedisKey[64];
-        snprintf(sRedisKey, sizeof(sRedisKey), TEST_SSDB_KEY);
-        net::RedisOperator oRedisOperator(0, sRedisKey, "", "GET");
-        LOG4_TRACE("%s() stateFunc1 %s", __FUNCTION__, ((StateParam*)state->GetData())->str.c_str());
-        return net::SendToCallback(state, oRedisOperator.MakeMemOperate(), GetValueFromRedis_callback);
-    };
-    auto stateFuncOnSucc = [](net::StepState* state)
-    {
-        LOG4_TRACE("stateFuncOnSucc");
-        util::CJsonObject oRsp;
-        oRsp.Add("code", 0);
-        oRsp.Add("msg", "succ");
-        state->SendToClient(oRsp.ToString());
-    };
-    auto stateFuncOnFail = [](net::StepState* state)
-    {
-        LOG4_TRACE("stateFuncOnFail");
-        util::CJsonObject oRsp;
-        oRsp.Add("code", 1);
-        oRsp.Add("msg", "fail");
-        state->SendToClient(oRsp.ToString());
-    };
-    net::StepState* pstep = new net::StepState(stMsgShell, oInHttpMsg);
-    pstep->AddStateFunc(stateFunc0);
-    pstep->AddStateFunc(stateFunc1);
-    pstep->SetSuccFunc(stateFuncOnSucc);
-    pstep->SetFailFunc(stateFuncOnFail);
-    pstep->SetData(new StateParam(str, stMsgShell, oInHttpMsg));
-    return net::Launch(pstep);
+	struct StateParam:public net::StepParam
+	{
+		StateParam(const std::string &s,const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg):
+			str(s),shell(stMsgShell),msg(oInHttpMsg){}
+		std::string str;
+		net::tagMsgShell shell;
+		HttpMsg msg;
+	};
+	auto stateFunc0= [] (net::StepState* state)
+	{
+		auto Redis_SetGet_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+		{
+			LOG4_TRACE("Redis_SetGet_callback %d:%s",oMemRsp.err_no(),oMemRsp.err_msg().c_str());
+		};
+		char sRedisKey[64];
+		snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+		net::RedisOperator oRedisOperator(0, sRedisKey,"SET");
+		oRedisOperator.AddRedisField("",(dynamic_cast<StateParam*>(state->GetData()))->str);
+		LOG4_TRACE("%s() stateFunc0 %s",__FUNCTION__,(dynamic_cast<StateParam*>(state->GetData()))->str.c_str());
+		return GetLabor()->SendToCallback(state,oRedisOperator.MakeMemOperate(),Redis_SetGet_callback);
+	};
+	auto stateFunc1= [] (net::StepState* state)
+	{
+		auto GetValueFromRedis_callback = [] (const DataMem::MemRsp &oMemRsp,net::Step*pStep,net::StepParam* data)
+		{
+			LOG4_TRACE("GetValueFromRedis_callback %d:%s",oMemRsp.err_no(),oMemRsp.err_msg().c_str());
+		};
+		char sRedisKey[64];
+		snprintf(sRedisKey,sizeof(sRedisKey),TEST_REDIS_KEY);
+		net::RedisOperator oRedisOperator(0, sRedisKey,"","GET");
+		LOG4_TRACE("%s() stateFunc1 %s",__FUNCTION__,(dynamic_cast<StateParam*>(state->GetData()))->str.c_str());
+		return GetLabor()->SendToCallback(state,oRedisOperator.MakeMemOperate(),GetValueFromRedis_callback);
+	};
+	auto stateFuncOnSucc= [] (net::StepState* state)
+	{
+		LOG4_TRACE("stateFuncOnSucc");
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", 0);
+		oJsonObj.Add("msg", "succ");
+		state->SendToClient(oJsonObj.ToString());
+	};
+	auto stateFuncOnFail = [] (net::StepState* state)
+	{
+		LOG4_TRACE("stateFuncOnFail");
+		util::CJsonObject oJsonObj;
+		oJsonObj.Add("code", 1);
+		oJsonObj.Add("msg", "fail");
+		state->SendToClient(oJsonObj.ToString());
+	};
+	net::StepState* pstep = new net::StepState(stMsgShell,oInHttpMsg);
+	pstep->AddStateFunc(stateFunc0);
+	pstep->AddStateFunc(stateFunc1);
+	pstep->SetSuccFunc(stateFuncOnSucc);
+	pstep->SetFailFunc(stateFuncOnFail);
+	pstep->SetData(new StateParam(str,stMsgShell,oInHttpMsg));
+	return net::Launch(pstep);
 }
 
-void ModuleHello::Base64Encode(const char* data, unsigned int datalen, std::string& strEncode)
+void ModuleHello::Base64Encode(const char* data,unsigned int datalen,std::string &strEncode)
 {
-    int   encodedMaxlen = Base64encode_len(datalen);
-    char* encoded       = new char[encodedMaxlen];
-    int   encodedlen    = Base64encode(encoded, data, datalen);
-    strEncode.assign(encoded); // 编码后的encoded是普通字符串(末尾增加0)
-    delete[] encoded;
-    LOG4_DEBUG("Base64Encode data(%s,%d(bin length)),encoded(%s,%d(include added end 0),%d),"
-               "strEncode len(%u)",
-               data,
-               datalen,
-               encoded,
-               encodedlen,
-               encodedMaxlen,
-               strEncode.length()); // encodedlen长度包括添加的末尾字节0
+    int encodedMaxlen = Base64encode_len(datalen);
+    char *encoded = new char [encodedMaxlen];
+    int encodedlen = Base64encode(encoded,data,datalen);
+    strEncode.assign(encoded);//编码后的encoded是普通字符串(末尾增加0)
+    delete [] encoded;
+    LOG4_TRACE("Base64Encode data(%s,%d(bin length)),encoded(%s,%d(include added end 0),%d),"
+                        "strEncode len(%u)",
+                        data,datalen,
+                        encoded,encodedlen,encodedMaxlen,
+                        strEncode.length());//encodedlen长度包括添加的末尾字节0
 }
 
-void ModuleHello::Base64Decode(const char* encoded, unsigned int encodedlen, std::string& strDecode)
+void ModuleHello::Base64Decode(const char* encoded,unsigned int encodedlen,std::string &strDecode)
 {
-    int   decodedMaxlen = Base64decode_len(encoded);
-    char* decoded       = new char[decodedMaxlen];
-    int   decodedlen    = Base64decode(decoded, encoded); // add 0 to the end
-    strDecode.assign(decoded, decodedlen);                // decodedlen长度不包括Base64decode添加的末尾字节0
-    delete[] decoded;
-    LOG4_DEBUG("Base64Decode encoded(%s,%d(not include added end 0)),decode(%s,%d(not include added end 0),%d),"
-               "strDecode len(%u)",
-               encoded,
-               encodedlen,
-               decoded,
-               decodedlen,
-               decodedMaxlen,
-               strDecode.length());
+    int decodedMaxlen = Base64decode_len(encoded);
+    char *decoded = new char [decodedMaxlen];
+    int decodedlen = Base64decode(decoded,encoded);//add 0 to the end
+    strDecode.assign(decoded,decodedlen);//decodedlen长度不包括Base64decode添加的末尾字节0
+    delete [] decoded;
+    LOG4_TRACE("Base64Decode encoded(%s,%d(not include added end 0)),decode(%s,%d(not include added end 0),%d),"
+                    "strDecode len(%u)",
+                    encoded,encodedlen,
+                    decoded,decodedlen,decodedMaxlen,
+                    strDecode.length());
 }
 
-void ModuleHello::PrintBin(const char* data, unsigned int datalen)
+void ModuleHello::PrintBin(const char* data,unsigned int datalen)
 {
-    char* tmp = new char[datalen + 1];
-    memcpy(tmp, data, datalen);
-    for (unsigned int i = 0; i < datalen; ++i)
+    char *tmp = new char [datalen+1];
+    memcpy(tmp,data,datalen);
+    for(unsigned int i = 0;i < datalen;++i)
     {
         if ('\0' == tmp[i])
         {
@@ -1816,11 +2304,12 @@ void ModuleHello::PrintBin(const char* data, unsigned int datalen)
         }
     }
     tmp[datalen] = 0;
-    LOG4_DEBUG("PrintBin data:%s", tmp);
-    delete[] tmp;
+    LOG4_TRACE("PrintBin data:%s",tmp);
+    delete [] tmp;
 }
 
-bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell,
+                const HttpMsg& oInHttpMsg)
 {
     /*
     http://192.168.18.68:16037/robot/web/hello
@@ -1828,99 +2317,90 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg&
         "session_id": 1
     }
     */
-    { // parse json to pb msg
+    {//parse json to pb msg
         /*
             message MsgBody
             {
                 bytes body         = 1;         ///< 消息体主体
-                uint64 session_id  = 2;         ///< 会话ID（没有设置的服务器会设置为发送者的appid +
-         userid,需要修改的则为客户端主动填写） string session     = 3;         ///<
-         会话ID（当session_id用整型无法表达时使用） bytes additional   = 4;         ///<
-         接入层附加的数据（客户端无须理会）
+                uint64 session_id  = 2;         ///< 会话ID（没有设置的服务器会设置为发送者的appid + userid,需要修改的则为客户端主动填写）
+                string session     = 3;         ///< 会话ID（当session_id用整型无法表达时使用）
+                bytes additional   = 4;         ///< 接入层附加的数据（客户端无须理会）
             }
          * */
         util::CJsonObject obj;
-        if (!obj.Parse(oInHttpMsg.body()))
+        if(!obj.Parse(oInHttpMsg.body()))
         {
-            LOG4_WARN("it is not json:%s", oInHttpMsg.body().c_str());
-            Response(stMsgShell, oInHttpMsg, ERR_PARASE_PROTOBUF);
+            LOG4_WARN("it is not json:%s",oInHttpMsg.body().c_str());
+            Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
             return false;
         }
-        { // 增加body字段，bytes类型,需要先进行Base64编码
+        {//增加body字段，bytes类型,需要先进行Base64编码
             util::CJsonObject bodyJson;
-            bodyJson.Add("test_1", 1);
-            bodyJson.Add("test_2", "2");
-            bodyJson.Add("test_3", 3.0);
-            bodyJson.Add("chinese", "你好");
-            { // 二进制
-                char        cs[] = { 'a', 'b', 0x0, 'c', 'd', 'e', 0x0, 0x0, 0x0, 0x0 };
+            bodyJson.Add("test_1",1);
+            bodyJson.Add("test_2","2");
+            bodyJson.Add("test_3",3.0);
+            bodyJson.Add("chinese","你好");
+            {//二进制
+                char cs[] = {'a','b',0x0,'c','d','e',0x0,0x0,0x0,0x0};
                 std::string encoded;
-                Base64Encode(cs, sizeof(cs), encoded);
-                bodyJson.Add("bin", encoded);
+                Base64Encode(cs,sizeof(cs),encoded);
+                bodyJson.Add("bin",encoded);
                 std::string getBintmp;
-                bodyJson.Get("bin", getBintmp);
+                bodyJson.Get("bin",getBintmp);
                 std::string decoded;
-                Base64Decode(getBintmp.c_str(), getBintmp.length(), decoded);
-                LOG4_DEBUG("check encoded(%s,%d(not include added end 0)),"
-                           "getencoded(%s,%d(not include added end 0)),decoded(%s,%d)",
-                           encoded.c_str(),
-                           encoded.length(),
-                           getBintmp.c_str(),
-                           getBintmp.length(),
-                           decoded.c_str(),
-                           decoded.length());
+                Base64Decode(getBintmp.c_str(),getBintmp.length(),decoded);
+                LOG4_TRACE("check encoded(%s,%d(not include added end 0)),"
+                                "getencoded(%s,%d(not include added end 0)),decoded(%s,%d)",
+                                encoded.c_str(),encoded.length(),
+                                getBintmp.c_str(),getBintmp.length(),
+                                decoded.c_str(),decoded.length());
                 /*
                  check encoded(YWIAY2RlAAAAAA==,16(not include added end 0)),getencoded(YWIAY2RlAAAAAA==,16(not
                  include added end 0)),decoded(ab,10)
                  * */
-                PrintBin(decoded.c_str(), decoded.length());
+                PrintBin(decoded.c_str(),decoded.length());
             }
             std::string strbody = bodyJson.ToString();
             std::string encoded;
-            Base64Encode(strbody.c_str(), strbody.length(), encoded);
-            LOG4_DEBUG("strbody(%s,%d),encoded(%s,%d)",
-                       strbody.c_str(),
-                       strbody.length(),
-                       encoded.c_str(),
-                       encoded.length());
+            Base64Encode(strbody.c_str(),strbody.length(),encoded);
+            LOG4_TRACE("strbody(%s,%d),encoded(%s,%d)",
+                            strbody.c_str(),strbody.length(),
+                            encoded.c_str(),encoded.length());
             /*
              strbody({"test1":1,"test2":"2","test3":3,"chinese":"ä½ å¥½","bin":"YWIAY2RlAAAAAA=="},77),
              encoded(eyJ0ZXN0MSI6MSwidGVzdDIiOiIyIiwidGVzdDMiOjMsImNoaW5lc2UiOiLkvaDlpb0iLCJiaW4iOiJZV0lBWTJSbEFBQUFBQT09In0=,104)
              * */
-            obj.Add("body", encoded); // bytes类型的字段需要先进行Base64编码
+            obj.Add("body",encoded);//bytes类型的字段需要先进行Base64编码
         }
-        { // 增加session
+        {//增加session
             util::CJsonObject additionalJson;
-            additionalJson.Add("additional_1", 1);
-            additionalJson.Add("additional_2", "2");
-            additionalJson.Add("additional_3", 3.0);
-            additionalJson.Add("chinese", "你好");
-            { // 二进制
-                char        cs[] = { 'a', 'b', 0x0, 'c', 'd', 'e', 0x0, 0x0, 0x0, 0x0 };
+            additionalJson.Add("additional_1",1);
+            additionalJson.Add("additional_2","2");
+            additionalJson.Add("additional_3",3.0);
+            additionalJson.Add("chinese","你好");
+            {//二进制
+                char cs[] = {'a','b',0x0,'c','d','e',0x0,0x0,0x0,0x0};
                 std::string encoded;
-                Base64Encode(cs, sizeof(cs), encoded);
-                additionalJson.Add("bin", encoded);
+                Base64Encode(cs,sizeof(cs),encoded);
+                additionalJson.Add("bin",encoded);
                 std::string getBintmp;
-                additionalJson.Get("bin", getBintmp);
+                additionalJson.Get("bin",getBintmp);
                 std::string decoded;
-                Base64Decode(getBintmp.c_str(), getBintmp.length(), decoded);
-                LOG4_DEBUG("check encoded(%s,%d(not include added end 0)),"
-                           "getencoded(%s,%d(not include added end 0)),decoded(%s,%d)",
-                           encoded.c_str(),
-                           encoded.length(),
-                           getBintmp.c_str(),
-                           getBintmp.length(),
-                           decoded.c_str(),
-                           decoded.length());
+                Base64Decode(getBintmp.c_str(),getBintmp.length(),decoded);
+                LOG4_TRACE("check encoded(%s,%d(not include added end 0)),"
+                                "getencoded(%s,%d(not include added end 0)),decoded(%s,%d)",
+                                encoded.c_str(),encoded.length(),
+                                getBintmp.c_str(),getBintmp.length(),
+                                decoded.c_str(),decoded.length());
                 /*
                  check encoded(YWIAY2RlAAAAAA==,16(not include added end 0)),
                  getencoded(YWIAY2RlAAAAAA==,16(not include added end 0)),decoded(ab,10)
                  */
-                PrintBin(decoded.c_str(), decoded.length());
-                obj.Add("session", additionalJson.ToString());
+                PrintBin(decoded.c_str(),decoded.length());
+                obj.Add("session",additionalJson.ToString());
             }
         }
-        LOG4_DEBUG("json data:%s", obj.ToString().c_str());
+        LOG4_TRACE("json data:%s",obj.ToString().c_str());
         /*
          json data:
          {
@@ -1930,20 +2410,18 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg&
          }
         */
         MsgBody oMsgBody;
-        { // json to msg
+        {//json to msg
             google::protobuf::util::JsonParseOptions oParseOptions;
-            google::protobuf::util::Status           oStatus;
+            google::protobuf::util::Status oStatus;
             oStatus = google::protobuf::util::JsonStringToMessage(obj.ToString(), &oMsgBody, oParseOptions);
-            if (!oStatus.ok())
+            if(!oStatus.ok())
             {
                 LOG4_WARN("failed to JsonStringToMessage(),error_code(%d),error_message(%s):%s",
-                          oStatus.error_code(),
-                          oStatus.error_message().data(),
-                          oInHttpMsg.body().c_str());
-                Response(stMsgShell, oInHttpMsg, ERR_PARASE_PROTOBUF);
+                                oStatus.error_code(),oStatus.error_message().data(),oInHttpMsg.body().c_str());
+                Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
                 return false;
             }
-            LOG4_DEBUG("JsonStringToMessage oMsgBody():%s", oMsgBody.DebugString().c_str());
+            LOG4_TRACE("JsonStringToMessage oMsgBody():%s",oMsgBody.DebugString().c_str());
             /*
              * 使用JsonStringToMessage会转码base64编码的body为明文
                 JsonStringToMessage oMsgBody():
@@ -1954,22 +2432,20 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg&
                 "{\"additional1\":1,\"additional2\":\"2\",\"additional3\":3,\"chinese\":\"\344\275\240\345\245\275\",\"bin\":\"YWIAY2RlAAAAAA==\"}"
              */
         }
-        { // msg to json
+        {//msg to json
             google::protobuf::util::JsonOptions oOptions;
             oOptions.add_whitespace = true;
             google::protobuf::util::Status oStatus;
-            std::string                    strJson;
-            oStatus = google::protobuf::util::MessageToJsonString(oMsgBody, &strJson, oOptions);
-            if (!oStatus.ok())
+            std::string strJson;
+            oStatus = google::protobuf::util::MessageToJsonString(oMsgBody,&strJson,oOptions);
+            if(!oStatus.ok())
             {
                 LOG4_WARN("failed to JsonStringToMessage(),error_code(%d),error_message(%s):%s",
-                          oStatus.error_code(),
-                          oStatus.error_message().data(),
-                          oInHttpMsg.body().c_str());
-                Response(stMsgShell, oInHttpMsg, ERR_PARASE_PROTOBUF);
+                                oStatus.error_code(),oStatus.error_message().data(),oInHttpMsg.body().c_str());
+                Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
                 return false;
             }
-            LOG4_DEBUG("MessageToJsonString strJson():%s", strJson.c_str());
+            LOG4_TRACE("MessageToJsonString strJson():%s",strJson.c_str());
             /*
                              转换oMsgBody为json后，body字段为原来base64编码后的数据（json对象的字符串编码为BYTES的字段）
              MessageToJsonString strJson():
@@ -1979,20 +2455,20 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg&
              "session":"{\"additional1\":1,\"additional2\":\"2\",\"additional3\":3,\"chinese\":\"ä½ å¥½\",\"bin\":\"YWIAY2RlAAAAAA==\"}"}
              */
             util::CJsonObject jsonObj;
-            if (!jsonObj.Parse(strJson))
+            if(!jsonObj.Parse(strJson))
             {
-                LOG4_WARN("failed to parse strJson(%s)", strJson.c_str());
-                Response(stMsgShell, oInHttpMsg, ERR_PARASE_PROTOBUF);
+                LOG4_WARN("failed to parse strJson(%s)",strJson.c_str());
+                Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
                 return false;
             }
-            LOG4_DEBUG("ok to parse strJson(%s)", strJson.c_str());
+            LOG4_TRACE("ok to parse strJson(%s)",strJson.c_str());
             std::string strBody;
-            if (jsonObj.Get("body", strBody))
+            if(jsonObj.Get("body",strBody))
             {
                 std::string decoded;
-                LOG4_DEBUG("parse strJson body(%u,%s)", strBody.length(), strBody.c_str());
-                Base64Decode(strBody.c_str(), strBody.length(), decoded);
-                LOG4_DEBUG("ok to parse strJson body:%s", decoded.c_str());
+                LOG4_TRACE("parse strJson body(%u,%s)",strBody.length(),strBody.c_str());
+                Base64Decode(strBody.c_str(),strBody.length(),decoded);
+                LOG4_TRACE("ok to parse strJson body:%s",decoded.c_str());
             }
         }
     }
@@ -2001,13 +2477,13 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell, const HttpMsg&
 
 void ModuleHello::TestProto3Type()
 {
-    // https://developers.google.com/protocol-buffers/docs/reference/cpp-generated
+    //https://developers.google.com/protocol-buffers/docs/reference/cpp-generated
     /*
      .proto类型   Java 类型     C++类型   备注
     double      double      double
     float       float       float
-    int32       int         int32 使用可变长编码方式。编码负数时不够高效——如果你的字段可能含有负数，那么请使用sint32。
-    int64       long        int64 使用可变长编码方式。编码负数时不够高效——如果你的字段可能含有负数，那么请使用sint64。
+    int32       int         int32       使用可变长编码方式。编码负数时不够高效——如果你的字段可能含有负数，那么请使用sint32。
+    int64       long        int64       使用可变长编码方式。编码负数时不够高效——如果你的字段可能含有负数，那么请使用sint64。
     uint32      int[1]      uint32      Uses variable-length encoding.
     uint64      long[1]     uint64      Uses variable-length encoding.
     sint32      int         int32       使用可变长编码方式。有符号的整型值。编码时比通常的int32高效。
@@ -2021,76 +2497,351 @@ void ModuleHello::TestProto3Type()
     bytes       ByteString  string      可能包含任意顺序的字节数据。
      * */
     /*
-            消息描述中的一个元素可以被标记为“可选的”（optional）。一个格式良好的消息可以包含0个或一个optional的元素。当解
-     析消息时，如果它不包含optional的元素值，那么解析出来的对象中的对应字段就被置为默认值。默认值可以在消息描述文件中指定。例如，要为
-     SearchRequest消息的result_per_page字段指定默认值10，在定义消息格式时如下所示： optional int32 result_per_page = 3
-     [default = 10];
+            消息描述中的一个元素可以被标记为“可选的”（optional）。一个格式良好的消息可以包含0个或一个optional的元素。当解 析消息时，如果它不包含optional的元素值，那么解析出来的对象中的对应字段就被置为默认值。默认值可以在消息描述文件中指定。例如，要为 SearchRequest消息的result_per_page字段指定默认值10，在定义消息格式时如下所示：
+      optional int32 result_per_page = 3 [default = 10];
             如果没有为optional的元素指定默认值，就会使用与特定类型相关的默认值：对string来说，默认值是空字符串。对bool来说，默认值是false。对数值类型来说，默认值是0。对枚举来说，默认值是枚举类型定义中的第一个值。
      * */
     {
-        MsgBody foo;
-        MsgBody foo1;
-        foo.set_session_id(100);
-        foo.set_session("123");
-        google::protobuf::Any any;
-        any.PackFrom(foo);
-        LOG4_DEBUG("any :%s", any.DebugString().c_str());
         /*
-         any :[type.googleapis.com/MsgBody] {
-             session_id: 100
-             session: "123"
-           }
-         * */
-        if (any.UnpackTo(&foo1))
-        {
-            LOG4_DEBUG("foo1 :%s", foo1.DebugString().c_str());
-            /*
-             foo1 :session_id: 100
-             session: "123"
-             * */
+         class Any {
+             public:
+              // Packs the given message into this Any using the default type URL
+              // prefix “type.googleapis.com”.
+              void PackFrom(const google::protobuf::Message& message);
+
+              // Packs the given message into this Any using the given type URL
+              // prefix.
+              void PackFrom(const google::protobuf::Message& message,
+                            const string& type_url_prefix);
+
+              // Unpacks this Any to a Message. Returns false if this Any
+              // represents a different protobuf type or parsing fails.
+              bool UnpackTo(google::protobuf::Message* message) const;
+
+              // Returns true if this Any represents the given protobuf type.
+              template<typename T> bool Is() const;
+            }
+        message Any {
+          // A URL/resource name whose content describes the type of the
+          // serialized protocol buffer message.
+          //
+          // For URLs which use the scheme `http`, `https`, or no scheme, the
+          // following restrictions and interpretations apply:
+          //
+          // * If no scheme is provided, `https` is assumed.
+          // * The last segment of the URL's path must represent the fully
+          //   qualified name of the type (as in `path/google.protobuf.Duration`).
+          //   The name should be in a canonical form (e.g., leading "." is
+          //   not accepted).
+          // * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+          //   value in binary format, or produce an error.
+          // * Applications are allowed to cache lookup results based on the
+          //   URL, or have them precompiled into a binary to avoid any
+          //   lookup. Therefore, binary compatibility needs to be preserved
+          //   on changes to types. (Use versioned type names to manage
+          //   breaking changes.)
+          //
+          // Schemes other than `http`, `https` (or the empty scheme) might be
+          // used with implementation specific semantics.
+          //
+          string type_url = 1;
+
+          // Must be a valid serialized protocol buffer of the above specified type.
+          bytes value = 2;
         }
+         * */
+         MsgBody foo;
+         MsgBody foo1;
+         foo.set_targetid("123");
+         google::protobuf::Any any;
+         any.PackFrom(foo);
+         LOG4_TRACE("any :%s",any.DebugString().c_str());
+         /*
+          any :[type.googleapis.com/MsgBody] {
+              session_id: 100
+              session: "123"
+            }
+          * */
+         if (any.UnpackTo(&foo1))
+         {
+             LOG4_TRACE("foo1 :%s",foo1.DebugString().c_str());
+             /*
+              foo1 :session_id: 100
+              session: "123"
+              * */
+         }
+    }
+    {
+        /*
+         Map Fields
+            For this map field definition:
+            map<int32, int32> weight = 1;
+
+            The compiler will generate the following accessor methods:
+            const google::protobuf::Map<int32, int32>& weight();: Returns an immutable Map.
+            google::protobuf::Map<int32, int32>* mutable_weight();: Returns a mutable Map.
+            A google::protobuf::Map is a special container type used in protocol buffers to store map fields. As you can see from its interface below, it uses a commonly-used subset of std::map and std::unordered_map methods.
+            template<typename Key, typename T> {
+            class Map {
+              // Member types
+              typedef Key key_type;
+              typedef T mapped_type;
+              typedef ... value_type;
+              // Iterators
+              iterator begin();
+              const_iterator begin() const;
+              const_iterator cbegin() const;
+              iterator end();
+              const_iterator end() const;
+              const_iterator cend() const;
+              // Capacity
+              int size() const;
+              bool empty() const;
+              // Element access
+              T& operator[](const Key& key);
+              const T& at(const Key& key) const;
+              T& at(const Key& key);
+              // Lookup
+              int count(const Key& key) const;
+              const_iterator find(const Key& key) const;
+              iterator find(const Key& key);
+              // Modifiers
+              pair<iterator, bool> insert(const value_type& value);
+              template<class InputIt>
+              void insert(InputIt first, InputIt last);
+              size_type erase(const Key& Key);
+              iterator erase(const_iterator pos);
+              iterator erase(const_iterator first, const_iterator last);
+              void clear();
+              // Copy
+              Map(const Map& other);
+              Map& operator=(const Map& other);
+            }
+            The easiest way to add data is to use normal map syntax, for example:
+            std::unique_ptr<ProtoName> my_enclosing_proto(new ProtoName);
+            (*my_enclosing_proto->mutable_weight())[my_key] = my_value;
+            pair<iterator, bool> insert(const value_type& value) will implicitly cause a deep copy of the value_type instance. The most efficient way to insert a new value into a google::protobuf::Map is as follows:
+            T& operator[](const Key& key): map[new_key] = new_mapped;
+            Using google::protobuf::Map with standard maps
+            google::protobuf::Map supports the same iterator API as std::map and std::unordered_map. If you don't want to use google::protobuf::Map directly, you can convert a google::protobuf::Map to a standard map by doing the following:
+            std::map<int32, int32> standard_map(message.weight().begin(),
+                                                message.weight().end());
+            Note that this will make a deep copy of the entire map.
+            You can also construct a google::protobuf::Map from a standard map as follows:
+            google::protobuf::Map<int32, int32> weight(standard_map.begin(), standard_map.end());
+            Parsing unknown values
+            On the wire, a .proto map is equivalent to a map entry message for each key/value pair, while the map itself is a repeated field of map entries. Like ordinary message types, it's possible for a parsed map entry message to have unknown fields: for example a field of type int64 in a map defined as map<int32, string>.
+            If there are unknown fields in the wire format of a map entry message, they will be discarded.
+            If there is an unknown enum value in the wire format of a map entry message, it's handled differently in proto2 and proto3. In proto2, the whole map entry message is put into the unknown field set of the containing message. In proto3, it is put into a map field as if it is a known enum value.
+         * */
+        std::map<int,int> standard_map;
+        standard_map.insert(std::make_pair(100,200));
+        google::protobuf::Map<int32, int32> weight(standard_map.begin(), standard_map.end());\
+    }
+
+    {
+        /*
+         Enumerations
+            Given an enum definition like:
+            enum Foo {
+              VALUE_A = 0;
+              VALUE_B = 5;
+              VALUE_C = 1234;
+            }
+            The protocol buffer compiler will generate a C++ enum type called Foo with the same set of values. In addition, the compiler will generate the following functions:
+            const EnumDescriptor* Foo_descriptor(): Returns the type's descriptor, which contains information about what values this enum type defines.
+            bool Foo_IsValid(int value): Returns true if the given numeric value matches one of Foo's defined values. In the above example, it would return true if the input were 0, 5, or 1234.
+            const string& Foo_Name(int value): Returns the name for given numeric value. Returns an empty string if no such value exists. If multiple values have this number, the first one defined is returned. In the above example, Foo_Name(5) would return "VALUE_B".
+            bool Foo_Parse(const string& name, Foo* value): If name is a valid value name for this enum, assigns that value into value and returns true. Otherwise returns false. In the above example, Foo_Parse("VALUE_C", &someFoo) would return true and set someFoo to 1234.
+            const Foo Foo_MIN: the smallest valid value of the enum (VALUE_A in the example).
+            const Foo Foo_MAX: the largest valid value of the enum (VALUE_C in the example).
+            const int Foo_ARRAYSIZE: always defined as Foo_MAX + 1.
+            Be careful when casting integers to proto2 enums. If an integer is cast to a proto2 enum value, the integer must be one of the valid values for than enum, or the results may be undefined. If in doubt, use the generated Foo_IsValid() function to test if the cast is valid. Setting an enum-typed field of a proto2 message to an invalid value may cause an assertion failure. If an invalid enum value is read when parsing a proto2 message, it will be treated as an unknown field. These semantics have been changed in proto3. It's safe to cast any integer to a proto3 enum value as long as it fits into int32. Invalid enum values will also be kept when parsing a proto3 message and returned by enum field accessors.
+            You can define an enum inside a message type. In this case, the protocol buffer compiler generates code that makes it appear that the enum type itself was declared nested inside the message's class. The Foo_descriptor() and Foo_IsValid() functions are declared as static methods. In reality, the enum type itself and its values are declared at the global scope with mangled names, and are imported into the class's scope with a typedef and a series of constant definitions. This is done only to get around problems with declaration ordering. Do not depend on the mangled top-level names; pretend the enum really is nested in the message class.
+         * */
+    }
+    {
+        /*
+                     使用Oneof
+                    为了在.proto定义Oneof字段， 你需要在名字前面加上oneof关键字, 比如下面例子的test_oneof:
+                message SampleMessage {
+                  oneof test_oneof {
+                     string name = 4;
+                     SubMessage sub_message = 9;
+                  }
+                }
+                        然后你可以增加oneof字段到 oneof 定义中. 你可以增加任意类型的字段, 但是不能使用 required, optional, repeated 关键字.
+                        在产生的代码中, oneof字段拥有同样的 getters 和setters， 就像正常的可选字段一样. 也有一个特殊的方法来检查到底那个字段被设置. 你可以在相应的语言API中找到oneof API介绍.
+        Oneof 特性:
+                    设置oneof会自动清楚其它oneof字段的值. 所以设置多次后，只有最后一次设置的字段有值.
+            SampleMessage message;
+            message.set_name(“name”);
+            CHECK(message.has_name());
+            message.mutable_sub_message();   // Will clear name field.
+            CHECK(!message.has_name());
+
+            If the parser encounters multiple members of the same oneof on the wire, only the last member seen is used in the parsed message.
+            oneof不支持扩展.
+            oneof不能 repeated.
+                        反射API对oneof 字段有效.
+                        如果使用C++,需确保代码不会导致内存泄漏. 下面的代码会崩溃， 因为sub_message 已经通过set_name()删除了.
+
+            SampleMessage message;
+            SubMessage* sub_message = message.mutable_sub_message();
+            message.set_name(“name”);      // Will delete sub_message
+            sub_message.set_…              // Crashes here
+            Again in C++, if you Swap() two messages with oneofs, each message will end up with the other’s oneof case: in the example below, msg1 will have a sub_message and msg2 will have a name.
+
+            SampleMessage msg1;
+            msg1.set_name(“name”);
+            SampleMessage msg2;
+            msg2.mutable_sub_message();
+            msg1.swap(&msg2);
+            CHECK(msg1.has_sub_message());
+            CHECK(msg2.has_name());
+         * */
+    }
+    {
+        /*
+         Arena Allocation
+            Arena allocation is a C++-only feature that helps you optimize your memory usage and improve performance when working with protocol buffers. Enabling arena allocation in your .proto adds additional code for working with arenas to your C++ generated code. You can find out more about the arena allocation API in the Arena Allocation Guide.
+         * */
+    }
+    {
+        /*
+         Interface
+            Given a service definition:
+            service Foo {
+              rpc Bar(FooRequest) returns(FooResponse);
+            }
+            The protocol buffer compiler will generate a class Foo to represent this service. Foo will have a virtual method for each method defined in the service definition. In this case, the method Bar is defined as:
+            virtual void Bar(RpcController* controller, const FooRequest* request,
+                             FooResponse* response, Closure* done);
+            The parameters are equivalent to the parameters of Service::CallMethod(), except that the method argument is implied and request and response specify their exact type.
+            These generated methods are virtual, but not pure-virtual. The default implementations simply call controller->SetFailed() with an error message indicating that the method is unimplemented, then invoke the done callback. When implementing your own service, you must subclass this generated service and implement its methods as appropriate.
+            Foo subclasses the Service interface. The protocol buffer compiler automatically generates implementations of the methods of Service as follows:
+            GetDescriptor: Returns the service's ServiceDescriptor.
+            CallMethod: Determines which method is being called based on the provided method descriptor and calls it directly, down-casting the request and response messages objects to the correct types.
+            GetRequestPrototype and GetResponsePrototype: Returns the default instance of the request or response of the correct type for the given method.
+            The following static method is also generated:
+            static ServiceDescriptor descriptor(): Returns the type's descriptor, which contains information about what methods this service has and what their input and output types are.
+         * */
+    }
+    {
+        /*
+         *Stub
+            The protocol buffer compiler also generates a "stub" implementation of every service interface, which is used by clients wishing to send requests to servers implementing the service. For the Foo service (above), the stub implementation Foo_Stub will be defined. As with nested message types, a typedef is used so that Foo_Stub can also be referred to as Foo::Stub.
+            Foo_Stub is a subclass of Foo which also implements the following methods:
+            Foo_Stub(RpcChannel* channel): Constructs a new stub which sends requests on the given channel.
+            Foo_Stub(RpcChannel* channel, ChannelOwnership ownership): Constructs a new stub which sends requests on the given channel and possibly owns that channel. If ownership is Service::STUB_OWNS_CHANNEL then when the stub object is deleted it will delete the channel as well.
+            RpcChannel* channel(): Returns this stub's channel, as passed to the constructor.
+            The stub additionally implements each of the service's methods as a wrapper around the channel. Calling one of the methods simply calls channel->CallMethod().
+            The Protocol Buffer library does not include an RPC implementation. However, it includes all of the tools you need to hook up a generated service class to any arbitrary RPC implementation of your choice. You need only provide implementations of RpcChannel and RpcController. See the documentation for service.h for more information.
+         * */
     }
 }
 
 void ModuleHello::TestJson2pbRepeatedFields()
-{ // repeated
-    LOG4_DEBUG("test_proto3");
-    // message test_proto3
+{//repeated
+//      Repeated Numeric Fields
+//      For this field definition:
+//      repeated int32 foo = 1;
+//      The compiler will generate the following accessor methods:
+//      int foo_size() const: Returns the number of elements currently in the field.
+//      int32 foo(int index) const: Returns the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      void set_foo(int index, int32 value): Sets the value of the element at the given zero-based index.
+//      void add_foo(int32 value): Appends a new element to the field with the given value.
+//      void clear_foo(): Removes all elements from the field. After calling this, foo_size() will return zero.
+//      const RepeatedField<int32>& foo() const: Returns the underlying RepeatedField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//      RepeatedField<int32>* mutable_foo(): Returns a pointer to the underlying mutable RepeatedField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//      For other numeric field types (including bool), int32 is replaced with the corresponding C++ type according to the scalar value types table.
+//
+//      Repeated String Fields
+//      For either of these field definitions:
+//      repeated string foo = 1;
+//      repeated bytes foo = 1;
+//      The compiler will generate the following accessor methods:
+//      int foo_size() const: Returns the number of elements currently in the field.
+//      const string& foo(int index) const: Returns the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      void set_foo(int index, const string& value): Sets the value of the element at the given zero-based index.
+//      void set_foo(int index, const char* value): Sets the value of the element at the given zero-based index using a C-style null-terminated string.
+//      void set_foo(int index, const char* value, int size): Like above, but the string size is given explicitly rather than determined by looking for a null-terminator byte.
+//      string* mutable_foo(int index): Returns a pointer to the mutable string object that stores the value of the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      void add_foo(const string& value): Appends a new element to the field with the given value.
+//      void add_foo(const char* value): Appends a new element to the field using a C-style null-terminated string.
+//      void add_foo(const char* value, int size): Like above, but the string size is given explicitly rather than determined by looking for a null-terminator byte.
+//      string* add_foo(): Adds a new empty string element and returns a pointer to it.
+//      void clear_foo(): Removes all elements from the field. After calling this, foo_size() will return zero.
+//      const RepeatedPtrField<string>& foo() const: Returns the underlying RepeatedPtrField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//      RepeatedPtrField<string>* mutable_foo(): Returns a pointer to the underlying mutable RepeatedPtrField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//
+//      Repeated Enum Fields
+//      Given the enum type:
+//      enum Bar {
+//        BAR_VALUE = 0;
+//        OTHER_VALUE = 1;
+//      }
+//      For this field definition:
+//      repeated Bar foo = 1;
+//      The compiler will generate the following accessor methods:
+//      int foo_size() const: Returns the number of elements currently in the field.
+//      Bar foo(int index) const: Returns the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      void set_foo(int index, Bar value): Sets the value of the element at the given zero-based index. In debug mode (i.e. NDEBUG is not defined), if value does not match any of the values defined for Bar, this method will abort the process.
+//      void add_foo(Bar value): Appends a new element to the field with the given value. In debug mode (i.e. NDEBUG is not defined), if value does not match any of the values defined for Bar, this method will abort the process.
+//      void clear_foo(): Removes all elements from the field. After calling this, foo_size() will return zero.
+//      const RepeatedField<int>& foo() const: Returns the underlying RepeatedField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//      RepeatedField<int>* mutable_foo(): Returns a pointer to the underlying mutable RepeatedField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//
+//      Repeated Embedded Message Fields
+//      Given the message type:
+//      message Bar {}
+//      For this field definitions:
+//      repeated Bar foo = 1;
+//      The compiler will generate the following accessor methods:
+//      int foo_size() const: Returns the number of elements currently in the field.
+//      const Bar& foo(int index) const: Returns the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      Bar* mutable_foo(int index): Returns a pointer to the mutable Bar object that stores the value of the element at the given zero-based index. Calling this method with index outside of [0, foo_size()) yields undefined behavior.
+//      Bar* add_foo(): Adds a new element and returns a pointer to it. The returned Bar will have none of its fields set (i.e. it will be identical to a newly-allocated Bar).
+//      void clear_foo(): Removes all elements from the field. After calling this, foo_size() will return zero.
+//      const RepeatedPtrField<Bar>& foo() const: Returns the underlying RepeatedPtrField that stores the field's elements. This container class provides STL-like iterators and other methods.
+//      RepeatedPtrField<Bar>* mutable_foo(): Returns a pointer to the underlying mutable RepeatedPtrField that stores the field's elements. This container class provides STL-like iterators and other methods.
+    LOG4_TRACE("test_proto3");
+    //message test_proto3
     //{
-    //     repeated string test_foo1 = 1;
-    //     repeated bytes test_foo2 = 2;
-    //     repeated int32 test_foo3 = 3;
-    //     repeated uint64 test_foo4 = 4;
-    //     repeated test_bar test_foo5 = 5;
-    // }
+    //    repeated string test_foo1 = 1;
+    //    repeated bytes test_foo2 = 2;
+    //    repeated int32 test_foo3 = 3;
+    //    repeated uint64 test_foo4 = 4;
+    //    repeated test_bar test_foo5 = 5;
+    //}
     ::test_proto3 testProto;
-    // repeated string
+    //repeated string
     testProto.add_test_foo1("foo1");
     testProto.add_test_foo1("foo11");
-    // repeated bytes
+    //repeated bytes
     testProto.add_test_foo2("foo2");
     testProto.add_test_foo2("foo22");
     std::string strEncodeTestFoo2;
-    Base64Encode("foo2", strlen("foo2"), strEncodeTestFoo2);
-    LOG4_DEBUG("strEncodeTestFoo2:%s", strEncodeTestFoo2.c_str());
-    // strEncodeTestFoo2:Zm9vMg==
-    // repeated int32
+    Base64Encode("foo2",strlen("foo2"),strEncodeTestFoo2);
+    LOG4_TRACE("strEncodeTestFoo2:%s",strEncodeTestFoo2.c_str());
+    //strEncodeTestFoo2:Zm9vMg==
+    //repeated int32
     testProto.add_test_foo3(3);
     testProto.add_test_foo3(33);
-    // repeated uint64
+    //repeated uint64
     testProto.add_test_foo4(4);
     testProto.add_test_foo4(44);
-    // repeated test_bar
-    // message test_bar
+    //repeated test_bar
+    //message test_bar
     //{
-    //     int32 test_bar1 = 1;
-    //     uint64 testBar2 = 2;
-    //     string TestBar3 = 3;
-    //     bytes Testbar4 = 4;
-    //     fixed32 test_Bar5 = 5;
-    //     sint64 Test_Bar6 = 6;
-    //     double Test_bar7 = 7;
-    // }
+    //    int32 test_bar1 = 1;
+    //    uint64 testBar2 = 2;
+    //    string TestBar3 = 3;
+    //    bytes Testbar4 = 4;
+    //    fixed32 test_Bar5 = 5;
+    //    sint64 Test_Bar6 = 6;
+    //    double Test_bar7 = 7;
+    //}
     ::test_bar* bar = testProto.add_test_foo5();
     bar->set_test_bar1(1);
     bar->set_testbar2(2);
@@ -2108,89 +2859,87 @@ void ModuleHello::TestJson2pbRepeatedFields()
     bar->set_test_bar6(66);
     bar->set_test_bar7(7.7);
     std::string strJson;
-    { // pb to json
+    {//pb to json
         google::protobuf::util::JsonOptions oOptions;
-        google::protobuf::util::Status      oStatus;
-        oStatus = google::protobuf::util::MessageToJsonString(testProto, &strJson, oOptions);
-        if (!oStatus.ok())
+        google::protobuf::util::Status oStatus;
+        oStatus = google::protobuf::util::MessageToJsonString(testProto,&strJson,oOptions);
+        if(!oStatus.ok())
         {
             LOG4_WARN("test_proto3 failed to JsonStringToMessage(),error_code(%d),error_message(%s),testProto:%s",
-                      oStatus.error_code(),
-                      oStatus.error_message().data(),
-                      testProto.DebugString().c_str());
+                            oStatus.error_code(),oStatus.error_message().data(),
+                            testProto.DebugString().c_str());
             return;
         }
-        LOG4_DEBUG("test_proto3 succ to MessageToJsonString strJson:%s", strJson.c_str());
-        // test_proto3 succ to MessageToJsonString strJson:{
-        //  "testFoo1": [
-        //   "foo1",
-        //   "foo11"
-        //  ],
-        //  "testFoo2": [
-        //   "Zm9vMg==",
-        //   "Zm9vMjI="
-        //  ],
-        //  "testFoo3": [
-        //   3,
-        //   33
-        //  ],
-        //  "testFoo4": [
-        //   "4",
-        //   "44"
-        //  ],
-        //  "testFoo5": [
-        //   {
-        //    "testBar1": 1,
-        //    "testBar2": "2",
-        //    "testBar3": "3",
-        //    "testbar4": "NA==",
-        //    "testBar5": 5,
-        //    "testBar6": "6",
-        //    "testBar7": 7
-        //   },
-        //   {
-        //    "testBar1": 11,
-        //    "testBar2": "22",
-        //    "testBar3": "33",
-        //    "testbar4": "NDQ=",
-        //    "testBar5": 55,
-        //    "testBar6": "66",
-        //    "testBar7": 7.7
-        //   }
-        //  ]
-        // }
+        LOG4_TRACE("test_proto3 succ to MessageToJsonString strJson:%s",strJson.c_str());
+        //test_proto3 succ to MessageToJsonString strJson:{
+        // "testFoo1": [
+        //  "foo1",
+        //  "foo11"
+        // ],
+        // "testFoo2": [
+        //  "Zm9vMg==",
+        //  "Zm9vMjI="
+        // ],
+        // "testFoo3": [
+        //  3,
+        //  33
+        // ],
+        // "testFoo4": [
+        //  "4",
+        //  "44"
+        // ],
+        // "testFoo5": [
+        //  {
+        //   "testBar1": 1,
+        //   "testBar2": "2",
+        //   "testBar3": "3",
+        //   "testbar4": "NA==",
+        //   "testBar5": 5,
+        //   "testBar6": "6",
+        //   "testBar7": 7
+        //  },
+        //  {
+        //   "testBar1": 11,
+        //   "testBar2": "22",
+        //   "testBar3": "33",
+        //   "testbar4": "NDQ=",
+        //   "testBar5": 55,
+        //   "testBar6": "66",
+        //   "testBar7": 7.7
+        //  }
+        // ]
+        //}
         util::CJsonObject jsonObj;
-        if (!jsonObj.Parse(strJson))
+        if(!jsonObj.Parse(strJson))
         {
-            LOG4_WARN("test_proto3 failed to parse strJson:%s", strJson.c_str());
+            LOG4_WARN("test_proto3 failed to parse strJson:%s",strJson.c_str());
             return;
         }
-        LOG4_DEBUG("ok to parse jsonObj:%s", jsonObj.ToString().c_str());
-        // ok to parse jsonObj:{"testFoo1":["foo1","foo11"],"testFoo2":["Zm9vMg==","Zm9vMjI="],
+        LOG4_TRACE("ok to parse jsonObj:%s",jsonObj.ToString().c_str());
+        //ok to parse jsonObj:{"testFoo1":["foo1","foo11"],"testFoo2":["Zm9vMg==","Zm9vMjI="],
         //"testFoo3":[3,33],"testFoo4":["4","44"],
         //"testFoo5":[{"testBar1":1,"testBar2":"2","testBar3":"3","testbar4":"NA==","testBar5":5,"testBar6":"6","testBar7":7},
         //{"testBar1":11,"testBar2":"22","testBar3":"33","testbar4":"NDQ=","testBar5":55,"testBar6":"66","testBar7":7.700000}]}
         m_RunClock.StartClock("pb to json");
         std::string strTmpJson;
-        for (int i = 0; i < 10000; ++i)
+        for(int i = 0;i < 10000;++i)
         {
             strTmpJson.clear();
             google::protobuf::util::JsonOptions oOptions;
-            google::protobuf::util::Status      oStatus;
-            oStatus = google::protobuf::util::MessageToJsonString(testProto, &strTmpJson, oOptions);
-            if (!oStatus.ok())
+            google::protobuf::util::Status oStatus;
+            oStatus = google::protobuf::util::MessageToJsonString(testProto,&strTmpJson,oOptions);
+            if(!oStatus.ok())
             {
                 LOG4_WARN("test_proto3 failed to JsonStringToMessage(),error_code(%d),error_message(%s),testProto:%s",
-                          oStatus.error_code(),
-                          oStatus.error_message().data(),
-                          testProto.DebugString().c_str());
+                                oStatus.error_code(),oStatus.error_message().data(),
+                                testProto.DebugString().c_str());
                 return;
             }
         }
         m_RunClock.EndClock();
-        // EndClock() net::RunClock pb to json use time(251.009003) ms 不加换行和空格
-        // EndClock() net::RunClock pb to json use time(1335.982056) ms 加换行和空格
-        LOG4_DEBUG("test_proto3 succ to MessageToJsonString 10000 times strJson:%s", strJson.c_str());
+        //EndClock() net::RunClock pb to json use time(251.009003) ms 不加换行和空格
+        //EndClock() net::RunClock pb to json use time(1335.982056) ms 加换行和空格
+        LOG4_TRACE("test_proto3 succ to MessageToJsonString 10000 times strJson:%s",strJson.c_str());
         /*
         test_foo1: "foo1"
         test_foo1: "foo11"
@@ -2220,77 +2969,71 @@ void ModuleHello::TestJson2pbRepeatedFields()
         }
          * */
     }
-    { // json 2 pb
-        ::test_proto3                            testProto1;
+    {//json 2 pb
+        ::test_proto3 testProto1;
         google::protobuf::util::JsonParseOptions oParseOptions;
-        google::protobuf::util::Status           oStatus;
+        google::protobuf::util::Status oStatus;
         oStatus = google::protobuf::util::JsonStringToMessage(strJson, &testProto1, oParseOptions);
-        if (!oStatus.ok())
+        if(!oStatus.ok())
         {
             LOG4_WARN("test_proto3 failed to JsonStringToMessage,error_code(%d),error_message(%s),strJson:%s",
-                      oStatus.error_code(),
-                      oStatus.error_message().data(),
-                      strJson.c_str());
+                            oStatus.error_code(),oStatus.error_message().data(),strJson.c_str());
             return;
         }
-        LOG4_DEBUG("test_proto3 JsonStringToMessage testProto1:%s,testProto1 descriptor:%s",
-                   testProto1.DebugString().c_str(),
-                   testProto1.descriptor()->DebugString().c_str());
-        // test_proto3 JsonStringToMessage testProto1:test_foo1: "foo1"
-        // test_foo1: "foo11"
-        // test_foo2: "foo2"
-        // test_foo2: "foo22"
-        // test_foo3: 3
-        // test_foo3: 33
-        // test_foo4: 4
-        // test_foo4: 44
-        // test_foo5 {
-        //   test_bar1: 1
-        //   testBar2: 2
-        //   TestBar3: "3"
-        //   Testbar4: "4"
-        //   test_Bar5: 5
-        //   Test_Bar6: 6
-        //   Test_bar7: 7
-        // }
-        // test_foo5 {
-        //   test_bar1: 11
-        //   testBar2: 22
-        //   TestBar3: "33"
-        //   Testbar4: "44"
-        //   test_Bar5: 55
-        //   Test_Bar6: 66
-        //   Test_bar7: 7.7
-        // }
+        LOG4_TRACE("test_proto3 JsonStringToMessage testProto1:%s,testProto1 descriptor:%s",
+                        testProto1.DebugString().c_str(),testProto1.descriptor()->DebugString().c_str());
+        //test_proto3 JsonStringToMessage testProto1:test_foo1: "foo1"
+        //test_foo1: "foo11"
+        //test_foo2: "foo2"
+        //test_foo2: "foo22"
+        //test_foo3: 3
+        //test_foo3: 33
+        //test_foo4: 4
+        //test_foo4: 44
+        //test_foo5 {
+        //  test_bar1: 1
+        //  testBar2: 2
+        //  TestBar3: "3"
+        //  Testbar4: "4"
+        //  test_Bar5: 5
+        //  Test_Bar6: 6
+        //  Test_bar7: 7
+        //}
+        //test_foo5 {
+        //  test_bar1: 11
+        //  testBar2: 22
+        //  TestBar3: "33"
+        //  Testbar4: "44"
+        //  test_Bar5: 55
+        //  Test_Bar6: 66
+        //  Test_bar7: 7.7
+        //}
         //,testProto1 descriptor:message test_proto3 {
-        //   repeated string test_foo1 = 1;
-        //   repeated bytes test_foo2 = 2;
-        //   repeated int32 test_foo3 = 3;
-        //   repeated uint64 test_foo4 = 4;
-        //   repeated .test_bar test_foo5 = 5;
-        // }
+        //  repeated string test_foo1 = 1;
+        //  repeated bytes test_foo2 = 2;
+        //  repeated int32 test_foo3 = 3;
+        //  repeated uint64 test_foo4 = 4;
+        //  repeated .test_bar test_foo5 = 5;
+        //}
         m_RunClock.StartClock("json 2 pb");
-        for (int i = 0; i < 10000; ++i)
+        for(int i = 0;i < 10000;++i)
         {
-            ::test_proto3                            testProto1;
-            google::protobuf::util::JsonParseOptions oParseOptions;
-            google::protobuf::util::Status           oStatus;
-            oStatus = google::protobuf::util::JsonStringToMessage(strJson, &testProto1, oParseOptions);
-            if (!oStatus.ok())
+        	::test_proto3 testProto2;
+            google::protobuf::util::JsonParseOptions oParseOptions2;
+            google::protobuf::util::Status oStatus2;
+            oStatus2 = google::protobuf::util::JsonStringToMessage(strJson, &testProto2, oParseOptions2);
+            if(!oStatus2.ok())
             {
                 LOG4_WARN("test_proto3 failed to JsonStringToMessage,error_code(%d),error_message(%s),strJson:%s",
-                          oStatus.error_code(),
-                          oStatus.error_message().data(),
-                          strJson.c_str());
+                		oStatus2.error_code(),oStatus2.error_message().data(),strJson.c_str());
                 return;
             }
         }
         m_RunClock.EndClock();
-        // EndClock() net::RunClock json 2 pb use time(659.744995) ms  不加空格和换行
-        LOG4_DEBUG("test_proto3 JsonStringToMessage 10000 times testProto1:%s,testProto1 descriptor:%s",
-                   testProto1.DebugString().c_str(),
-                   testProto1.descriptor()->DebugString().c_str());
+        //EndClock() net::RunClock json 2 pb use time(659.744995) ms  不加空格和换行
+        LOG4_TRACE("test_proto3 JsonStringToMessage 10000 times testProto1:%s,testProto1 descriptor:%s",
+                                testProto1.DebugString().c_str(),testProto1.descriptor()->DebugString().c_str());
     }
 }
 
-} // namespace robot
+} /* namespace core */

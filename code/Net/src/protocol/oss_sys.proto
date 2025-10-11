@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+//为了兼容角色数据与连接处理
+
+message user_basic
+{
+	bytes session_key		   = 1; ///< 通过(临时客户端公钥与服务端私钥协商生成的)密钥加密的值.后续消息的加密key
+	
+	uint64 session_id	       = 3; ///< 会话id
+	int32 start_seq			   = 4; ///< 客户端后续消息的起始seq
+	uint64 user_id			   = 5;	///< 用户ID
+	string dev_id              = 6; ///< 设备id
+	uint32 user_type     	   = 7; ///< 用户类型
+	uint32 client_type   	   = 8;///< 客户登录客户端类型 0:未定义1:安卓2 安卓平板 3:IOS 4:IPAD 5:网页 ,最初是推送第三方类型
+	string login_ip			   = 9;///< 客户端IP地址
+    uint64 user_identity	   = 10;///< 用户身份
+    uint32 prohibit            = 11;///< 禁止
+	uint32 platform_type	   = 12;///< 客户登录客户端类型 0:未定义1:安卓 2:IOS 3:MAC 5:Windows
+	
+	string language	   		   = 13;///< 客户端语言版本，如en-US、zh-CN、default，匹配不上的，使用default的
+	
+	string extend			   = 14;///< 客户端拓展json数据
+	
+	string client_version	   = 15;///< 客户端版本
+	string app_key	   		   = 16;///< app key
+	
+}
+
+///服务器数据，埋点数据
+message server_data
+{
+	string root_msgid = 1;
+	string parent_msgid = 2;
+	string cur_msgid = 3;
+	string child_msgid = 4;
+}
+
+
+/**
+ * @brief 节点上报
+ {
+	"node_type": "LOGIC",
+	"node_id": 2,
+	"node_ip": "192.168.11.66",
+	"node_port": 16068,
+	"access_ip": "",
+	"access_port": 0,
+	"worker_num": 1,
+	"active_time": 1577514574.585821,
+	"node": {
+		"load": 3,
+		"connect": 3,
+		"recv_num": 0,
+		"recv_byte": 0,
+		"send_num": 0,
+		"send_byte": 0,
+		"client": 0
+	},
+	"worker": [{
+		"load": 3,
+		"connect": 3,
+		"recv_num": 0,
+		"recv_byte": 0,
+		"send_num": 0,
+		"send_byte": 0,
+		"client": 0
+	}]
+}
+ */
+ 
+ message NodeReport
+ {
+ 	string node_type = 1;
+ 	uint32 node_id = 2;
+ 	string node_ip = 3;
+ 	uint32 node_port = 4;
+ 	string access_ip = 5;
+ 	uint32 access_port = 6;
+ 	uint32 worker_num = 7;
+ 	double active_time = 8;
+ 	
+ 	Node node = 9;
+ 	repeated Worker workers = 10;
+ 	
+ 	message Node
+ 	{
+ 		uint32 load = 1;
+ 		uint32 connect = 2;
+ 		uint32 recv_num = 3;
+ 		uint32 recv_byte = 4;
+ 		uint32 send_num = 5;
+ 		uint32 send_byte = 6;
+ 		uint32 client = 7;
+ 	}
+ 	
+ 	message Worker
+ 	{
+ 		uint32 load = 1;
+ 		uint32 connect = 2;
+ 		uint32 recv_num = 3;
+ 		uint32 recv_byte = 4;
+ 		uint32 send_num = 5;
+ 		uint32 send_byte = 6;
+ 		uint32 client = 7;
+ 	}
+ }
+ 
+
+message NodeReportRsp
+{
+	uint32 errcode = 1;
+	uint32 node_id = 2;
+}
+
+
+message NodeNotice
+{
+	repeated NodeReport node_arry_reg = 1;
+	repeated NodeReport node_arry_exit = 2;
+}
+
+
+/**
+ * @brief 连接Worker信息
+ * @note 连接Worker信息，对应系统命令字 CMD_REQ_CONNECT_TO_WORKER
+ */
+message ConnectWorker
+{
+    int32 worker_index     = 1;    ///< worker进程编号
+}
+
+/**
+ * @brief 目标Server连接标识
+ * @note 目标Server连接标识用于唯一标识一个Worker进程，由ip、port、worker_index三部分构成，三个
+ * 组成部分拼接成类似 192.168.1.235:9987.3 的字符串存储于各Worker进程内存，通过该标识可以查找到对应
+ * 连接文件描述符发送数据。其中ip为目标Server绑定的IP；port为目标Server监听的端口；worker_index
+ * 为连接目标Server对应的Worker进程编号。对应系统命令字CMD_REQ_TELL_WORKER 和
+ * CMD_RSP_TELL_WORKER
+ */
+message TargetWorker
+{
+    int32 err_no           = 1;    ///< 错误码，0为成功
+    string worker_identify = 2;    ///< 目标Server Worker标识
+    string node_type       = 3;    ///< 节点类型
+    string err_msg         = 4;    ///< 错误信息
+}
+
+message LogLevel
+{
+	int32 log_level        = 1;	///< 日志级别
+}
+
+/**
+ * @brief 更新配置文件
+ * @note 要更新的配置文件信息，接收来自Beacon的配置下发，更新指定配置文件内容
+ */
+message ConfigInfo
+{
+    string file_name      = 1;    ///< 配置文件名
+    string file_content   = 2;    ///< 配置文件内容（所有配置文件内容均必须是标准JSON结构）
+    string file_path      = 3;    ///< 配置文件相对于${NEBULA_HOME}/conf的路径，默认为空，即配置文件存储于${NEBULA_HOME}/conf
+}
+
+
+message TraceLog
+{
+    string log_time = 1;
+    string node_type = 2;
+    string node_identify = 3;
+    string log_level    = 4;
+    string code_file_name = 5;
+    uint32 code_file_line = 6;
+    string code_function = 7;
+    bytes log_content = 8;
+}
+

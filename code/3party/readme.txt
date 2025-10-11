@@ -7,7 +7,7 @@ log4cplus-2.0.2
 protobuf-3.6.1
 libev-master(4.22)
 hiredis-vip-master(0.3)
-
+leveldb-1.23
 
 如果动态库找不到函数符号，则重新编译动态库并替换
 
@@ -27,6 +27,9 @@ make
 
 
 安装protobuf库
+wget https://github.com/protocolbuffers/protobuf/archive/refs/tags/v3.6.0.tar.gz
+
+
 wget https://github.com/protocolbuffers/protobuf/archive/refs/tags/v3.6.1.tar.gz
 sudo apt-get install autoconf automake libtool pkg-config
 ./autogen.sh
@@ -46,5 +49,15 @@ tar -xzf CRYPTOPP_5_6_2.tar.gz
 cd cryptopp-CRYPTOPP_5_6_2
 make dynamic CXXFLAGS="-Wno-narrowing -fPIC"
 
+安装leveldb
+git clone --recurse-submodules https://github.com/google/leveldb.git
+git fetch --all --tags
+git checkout -f 1.23
 
+vim  CMakeLists.txt
+添加
+set(BUILD_SHARED_LIBS 1)
+
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build .
 

@@ -1,5 +1,5 @@
 CC = gcc
-CXX = $(shell command -v ccache >/dev/null 2>&1 && echo "ccache g++" || echo "g++")
+CXX = g++
 CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wstrict-overflow
 
 ARCH:=$(shell uname -m)
@@ -12,9 +12,9 @@ SYSTEM_LIB_PATH:=/usr/lib64
 else
 SYSTEM_LIB_PATH:=/usr/lib
 endif
-3PARTY_PATH = ../../Core/../3party
+3PARTY_PATH = ../../3party
 PROTO_PATH = .
-NET_PATH = ../../Core/Net
+NET_PATH = ../../Net
 
 VPATH = .
 

@@ -11,6 +11,7 @@
 #include "util/HashCalc.hpp"
 #include "util/StringCoder.hpp"
 #include "util/UnixTime.hpp"
+#include "util/CommonUtils.hpp"
 #include <map>
 
 MUDULE_CREATE(robot::ModuleHello);
@@ -29,35 +30,30 @@ bool ModuleHello::Init()
 
 void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
 {
-    std::string strToken = std::to_string(util::GetUniqueId(net::GetNodeId(), net::GetWorkerIndex()));
-    std::string strKey   = std::to_string(util::GetUniqueId(net::GetNodeId(), net::GetWorkerIndex()));
+    std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
+    std::string strKey   = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
 
     { // 返回客户端
         util::CJsonObject oRsp;
         oRsp.Add("token", strToken);
         oRsp.Add("key", strKey);
-        net::SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
+        GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
     }
     { // 发送服务器
-        auto callback = [](const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, void* data, net::Step* pStep)
-        {
-            LOG4_TRACE("callback %s", oInMsgBody.body().c_str()); // 不需要再返回客户端
-        };
+        auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
+		{
+			LOG4_TRACE("callback %s",oInMsgBody.body().c_str());//不需要再返回客户端
+		};
         util::CJsonObject oJson;
-        std::string       address = g_pLabor->GetClientAddr(stMsgShell);
+        std::string       address = GetLabor()->GetClientAddr(stMsgShell);
         oJson.Add("token", strToken);
         oJson.Add("key", strKey);
         oJson.Add("genkey", "1");
 
         oJson.Add("address", address);
         LOG4_DEBUG("oJson(%s)", oJson.ToString().c_str());
-        int64 mod = util::CalcKeyHash(address.c_str(), address.size());
-        net::SendToModCallback(new net::DataStep(stMsgShell, oInHttpMsg),
-                               GET_TOKEN_GEN,
-                               oJson.ToString(),
-                               callback,
-                               mod,
-                               "LOGIC");
+        // int64 mod = util::CalcKeyHash(address.c_str(), address.size());
+        GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
     }
 }
 
@@ -76,29 +72,40 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& o
     if (strToken.empty() || strKey.empty())
     {
         LOG4_ERROR("%s() strToken.empty() || strKey.empty()", __FUNCTION__);
-        net::SendToClient(stMsgShell, oInHttpMsg, "strToken empty or strKey empty", 400);
+        GetLabor()->SendToClient(stMsgShell, oInHttpMsg, "strToken empty or strKey empty", 400);
         return;
     }
-    auto callback = [](const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, void* data, net::Step* pStep)
+    // auto callback = [](const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, void* data, net::Step* pStep)
+    // {
+    //     LOG4_TRACE("callback %s", oInMsgBody.body().c_str());
+    //     util::CJsonObject oJson;
+    //     oJson.Parse(oInMsgBody.body());
+    //     int code(1);
+    //     oJson.Get("code", code);
+    //     pStep->SendToClient(oInMsgBody.body(), code == 0 ? 200 : 400);
+    // };
+    auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
     {
-        LOG4_TRACE("callback %s", oInMsgBody.body().c_str());
+        LOG4_TRACE("callback %s",oInMsgBody.body().c_str());
         util::CJsonObject oJson;
         oJson.Parse(oInMsgBody.body());
         int code(1);
         oJson.Get("code", code);
         pStep->SendToClient(oInMsgBody.body(), code == 0 ? 200 : 400);
     };
+
     oJson.Add("verifykey", "1");
-    std::string address = g_pLabor->GetClientAddr(stMsgShell);
+    std::string address = GetLabor()->GetClientAddr(stMsgShell);
     oJson.Add("address", address);
     LOG4_DEBUG("oJson(%s)", oJson.ToString().c_str());
-    int64 mod = util::CalcKeyHash(address.c_str(), address.size());
-    net::SendToModCallback(new net::DataStep(stMsgShell, oInHttpMsg),
-                           GET_TOKEN_GEN,
-                           oJson.ToString(),
-                           callback,
-                           mod,
-                           "LOGIC");
+    // int64 mod = util::CalcKeyHash(address.c_str(), address.size());
+    // GetLabor()->SendToModCallback(new net::DataStep(stMsgShell, oInHttpMsg),
+    //                        GET_TOKEN_GEN,
+    //                        oJson.ToString(),
+    //                        callback,
+    //                        mod,
+    //                        "LOGIC");
+    GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
 }
 
 bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
@@ -121,7 +128,7 @@ void ModuleHello::Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oI
     util::CJsonObject oRsp;
     oRsp.Add("code", iCode);
     oRsp.Add("msg", "ok");
-    net::SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString());
+    GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString());
 }
 
 } // namespace robot

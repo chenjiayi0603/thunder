@@ -1,0 +1,68 @@
+{
+    "node_type":    "CENTER",
+    "inner_host":"",
+    "inner_port":   27000,
+    "access_host":"",
+    "access_port":26000,
+    "access_codec":3,
+    "center":   [],
+    "server_name":  "Center_im",
+    "process_num":  1,
+    "cpu_affinity":true,
+    "worker_capacity":  1000000,
+    "config_path":  "conf/",
+    "log_path": "log/",
+    "max_log_file_num": 10,
+    "max_log_file_size":    102400000,
+    "io_timeout":   300.0,
+    "step_timeout":1.0,
+    "log_levels":{"FATAL":50000, "ERROR":40000, "WARN":30000, "INFO":20000, "DEBUG":10000, "TRACE":0},
+    "log_level":0,
+    "refresh_interval": 20,
+    "so":   [{
+            "cmd":  11,
+            "so_path":  "plugins/CmdNodeReport.so",
+            "entrance_symbol":  "create",
+            "load": true,
+            "version":  4
+        }, {
+            "cmd":  13,
+            "so_path":  "plugins/CmdNodeRegister.so",
+            "entrance_symbol":  "create",
+            "load": true,
+            "version":  1
+        }, {
+            "cmd":  19,
+            "so_path":  "plugins/CmdNodeDisconnect.so",
+            "entrance_symbol":  "create",
+            "load": true,
+            "version":  1
+        }, {
+            "cmd":  41,
+            "so_path":  "plugins/CmdElection.so",
+            "entrance_symbol":  "create",
+            "load": true,
+            "version":  1
+        }],
+	"module":[
+    	{"url_path":"/admin","so_path":"plugins/ModuleAdmin.so","entrance_symbol":"create", "load":true, "version":1}
+    ],
+   "custom":{
+		"need_leadership":true,
+		"center_beat":3,
+		"ipwhite":["10.1.3.75"],
+		"centers":["10.1.3.75:27000","10.1.3.75:27022","10.1.3.75:27032"],
+		"node_types":[
+			{"node_type":"HELLO", "subscribe":["LOGIC", "ROUTER"]},
+			{"node_type":"ACCESS", "subscribe":["LOGIC", "ROUTER"]},
+			{"node_type":"API", "subscribe":["ROUTER"]},
+			{"node_type":"ROUTER", "subscribe":["LOGIN", "NOTICE", "MSG","GROUP","OFFICAL"]},
+			{"node_type":"LOGIN", "subscribe":["ACCESS", "REDISAGENT","GROUP","DBAGENT","MSG","MONGOAGENT","NOTICE"]},
+			{"node_type":"MSG", "subscribe":["ACCESS", "REDISAGENT", "DBAGENT","MONGOAGENT", "API"]}, 
+			{"node_type":"HELLO", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT"]},
+			{"node_type":"NOTICE", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT","API"]},
+			{"node_type":"GROUP", "subscribe":["REDISAGENT","DBAGENT","MONGOAGENT","API"]},
+			{"node_type":"OFFICAL", "subscribe":["REDISAGENT","MONGOAGENT","API","ACCESS","DBAGENT"]}
+		]
+    }
+}

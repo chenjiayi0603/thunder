@@ -38,42 +38,49 @@ namespace protobuf_user_5fbasic_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[1];
+  static const ::google::protobuf::internal::ParseTable schema[2];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
 };
 void AddDescriptors();
 }  // namespace protobuf_user_5fbasic_2eproto
-class user_basic;
-class user_basicDefaultTypeInternal;
-extern user_basicDefaultTypeInternal _user_basic_default_instance_;
+namespace server {
+class user_device_info_notify;
+class user_device_info_notifyDefaultTypeInternal;
+extern user_device_info_notifyDefaultTypeInternal _user_device_info_notify_default_instance_;
+class user_device_info_notify_ack;
+class user_device_info_notify_ackDefaultTypeInternal;
+extern user_device_info_notify_ackDefaultTypeInternal _user_device_info_notify_ack_default_instance_;
+}  // namespace server
 namespace google {
 namespace protobuf {
-template<> ::user_basic* Arena::CreateMaybeMessage<::user_basic>(Arena*);
+template<> ::server::user_device_info_notify* Arena::CreateMaybeMessage<::server::user_device_info_notify>(Arena*);
+template<> ::server::user_device_info_notify_ack* Arena::CreateMaybeMessage<::server::user_device_info_notify_ack>(Arena*);
 }  // namespace protobuf
 }  // namespace google
+namespace server {
 
 // ===================================================================
 
-class user_basic : public ::google::protobuf::Message /* @@protoc_insertion_point(class_definition:user_basic) */ {
+class user_device_info_notify : public ::google::protobuf::Message /* @@protoc_insertion_point(class_definition:server.user_device_info_notify) */ {
  public:
-  user_basic();
-  virtual ~user_basic();
+  user_device_info_notify();
+  virtual ~user_device_info_notify();
 
-  user_basic(const user_basic& from);
+  user_device_info_notify(const user_device_info_notify& from);
 
-  inline user_basic& operator=(const user_basic& from) {
+  inline user_device_info_notify& operator=(const user_device_info_notify& from) {
     CopyFrom(from);
     return *this;
   }
   #if LANG_CXX11
-  user_basic(user_basic&& from) noexcept
-    : user_basic() {
+  user_device_info_notify(user_device_info_notify&& from) noexcept
+    : user_device_info_notify() {
     *this = ::std::move(from);
   }
 
-  inline user_basic& operator=(user_basic&& from) noexcept {
+  inline user_device_info_notify& operator=(user_device_info_notify&& from) noexcept {
     if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
       if (this != &from) InternalSwap(&from);
     } else {
@@ -83,34 +90,34 @@ class user_basic : public ::google::protobuf::Message /* @@protoc_insertion_poin
   }
   #endif
   static const ::google::protobuf::Descriptor* descriptor();
-  static const user_basic& default_instance();
+  static const user_device_info_notify& default_instance();
 
   static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
-  static inline const user_basic* internal_default_instance() {
-    return reinterpret_cast<const user_basic*>(
-               &_user_basic_default_instance_);
+  static inline const user_device_info_notify* internal_default_instance() {
+    return reinterpret_cast<const user_device_info_notify*>(
+               &_user_device_info_notify_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
     0;
 
-  void Swap(user_basic* other);
-  friend void swap(user_basic& a, user_basic& b) {
+  void Swap(user_device_info_notify* other);
+  friend void swap(user_device_info_notify& a, user_device_info_notify& b) {
     a.Swap(&b);
   }
 
   // implements Message ----------------------------------------------
 
-  inline user_basic* New() const final {
-    return CreateMaybeMessage<user_basic>(NULL);
+  inline user_device_info_notify* New() const final {
+    return CreateMaybeMessage<user_device_info_notify>(NULL);
   }
 
-  user_basic* New(::google::protobuf::Arena* arena) const final {
-    return CreateMaybeMessage<user_basic>(arena);
+  user_device_info_notify* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<user_device_info_notify>(arena);
   }
   void CopyFrom(const ::google::protobuf::Message& from) final;
   void MergeFrom(const ::google::protobuf::Message& from) final;
-  void CopyFrom(const user_basic& from);
-  void MergeFrom(const user_basic& from);
+  void CopyFrom(const user_device_info_notify& from);
+  void MergeFrom(const user_device_info_notify& from);
   void Clear() final;
   bool IsInitialized() const final;
 
@@ -127,7 +134,7 @@ class user_basic : public ::google::protobuf::Message /* @@protoc_insertion_poin
   void SharedCtor();
   void SharedDtor();
   void SetCachedSize(int size) const final;
-  void InternalSwap(user_basic* other);
+  void InternalSwap(user_device_info_notify* other);
   private:
   inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
     return NULL;
@@ -143,142 +150,200 @@ class user_basic : public ::google::protobuf::Message /* @@protoc_insertion_poin
 
   // accessors -------------------------------------------------------
 
-  // bytes appguid = 2;
-  void clear_appguid();
-  static const int kAppguidFieldNumber = 2;
-  const ::std::string& appguid() const;
-  void set_appguid(const ::std::string& value);
+  // string devid = 2;
+  void clear_devid();
+  static const int kDevidFieldNumber = 2;
+  const ::std::string& devid() const;
+  void set_devid(const ::std::string& value);
   #if LANG_CXX11
-  void set_appguid(::std::string&& value);
+  void set_devid(::std::string&& value);
   #endif
-  void set_appguid(const char* value);
-  void set_appguid(const void* value, size_t size);
-  ::std::string* mutable_appguid();
-  ::std::string* release_appguid();
-  void set_allocated_appguid(::std::string* appguid);
+  void set_devid(const char* value);
+  void set_devid(const char* value, size_t size);
+  ::std::string* mutable_devid();
+  ::std::string* release_devid();
+  void set_allocated_devid(::std::string* devid);
 
-  // bytes appsecret = 3;
-  void clear_appsecret();
-  static const int kAppsecretFieldNumber = 3;
-  const ::std::string& appsecret() const;
-  void set_appsecret(const ::std::string& value);
+  // string accNodeIdentify = 6;
+  void clear_accnodeidentify();
+  static const int kAccNodeIdentifyFieldNumber = 6;
+  const ::std::string& accnodeidentify() const;
+  void set_accnodeidentify(const ::std::string& value);
   #if LANG_CXX11
-  void set_appsecret(::std::string&& value);
+  void set_accnodeidentify(::std::string&& value);
   #endif
-  void set_appsecret(const char* value);
-  void set_appsecret(const void* value, size_t size);
-  ::std::string* mutable_appsecret();
-  ::std::string* release_appsecret();
-  void set_allocated_appsecret(::std::string* appsecret);
+  void set_accnodeidentify(const char* value);
+  void set_accnodeidentify(const char* value, size_t size);
+  ::std::string* mutable_accnodeidentify();
+  ::std::string* release_accnodeidentify();
+  void set_allocated_accnodeidentify(::std::string* accnodeidentify);
 
-  // bytes account = 6;
-  void clear_account();
-  static const int kAccountFieldNumber = 6;
-  const ::std::string& account() const;
-  void set_account(const ::std::string& value);
-  #if LANG_CXX11
-  void set_account(::std::string&& value);
-  #endif
-  void set_account(const char* value);
-  void set_account(const void* value, size_t size);
-  ::std::string* mutable_account();
-  ::std::string* release_account();
-  void set_allocated_account(::std::string* account);
-
-  // bytes nickname = 7;
-  void clear_nickname();
-  static const int kNicknameFieldNumber = 7;
-  const ::std::string& nickname() const;
-  void set_nickname(const ::std::string& value);
-  #if LANG_CXX11
-  void set_nickname(::std::string&& value);
-  #endif
-  void set_nickname(const char* value);
-  void set_nickname(const void* value, size_t size);
-  ::std::string* mutable_nickname();
-  ::std::string* release_nickname();
-  void set_allocated_nickname(::std::string* nickname);
-
-  // bytes avatar = 8;
-  void clear_avatar();
-  static const int kAvatarFieldNumber = 8;
-  const ::std::string& avatar() const;
-  void set_avatar(const ::std::string& value);
-  #if LANG_CXX11
-  void set_avatar(::std::string&& value);
-  #endif
-  void set_avatar(const char* value);
-  void set_avatar(const void* value, size_t size);
-  ::std::string* mutable_avatar();
-  ::std::string* release_avatar();
-  void set_allocated_avatar(::std::string* avatar);
-
-  // string login_ip = 11;
-  void clear_login_ip();
-  static const int kLoginIpFieldNumber = 11;
-  const ::std::string& login_ip() const;
-  void set_login_ip(const ::std::string& value);
-  #if LANG_CXX11
-  void set_login_ip(::std::string&& value);
-  #endif
-  void set_login_ip(const char* value);
-  void set_login_ip(const char* value, size_t size);
-  ::std::string* mutable_login_ip();
-  ::std::string* release_login_ip();
-  void set_allocated_login_ip(::std::string* login_ip);
-
-  // uint32 appid = 1;
-  void clear_appid();
-  static const int kAppidFieldNumber = 1;
-  ::google::protobuf::uint32 appid() const;
-  void set_appid(::google::protobuf::uint32 value);
-
-  // uint32 userid = 5;
+  // int64 userId = 1;
   void clear_userid();
-  static const int kUseridFieldNumber = 5;
-  ::google::protobuf::uint32 userid() const;
-  void set_userid(::google::protobuf::uint32 value);
+  static const int kUserIdFieldNumber = 1;
+  ::google::protobuf::int64 userid() const;
+  void set_userid(::google::protobuf::int64 value);
 
-  // uint64 login_token = 4;
-  void clear_login_token();
-  static const int kLoginTokenFieldNumber = 4;
-  ::google::protobuf::uint64 login_token() const;
-  void set_login_token(::google::protobuf::uint64 value);
+  // uint64 ssidFreshTime = 4;
+  void clear_ssidfreshtime();
+  static const int kSsidFreshTimeFieldNumber = 4;
+  ::google::protobuf::uint64 ssidfreshtime() const;
+  void set_ssidfreshtime(::google::protobuf::uint64 value);
 
-  // uint32 user_type = 9;
-  void clear_user_type();
-  static const int kUserTypeFieldNumber = 9;
-  ::google::protobuf::uint32 user_type() const;
-  void set_user_type(::google::protobuf::uint32 value);
+  // uint64 sessionId = 5;
+  void clear_sessionid();
+  static const int kSessionIdFieldNumber = 5;
+  ::google::protobuf::uint64 sessionid() const;
+  void set_sessionid(::google::protobuf::uint64 value);
 
-  // uint32 login_client_type = 10;
-  void clear_login_client_type();
-  static const int kLoginClientTypeFieldNumber = 10;
-  ::google::protobuf::uint32 login_client_type() const;
-  void set_login_client_type(::google::protobuf::uint32 value);
+  // uint32 status = 3;
+  void clear_status();
+  static const int kStatusFieldNumber = 3;
+  ::google::protobuf::uint32 status() const;
+  void set_status(::google::protobuf::uint32 value);
 
-  // uint64 user_identity = 12;
-  void clear_user_identity();
-  static const int kUserIdentityFieldNumber = 12;
-  ::google::protobuf::uint64 user_identity() const;
-  void set_user_identity(::google::protobuf::uint64 value);
+  // uint32 loginTime = 7;
+  void clear_logintime();
+  static const int kLoginTimeFieldNumber = 7;
+  ::google::protobuf::uint32 logintime() const;
+  void set_logintime(::google::protobuf::uint32 value);
 
-  // @@protoc_insertion_point(class_scope:user_basic)
+  // uint64 notify_groupid = 8;
+  void clear_notify_groupid();
+  static const int kNotifyGroupidFieldNumber = 8;
+  ::google::protobuf::uint64 notify_groupid() const;
+  void set_notify_groupid(::google::protobuf::uint64 value);
+
+  // @@protoc_insertion_point(class_scope:server.user_device_info_notify)
  private:
 
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
-  ::google::protobuf::internal::ArenaStringPtr appguid_;
-  ::google::protobuf::internal::ArenaStringPtr appsecret_;
-  ::google::protobuf::internal::ArenaStringPtr account_;
-  ::google::protobuf::internal::ArenaStringPtr nickname_;
-  ::google::protobuf::internal::ArenaStringPtr avatar_;
-  ::google::protobuf::internal::ArenaStringPtr login_ip_;
-  ::google::protobuf::uint32 appid_;
-  ::google::protobuf::uint32 userid_;
-  ::google::protobuf::uint64 login_token_;
-  ::google::protobuf::uint32 user_type_;
-  ::google::protobuf::uint32 login_client_type_;
-  ::google::protobuf::uint64 user_identity_;
+  ::google::protobuf::internal::ArenaStringPtr devid_;
+  ::google::protobuf::internal::ArenaStringPtr accnodeidentify_;
+  ::google::protobuf::int64 userid_;
+  ::google::protobuf::uint64 ssidfreshtime_;
+  ::google::protobuf::uint64 sessionid_;
+  ::google::protobuf::uint32 status_;
+  ::google::protobuf::uint32 logintime_;
+  ::google::protobuf::uint64 notify_groupid_;
+  mutable ::google::protobuf::internal::CachedSize _cached_size_;
+  friend struct ::protobuf_user_5fbasic_2eproto::TableStruct;
+};
+// -------------------------------------------------------------------
+
+class user_device_info_notify_ack : public ::google::protobuf::Message /* @@protoc_insertion_point(class_definition:server.user_device_info_notify_ack) */ {
+ public:
+  user_device_info_notify_ack();
+  virtual ~user_device_info_notify_ack();
+
+  user_device_info_notify_ack(const user_device_info_notify_ack& from);
+
+  inline user_device_info_notify_ack& operator=(const user_device_info_notify_ack& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  #if LANG_CXX11
+  user_device_info_notify_ack(user_device_info_notify_ack&& from) noexcept
+    : user_device_info_notify_ack() {
+    *this = ::std::move(from);
+  }
+
+  inline user_device_info_notify_ack& operator=(user_device_info_notify_ack&& from) noexcept {
+    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+  #endif
+  static const ::google::protobuf::Descriptor* descriptor();
+  static const user_device_info_notify_ack& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const user_device_info_notify_ack* internal_default_instance() {
+    return reinterpret_cast<const user_device_info_notify_ack*>(
+               &_user_device_info_notify_ack_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    1;
+
+  void Swap(user_device_info_notify_ack* other);
+  friend void swap(user_device_info_notify_ack& a, user_device_info_notify_ack& b) {
+    a.Swap(&b);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline user_device_info_notify_ack* New() const final {
+    return CreateMaybeMessage<user_device_info_notify_ack>(NULL);
+  }
+
+  user_device_info_notify_ack* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<user_device_info_notify_ack>(arena);
+  }
+  void CopyFrom(const ::google::protobuf::Message& from) final;
+  void MergeFrom(const ::google::protobuf::Message& from) final;
+  void CopyFrom(const user_device_info_notify_ack& from);
+  void MergeFrom(const user_device_info_notify_ack& from);
+  void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  bool MergePartialFromCodedStream(
+      ::google::protobuf::io::CodedInputStream* input) final;
+  void SerializeWithCachedSizes(
+      ::google::protobuf::io::CodedOutputStream* output) const final;
+  ::google::protobuf::uint8* InternalSerializeWithCachedSizesToArray(
+      bool deterministic, ::google::protobuf::uint8* target) const final;
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  void SharedCtor();
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(user_device_info_notify_ack* other);
+  private:
+  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
+    return NULL;
+  }
+  inline void* MaybeArenaPtr() const {
+    return NULL;
+  }
+  public:
+
+  ::google::protobuf::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  // string codeMsg = 2;
+  void clear_codemsg();
+  static const int kCodeMsgFieldNumber = 2;
+  const ::std::string& codemsg() const;
+  void set_codemsg(const ::std::string& value);
+  #if LANG_CXX11
+  void set_codemsg(::std::string&& value);
+  #endif
+  void set_codemsg(const char* value);
+  void set_codemsg(const char* value, size_t size);
+  ::std::string* mutable_codemsg();
+  ::std::string* release_codemsg();
+  void set_allocated_codemsg(::std::string* codemsg);
+
+  // uint32 code = 1;
+  void clear_code();
+  static const int kCodeFieldNumber = 1;
+  ::google::protobuf::uint32 code() const;
+  void set_code(::google::protobuf::uint32 value);
+
+  // @@protoc_insertion_point(class_scope:server.user_device_info_notify_ack)
+ private:
+
+  ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
+  ::google::protobuf::internal::ArenaStringPtr codemsg_;
+  ::google::protobuf::uint32 code_;
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
   friend struct ::protobuf_user_5fbasic_2eproto::TableStruct;
 };
@@ -291,416 +356,278 @@ class user_basic : public ::google::protobuf::Message /* @@protoc_insertion_poin
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif  // __GNUC__
-// user_basic
+// user_device_info_notify
 
-// uint32 appid = 1;
-inline void user_basic::clear_appid() {
-  appid_ = 0u;
+// int64 userId = 1;
+inline void user_device_info_notify::clear_userid() {
+  userid_ = GOOGLE_LONGLONG(0);
 }
-inline ::google::protobuf::uint32 user_basic::appid() const {
-  // @@protoc_insertion_point(field_get:user_basic.appid)
-  return appid_;
-}
-inline void user_basic::set_appid(::google::protobuf::uint32 value) {
-  
-  appid_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.appid)
-}
-
-// bytes appguid = 2;
-inline void user_basic::clear_appguid() {
-  appguid_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline const ::std::string& user_basic::appguid() const {
-  // @@protoc_insertion_point(field_get:user_basic.appguid)
-  return appguid_.GetNoArena();
-}
-inline void user_basic::set_appguid(const ::std::string& value) {
-  
-  appguid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.appguid)
-}
-#if LANG_CXX11
-inline void user_basic::set_appguid(::std::string&& value) {
-  
-  appguid_.SetNoArena(
-    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.appguid)
-}
-#endif
-inline void user_basic::set_appguid(const char* value) {
-  GOOGLE_DCHECK(value != NULL);
-  
-  appguid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.appguid)
-}
-inline void user_basic::set_appguid(const void* value, size_t size) {
-  
-  appguid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
-      ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.appguid)
-}
-inline ::std::string* user_basic::mutable_appguid() {
-  
-  // @@protoc_insertion_point(field_mutable:user_basic.appguid)
-  return appguid_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline ::std::string* user_basic::release_appguid() {
-  // @@protoc_insertion_point(field_release:user_basic.appguid)
-  
-  return appguid_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline void user_basic::set_allocated_appguid(::std::string* appguid) {
-  if (appguid != NULL) {
-    
-  } else {
-    
-  }
-  appguid_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), appguid);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.appguid)
-}
-
-// bytes appsecret = 3;
-inline void user_basic::clear_appsecret() {
-  appsecret_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline const ::std::string& user_basic::appsecret() const {
-  // @@protoc_insertion_point(field_get:user_basic.appsecret)
-  return appsecret_.GetNoArena();
-}
-inline void user_basic::set_appsecret(const ::std::string& value) {
-  
-  appsecret_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.appsecret)
-}
-#if LANG_CXX11
-inline void user_basic::set_appsecret(::std::string&& value) {
-  
-  appsecret_.SetNoArena(
-    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.appsecret)
-}
-#endif
-inline void user_basic::set_appsecret(const char* value) {
-  GOOGLE_DCHECK(value != NULL);
-  
-  appsecret_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.appsecret)
-}
-inline void user_basic::set_appsecret(const void* value, size_t size) {
-  
-  appsecret_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
-      ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.appsecret)
-}
-inline ::std::string* user_basic::mutable_appsecret() {
-  
-  // @@protoc_insertion_point(field_mutable:user_basic.appsecret)
-  return appsecret_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline ::std::string* user_basic::release_appsecret() {
-  // @@protoc_insertion_point(field_release:user_basic.appsecret)
-  
-  return appsecret_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline void user_basic::set_allocated_appsecret(::std::string* appsecret) {
-  if (appsecret != NULL) {
-    
-  } else {
-    
-  }
-  appsecret_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), appsecret);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.appsecret)
-}
-
-// uint64 login_token = 4;
-inline void user_basic::clear_login_token() {
-  login_token_ = GOOGLE_ULONGLONG(0);
-}
-inline ::google::protobuf::uint64 user_basic::login_token() const {
-  // @@protoc_insertion_point(field_get:user_basic.login_token)
-  return login_token_;
-}
-inline void user_basic::set_login_token(::google::protobuf::uint64 value) {
-  
-  login_token_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.login_token)
-}
-
-// uint32 userid = 5;
-inline void user_basic::clear_userid() {
-  userid_ = 0u;
-}
-inline ::google::protobuf::uint32 user_basic::userid() const {
-  // @@protoc_insertion_point(field_get:user_basic.userid)
+inline ::google::protobuf::int64 user_device_info_notify::userid() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.userId)
   return userid_;
 }
-inline void user_basic::set_userid(::google::protobuf::uint32 value) {
+inline void user_device_info_notify::set_userid(::google::protobuf::int64 value) {
   
   userid_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.userid)
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.userId)
 }
 
-// bytes account = 6;
-inline void user_basic::clear_account() {
-  account_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+// string devid = 2;
+inline void user_device_info_notify::clear_devid() {
+  devid_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline const ::std::string& user_basic::account() const {
-  // @@protoc_insertion_point(field_get:user_basic.account)
-  return account_.GetNoArena();
+inline const ::std::string& user_device_info_notify::devid() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.devid)
+  return devid_.GetNoArena();
 }
-inline void user_basic::set_account(const ::std::string& value) {
+inline void user_device_info_notify::set_devid(const ::std::string& value) {
   
-  account_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.account)
+  devid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.devid)
 }
 #if LANG_CXX11
-inline void user_basic::set_account(::std::string&& value) {
+inline void user_device_info_notify::set_devid(::std::string&& value) {
   
-  account_.SetNoArena(
+  devid_.SetNoArena(
     &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.account)
+  // @@protoc_insertion_point(field_set_rvalue:server.user_device_info_notify.devid)
 }
 #endif
-inline void user_basic::set_account(const char* value) {
+inline void user_device_info_notify::set_devid(const char* value) {
   GOOGLE_DCHECK(value != NULL);
   
-  account_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.account)
+  devid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:server.user_device_info_notify.devid)
 }
-inline void user_basic::set_account(const void* value, size_t size) {
+inline void user_device_info_notify::set_devid(const char* value, size_t size) {
   
-  account_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+  devid_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
       ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.account)
+  // @@protoc_insertion_point(field_set_pointer:server.user_device_info_notify.devid)
 }
-inline ::std::string* user_basic::mutable_account() {
+inline ::std::string* user_device_info_notify::mutable_devid() {
   
-  // @@protoc_insertion_point(field_mutable:user_basic.account)
-  return account_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  // @@protoc_insertion_point(field_mutable:server.user_device_info_notify.devid)
+  return devid_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline ::std::string* user_basic::release_account() {
-  // @@protoc_insertion_point(field_release:user_basic.account)
+inline ::std::string* user_device_info_notify::release_devid() {
+  // @@protoc_insertion_point(field_release:server.user_device_info_notify.devid)
   
-  return account_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  return devid_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline void user_basic::set_allocated_account(::std::string* account) {
-  if (account != NULL) {
+inline void user_device_info_notify::set_allocated_devid(::std::string* devid) {
+  if (devid != NULL) {
     
   } else {
     
   }
-  account_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), account);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.account)
+  devid_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), devid);
+  // @@protoc_insertion_point(field_set_allocated:server.user_device_info_notify.devid)
 }
 
-// bytes nickname = 7;
-inline void user_basic::clear_nickname() {
-  nickname_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+// uint32 status = 3;
+inline void user_device_info_notify::clear_status() {
+  status_ = 0u;
 }
-inline const ::std::string& user_basic::nickname() const {
-  // @@protoc_insertion_point(field_get:user_basic.nickname)
-  return nickname_.GetNoArena();
+inline ::google::protobuf::uint32 user_device_info_notify::status() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.status)
+  return status_;
 }
-inline void user_basic::set_nickname(const ::std::string& value) {
+inline void user_device_info_notify::set_status(::google::protobuf::uint32 value) {
   
-  nickname_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.nickname)
+  status_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.status)
+}
+
+// uint64 ssidFreshTime = 4;
+inline void user_device_info_notify::clear_ssidfreshtime() {
+  ssidfreshtime_ = GOOGLE_ULONGLONG(0);
+}
+inline ::google::protobuf::uint64 user_device_info_notify::ssidfreshtime() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.ssidFreshTime)
+  return ssidfreshtime_;
+}
+inline void user_device_info_notify::set_ssidfreshtime(::google::protobuf::uint64 value) {
+  
+  ssidfreshtime_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.ssidFreshTime)
+}
+
+// uint64 sessionId = 5;
+inline void user_device_info_notify::clear_sessionid() {
+  sessionid_ = GOOGLE_ULONGLONG(0);
+}
+inline ::google::protobuf::uint64 user_device_info_notify::sessionid() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.sessionId)
+  return sessionid_;
+}
+inline void user_device_info_notify::set_sessionid(::google::protobuf::uint64 value) {
+  
+  sessionid_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.sessionId)
+}
+
+// string accNodeIdentify = 6;
+inline void user_device_info_notify::clear_accnodeidentify() {
+  accnodeidentify_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline const ::std::string& user_device_info_notify::accnodeidentify() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.accNodeIdentify)
+  return accnodeidentify_.GetNoArena();
+}
+inline void user_device_info_notify::set_accnodeidentify(const ::std::string& value) {
+  
+  accnodeidentify_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.accNodeIdentify)
 }
 #if LANG_CXX11
-inline void user_basic::set_nickname(::std::string&& value) {
+inline void user_device_info_notify::set_accnodeidentify(::std::string&& value) {
   
-  nickname_.SetNoArena(
+  accnodeidentify_.SetNoArena(
     &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.nickname)
+  // @@protoc_insertion_point(field_set_rvalue:server.user_device_info_notify.accNodeIdentify)
 }
 #endif
-inline void user_basic::set_nickname(const char* value) {
+inline void user_device_info_notify::set_accnodeidentify(const char* value) {
   GOOGLE_DCHECK(value != NULL);
   
-  nickname_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.nickname)
+  accnodeidentify_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:server.user_device_info_notify.accNodeIdentify)
 }
-inline void user_basic::set_nickname(const void* value, size_t size) {
+inline void user_device_info_notify::set_accnodeidentify(const char* value, size_t size) {
   
-  nickname_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+  accnodeidentify_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
       ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.nickname)
+  // @@protoc_insertion_point(field_set_pointer:server.user_device_info_notify.accNodeIdentify)
 }
-inline ::std::string* user_basic::mutable_nickname() {
+inline ::std::string* user_device_info_notify::mutable_accnodeidentify() {
   
-  // @@protoc_insertion_point(field_mutable:user_basic.nickname)
-  return nickname_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  // @@protoc_insertion_point(field_mutable:server.user_device_info_notify.accNodeIdentify)
+  return accnodeidentify_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline ::std::string* user_basic::release_nickname() {
-  // @@protoc_insertion_point(field_release:user_basic.nickname)
+inline ::std::string* user_device_info_notify::release_accnodeidentify() {
+  // @@protoc_insertion_point(field_release:server.user_device_info_notify.accNodeIdentify)
   
-  return nickname_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  return accnodeidentify_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline void user_basic::set_allocated_nickname(::std::string* nickname) {
-  if (nickname != NULL) {
+inline void user_device_info_notify::set_allocated_accnodeidentify(::std::string* accnodeidentify) {
+  if (accnodeidentify != NULL) {
     
   } else {
     
   }
-  nickname_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), nickname);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.nickname)
+  accnodeidentify_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), accnodeidentify);
+  // @@protoc_insertion_point(field_set_allocated:server.user_device_info_notify.accNodeIdentify)
 }
 
-// bytes avatar = 8;
-inline void user_basic::clear_avatar() {
-  avatar_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+// uint32 loginTime = 7;
+inline void user_device_info_notify::clear_logintime() {
+  logintime_ = 0u;
 }
-inline const ::std::string& user_basic::avatar() const {
-  // @@protoc_insertion_point(field_get:user_basic.avatar)
-  return avatar_.GetNoArena();
+inline ::google::protobuf::uint32 user_device_info_notify::logintime() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.loginTime)
+  return logintime_;
 }
-inline void user_basic::set_avatar(const ::std::string& value) {
+inline void user_device_info_notify::set_logintime(::google::protobuf::uint32 value) {
   
-  avatar_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.avatar)
+  logintime_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.loginTime)
+}
+
+// uint64 notify_groupid = 8;
+inline void user_device_info_notify::clear_notify_groupid() {
+  notify_groupid_ = GOOGLE_ULONGLONG(0);
+}
+inline ::google::protobuf::uint64 user_device_info_notify::notify_groupid() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify.notify_groupid)
+  return notify_groupid_;
+}
+inline void user_device_info_notify::set_notify_groupid(::google::protobuf::uint64 value) {
+  
+  notify_groupid_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify.notify_groupid)
+}
+
+// -------------------------------------------------------------------
+
+// user_device_info_notify_ack
+
+// uint32 code = 1;
+inline void user_device_info_notify_ack::clear_code() {
+  code_ = 0u;
+}
+inline ::google::protobuf::uint32 user_device_info_notify_ack::code() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify_ack.code)
+  return code_;
+}
+inline void user_device_info_notify_ack::set_code(::google::protobuf::uint32 value) {
+  
+  code_ = value;
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify_ack.code)
+}
+
+// string codeMsg = 2;
+inline void user_device_info_notify_ack::clear_codemsg() {
+  codemsg_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline const ::std::string& user_device_info_notify_ack::codemsg() const {
+  // @@protoc_insertion_point(field_get:server.user_device_info_notify_ack.codeMsg)
+  return codemsg_.GetNoArena();
+}
+inline void user_device_info_notify_ack::set_codemsg(const ::std::string& value) {
+  
+  codemsg_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:server.user_device_info_notify_ack.codeMsg)
 }
 #if LANG_CXX11
-inline void user_basic::set_avatar(::std::string&& value) {
+inline void user_device_info_notify_ack::set_codemsg(::std::string&& value) {
   
-  avatar_.SetNoArena(
+  codemsg_.SetNoArena(
     &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.avatar)
+  // @@protoc_insertion_point(field_set_rvalue:server.user_device_info_notify_ack.codeMsg)
 }
 #endif
-inline void user_basic::set_avatar(const char* value) {
+inline void user_device_info_notify_ack::set_codemsg(const char* value) {
   GOOGLE_DCHECK(value != NULL);
   
-  avatar_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.avatar)
+  codemsg_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:server.user_device_info_notify_ack.codeMsg)
 }
-inline void user_basic::set_avatar(const void* value, size_t size) {
+inline void user_device_info_notify_ack::set_codemsg(const char* value, size_t size) {
   
-  avatar_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+  codemsg_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
       ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.avatar)
+  // @@protoc_insertion_point(field_set_pointer:server.user_device_info_notify_ack.codeMsg)
 }
-inline ::std::string* user_basic::mutable_avatar() {
+inline ::std::string* user_device_info_notify_ack::mutable_codemsg() {
   
-  // @@protoc_insertion_point(field_mutable:user_basic.avatar)
-  return avatar_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  // @@protoc_insertion_point(field_mutable:server.user_device_info_notify_ack.codeMsg)
+  return codemsg_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline ::std::string* user_basic::release_avatar() {
-  // @@protoc_insertion_point(field_release:user_basic.avatar)
+inline ::std::string* user_device_info_notify_ack::release_codemsg() {
+  // @@protoc_insertion_point(field_release:server.user_device_info_notify_ack.codeMsg)
   
-  return avatar_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  return codemsg_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline void user_basic::set_allocated_avatar(::std::string* avatar) {
-  if (avatar != NULL) {
+inline void user_device_info_notify_ack::set_allocated_codemsg(::std::string* codemsg) {
+  if (codemsg != NULL) {
     
   } else {
     
   }
-  avatar_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), avatar);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.avatar)
-}
-
-// uint32 user_type = 9;
-inline void user_basic::clear_user_type() {
-  user_type_ = 0u;
-}
-inline ::google::protobuf::uint32 user_basic::user_type() const {
-  // @@protoc_insertion_point(field_get:user_basic.user_type)
-  return user_type_;
-}
-inline void user_basic::set_user_type(::google::protobuf::uint32 value) {
-  
-  user_type_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.user_type)
-}
-
-// uint32 login_client_type = 10;
-inline void user_basic::clear_login_client_type() {
-  login_client_type_ = 0u;
-}
-inline ::google::protobuf::uint32 user_basic::login_client_type() const {
-  // @@protoc_insertion_point(field_get:user_basic.login_client_type)
-  return login_client_type_;
-}
-inline void user_basic::set_login_client_type(::google::protobuf::uint32 value) {
-  
-  login_client_type_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.login_client_type)
-}
-
-// string login_ip = 11;
-inline void user_basic::clear_login_ip() {
-  login_ip_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline const ::std::string& user_basic::login_ip() const {
-  // @@protoc_insertion_point(field_get:user_basic.login_ip)
-  return login_ip_.GetNoArena();
-}
-inline void user_basic::set_login_ip(const ::std::string& value) {
-  
-  login_ip_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:user_basic.login_ip)
-}
-#if LANG_CXX11
-inline void user_basic::set_login_ip(::std::string&& value) {
-  
-  login_ip_.SetNoArena(
-    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:user_basic.login_ip)
-}
-#endif
-inline void user_basic::set_login_ip(const char* value) {
-  GOOGLE_DCHECK(value != NULL);
-  
-  login_ip_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:user_basic.login_ip)
-}
-inline void user_basic::set_login_ip(const char* value, size_t size) {
-  
-  login_ip_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
-      ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:user_basic.login_ip)
-}
-inline ::std::string* user_basic::mutable_login_ip() {
-  
-  // @@protoc_insertion_point(field_mutable:user_basic.login_ip)
-  return login_ip_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline ::std::string* user_basic::release_login_ip() {
-  // @@protoc_insertion_point(field_release:user_basic.login_ip)
-  
-  return login_ip_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline void user_basic::set_allocated_login_ip(::std::string* login_ip) {
-  if (login_ip != NULL) {
-    
-  } else {
-    
-  }
-  login_ip_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), login_ip);
-  // @@protoc_insertion_point(field_set_allocated:user_basic.login_ip)
-}
-
-// uint64 user_identity = 12;
-inline void user_basic::clear_user_identity() {
-  user_identity_ = GOOGLE_ULONGLONG(0);
-}
-inline ::google::protobuf::uint64 user_basic::user_identity() const {
-  // @@protoc_insertion_point(field_get:user_basic.user_identity)
-  return user_identity_;
-}
-inline void user_basic::set_user_identity(::google::protobuf::uint64 value) {
-  
-  user_identity_ = value;
-  // @@protoc_insertion_point(field_set:user_basic.user_identity)
+  codemsg_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), codemsg);
+  // @@protoc_insertion_point(field_set_allocated:server.user_device_info_notify_ack.codeMsg)
 }
 
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 
 // @@protoc_insertion_point(namespace_scope)
 
+}  // namespace server
 
 // @@protoc_insertion_point(global_scope)
 
