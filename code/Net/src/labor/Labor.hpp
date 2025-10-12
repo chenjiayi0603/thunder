@@ -165,8 +165,8 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
 	 */
    	virtual bool SendToCallback(Session* pUpperSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeType=REDISAGENT_NODE,const std::string & strModFactor="",StepParam* pStepParam=nullptr,uint32 uiCmd = CMD_REQ_STORATE){return false;}
    	virtual bool SendToCallback(Step* pUpperStep,const DataMem::MemOperate* pMemOper,StepCallbackMem callback,const std::string &nodeType=REDISAGENT_NODE,const std::string & strModFactor="",StepParam* pStepParam=nullptr,uint32 uiCmd = CMD_REQ_STORATE){return false;}
-   	virtual bool SendToCallback(Session* pUpperSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
-   	virtual bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeType,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
+   	virtual bool SendToCallback(Session* pUpperSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeTypeOrIdentify,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
+   	virtual bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeTypeOrIdentify,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
    	virtual bool SendToCallback(Session* pUpperSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const tagMsgShell& stMsgShell,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
    	virtual bool SendToCallback(Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const tagMsgShell& stMsgShell,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
 

@@ -229,7 +229,6 @@ namespace coor
             std::unordered_map<std::string, NodeReport> mapNodeInfo;
             mapNodeInfo.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId));
             m_mapOnlineNodes.insert(std::make_pair(oNodeInfoWithNodeId.node_type(), mapNodeInfo));
-            //        m_mapIdentifyNodeType.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId.node_type()));
             LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
             AddNodeId(oNodeInfoWithNodeId.node_id());
             AddNodeBroadcast(oNodeInfoWithNodeId);
@@ -244,7 +243,6 @@ namespace coor
                 node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId));
                 LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
                 AddNodeId(oNodeInfoWithNodeId.node_id());
-                //            m_mapIdentifyNodeType.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId.node_type()));
                 AddNodeBroadcast(oNodeInfoWithNodeId);
                 SendCenterBeat();
                 return (oNodeInfoWithNodeId.node_id());
@@ -254,7 +252,7 @@ namespace coor
                 node_iter->second = oNodeInfoWithNodeId;
                 LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(),boRegister);
                 AddNodeId(oNodeInfoWithNodeId.node_id());
-                if (boRegister)
+                if (boRegister)//新注册节点的需要广播
                 {
                     AddNodeBroadcast(oNodeInfoWithNodeId);
                 }
@@ -280,7 +278,6 @@ namespace coor
                     RemoveNodeId(uiNodeId);
                     RemoveNodeBroadcast(node_iter->second);
                     SendCenterBeat();
-                    //                m_mapIdentifyNodeType.erase(strNodeIdentify);
                     node_type_iter->second.erase(node_iter);
                 }
             }
@@ -575,8 +572,7 @@ namespace coor
             }
         };
         LOG4_TRACE("%s() CMD_REQ_NODE_REG_NOTICE request:sending to %s oNodeNotice:%s!", __FUNCTION__, strToNodeIdentify.c_str(), oNodeNotice.DebugString().c_str());
-        // virtual bool SendToCallback(Session* pUpperSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,const std::string & strModFactor="",StepParam* pStepParam=nullptr){return false;}
-        GetLabor()->SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, oNodeNotice.SerializeAsString(), callback, strToNodeIdentify, "", new DataStepCustom(strToNodeIdentify)); // node_iter.first
+        GetLabor()->SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, oNodeNotice.SerializeAsString(), callback, strToNodeIdentify, "", new DataStepCustom(strToNodeIdentify)); 
         if (boPushSendingList)
         {
             AddSendingNodeNotice(strToNodeIdentify, oNodeNotice);

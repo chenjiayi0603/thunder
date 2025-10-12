@@ -2400,7 +2400,7 @@ bool Worker::BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::prot
     return true;
 }
 
-bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeType,const std::string & strModFactor,StepParam* pStepParam,uint32 uiCmd)
+bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pMemOper,SessionCallbackMem callback,const std::string &nodeTypeOrIdentify,const std::string & strModFactor,StepParam* pStepParam,uint32 uiCmd)
 {
 	if (!pSession)
 	{
@@ -2419,7 +2419,7 @@ bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pM
         SAFE_DELETE(pStep);
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,nodeType,strModFactor,uiCmd);
+    pStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
     if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
     {
         DeleteCallback(pStep);
@@ -2494,7 +2494,7 @@ bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::strin
     return true;
 }
 
-bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeType,const std::string & strModFactor,StepParam* pStepParam)
+bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string &strBody,StepCallback callback,const std::string &nodeTypeOrIdentify,const std::string & strModFactor,StepParam* pStepParam)
 {
 	if (!pUpperStep)
 	{
@@ -2527,7 +2527,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
         SAFE_DELETE(pStep);
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,nodeType,uiCmd,strModFactor);
+    pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
     pUpperStep->AddPreStepSeq(pStep);
     if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
     {
