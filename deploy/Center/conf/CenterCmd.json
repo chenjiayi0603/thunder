@@ -11,6 +11,12 @@
     ],
     "node_types": [
         {
+            "node_type": "CENTER",
+            "subscribe": [
+                "CENTER"
+            ]
+        },
+        {
             "node_type": "HELLO",
             "subscribe": [
                 "LOGIC"

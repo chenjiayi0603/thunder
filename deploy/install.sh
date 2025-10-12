@@ -100,8 +100,8 @@ function ChangeConfig()
 
 function PreProcess()
 {
-	unzip ./3lib.zip
-	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
+	# unzip ./3lib.zip
+	# find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
 	#3lib
 	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} ${RUN_PATH}/3lib  && echo "ln 3lib for deploy"
 	#config

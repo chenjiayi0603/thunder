@@ -115,7 +115,7 @@ protected:
 	uint32 m_uiLastCheckSendingNodeNotice = GetLabor()->GetNowTime();
 
 	void SendNodeNotice(const std::string& strToNodeIdentify,const NodeNotice& oNodeNotice,bool boPushSendingList = true);
-    void AddNodeBroadcast(const NodeReport& oNodeReport);
+    void AddNodeBroadcast(const NodeReport& oNodeReport,bool boRegister);
     void RemoveNodeBroadcast(const NodeReport& oNodeReport);
     void CheckLeader();
     void SendCenterBeat(uint32 uiServerTime = GetLabor()->GetNowTime());

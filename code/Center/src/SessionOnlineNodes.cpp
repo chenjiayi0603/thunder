@@ -49,7 +49,7 @@ namespace coor
         oCustomConf.Get("need_leadership", m_boNeedLeadership);
         oCustomConf.Get("center_beat", m_uiCenterBeat);
         oCustomConf.Get("node_overdue", m_uiNodeOverdue);
-        if (!m_boNeedLeadership)
+        if (m_boNeedLeadership)
         {
             m_bIsLeader = true;
         }
@@ -231,7 +231,7 @@ namespace coor
             m_mapOnlineNodes.insert(std::make_pair(oNodeInfoWithNodeId.node_type(), mapNodeInfo));
             LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
             AddNodeId(oNodeInfoWithNodeId.node_id());
-            AddNodeBroadcast(oNodeInfoWithNodeId);
+            AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
             SendCenterBeat();
             return (oNodeInfoWithNodeId.node_id());
         }
@@ -243,7 +243,7 @@ namespace coor
                 node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId));
                 LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
                 AddNodeId(oNodeInfoWithNodeId.node_id());
-                AddNodeBroadcast(oNodeInfoWithNodeId);
+                AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
                 SendCenterBeat();
                 return (oNodeInfoWithNodeId.node_id());
             }
@@ -254,7 +254,7 @@ namespace coor
                 AddNodeId(oNodeInfoWithNodeId.node_id());
                 if (boRegister)//新注册节点的需要广播
                 {
-                    AddNodeBroadcast(oNodeInfoWithNodeId);
+                    AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
                 }
                 SendCenterBeat();
                 return (oNodeInfoWithNodeId.node_id());
@@ -579,11 +579,13 @@ namespace coor
         }
     }
 
-    void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport)
+    void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport,bool boRegister)
     {
         bool boLeadership = IsLeadership();
         LOG4_TRACE("%s() WorkerIdentify(%s) IsLeadership(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), boLeadership);
-        if (!boLeadership)
+        //新注册的消息，或者刚选举为leader的60s内需要广播，兼容故障切换时间内的放弃的广播消息，最终一致
+        bool needBroadcast = (m_uiBeLeaderTime > 0 || (m_uiBeLeaderTime + 60 >= util::GetMicrosecond())) || !boRegister;
+        if (!boLeadership || !needBroadcast)
         {
             return;
         }
@@ -816,10 +818,6 @@ namespace coor
             LOG4_TRACE("%s() WorkerIdentify(%s) BeLeader", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
             BeLeader();
         }
-        //    else
-        //    {
-        //    	RelievedLeader();
-        //    }
     }
 
     void SessionOnlineNodes::SendCenterBeat(uint32 uiServerTime)
