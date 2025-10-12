@@ -36,7 +36,7 @@ then
     done < server_list.conf
     sleep 1
     echo "server list:"
-    ps -eo pid,lstart,etime,cmd | grep _im
+    ps -eo pid,lstart,etime,cmd | grep _robot
 elif [ "$1"x == "all"x ]
 then
 	#${SERVER_HOME}/Center/restart.sh all
@@ -47,7 +47,7 @@ then
     done < server_list.conf
     sleep 1
     echo "server list:"
-    ps -eo pid,lstart,etime,cmd | grep _im
+    ps -eo pid,lstart,etime,cmd | grep _robot
 else
     while read server others
     do

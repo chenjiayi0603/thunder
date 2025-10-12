@@ -33,16 +33,22 @@ void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInH
     std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
     std::string strKey   = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
 
-    { // 返回客户端
-        util::CJsonObject oRsp;
-        oRsp.Add("token", strToken);
-        oRsp.Add("key", strKey);
-        GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
-    }
     { // 发送服务器
         auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
 		{
-			LOG4_TRACE("callback %s",oInMsgBody.body().c_str());//不需要再返回客户端
+			LOG4_TRACE("callback %s",oInMsgBody.body().c_str());
+            { // 返回客户端
+                // util::CJsonObject oRsp;
+                // oRsp.Add("token", strToken);
+                // oRsp.Add("key", strKey);
+                // GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
+
+                util::CJsonObject oJson;
+                oJson.Parse(oInMsgBody.body());
+                int code(1);
+                oJson.Get("code", code);
+                pStep->SendToClient(oInMsgBody.body(), code == 0 ? 200 : 400);
+            }
 		};
         util::CJsonObject oJson;
         std::string       address = GetLabor()->GetClientAddr(stMsgShell);

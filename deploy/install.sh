@@ -100,7 +100,7 @@ function ChangeConfig()
 
 function PreProcess()
 {
-	rar x -A ./3lib.rar
+	unzip ./3lib.zip
 	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
 	#3lib
 	test ! -d ./3lib  && test -d ${lib3_path} && ln -s ${lib3_path} ${RUN_PATH}/3lib  && echo "ln 3lib for deploy"
@@ -117,10 +117,6 @@ function DebugConfig()
 	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":3,/\"process_num\":1,/g"
 	find ./ -maxdepth 5 -type f -name "*.json"  |xargs sed -i "s/\"process_num\":2,/\"process_num\":1,/g"
 }
-
-#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_num\":5,/\"max_log_file_num\":10,/g"
-#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_size\":20480000,/\"max_log_file_size\":102400000,/g"
-#find ./ -maxdepth 4 -type f -name "*.json"  |xargs sed -i "s/\"max_log_file_size\":81920000,/\"max_log_file_size\":102400000,/g"
 
 function ReleaseConfig()
 {

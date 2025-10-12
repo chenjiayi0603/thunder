@@ -31,10 +31,12 @@ bool CmdElection::Init()
 
 bool CmdElection::AnyMessage(const net::tagMsgShell& stMsgShell,const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
+    LOG4_TRACE("%s() Election oMsgHead.cmd:%u)", __FUNCTION__, oMsgHead.cmd());
     Election oElection;
 	GetLabor()->SendToClient(stMsgShell,oMsgHead,std::string());
     if (oElection.ParseFromString(oMsgBody.body()))
     {
+        LOG4_INFO("Election strNodeIdentify(%s)!",GetLabor()->GetConnectIdentify(stMsgShell).c_str());
         m_pSessionOnlineNodes->AddCenterBeat(GetLabor()->GetConnectIdentify(stMsgShell), oElection);
         return(true);
     }

@@ -95,10 +95,12 @@ deploy/Interface/log/Interface_robot_W0.log
 # 运行目录结构
 deploy  运行目录
 deploy/3lib  第三方库
+
 deploy/Center  中心服务器
 deploy/Center/log  中心服务器日志
 deploy/Center/conf  中心服务器配置
 deploy/Center/bin  中心服务器执行文件
+
 deploy/Interface  网关服务器
 deploy/Logic  逻辑服务器
 
@@ -147,4 +149,4 @@ client=>Interface =>Logic
 curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
 
 测试验证token和key合法性
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7382816206950105089&key=7382816206950105090"
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7383077905527668737&key=7383077905527668738"

@@ -6,3 +6,4 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ASYNC_SERVER_PATH_LIB}
 /app/thunder/deploy/3lib/protoc --version 
 /app/thunder/deploy/3lib/protoc -I=.. --cpp_out=. ../common.proto  ../enum.proto ../user.proto ../user_basic.proto  \
        ../test_proto3.proto   ../coor.proto 
+  

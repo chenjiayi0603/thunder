@@ -148,7 +148,7 @@ private:
     std::unordered_map<std::string, std::unordered_set<std::string> > m_mapPublisher;               ///< map<node_type, set<subscribers_node_type> >
     std::unordered_map<std::string, std::pair<uint16,std::string> > m_mapIdentifyNodeId;                          ///< map<node_identify, pair<node_id,node_type>  >
 //    std::unordered_map<std::string, std::string> m_mapIdentifyNodeType;                   ///< map<node_Identify，node_type>
-    std::unordered_map<std::string, std::unordered_map<std::string, NodeReport> > m_mapNode;  ///< map<node_type, map<node_identify, NodeReport> >
+    std::unordered_map<std::string, std::unordered_map<std::string, NodeReport> > m_mapOnlineNodes;  ///< map<node_type, map<node_identify, NodeReport> >
     std::map<std::string, CenterElection> m_mapCenterElection;
 
     std::map<std::string, std::list<std::pair<NodeNotice,uint32> >> m_mapSendingNodeNotice;//map<to_node_Identify,list<NodeNotice,timestamp>>

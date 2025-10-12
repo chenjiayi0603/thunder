@@ -30,6 +30,7 @@ bool CmdNodeReport::Init()
 
 bool CmdNodeReport::AnyMessage(const net::tagMsgShell& stMsgShell,const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
+    LOG4_TRACE("%s() NodeReport oMsgHead.cmd:%u)", __FUNCTION__, oMsgHead.cmd());
 	NodeReport oNodeReport;
 	NodeReportRsp oNodeReportRsp;
     if (oNodeReport.ParseFromString(oMsgBody.body()))

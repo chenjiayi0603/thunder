@@ -2,8 +2,21 @@
     "node_type": "CENTER",
     "inner_host": "172.17.218.148",
     "inner_port": 27000,
-    "center": [],
-    "server_name": "Center_im",
+    "center": [
+        {
+            "host": "172.17.218.148",
+            "port": "27000"
+        },
+        {
+            "host": "172.17.218.148",
+            "port": "27022"
+        },
+        {
+            "host": "172.17.218.148",
+            "port": "27032"
+        }
+    ],
+    "server_name": "Center_robot",
     "process_num": 1,
     "cpu_affinity": true,
     "config_path": "conf/",

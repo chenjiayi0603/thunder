@@ -1,10 +1,7 @@
 {
-    "node_type": "HELLO",
-    "access_host": "172.17.218.148",
-    "access_port": 27006,
-    "access_codec": 3,
+    "node_type": "CENTER",
     "inner_host": "172.17.218.148",
-    "inner_port": 27007,
+    "inner_port": 27032,
     "center": [
         {
             "host": "172.17.218.148",
@@ -19,25 +16,15 @@
             "port": "27032"
         }
     ],
-    "server_name": "Hello_robot",
+    "server_name": "Center_robot3",
     "process_num": 1,
-    "worker_capacity": 1000000,
+    "cpu_affinity": true,
     "config_path": "conf/",
     "log_path": "log/",
     "max_log_file_num": 10,
-    "max_log_file_size": 20480000,
-    "permission": {
-        "addr_permit": {
-            "stat_interval": 1.0,
-            "permit_num": 500
-        },
-        "uin_permit": {
-            "stat_interval": 1.0,
-            "permit_num": 500
-        }
-    },
+    "max_log_file_size": 102400000,
     "io_timeout": 300.0,
-    "step_timeout": 5.0,
+    "step_timeout": 1.0,
     "log_levels": {
         "FATAL": 50000,
         "ERROR": 40000,
@@ -46,39 +33,46 @@
         "DEBUG": 10000,
         "TRACE": 0
     },
-    "log_level": 10000,
-    "load_so_interval": 60.0,
+    "log_level": 0,
+    "refresh_interval": 20,
     "so": [
         {
-            "cmd": 20001,
-            "so_path": "plugins/CmdHello.so",
+            "cmd": 11,
+            "so_path": "plugins/CmdNodeReport.so",
             "entrance_symbol": "create",
-            "process_num": 0,
-            "load": false,
+            "load": true,
+            "version": 4
+        },
+        {
+            "cmd": 13,
+            "so_path": "plugins/CmdNodeRegister.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        },
+        {
+            "cmd": 19,
+            "so_path": "plugins/CmdNodeDisconnect.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        },
+        {
+            "cmd": 41,
+            "so_path": "plugins/CmdElection.so",
+            "entrance_symbol": "create",
+            "load": true,
             "version": 1
         }
     ],
     "module": [
         {
-            "url_path": "/hello/shake",
-            "so_path": "plugins/ModuleShake.so",
-            "entrance_symbol": "create",
-            "load": true,
-            "version": 1
-        },
-        {
-            "url_path": "/hello/locatedata",
-            "so_path": "plugins/ModuleLocateData.so",
-            "entrance_symbol": "create",
-            "load": true,
-            "version": 1
-        },
-        {
-            "url_path": "/hello/hello",
-            "so_path": "plugins/ModuleHello.so",
+            "url_path": "/admin",
+            "so_path": "plugins/ModuleAdmin.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1
         }
-    ]
+    ],
+    "custom": {}
 }

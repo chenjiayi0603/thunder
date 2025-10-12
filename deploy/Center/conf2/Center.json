@@ -1,17 +1,30 @@
 {
     "node_type": "CENTER",
     "inner_host": "172.17.218.148",
-    "inner_port": 27001,
-    "center": [],
-    "server_name": "Center2_robot",
+    "inner_port": 27022,
+    "center": [
+        {
+            "host": "172.17.218.148",
+            "port": "27000"
+        },
+        {
+            "host": "172.17.218.148",
+            "port": "27022"
+        },
+        {
+            "host": "172.17.218.148",
+            "port": "27032"
+        }
+    ],
+    "server_name": "Center_robot2",
     "process_num": 1,
-    "worker_capacity": 1000000,
+    "cpu_affinity": true,
     "config_path": "conf/",
     "log_path": "log/",
-    "max_log_file_num": 5,
-    "max_log_file_size": 20480000,
+    "max_log_file_num": 10,
+    "max_log_file_size": 102400000,
     "io_timeout": 300.0,
-    "step_timeout": 5.0,
+    "step_timeout": 1.0,
     "log_levels": {
         "FATAL": 50000,
         "ERROR": 40000,
@@ -25,43 +38,41 @@
     "so": [
         {
             "cmd": 11,
-            "so_path": "plugins/Center/CmdNodeReport.so",
+            "so_path": "plugins/CmdNodeReport.so",
             "entrance_symbol": "create",
-            "process_num": 0,
             "load": true,
             "version": 4
         },
         {
             "cmd": 13,
-            "so_path": "plugins/Center/CmdNodeRegister.so",
+            "so_path": "plugins/CmdNodeRegister.so",
             "entrance_symbol": "create",
-            "process_num": 0,
             "load": true,
             "version": 1
         },
         {
             "cmd": 19,
-            "so_path": "plugins/Center/CmdNodeDisconnect.so",
+            "so_path": "plugins/CmdNodeDisconnect.so",
             "entrance_symbol": "create",
-            "process_num": 0,
             "load": true,
             "version": 1
         },
         {
-            "cmd": 23005,
-            "so_path": "plugins/Center/CmdOfflineNode.so",
+            "cmd": 41,
+            "so_path": "plugins/CmdElection.so",
             "entrance_symbol": "create",
-            "process_num": 0,
             "load": true,
             "version": 1
-        },
-        {
-            "cmd": 23007,
-            "so_path": "plugins/Center/CmdOnlineNode.so",
-            "entrance_symbol": "create",
-            "process_num": 0,
-            "load": true,
-            "version": 6
         }
-    ]
+    ],
+    "module": [
+        {
+            "url_path": "/admin",
+            "so_path": "plugins/ModuleAdmin.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        }
+    ],
+    "custom": {}
 }

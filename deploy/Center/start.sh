@@ -66,6 +66,8 @@ elif [ "$1"x == "all"x ];then
 else
 	#默认启动单个中心节点
 	start_node "${SERVER_CONF}"
+	start_node "${SERVER_CONF2}"
+	start_node "${SERVER_CONF3}"
 fi
 
 

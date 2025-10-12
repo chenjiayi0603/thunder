@@ -55,10 +55,12 @@ bool CmdNodeRegister::Init()
 bool CmdNodeRegister::AnyMessage(
                 const net::tagMsgShell& stMsgShell,const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
+    LOG4_TRACE("%s() NodeRegister oMsgHead.cmd:%u)", __FUNCTION__, oMsgHead.cmd());
 	NodeReport oNodeReport;
 	NodeReportRsp oNodeReportRsp;
     if (oNodeReport.ParseFromString(oMsgBody.body()))
     {
+        LOG4_INFO("NodeRegister oNodeReport(%s)!",oNodeReport.DebugString().c_str());
         uint16 unNodeId = m_pSessionOnlineNodes->AddNode(oNodeReport,true);
         if (0 == unNodeId)
         {
@@ -67,7 +69,7 @@ bool CmdNodeRegister::AnyMessage(
         }
         else
         {
-        	LOG4_INFO("AddNode node_id(%u)!",unNodeId);
+        	LOG4_INFO("NodeRegister AddNode node_id(%u)!",unNodeId);
             oNodeReportRsp.set_node_id(unNodeId);
             oNodeReportRsp.set_errcode(0);
         }
@@ -77,7 +79,7 @@ bool CmdNodeRegister::AnyMessage(
         LOG4_ERROR("failed to parse node info json from MsgBody.data()!");
         oNodeReportRsp.set_errcode(1);
     }
-    LOG4_INFO("oNodeId(%s)!",oNodeReportRsp.DebugString().c_str());
+    LOG4_INFO("oNodeReportRsp(%s)!",oNodeReportRsp.DebugString().c_str());
     return GetLabor()->SendToClient(stMsgShell,oMsgHead,oNodeReportRsp.SerializeAsString());
 }
 

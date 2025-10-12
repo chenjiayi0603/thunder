@@ -74,7 +74,8 @@
     "variant": "cpp",
     "*.bakhpp": "cpp",
     "*.11hpp": "cpp",
-    "complex": "cpp"
+    "complex": "cpp",
+    "*.bak": "cpp"
   },
   "editor.tabSize": 4,
   "editor.insertSpaces": true,
