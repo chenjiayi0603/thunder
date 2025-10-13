@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CodecCustom.hpp
  * @brief    protobuf编解码器
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年8月11日
  * @note     对应proto里msg.proto的MsgHead和MsgBody
  * Modify history:

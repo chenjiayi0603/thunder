@@ -2,7 +2,7 @@
  * HelloSession.h
  *
  *  Created on: 2015年10月21日
- *      author   Tommy
+ *      author   cjy
  */
 #ifndef CODE_HELLOSERVER_SRC_HELLOSESSION_H_
 #define CODE_HELLOSERVER_SRC_HELLOSESSION_H_

@@ -2,7 +2,7 @@
 * Project:  Util
 * @file     rc5.h
 * @brief    rc5 Operations, Terminology and Notation
-* @author   Tommy
+* @author   cjy
 * @date:    2019年12月15日
 * @note     In summary, the cipher will be explained in terms of these
 operations:

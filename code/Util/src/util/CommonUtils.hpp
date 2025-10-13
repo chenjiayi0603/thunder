@@ -2,7 +2,7 @@
  * CommonUtils.hpp
  *
  *  Created on: 2017年1月17日
- *      author   Tommy
+ *      author   cjy
  */
 
 #ifndef CODE_LOSS_SRC_UTIL_COMMONUTILS_HPP_

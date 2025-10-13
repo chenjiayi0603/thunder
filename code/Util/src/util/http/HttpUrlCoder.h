@@ -2,7 +2,7 @@
  * HttpUrl.h
  *
  *  Created on: 2019年12月23日
- *      author   Tommy
+ *      author   cjy
  */
 
 #ifndef CODE_INTERFACESERVER_SRC_HTTPURLCODER_H_

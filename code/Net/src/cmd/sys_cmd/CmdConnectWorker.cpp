@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdConnectWorker.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月6日
  * @note
  * Modify history:

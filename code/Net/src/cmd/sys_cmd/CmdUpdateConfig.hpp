@@ -2,7 +2,7 @@
 * * Project:  Thunder
  * @file     CmdUpdateConfig.hpp
  * @brief    更新配置
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年11月5日
  * @note
  * Modify history:

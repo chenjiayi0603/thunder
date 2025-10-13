@@ -2,7 +2,7 @@
 * * Project:  Net
  * @file     CmdBeat.hpp
  * @brief    心跳包响应
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年11月5日
  * @note
  * Modify history:

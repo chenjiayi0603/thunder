@@ -2,7 +2,7 @@
 * Project:  proto
 * @file     protoError.h
 * @brief    系统错误定义
-* @author   Tommy
+* @author   cjy
 * @date:    2019年10月12日
 * @note
 * Modify history:

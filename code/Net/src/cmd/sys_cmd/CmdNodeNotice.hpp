@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdNodeNotice.hpp
  * @brief    注册通知
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月9日
  * @note     节点注册通知
  * Modify history:

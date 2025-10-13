@@ -2,7 +2,7 @@
  * Project:  CenterServer
  * @file    Comm.hpp
  * @brief    
- * @author   Tommy
+ * @author   cjy
  * @date:    2015年9月16日
  * @note
  * Modify history:

@@ -2,7 +2,7 @@
 * Project:  Util
 * @file     hconv.c
 * @brief 
-* @author   Tommy
+* @author   cjy
 * @date:    2019年12月15日
 * @note
 * Modify history:

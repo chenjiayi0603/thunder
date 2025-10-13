@@ -2,7 +2,7 @@
  * Project:  Thunder
  * @file     Module.hpp
  * @brief    Http服务模块基类
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年10月19日
  * @note
  * Modify history:

@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     CmdRegister.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    Sep 19, 2016
  * @note
  * Modify history:

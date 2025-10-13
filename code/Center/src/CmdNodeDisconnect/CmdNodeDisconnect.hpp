@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     CmdNodeDisconnect.hpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    Feb 14, 2017
  * @note
  * Modify history:

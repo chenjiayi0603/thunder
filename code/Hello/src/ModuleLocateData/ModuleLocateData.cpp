@@ -2,7 +2,7 @@
  * Project:  HelloServer
  * @file     ModuleLocateData.cpp
  * @brief 	 返回数据分布信息
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年4月19日
  * @note
  * Modify history:

@@ -2,7 +2,7 @@
  * Project:  WebServer
  * @file     ModuleHello.cpp
  * @brief 	 用于支持websocket的握手协议
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年10月31日
  * @note
  * Modify history:

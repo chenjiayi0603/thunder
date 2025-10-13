@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CodecCustom.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年8月11日
  * @note
  * Modify history:

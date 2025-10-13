@@ -2,7 +2,7 @@
 * Project:  Util
 * @file     HashCalc.cpp
 * @brief 
-* @author   Tommy
+* @author   cjy
 * @date:    2016年1月11日
 * @note
 * Modify history:

@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Session.hpp
  * @brief    会话基类
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年7月28日
  * @note
  * Modify history:

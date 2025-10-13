@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     StepSetConfig.hpp
  * @brief
- * @author   Tommy
+ * @author   cjy
  * @date:    2019-04-04
  * @note
  * Modify history:

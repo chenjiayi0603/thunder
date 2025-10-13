@@ -2,7 +2,7 @@
  * Project:  Hello
  * @file     ModuleHello.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年2月1日
  * @note
  * Modify history:

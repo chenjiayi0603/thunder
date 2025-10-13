@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     MysqlStep.hpp
  * @brief    带mysql的异步步骤基类
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年8月15日
  * @note
  * Modify history:

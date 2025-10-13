@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdToldWorker.hpp
  * @brief    被告知Worker信息
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月9日
  * @note     A连接B成功后，A将己方的Worker信息A_attr（节点类型和Worker唯一标记）告知B，
  * B收到A后将A_attr登记起来，并将己方的Worker信息B_attr回复A

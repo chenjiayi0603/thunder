@@ -2,7 +2,7 @@
  * Project:  GongyiLib
  * @file     StringCoder.hpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2017��3��18��
  * @note
  * Modify history:

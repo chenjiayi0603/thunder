@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Cmd.cpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2017年3月6日
  * @note
  * Modify history:

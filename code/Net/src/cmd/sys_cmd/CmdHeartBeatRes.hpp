@@ -2,7 +2,7 @@
 * * Project:  Net
  * @file     CmdHeartBeatRes.hpp
  * @brief    处理HeartBeat响应消息
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年11月5日
  * @note
  * Modify history:

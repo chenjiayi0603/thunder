@@ -2,7 +2,7 @@
  * HttpUrl.cpp
  *
  *  Created on: 2019年12月23日
- *      author   Tommy
+ *      author   cjy
  */
 
 #ifndef CODE_SRC_HTTPURL_CPP_

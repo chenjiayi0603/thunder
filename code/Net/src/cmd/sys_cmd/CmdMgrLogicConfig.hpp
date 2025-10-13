@@ -2,7 +2,7 @@
 * * Project:  Net
  * @file     CmdMgrLogicConfig.hpp
  * @brief
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年11月5日
  * @note
  * Modify history:

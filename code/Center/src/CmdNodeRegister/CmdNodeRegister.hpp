@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     CmdRegister.hpp
  * @brief    节点注册
- * @author   Tommy
+ * @author   cjy
  * @date:    Sep 19, 2016
  * @note
  * Modify history:

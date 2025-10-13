@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     CJsonObject.hpp
  * @brief    Json管理类
- * @author   Tommy
+ * @author   cjy
  * @date:    2017
  * @note
  * Modify history:

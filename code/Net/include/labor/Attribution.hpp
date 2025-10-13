@@ -2,7 +2,7 @@
 * Project:  Thunder
 * @file     Attribute.hpp
 * @brief 
-* @author   Tommy
+* @author   cjy
 * @date:    2016年4月27日
 * @note
 * Modify history:

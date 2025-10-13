@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Timer.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年7月25日
  * @note
  * Modify history:

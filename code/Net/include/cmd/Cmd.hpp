@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Cmd.hpp
  * @brief    业务处理基类
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年12月9日
  * @note
  * Modify history:

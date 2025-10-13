@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Nodes.hpp
  * @brief    节点Session
- * @author   Tommy
+ * @author   cjy
  * @date:    2020年1月9日
  * @note     存储节点信息，提供节点的添加、删除、修改操作，提供通过hash字符串或hash值定位具体节点操作。
  * Modify history:

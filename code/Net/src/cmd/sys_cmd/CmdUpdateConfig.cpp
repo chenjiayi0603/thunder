@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdBeat.cpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2016年11月5日
  * @note
  * Modify history:

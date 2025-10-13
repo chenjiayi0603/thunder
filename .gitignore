@@ -7,14 +7,10 @@
 deploy/3lib/*
 code/Core/Util/src/util/encrypt/
 code/3party/bin
-code/Core/Util/src/util/encrypt/*
-code/Core/Net/src/Hello
-code/Core/Net/src/Interface
-code/Core/Net/src/Logic
 *.o
 deploy/bin/
 *.log
-code/Core/Net/src/Center
+code/Net/src/Center
 deploy/Center/bin/
 deploy/Interface/bin/Interface
 deploy/Logic/bin/Logic
@@ -26,3 +22,4 @@ deploy/Interface/conf/Interface.json
 deploy/Logic/conf/Logic.json
 deploy/Hello/bin/Hello
 deploy/3lib.zip
+*.log.*

@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Session.cpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2019年7月28日
  * @note
  * Modify history:

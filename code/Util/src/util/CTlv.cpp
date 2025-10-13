@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     CTlv.cpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2014年8月21日
  * @note
  * Modify history:

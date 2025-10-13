@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     CmdElection.hpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2019-1-6
  * @note
  * Modify history:

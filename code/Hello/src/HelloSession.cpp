@@ -1,7 +1,7 @@
 /*
  * HelloSession.cpp
  *
- *      author   Tommy
+ *      author   cjy
  */
 #include "HelloSession.h"
 #include "CustomLogger.hpp"

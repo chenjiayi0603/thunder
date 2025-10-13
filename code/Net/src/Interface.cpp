@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Interface.hpp
  * @brief    Node工作成员
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年9月6日
  * Modify history:
  ******************************************************************************/

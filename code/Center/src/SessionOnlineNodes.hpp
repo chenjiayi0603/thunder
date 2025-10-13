@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     SessionOnlineNodes.hpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:     11.22, 2019
  * @note
  * Modify history:

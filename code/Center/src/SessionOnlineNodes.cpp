@@ -2,7 +2,7 @@
  * Project:  Center
  * @file     SessionOnlineNodes.cpp
  * @brief
- * @author   Tommy
+ * @author   cjy
  * @date:    Sep 20, 2016
  * @note
  * Modify history:
@@ -49,10 +49,7 @@ namespace coor
         oCustomConf.Get("need_leadership", m_boNeedLeadership);
         oCustomConf.Get("center_beat", m_uiCenterBeat);
         oCustomConf.Get("node_overdue", m_uiNodeOverdue);
-        if (m_boNeedLeadership)
-        {
-            BeLeader();
-        }
+        // BeLeader();
         LOG4_TRACE("%s() boNeedLeadership(%d) bIsLeader(%d) uiCenterBeat(%u)", __FUNCTION__, m_boNeedLeadership, m_bIsLeader, m_uiCenterBeat);
         InitElection(oCustomConf["centers"]);
         for (int i = 0; i < oCustomConf["ipwhite"].GetArraySize(); ++i)
@@ -73,12 +70,16 @@ namespace coor
     {
         LOG4_INFO("%s() WorkerIdentify(%s) IsLeader(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), m_bIsLeader);
         m_uiServerTime = GetLabor()->GetNowTime();
-        if (m_uiLastSendCenterBeat > 0 && m_uiServerTime >= m_uiLastSendCenterBeat + 1)
-        {
-            CheckLeader();
-        }
+        // if (m_uiLastSendCenterBeat > 0 && m_uiServerTime >= m_uiLastSendCenterBeat + 1)
+        // {
+        //     CheckLeader();
+        // }
         if (m_uiServerTime >= m_uiLastSendCenterBeat + m_uiCenterBeat)
         {
+            if (m_uiLastSendCenterBeat > 0)
+            {
+                CheckLeader();
+            }
             SendCenterBeat(m_uiServerTime);
         }
         CheckNodesBeat();
@@ -794,6 +795,7 @@ namespace coor
             else
             {
                 iter.second.uiElection &= (~mc_uiLeader);
+                LOG4_TRACE("%s() WorkerIdentify(%s) is offline", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
             }
             { // 处理该节点心跳
                 uint32 uiLeaderBit = mc_uiLeader & iter.second.uiElection;
@@ -803,7 +805,8 @@ namespace coor
                     iter.second.uiElection |= mc_uiBeat;
                 }
             }
-        }
+            }
+        LOG4_TRACE("%s() mapLeaderElection.size()(%zu) strFirstLeader(%s)", __FUNCTION__, mapLeaderElection.size(),strFirstLeader.c_str());
         if (mapLeaderElection.size() > 0)// 已经选举leader的，根据最早成为leader的，判断是否选的本节点来处理
         {
             auto iter = mapLeaderElection.begin();
@@ -889,11 +892,6 @@ namespace coor
                                        iterNodeIdentify.first.c_str(), iterNodeIdentify.second.active_time(), m_uiServerTime, m_uiNodeOverdue);
                             removeNodeIdentifys.push_back(iterNodeIdentify.first);
                         }
-                        //				else
-                        //				{
-                        //					LOG4_TRACE("%s() iterNodeIdentify(%s,%lf) uiServerTime(%u) uiNodeOverdue(%u)", __FUNCTION__,
-                        //							iterNodeIdentify.first.c_str(),iterNodeIdentify.second.active_time(),m_uiServerTime,m_uiNodeOverdue);
-                        //				}
                     }
                 }
                 for (const auto &iterRemoveNodeIdentify : removeNodeIdentifys)

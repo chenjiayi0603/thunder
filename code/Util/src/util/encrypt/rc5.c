@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     rc5.cpp
  * @brief
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年12月14日
  * @note
  * Modify history:

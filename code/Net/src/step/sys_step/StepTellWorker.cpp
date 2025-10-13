@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     StepTellWorker.cpp
  * @brief    告知对端己方Worker进程信息
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月13日
  * @note
  * Modify history:

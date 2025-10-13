@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CodecWebSocketJson.hpp
  * @brief    与手机客户端通信协议编解码器
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年9月3日
  * @note
  * Modify history:

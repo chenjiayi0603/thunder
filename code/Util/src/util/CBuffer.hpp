@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     CBuffer.hpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2014骞�8鏈�21鏃�
  * @note
  * Modify history:

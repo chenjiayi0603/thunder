@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdNodeNotice.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月9日
  * @note
  * Modify history:

@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     CJsonObject.cpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2017
  * @note
  * Modify history:

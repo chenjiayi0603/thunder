@@ -2,7 +2,7 @@
 * Project:  Net
 * @file     NetError.hpp
 * @brief    系统错误定义
-* @author   Tommy
+* @author   cjy
 * @date:    2019年8月5日
 * @note
 * Modify history:

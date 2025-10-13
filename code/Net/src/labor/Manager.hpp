@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Manager.hpp
  * @brief    Node管理者
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年7月27日
  * @note
  * Modify history:

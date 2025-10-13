@@ -2,7 +2,7 @@
  * Project:  Util
  * @file     StreamCoder.hpp
  * @brief 
- * @author   tommy
+ * @author   cjy
  * @date:    2014年9月10日
  * @note
  * Modify history:

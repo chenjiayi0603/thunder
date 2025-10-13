@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     AppMsgCodec.hpp
  * @brief    与APP通信协议编解码器
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年10月9日
  * @note
  * Modify history:

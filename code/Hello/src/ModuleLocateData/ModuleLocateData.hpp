@@ -2,7 +2,7 @@
  * Project:  Hello
  * @file     ModuleLocateData.hpp
  * @brief 
- * @author   Tommy
+ * @author   cjy
  * @date:    2016年4月19日
  * @note
  * Modify history:

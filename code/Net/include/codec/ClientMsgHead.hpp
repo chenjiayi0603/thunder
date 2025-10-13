@@ -2,7 +2,7 @@
 * Project:  Net
 * @file     ClientMsgHead.hpp
 * @brief    数据包头定义
-* @author   Tommy
+* @author   cjy
 * @date:    2019年10月8日
 * @note
 * Modify history:

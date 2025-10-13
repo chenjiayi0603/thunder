@@ -2,7 +2,7 @@
  * Similarity.hpp
  *
  *  Created on: 2017年5月17日
- *      author   Tommy
+ *      author   cjy
  */
 #include "Similarity.hpp"
 

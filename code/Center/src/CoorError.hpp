@@ -2,7 +2,7 @@
 * Project:  Center
 * @file     CenterError.hpp
 * @brief 
-* @author   Tommy
+* @author   cjy
 * @date:    2018年12月8日
 * @note
 * Modify history:

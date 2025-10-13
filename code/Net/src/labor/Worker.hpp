@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Worker.hpp
  * @brief    工作者
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年7月27日
  * @note
  * Modify history:

@@ -2,7 +2,7 @@
  * Project:  protocol
  * @file     HttpParamCodec.h
  * @brief    http post参数编码/解码
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年12月21日
  * @note
  * Modify history:

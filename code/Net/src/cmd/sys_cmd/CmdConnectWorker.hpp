@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     CmdConnectWorker.hpp
  * @brief    连接Worker进程
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年8月6日
  * @note     CmdConnectWorker有别于其他绝大部分Cmd的是，他是命令发起者而并非命令
  * 接收者，所以一开始他的AnyMessage()的后两个参数并无输入，为简化实现，不调用

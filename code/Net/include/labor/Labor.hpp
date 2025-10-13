@@ -2,7 +2,7 @@
  * Project:  Net
  * @file     Labor.hpp
  * @brief    Node工作成员
- * @author   Tommy
+ * @author   cjy
  * @date:    2017年9月6日
  * @note     负责基础网络工作，具体工作由具有具体职责的类来负责，如Manager或Worker
  * Modify history:

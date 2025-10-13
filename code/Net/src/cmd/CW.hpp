@@ -2,7 +2,7 @@
 * Project:  Net
 * @file     CW.hpp
 * @brief    保留命令字定义
-* @author   Tommy
+* @author   cjy
 * @date:    2019年8月5日
 * @note
 * Modify history:

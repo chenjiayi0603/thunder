@@ -2,7 +2,7 @@
 * * Project:  Net
  * @file     CmdSimpleRes.hpp
  * @brief    处理响应消息(不做处理)
- * @author   Tommy
+ * @author   cjy
  * @date:    2019年11月5日
  * @note
  * Modify history:
