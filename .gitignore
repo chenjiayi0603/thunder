@@ -6,7 +6,7 @@
 *.so.*
 deploy/3lib/*
 code/Core/Util/src/util/encrypt/
-code/3party/
+code/3party/bin
 code/Core/Util/src/util/encrypt/*
 code/Core/Net/src/Hello
 code/Core/Net/src/Interface
