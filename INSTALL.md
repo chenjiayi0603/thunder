@@ -148,4 +148,4 @@ client=>Interface =>Logic
 curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
 
 测试验证token和key合法性
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7383175618004910081&key=7383175618004910082"
+curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7383564435643695105&key=7383564435643695106"

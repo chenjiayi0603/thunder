@@ -71,10 +71,6 @@ public:
     void AddIpwhite(const std::string& strIpwhite);
     void AddSubscribe(const std::string& strNodeType, const std::string& strBeSubscribeNodeType);
 
-    /**
-     * @return node_id
-     */
-    bool GenerateNodeId(NodeReport &oNodeInfoWithNodeId,const std::string& strNodeIdentify);
     uint16 AddNode(const NodeReport &oNodeReport,bool boRegister = false);
     void RemoveNode(const std::string& strNodeIdentify);
     void AddCenterBeat(const std::string& strNodeIdentify, const Election& oElection);
@@ -89,9 +85,6 @@ public:
     bool GetNodeReport(const std::string& strNodeType, const std::string& strIdentify, util::CJsonObject& oNodeReport) const;
 
     bool GetOnlineNode(const std::string& strNodeType, std::vector<std::string>& vecNodes);
-
-    void AddNodeId(uint32 uiNodeId);
-    void RemoveNodeId(uint32 uiNodeId);
 
     bool IsLeadership()const;//leader或者代理leader
     void BeLeader();
@@ -133,20 +126,14 @@ private:
     static const uint32 mc_uiBeat;
     static const uint32 mc_uiLeader;
     static const uint32 mc_uiAlive;
-    uint16 m_unLastNodeId = 0;
     bool m_bIsLeader = false;
     uint64 m_uiBeLeaderTime = 0;
     bool m_boNeedLeadership = true;
     uint32 m_uiCenterBeat = 3;
-
-    uint64 m_uiNodeVersion = 0;
-    uint32 m_uiNodeVersion_LastModifyTime = 0;
-    std::unordered_set<uint16> m_setNodeId;
-    std::unordered_set<uint16> m_setAddedNodeId;
-    std::unordered_set<uint16> m_setRemovedNodeId;
+    
     std::unordered_set<std::string> m_setIpwhite;
     std::unordered_map<std::string, std::unordered_set<std::string> > m_mapPublisher;               ///< map<node_type, set<subscribers_node_type> >
-    std::unordered_map<std::string, std::pair<uint16,std::string> > m_mapIdentifyNodeId;                          ///< map<node_identify, pair<node_id,node_type>  >
+    std::unordered_map<std::string, std::string> m_mapIdentifyNodeId;  ///< map<Identify, node_type>
     std::unordered_map<std::string, std::unordered_map<std::string, NodeReport> > m_mapOnlineNodes;  ///< map<node_type, map<node_identify, NodeReport> >
     std::map<std::string, CenterElection> m_mapCenterElection;
 

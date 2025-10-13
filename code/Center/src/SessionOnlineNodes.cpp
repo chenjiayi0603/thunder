@@ -109,74 +109,6 @@ namespace coor
         }
     }
 
-    void SessionOnlineNodes::AddNodeId(uint32 uiNodeId)
-    {
-        if (m_setNodeId.find(uiNodeId) == m_setNodeId.end())
-        {
-            m_uiNodeVersion++;
-            m_uiNodeVersion_LastModifyTime = GetLabor()->GetNowTime();
-            m_setNodeId.insert(uiNodeId);
-            m_setAddedNodeId.insert(uiNodeId);
-        }
-    }
-
-    void SessionOnlineNodes::RemoveNodeId(uint32 uiNodeId)
-    {
-        if (m_setNodeId.find(uiNodeId) != m_setNodeId.end())
-        {
-            m_uiNodeVersion++;
-            m_uiNodeVersion_LastModifyTime = GetLabor()->GetNowTime();
-            m_setNodeId.erase(uiNodeId);
-            m_setRemovedNodeId.insert(uiNodeId);
-        }
-    }
-
-    bool SessionOnlineNodes::GenerateNodeId(NodeReport &oNodeInfoWithNodeId, const std::string &strNodeIdentify)
-    {
-        uint32 uiNodeId = oNodeInfoWithNodeId.node_id();
-        // find node_id or create node_id
-        auto identify_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
-        if (identify_node_iter == m_mapIdentifyNodeId.end())
-        {
-            while (0 == uiNodeId)
-            {
-                uiNodeId = ++m_unLastNodeId;
-                auto node_id_iter = m_setNodeId.find(uiNodeId);
-                if (node_id_iter != m_setNodeId.end())
-                {
-                    uiNodeId = 0;
-                }
-                if (m_unLastNodeId >= NODE_ID_MAX)
-                {
-                    m_unLastNodeId = 0;
-                }
-                if (m_setNodeId.size() >= NODE_ID_MAX)
-                {
-                    LOG4_ERROR("there is no valid node_id in the system!");
-                    return (false);
-                }
-            }
-            m_mapIdentifyNodeId.insert(std::make_pair(strNodeIdentify, std::make_pair(uiNodeId, oNodeInfoWithNodeId.node_type())));
-        }
-        else
-        {
-            if (uiNodeId > 0)
-            {
-                if (identify_node_iter->second.first != uiNodeId)
-                {
-                    RemoveNodeId(identify_node_iter->second.first);
-                    identify_node_iter->second.first = uiNodeId; // 使用新数据
-                }
-            }
-            else
-            {
-                uiNodeId = identify_node_iter->second.first;
-            }
-        }
-        oNodeInfoWithNodeId.set_node_id(uiNodeId);
-        return (true);
-    }
-
     /*
     节点数据和负载状态都会保存
     oNodeInfo
@@ -214,51 +146,48 @@ namespace coor
         LOG4_TRACE("%s() AddNode oNodeReport WorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), oNodeReport.DebugString().c_str());
         std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
         LOG4_TRACE("%s() AddNode oNodeReport strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(),boRegister);
-        NodeReport oNodeInfoWithNodeId = oNodeReport;
-        //    oNodeInfoWithNodeId.clear_node();
-        //    oNodeInfoWithNodeId.clear_workers();
+        NodeReport oNodeInfoObj = oNodeReport;
+        oNodeInfoObj.clear_node();
+        oNodeInfoObj.clear_workers();
 
-        if (!GenerateNodeId(oNodeInfoWithNodeId, strNodeIdentify))
+        auto identify_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
+        if (identify_node_iter == m_mapIdentifyNodeId.end())
         {
-            LOG4_ERROR("there is no valid node_id in the system!");
-            return 0;
+            m_mapIdentifyNodeId.insert(std::make_pair(strNodeIdentify,oNodeInfoObj.node_type()));
         }
 
-        auto node_type_iter = m_mapOnlineNodes.find(oNodeInfoWithNodeId.node_type());
+        auto node_type_iter = m_mapOnlineNodes.find(oNodeInfoObj.node_type());
         if (node_type_iter == m_mapOnlineNodes.end())
         {
             std::unordered_map<std::string, NodeReport> mapNodeInfo;
-            mapNodeInfo.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId));
-            m_mapOnlineNodes.insert(std::make_pair(oNodeInfoWithNodeId.node_type(), mapNodeInfo));
+            mapNodeInfo.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
+            m_mapOnlineNodes.insert(std::make_pair(oNodeInfoObj.node_type(), mapNodeInfo));
             LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
-            AddNodeId(oNodeInfoWithNodeId.node_id());
-            AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
+            AddNodeBroadcast(oNodeInfoObj,boRegister);
             SendCenterBeat();
-            return (oNodeInfoWithNodeId.node_id());
+            return (oNodeInfoObj.node_id());
         }
         else
         {
             auto node_iter = node_type_iter->second.find(strNodeIdentify);
             if (node_iter == node_type_iter->second.end())
             {
-                node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoWithNodeId));
+                node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
                 LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
-                AddNodeId(oNodeInfoWithNodeId.node_id());
-                AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
+                AddNodeBroadcast(oNodeInfoObj,boRegister);
                 SendCenterBeat();
-                return (oNodeInfoWithNodeId.node_id());
+                return (oNodeInfoObj.node_id());
             }
             else
             {
-                node_iter->second = oNodeInfoWithNodeId;
+                node_iter->second = oNodeInfoObj;
                 LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(),boRegister);
-                AddNodeId(oNodeInfoWithNodeId.node_id());
                 if (boRegister)//新注册节点的需要广播
                 {
-                    AddNodeBroadcast(oNodeInfoWithNodeId,boRegister);
+                    AddNodeBroadcast(oNodeInfoObj,boRegister);
                 }
                 SendCenterBeat();
-                return (oNodeInfoWithNodeId.node_id());
+                return (oNodeInfoObj.node_id());
             }
         }
     }
@@ -269,14 +198,14 @@ namespace coor
         auto identity_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
         if (identity_node_iter != m_mapIdentifyNodeId.end())
         {
-            auto node_type_iter = m_mapOnlineNodes.find(identity_node_iter->second.second);
+            auto node_type_iter = m_mapOnlineNodes.find(identity_node_iter->second);//identity_node_iter->second.second
             if (node_type_iter != m_mapOnlineNodes.end())
             {
                 auto node_iter = node_type_iter->second.find(strNodeIdentify);
                 if (node_iter != node_type_iter->second.end())
                 {
-                    uint32 uiNodeId = node_iter->second.node_id();
-                    RemoveNodeId(uiNodeId);
+                    // uint32 uiNodeId = node_iter->second.node_id();
+                    // RemoveNodeId(uiNodeId);
                     RemoveNodeBroadcast(node_iter->second);
                     SendCenterBeat();
                     node_type_iter->second.erase(node_iter);
@@ -290,22 +219,6 @@ namespace coor
     {
         LOG4_TRACE("%s() WorkerIdentify(%s) strNodeIdentify(%s) beat.oElection(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(),
                    strNodeIdentify.c_str(), oElection.DebugString().c_str());
-        if (!m_bIsLeader && oElection.is_leader() > 0)
-        {
-            if (oElection.last_node_id() > 0)
-            {
-                m_unLastNodeId = oElection.last_node_id();
-            }
-            for (const auto &node_id : oElection.added_node_id()) // int32 i = 0; i < oElection.added_node_id_size(); ++i
-            {
-                m_setNodeId.insert(node_id);
-            }
-            for (const auto &node_id : oElection.removed_node_id()) // int32 j = 0; j < oElection.removed_node_id_size(); ++j
-            {
-                m_setNodeId.erase(node_id);
-            }
-        }
-
         auto iter = m_mapCenterElection.find(strNodeIdentify);
         if (iter == m_mapCenterElection.end())
         {
@@ -567,14 +480,14 @@ namespace coor
             if (pSessionOnlineNodes && pdata && pdata->strToNodeIdentify.size() > 0)
             {
                 pSessionOnlineNodes->RemoveSendingNodeNotice(pdata->strToNodeIdentify);
-                LOG4_TRACE("CMD_REQ_NODE_REG_NOTICE response:send to %s succ for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
+                LOG4_TRACE("NODE_REG_NOTICE response:send to %s succ for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
             }
             else
             {
-                LOG4_WARN("CMD_REQ_NODE_REG_NOTICE response:failed to send to %s for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
+                LOG4_WARN("NODE_REG_NOTICE response:failed to send to %s for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
             }
         };
-        LOG4_TRACE("%s() CMD_REQ_NODE_REG_NOTICE request:sending to %s oNodeNotice:%s!", __FUNCTION__, strToNodeIdentify.c_str(), oNodeNotice.DebugString().c_str());
+        LOG4_TRACE("%s() NODE_REG_NOTICE request:sending to %s oNodeNotice:%s!", __FUNCTION__, strToNodeIdentify.c_str(), oNodeNotice.DebugString().c_str());
         GetLabor()->SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, oNodeNotice.SerializeAsString(), callback, strToNodeIdentify, "", new DataStepCustom(strToNodeIdentify)); 
         if (boPushSendingList)
         {
@@ -600,7 +513,7 @@ namespace coor
         oAddedNodeInfo.clear_workers();
         const std::string& reportNodeType = oNodeReport.node_type();
         (*oAddNodes.add_node_arry_reg()) = std::move(oAddedNodeInfo);
-        LOG4_TRACE("%s() m_mapPublisher.size %zu ", __FUNCTION__, m_mapPublisher.size());
+        LOG4_TRACE("%s() mapPublisher.size %zu ", __FUNCTION__, m_mapPublisher.size());
         for (const auto &publisher_iter : m_mapPublisher)
         {
             const std::string& subscribedNodeType = publisher_iter.first;
@@ -612,7 +525,7 @@ namespace coor
                     auto onlineNodesIter = m_mapOnlineNodes.find(subscriberNodeType);
                     if (onlineNodesIter != m_mapOnlineNodes.end())
                     {
-                        LOG4_TRACE("m_mapOnlineNodes[%s].size() = %u", subscriberNodeType.c_str(), onlineNodesIter->second.size());
+                        LOG4_TRACE("mapOnlineNodes[%s].size() = %u", subscriberNodeType.c_str(), onlineNodesIter->second.size());
                         for (const auto &node_iter : onlineNodesIter->second)
                         {
                             //if (node_iter.second.node_id() == oNodeReport.node_id())//即使订阅者是自己节点也发送
@@ -839,23 +752,23 @@ namespace coor
         if (m_bIsLeader)
         {
             oElection.set_is_leader(1);
-            oElection.set_last_node_id(m_unLastNodeId);
-            for (const auto &it : m_setAddedNodeId)
-            {
-                oElection.add_added_node_id(it);
-            }
-            for (const auto &it : m_setRemovedNodeId)
-            {
-                oElection.add_removed_node_id(it);
-            }
+            // oElection.set_last_node_id(m_unLastNodeId);
+            // for (const auto &it : m_setAddedNodeId)
+            // {
+            //     oElection.add_added_node_id(it);
+            // }
+            // for (const auto &it : m_setRemovedNodeId)
+            // {
+            //     oElection.add_removed_node_id(it);
+            // }
             oElection.set_beleadertime(m_uiBeLeaderTime);
         }
         else
         {
             oElection.set_is_leader(0);
         }
-        m_setAddedNodeId.clear();
-        m_setRemovedNodeId.clear();
+        // m_setAddedNodeId.clear();
+        // m_setRemovedNodeId.clear();
         std::string strBody = oElection.SerializeAsString();
         LOG4_TRACE("%s() oElection(%s) %u", __FUNCTION__,oElection.DebugString().c_str(),strBody.size());
         for (auto &iter : m_mapCenterElection)
