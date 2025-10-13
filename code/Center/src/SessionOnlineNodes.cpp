@@ -51,7 +51,7 @@ namespace coor
         oCustomConf.Get("node_overdue", m_uiNodeOverdue);
         if (m_boNeedLeadership)
         {
-            m_bIsLeader = true;
+            BeLeader();
         }
         LOG4_TRACE("%s() boNeedLeadership(%d) bIsLeader(%d) uiCenterBeat(%u)", __FUNCTION__, m_boNeedLeadership, m_bIsLeader, m_uiCenterBeat);
         InitElection(oCustomConf["centers"]);
@@ -314,7 +314,7 @@ namespace coor
                 uiCenterAttr |= mc_uiLeader;
                 LOG4_TRACE("%s() strNodeIdentify(%s) is leader", __FUNCTION__, strNodeIdentify.c_str());
             }
-            m_mapCenterElection.insert(std::make_pair(strNodeIdentify, CenterElection(uiCenterAttr, 0)));
+            m_mapCenterElection.insert(std::make_pair(strNodeIdentify, CenterElection(uiCenterAttr, oElection.beleadertime())));
         }
         else
         {
@@ -322,11 +322,13 @@ namespace coor
             if (oElection.is_leader() > 0)
             {
                 iter->second.uiElection |= mc_uiLeader;
+                iter->second.uiBeLeaderTime = oElection.beleadertime();
                 LOG4_TRACE("%s() strNodeIdentify(%s) is leader", __FUNCTION__, strNodeIdentify.c_str());
             }
             else
             {
                 iter->second.uiElection &= ~mc_uiLeader;
+                iter->second.uiBeLeaderTime = 0;
             }
         }
     }
@@ -772,13 +774,15 @@ namespace coor
     void SessionOnlineNodes::CheckLeader()
     {
         LOG4_TRACE("%s() WorkerIdentify(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-        std::multimap<uint64, std::string> mapLeaderElection; // 已经选举leader的,优先最早成为leader的
-        std::string strFirstLeader;                           // 未选举的，选举存活节点中连接符值较小的
+        // 已经选举leader的,优先最早成为leader的节点;
+        // 未选举的，选举存活节点中连接符值较小的节点;
+        std::multimap<uint64, std::string> mapLeaderElection; 
+        std::string strFirstLeader;                           
         for (auto &iter : m_mapCenterElection)
         {
-            if (mc_uiAlive & iter.second.uiElection)
+            if (mc_uiAlive & iter.second.uiElection)// 最近三次心跳任意一次成功则认为在线
             {
-                if (mc_uiLeader & iter.second.uiElection)
+                if (mc_uiLeader & iter.second.uiElection) //该节点为主节点
                 {
                     mapLeaderElection.insert(std::make_pair(iter.second.uiBeLeaderTime, iter.first));
                 }
@@ -791,7 +795,7 @@ namespace coor
             {
                 iter.second.uiElection &= (~mc_uiLeader);
             }
-            { // 检查心跳
+            { // 处理该节点心跳
                 uint32 uiLeaderBit = mc_uiLeader & iter.second.uiElection;
                 iter.second.uiElection = ((iter.second.uiElection << 1) & mc_uiAlive) | uiLeaderBit; // 最近三次心跳任意一次成功则认为在线
                 if (iter.first == GetLabor()->GetWorkerIdentify())
@@ -810,7 +814,11 @@ namespace coor
             }
             else
             {
-                RelievedLeader();
+                LOG4_TRACE("%s() thisNode(Identify %s,IsLeader %d,uiBeLeaderTime %llu) TargetCenter(Identify %s,uiBeLeaderTime %llu)", __FUNCTION__, 
+                    GetLabor()->GetWorkerIdentify().c_str(),m_bIsLeader,m_uiBeLeaderTime,iter->second.c_str(),iter->first);
+                if (m_bIsLeader && iter->first > 0 && m_uiBeLeaderTime > iter->first) {
+                    RelievedLeader(); //要是选的不是本节点，但是该节点成为leader时间比本节点早，则取消本节点leader
+                }
             }
         }
         else if (strFirstLeader == GetLabor()->GetWorkerIdentify())// 未选举的，选举存活节点中连接符值较小的，判断是否选的本节点来处理
@@ -855,6 +863,8 @@ namespace coor
                 {
                     LOG4_TRACE("send succ CMD_REQ_LEADER_ELECTION:%s!", oInMsgBody.DebugString().c_str());
                 };
+                LOG4_TRACE("%s() REQ_LEADER_ELECTION thisNode(Identify %s,IsLeader %d,uiBeLeaderTime %llu) oElection(%s)", __FUNCTION__, 
+                    GetLabor()->GetWorkerIdentify().c_str(),m_bIsLeader,m_uiBeLeaderTime,oElection.DebugString().c_str());
                 GetLabor()->SendToCallback(this, net::CMD_REQ_LEADER_ELECTION, strBody, callback, iter.first);
             }
         }

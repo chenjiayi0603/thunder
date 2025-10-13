@@ -1,5 +1,5 @@
 {
-    "need_leadership": true,
+    "need_leadership": false,
     "center_beat": 3,
     "ipwhite": [
         "172.17.218.148"
