@@ -35,6 +35,8 @@ bool CmdNodeReport::AnyMessage(const net::tagMsgShell& stMsgShell,const MsgHead&
 	NodeReportRsp oNodeReportRsp;
     if (oNodeReport.ParseFromString(oMsgBody.body()))
     {
+        std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
+        LOG4_TRACE("%s() NodeReport oMsgHead.cmd:%u nodeIdentify:%s", __FUNCTION__, oMsgHead.cmd(),strNodeIdentify.c_str());
         uint16 unNodeId = m_pSessionOnlineNodes->AddNode(oNodeReport);
         if (0 == unNodeId)
         {

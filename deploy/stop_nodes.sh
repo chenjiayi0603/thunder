@@ -10,8 +10,7 @@ if [ $# -lt 1 ]; then
     exit 1; 
 fi
 
-#server_name=_im
-#ps -ef |grep _im|grep -v grep|awk '{print $2}'|xargs kill -9  #pkill -9 presureClient
+#ps -ef |grep _robot|grep -v grep|awk '{print $2}'|xargs kill -9  #pkill -9 presureClient
 if [ "$1"x == "all"x ]
 then
     while read server others

@@ -60,7 +60,8 @@ bool CmdNodeRegister::AnyMessage(
 	NodeReportRsp oNodeReportRsp;
     if (oNodeReport.ParseFromString(oMsgBody.body()))
     {
-        LOG4_INFO("NodeRegister oNodeReport(%s)!",oNodeReport.DebugString().c_str());
+        std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
+        LOG4_TRACE("%s() NodeRegister oMsgHead.cmd:%u nodeIdentify:%s", __FUNCTION__, oMsgHead.cmd(),strNodeIdentify.c_str());
         uint16 unNodeId = m_pSessionOnlineNodes->AddNode(oNodeReport,true);
         if (0 == unNodeId)
         {

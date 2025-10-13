@@ -30,11 +30,12 @@ bool CmdNodeDisconnect::Init()
 
 bool CmdNodeDisconnect::AnyMessage(const net::tagMsgShell& stMsgShell,const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s() NodeDisconnect oMsgHead.cmd:%u)", __FUNCTION__, oMsgHead.cmd());
+    const std::string &strNodeIdentify = oMsgBody.body();
+    LOG4_TRACE("%s() NodeDisconnect oMsgHead.cmd:%u nodeIdentify:%s", __FUNCTION__, oMsgHead.cmd(),strNodeIdentify.c_str());
     if (oMsgBody.body().size() > 0)
     {
         LOG4_TRACE("(%s) disconnect, remove from node list.", oMsgBody.body().c_str());//192.168.11.66:16068 disconnect
-        m_pSessionOnlineNodes->RemoveNode(oMsgBody.body());
+        m_pSessionOnlineNodes->RemoveNode(strNodeIdentify);
     }
     else
     {

@@ -90,9 +90,9 @@ void Manager::PeriodicTaskCallback(struct ev_loop* loop, struct ev_timer* watche
     if (watcher->data != nullptr)
     {
         Manager* pManager = (Manager*)(watcher->data);
-#ifndef NODE_TYPE_CENTER
-        pManager->ReportToCenter();
-#endif
+// #ifndef NODE_TYPE_CENTER
+        pManager->ReportToCenter();//中心节点也需要定时上报心跳管理状态
+// #endif
         pManager->CheckWorker();
         pManager->RefreshServer();
         pManager->RefreshEvent(NODE_BEAT,watcher);
