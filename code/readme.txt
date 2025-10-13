@@ -7,16 +7,8 @@
  
 节点目录：
 中心节点     Center
-redis代理    RedisAgent
-mysql代理    DbAgent
 测试demo节点     Hello 
-通知推送节点       Notice 
-二进制 网关节点     Access
-消息节点       MSG 
-API对接节点（http）       API 
-mongo代理	MongoAgent  
-指令转发		Router
-登录			Login
-
+逻辑服务器       Logic 
+登录			Interface
 
 编译使用在脚本make.sh中有注释说明

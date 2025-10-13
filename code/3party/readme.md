@@ -5,10 +5,11 @@ c-ares-1.14.0
 jemalloc-5.1.0
 log4cplus-2.0.2
 protobuf-3.6.1
-libev-master(4.22)
-hiredis-vip-master(0.3)
+libev 4.22
+hiredis-vip 1.0.0
 leveldb-1.23
 mariadb-connector-c 3.4.7
+mongo-c-driver 2.1.2
 
 ## 安装第三方库
 如果项目目录为/app/thunder
@@ -23,7 +24,7 @@ libcares.so        libev.so.4      libjemalloc.so         liblog4cplus-1.2.so.5.
 libcares.so.2      libev.so.4.0.0  libjemalloc.so.2       liblog4cplus.so            libprotobuf.so       protoc
 libcares.so.2.2.0  libhiredis.so   libleveldb.so          libmariadb.so              libprotobuf.so.17    readme.txt
 
-##  安装步骤如下
+##  第三方库安装步骤如下
 ### 安装mongo-c
 git clone https://github.com/mongodb/mongo-c-driver.git
 cd mongo-c-driver
