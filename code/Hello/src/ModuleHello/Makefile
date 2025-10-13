@@ -41,7 +41,6 @@ INC := $(INC) \
        -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
-       -I $(3PARTY_PATH)/include/mongoc/src/libbson/src -I $(3PARTY_PATH)/include/mongoc/src/libbson/src/bson \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
        -I $(NET_PATH)/src 
 
@@ -71,7 +70,6 @@ COMM_PATH = .. \
             $(NET_PATH)/src/session \
             $(NET_PATH)/src/labor \
             $(NET_PATH)/src/protocol 
-            #$(NET_PATH)/src
 
 SO_PATH = . 
 SO_DEP_PATH = $(SO_PATH) $(PLUGIN_PATH)/src $(PLUGIN_PATH)/src/MqClient

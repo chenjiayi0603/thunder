@@ -7,10 +7,7 @@
 #include "step/Step.hpp"
 #include "step/HttpStep.hpp"
 #include "session/Session.hpp"
-#include "storage/RedisOperator.hpp"
-#include "storage/DbOperator.hpp"
-#include "storage/MemOperator.hpp"
-
+ 
 namespace net
 {
 #define StepStateVecSize (20)

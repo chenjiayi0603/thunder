@@ -16,7 +16,7 @@
 #include "dispatcher/Nodes.hpp"
 #include "dispatcher/Coroutine.h"
 #include "Attribution.hpp"
-
+#include "storage/dataproxy.pb.h"
 namespace netcustomcat {
 	class CatClientConnent;
 }

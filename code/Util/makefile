@@ -27,19 +27,17 @@ DIRS := $(SUB_DIRS)
 INC := $(INC) \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb -I $(3PARTY_PATH)/include/mongoc/src/libbson/src -I $(3PARTY_PATH)/include/mongoc/src/libbson/src/bson \
-       -I $(3PARTY_PATH)/include/mongoc/src/libbson/src \
-       -I $(3PARTY_PATH)/include/mongoc/src/libbson/src/bson \
+       -I $(3PARTY_PATH)/include/mongoc \
+       -I $(3PARTY_PATH)/include/bson \
        -I $(3PARTY_PATH)/include/leveldb/include \
-       -I $(3PARTY_PATH)/include/nacos/include -I $(3PARTY_PATH)/include/nacos \
        -I $(UTIL_PATH)/src
-
-#    -L$(3PARTY_PATH)/lib -lsignal-protocol-c \
-#    -L$(3PARTY_PATH)/lib -lbson \
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -lev \
            -L$(3PARTY_PATH)/lib -ljemalloc \
 		   -L$(3PARTY_PATH)/lib -lleveldb \
+		   -L$(3PARTY_PATH)/lib -lbson2 \
+		   -L$(3PARTY_PATH)/lib -lmongoc2 \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -lc -ldl -lrt
 

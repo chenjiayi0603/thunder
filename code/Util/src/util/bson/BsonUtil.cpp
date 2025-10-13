@@ -92,7 +92,7 @@ std::string CBsonObject::ToString() const
 {
 	if (m_bson)
 	{
-		char *bStr = bson_as_json(m_bson, NULL);
+		char *bStr = bson_as_json_with_opts(m_bson, NULL, NULL);
 		std::string str(bStr);
 		bson_free(bStr);
 		return str;
@@ -387,7 +387,7 @@ bool CBsonObject::ToJson(util::CJsonObject &jsonObj)
 {
 	if (m_bson)
 	{
-		char *bStr = bson_as_json(m_bson, NULL);
+		char *bStr = bson_as_json_with_opts(m_bson, NULL, NULL);
 		jsonObj.Clear();
 		if (!jsonObj.Parse(bStr))
 		{
@@ -406,7 +406,7 @@ std::string CBsonObject::ToJsonStr()
 	std::string tmpStr;
 	if (m_bson)
 	{
-		char *bStr = bson_as_json(m_bson, NULL);
+		char *bStr = bson_as_json_with_opts(m_bson, NULL, NULL);
 		tmpStr.assign(bStr);
 		bson_free(bStr);
 	}
@@ -418,7 +418,7 @@ void BsonToJson(const bson_t *bson,util::CJsonObject &jsonObj)
 {
 	if (bson)
 	{
-		char *bStr = bson_as_json(bson, NULL);
+		char *bStr = bson_as_json_with_opts(bson, NULL,NULL);
 		jsonObj.Clear();
 		jsonObj.Parse(bStr);
 		bson_free(bStr);

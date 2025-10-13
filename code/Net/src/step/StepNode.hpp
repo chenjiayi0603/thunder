@@ -5,10 +5,7 @@
 #include "session/Session.hpp"
 #include "NetError.hpp"
 #include "NetDefine.hpp"
-#include "storage/RedisOperator.hpp"
-#include "storage/DbOperator.hpp"
-#include "storage/MemOperator.hpp"
-
+#include "storage/dataproxy.pb.h"
 namespace net
 {
 /**

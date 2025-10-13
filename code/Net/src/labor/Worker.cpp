@@ -44,7 +44,7 @@
 #include "cmd/sys_cmd/CmdReloadSo.hpp"
 #include "cmd/sys_cmd/CmdReloadModule.hpp"
 #include "cmd/sys_cmd/CmdReloadCustom.hpp"
-
+#include "storage/RedisOperator.hpp"
 
 namespace net
 {

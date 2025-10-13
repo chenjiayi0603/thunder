@@ -9,10 +9,8 @@
 #ifndef SRC_LABOR_INTERFACE_HPP_
 #define SRC_LABOR_INTERFACE_HPP_
 #include "NetDefine.hpp"
-#include "storage/StorageOperator.hpp"
-#include "storage/MemOperator.hpp"
 #include "dispatcher/Coroutine.h"
-
+#include "storage/dataproxy.pb.h"
 namespace net
 {
 

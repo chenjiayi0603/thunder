@@ -103,7 +103,7 @@ void MongoOperator::AddCond(const std::string& strCond)
 
 void MongoOperator::AddCond(const bson_t *bson)
 {
-	char *str = bson_as_json (bson, NULL);
+	char *str = bson_as_json_with_opts(bson, NULL, NULL);
 	m_pMongoOperate->set_cond(str);
 	bson_free(str);
 }
@@ -116,7 +116,7 @@ void MongoOperator::AddVal(const std::string& strValue)
 
 void MongoOperator::AddVal(const bson_t *bson)
 {
-	char *str = bson_as_json (bson, NULL);
+	char *str = bson_as_json_with_opts(bson, NULL, NULL);
 	m_pMongoOperate->set_val(str);
 	bson_free(str);
 }
@@ -128,7 +128,7 @@ void MongoOperator::AddFields(const std::string& strFields)
 
 void MongoOperator::AddFields(const bson_t *bson)
 {
-	char *str = bson_as_json (bson, NULL);
+	char *str = bson_as_json_with_opts(bson, NULL, NULL);
 	m_pMongoOperate->set_fields(str);
 	bson_free(str);
 }
@@ -140,7 +140,7 @@ void MongoOperator::AddSort(const std::string& strSort)
 
 void MongoOperator::AddSort(const bson_t *bson)
 {
-	char *str = bson_as_json (bson, NULL);
+	char *str = bson_as_json_with_opts(bson, NULL, NULL);
 	m_pMongoOperate->set_sort(str);
 	bson_free(str);
 }

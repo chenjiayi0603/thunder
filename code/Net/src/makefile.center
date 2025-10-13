@@ -39,9 +39,8 @@ DIRS := $(SUB_DIRS)
 INC := $(INC) \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
+       -I $(3PARTY_PATH)/include/mongoc -I $(3PARTY_PATH)/include/bson \
        -I $(3PARTY_PATH)/include/libev \
-       -I $(3PARTY_PATH)/include/mongoc/src/libbson/src \
-       -I $(3PARTY_PATH)/include/mongoc/src/libbson/src/bson \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/util \
        -I $(NET_PATH)/src 
 
@@ -57,7 +56,7 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -ljemalloc \
            -L$(3PARTY_PATH)/lib -lcares \
            -L$(3PARTY_PATH)/lib -lcurl \
-           -L$(3PARTY_PATH)/lib -lbson \
+           -L$(3PARTY_PATH)/lib -lmongoc2 -L$(3PARTY_PATH)/lib -lbson2 \
            -L$(3PARTY_PATH)/lib -lleveldb \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -lz -lc -ldl -lrt -lssl

@@ -7,7 +7,7 @@
 
 #ifndef UTIL_BSONUTIL_H_
 #define UTIL_BSONUTIL_H_
-#include <mongoc/src/libbson/src/bson/bson.h>
+#include "bson/bson.h"
 #include "util/json/CJsonObject.hpp"
 
 namespace util

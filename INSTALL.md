@@ -1,7 +1,6 @@
 
 # 编译依赖
-解压 deploy/3lib.zip到deploy/3lib
-如有编译符号找不到，则重新下载第三方库，重新编译并替换，第三方库所用版本参考code/3party/readme.txt
+第三方库所用版本参考 code/3party/readme.txt
 
 #   编译
 编译所有的服务器执行文件

@@ -9,7 +9,7 @@
  ******************************************************************************/
 #ifndef CLIENT_MONGODBOPERATOR_HPP_
 #define CLIENT_MONGODBOPERATOR_HPP_
-#include <mongoc/src/libbson/src/bson/bson.h>
+#include "bson/bson.h"
 #include "StorageOperator.hpp"
 
 namespace net
