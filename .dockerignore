@@ -1,0 +1,9 @@
+.git
+.gitmodules
+build
+.cmake
+*.o
+*.a
+*.so
+.vscode
+.idea

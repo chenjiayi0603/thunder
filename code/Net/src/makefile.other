@@ -12,7 +12,7 @@ CC = gcc
 CXX = g++
 #编译选项 -DDISABLE_COROUTINUE
 CFLAGS = -g -Og -Wno-error 
-CPPFLAGS = -g -Og -D_GNU_SOURCE=1 -D_REENTRANT -fPIC -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -std=c++11 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error -Wno-error=format-security
+CPPFLAGS = -g -Og -D_GNU_SOURCE=1 -D_REENTRANT -fPIC -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -std=c++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error -Wno-error=format-security
 #链接选项
 CXXFLAG = -g -Og -Wall -ggdb -m64 -Wl,--export-dynamic 
 
