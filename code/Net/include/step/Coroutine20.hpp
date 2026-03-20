@@ -29,6 +29,7 @@ namespace detail
 template<typename T>
 struct [[nodiscard]] Task
 {
+    using value_type = T;
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
 
@@ -114,6 +115,7 @@ private:
 template<>
 struct [[nodiscard]] Task<void>
 {
+    using value_type = void;
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
 

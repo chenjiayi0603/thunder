@@ -1,6 +1,6 @@
 CC = gcc
 CXX = g++
-CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wno-unused-variable -Wno-unused-function -Wno-pmf-conversions
+CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++20  -Wno-unused-variable -Wno-unused-function -Wno-pmf-conversions
 
 ifeq ($(unit_test),y)
 CXXFLAG += -DUNIT_TEST
@@ -39,16 +39,22 @@ DIRS := $(SUB_DIRS)
 INC := $(INC) \
        -I .. \
        -I $(PROTO_PATH) -I $(PROTO_PATH)/src -I $(PROTO_PATH)/include \
+       -I $(3PARTY_PATH)/protobuf/src \
+       -I $(3PARTY_PATH)/protobuf/build/_deps/absl-src \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/Util \
+       -I $(NET_PATH)/include \
        -I $(NET_PATH)/src 
 
-
+# 与 libProto / libprotobuf 一致：utf8_validity；业务使用 Crypto++ 需显式链接 libcryptopp
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(UTIL_PATH)/lib -lUtil \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
-           -L$(3PARTY_PATH)/lib -lprotobuf \
+           -L$(3PARTY_PATH)/lib -lcryptopp \
+           -L$(3PARTY_PATH)/protobuf/build \
+           -L$(3PARTY_PATH)/protobuf/build/third_party/utf8_range \
+           -lprotobuf -lutf8_validity \
            -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -ljemalloc \
            -L$(PROTO_PATH)/src -lProto \

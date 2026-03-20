@@ -106,6 +106,9 @@ protected:
 
     friend struct HttpRespAwaiter;
 
+protected:
+    std::string m_strStepDesc = "StepCo20";
+
 private:
     // 协程句柄
     std::coroutine_handle<> m_coroHandle;
@@ -127,7 +130,6 @@ private:
     // 错误信息
     int m_iErrno = 0;
     std::string m_strErrMsg;
-    std::string m_strStepDesc = "StepCo20";
 };
 
 /**

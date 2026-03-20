@@ -1,6 +1,7 @@
 CC = gcc
 CXX = g++
-CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++11  -Wstrict-overflow
+# 与 code/3party/protobuf 构建一致：protobuf 3.5+/7.x 生成代码需 C++17/20 与对应头路径
+CXXFLAG = -g -Og -fPIC -DNODE_BEAT=10.0 -Wall -Wno-deprecated-declarations -Wno-format -std=c++20 -Wstrict-overflow
 
 ARCH:=$(shell uname -m)
 
@@ -23,15 +24,21 @@ SUB_DIRS := $(VPATH)
 DIRS := $(SUB_DIRS)
 
 
+# protobuf 头必须优先于 code/3party/include（避免旧版 google/protobuf 与构建目录不一致）
 INC := $(INC) \
        -I $(PROTO_PATH) \
        -I $(PROTO_PATH)/src   \
        -I $(NET_PATH)/src \
-       -I $(3PARTY_PATH)/include 
+       -I $(3PARTY_PATH)/protobuf/src \
+       -I $(3PARTY_PATH)/protobuf/build/_deps/absl-src \
+       -I $(3PARTY_PATH)/include
 
-
+# 与 libprotobuf.so 一致：链 utf8_validity（libprotobuf 的 NEEDED）
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
-           -L$(3PARTY_PATH)/lib -lprotobuf \
+           -L$(3PARTY_PATH)/protobuf/build \
+           -L$(3PARTY_PATH)/protobuf/build/third_party/utf8_range \
+           -lprotobuf -lutf8_validity \
+           -L$(3PARTY_PATH)/lib \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -lc -ldl -lrt
 

@@ -31,7 +31,7 @@
 #include "step/RedisStep.hpp"
 #include "step/StepAuthRedis.hpp"
 #include "step/HttpStep.hpp"
-#include "step/sys_step/StepIoTimeout.hpp"
+#include "task/BaseTask.hpp"
 #include "session/Session.hpp"
 #include "cmd/sys_cmd/CmdConnectWorker.hpp"
 #include "cmd/sys_cmd/CmdToldWorker.hpp"
@@ -3045,7 +3045,7 @@ bool Worker::SendToNodeType(const std::string& strNodeType, const MsgHead& oMsgH
     return(true);
 }
 
-bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep)
+bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step* pStep)
 {
     LOG4_TRACE("%s(fd %d, seq %u)", __FUNCTION__, stMsgShell.iFd, stMsgShell.ulSeq);
     auto conn_iter = m_mapFdAttr.find(stMsgShell.iFd);
@@ -3124,9 +3124,9 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Http
                 }
                 else if (iWriteLen > 0)
                 {
-                    if (pHttpStep != nullptr)
+                    if (pStep != nullptr)
                     {
-                    	m_mapHttpAttr[stMsgShell.iFd].push_back(pHttpStep->GetSequence());
+                    	m_mapHttpAttr[stMsgShell.iFd].push_back(pStep->GetSequence());
                     }
 //                    else
 //                    {
@@ -3160,12 +3160,12 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Http
     }
 }
 
-bool Worker::SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep)
+bool Worker::SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep)
 {
     char szIdentify[256] = {0};
     snprintf(szIdentify, sizeof(szIdentify), "%s:%d%s", strHost.c_str(), iPort, strUrlPath.c_str());
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, szIdentify);
-    return(AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pHttpStep));
+    return(AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pStep));
     // 向外部发起http请求不复用连接
 //    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(szIdentify);
 //    if (shell_iter == m_mapMsgShell.end())
@@ -3279,7 +3279,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 	return(true);
 }
 
-bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep)
+bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep)
 {
     LOG4_TRACE("%s(%s, %d, %s)", __FUNCTION__, strHost.c_str(), iPort, strUrlPath.c_str());
     struct sockaddr addr;
@@ -3315,9 +3315,9 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		return(false);
 	}
 	connect(stMsgShell.iFd, &addr, sizeof(addr));
-	if (pHttpStep != nullptr)
+	if (pStep != nullptr)
 	{
-		m_mapHttpAttr[stMsgShell.iFd].push_back(pHttpStep->GetSequence());
+		m_mapHttpAttr[stMsgShell.iFd].push_back(pStep->GetSequence());
 	}
 //	else
 //	{
@@ -4799,12 +4799,23 @@ bool Worker::Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, H
                 auto step_iter = m_mapCallbackStep.find(*http_step_iter->second.begin());
                 if (step_iter != m_mapCallbackStep.end())   // 步骤回调
                 {
-                    E_CMD_STATUS eResult;
                     step_iter->second->SetActiveTime(ev_now(m_loop));
-                    eResult = ((HttpStep*)step_iter->second)->Callback(stMsgShell, oInHttpMsg);
-                    if (eResult != STATUS_CMD_RUNNING)
+                    BaseTask* pBaseTask = dynamic_cast<BaseTask*>(step_iter->second);
+                    if (pBaseTask != nullptr)
                     {
-                        DeleteCallback(step_iter->second);
+                        pBaseTask->ResumeWithHttpResponse(stMsgShell, oInHttpMsg);
+                        if (pBaseTask->IsCoroutineDone())
+                        {
+                            DeleteCallback(step_iter->second);
+                        }
+                    }
+                    else
+                    {
+                        E_CMD_STATUS eResult = ((HttpStep*)step_iter->second)->Callback(stMsgShell, oInHttpMsg);
+                        if (eResult != STATUS_CMD_RUNNING)
+                        {
+                            DeleteCallback(step_iter->second);
+                        }
                     }
                 }
                 else

@@ -104,7 +104,7 @@ public:     // Labor相关设置（由Cmd类或Step类调用这些方法完成La
 public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成数据交互，Worker类必须重新实现这些方法，Manager类可不实现）
 
    virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep) {return false;}
-   virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = nullptr){return false;}
+   virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr){return false;}
    /**
 	* @brief 自动连接并执行redis命令
 	* @param strHost redis服务所在IP
@@ -123,7 +123,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
    	 * @param oMsgBody 数据包体
    	 * @return 是否发送成功
    	 */
-   	virtual bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = nullptr){return(false);}
+   	virtual bool SentTo(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr){return(false);}
    	/*
    	 * @brief 服务器使用的发送到客户端接口
    	 * @note 为支持对不同客户端构造不同响应消息
@@ -185,7 +185,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
    	 * @param pHttpStep 步骤
    	 * @return 是否发送成功
    	 */
-   	virtual bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, HttpStep* pHttpStep = nullptr){return(false);}
+   	virtual bool SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step* pStep = nullptr){return(false);}
 	/**
 	 * @brief 发送数据到服务器
 	 * @note 发送数据到服务器
@@ -571,6 +571,7 @@ public:
 	 */
 	time_t GetNowTime() const {return((time_t)ev_now(m_loop));}
 	ev_tstamp GetTimeStamp() const {return(ev_now(m_loop));}
+	struct ev_loop* GetEvLoop() const { return m_loop; }
 
 	log4cplus::Logger GetLogger(){return(m_oLogger);}
 	log4cplus::Logger GetDataLogger(){return(m_oDataLogger);}

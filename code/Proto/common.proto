@@ -108,14 +108,14 @@ message session_info
     uint32 session_stage = 31;//会话状态0:会话未开始1:在会话中,2:会话已结束
 }
 
-message quality_control_option//质量会话选项（显示总分为各项之和）
+message quality_control_option //质量会话选项（显示总分为各项之和）
 {
     uint64 option_id = 1;//质检选项id（提交质检评价发送）
     bytes option_name = 2;//质检选项名称（服务态度,响应时间等,设置质检会话选项发送）
     float  judge_score = 3;// 质检选项评价分数 （提交质检评价发送）
     float  option_score = 4;// 质检选项分数（分数自定义）（设置质检会话选项发送）
 }
-message taboo_option//会话禁忌选项
+message taboo_option //会话禁忌选项
 {
     uint64 option_id = 1;// 禁忌选项id（提交质检评价发送）
     bytes option_name = 2;//禁忌选项名称（侮辱,敏感词等）（设置质检会话选项发送）

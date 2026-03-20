@@ -689,12 +689,12 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell,
         MsgBody oMsgBody;
         {//json to msg
             google::protobuf::util::JsonParseOptions oParseOptions;
-            google::protobuf::util::Status oStatus;
+            absl::Status oStatus;
             oStatus = google::protobuf::util::JsonStringToMessage(obj.ToString(), &oMsgBody, oParseOptions);
             if(!oStatus.ok())
             {
                 LOG4_WARN("failed to JsonStringToMessage(),error_code(%d),error_message(%s):%s",
-                                oStatus.error_code(),oStatus.error_message().data(),oInHttpMsg.body().c_str());
+                                static_cast<int>(oStatus.code()),std::string(oStatus.message()).c_str(),oInHttpMsg.body().c_str());
                 Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
                 return false;
             }
@@ -710,15 +710,15 @@ bool ModuleHello::TestJson2pb(const net::tagMsgShell& stMsgShell,
              */
         }
         {//msg to json
-            google::protobuf::util::JsonOptions oOptions;
+            google::protobuf::util::JsonPrintOptions oOptions;
             oOptions.add_whitespace = true;
-            google::protobuf::util::Status oStatus;
+            absl::Status oStatus;
             std::string strJson;
             oStatus = google::protobuf::util::MessageToJsonString(oMsgBody,&strJson,oOptions);
             if(!oStatus.ok())
             {
                 LOG4_WARN("failed to JsonStringToMessage(),error_code(%d),error_message(%s):%s",
-                                oStatus.error_code(),oStatus.error_message().data(),oInHttpMsg.body().c_str());
+                                static_cast<int>(oStatus.code()),std::string(oStatus.message()).c_str(),oInHttpMsg.body().c_str());
                 Response(stMsgShell,oInHttpMsg,robot::ERR_PARASE_PROTOBUF);
                 return false;
             }
@@ -1137,13 +1137,13 @@ void ModuleHello::TestJson2pbRepeatedFields()
     bar->set_test_bar7(7.7);
     std::string strJson;
     {//pb to json
-        google::protobuf::util::JsonOptions oOptions;
-        google::protobuf::util::Status oStatus;
+        google::protobuf::util::JsonPrintOptions oOptions;
+        absl::Status oStatus;
         oStatus = google::protobuf::util::MessageToJsonString(testProto,&strJson,oOptions);
         if(!oStatus.ok())
         {
             LOG4_WARN("test_proto3 failed to JsonStringToMessage(),error_code(%d),error_message(%s),testProto:%s",
-                            oStatus.error_code(),oStatus.error_message().data(),
+                            static_cast<int>(oStatus.code()),std::string(oStatus.message()).c_str(),
                             testProto.DebugString().c_str());
             return;
         }
@@ -1202,13 +1202,13 @@ void ModuleHello::TestJson2pbRepeatedFields()
         for(int i = 0;i < 10000;++i)
         {
             strTmpJson.clear();
-            google::protobuf::util::JsonOptions oOptions;
-            google::protobuf::util::Status oStatus;
+            google::protobuf::util::JsonPrintOptions oOptions;
+            absl::Status oStatus;
             oStatus = google::protobuf::util::MessageToJsonString(testProto,&strTmpJson,oOptions);
             if(!oStatus.ok())
             {
                 LOG4_WARN("test_proto3 failed to JsonStringToMessage(),error_code(%d),error_message(%s),testProto:%s",
-                                oStatus.error_code(),oStatus.error_message().data(),
+                                static_cast<int>(oStatus.code()),std::string(oStatus.message()).c_str(),
                                 testProto.DebugString().c_str());
                 return;
             }
@@ -1249,12 +1249,12 @@ void ModuleHello::TestJson2pbRepeatedFields()
     {//json 2 pb
         ::test_proto3 testProto1;
         google::protobuf::util::JsonParseOptions oParseOptions;
-        google::protobuf::util::Status oStatus;
+        absl::Status oStatus;
         oStatus = google::protobuf::util::JsonStringToMessage(strJson, &testProto1, oParseOptions);
         if(!oStatus.ok())
         {
             LOG4_WARN("test_proto3 failed to JsonStringToMessage,error_code(%d),error_message(%s),strJson:%s",
-                            oStatus.error_code(),oStatus.error_message().data(),strJson.c_str());
+                            static_cast<int>(oStatus.code()),std::string(oStatus.message()).c_str(),strJson.c_str());
             return;
         }
         LOG4_TRACE("test_proto3 JsonStringToMessage testProto1:%s,testProto1 descriptor:%s",
@@ -1297,12 +1297,12 @@ void ModuleHello::TestJson2pbRepeatedFields()
         {
         	::test_proto3 testProto2;
             google::protobuf::util::JsonParseOptions oParseOptions2;
-            google::protobuf::util::Status oStatus2;
+            absl::Status oStatus2;
             oStatus2 = google::protobuf::util::JsonStringToMessage(strJson, &testProto2, oParseOptions2);
             if(!oStatus2.ok())
             {
                 LOG4_WARN("test_proto3 failed to JsonStringToMessage,error_code(%d),error_message(%s),strJson:%s",
-                		oStatus2.error_code(),oStatus2.error_message().data(),strJson.c_str());
+                		static_cast<int>(oStatus2.code()),std::string(oStatus2.message()).c_str(),strJson.c_str());
                 return;
             }
         }

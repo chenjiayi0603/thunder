@@ -26,6 +26,8 @@ public:
      * @note 使用 co_await 语法编写异步逻辑，看起来像同步代码
      */
     virtual net::Task<> CoroutineMain() override;
+
+    void Response(int nCode);
     
 private:
     uint32 m_uiTestVal = 0;

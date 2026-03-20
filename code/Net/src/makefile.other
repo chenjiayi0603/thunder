@@ -67,7 +67,9 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -lmariadb \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lcryptopp \
-           -L$(3PARTY_PATH)/lib -lprotobuf $(ABSL_LINK) \
+           -L$(3PARTY_PATH)/lib -lprotobuf \
+           -L$(3PARTY_PATH)/protobuf/build/third_party/utf8_range -lutf8_validity \
+           $(ABSL_LINK) \
            -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -lev \
            -L$(3PARTY_PATH)/lib -ljemalloc \
