@@ -34,6 +34,9 @@ SYSTEM_LIB_PATH:=/usr/lib
 endif
 3PARTY_PATH = ../../3party
 UTIL_PATH = ../../Util
+# protobuf 35 依赖的 Abseil 静态库（与 3party/protobuf 构建一致；不修改 3party 仅引用路径）
+ABSL_ARCHIVES := $(shell find $(3PARTY_PATH)/protobuf/build/_deps/absl-build -name 'libabsl*.a' 2>/dev/null)
+ABSL_LINK := -Wl,--start-group $(ABSL_ARCHIVES) -Wl,--end-group
 
 NET_PATH = ..
 
@@ -46,6 +49,8 @@ DIRS := $(SUB_DIRS)
 
 
 INC := $(INC) \
+       -I $(3PARTY_PATH)/protobuf/src \
+       -I $(3PARTY_PATH)/protobuf/build/_deps/absl-src \
        -I $(3PARTY_PATH)/include \
        -I $(3PARTY_PATH)/include/mariadb \
        -I $(3PARTY_PATH)/include/mongoc -I $(3PARTY_PATH)/include/bson \
@@ -57,10 +62,12 @@ INC := $(INC) \
 
 LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(UTIL_PATH)/lib -lUtil \
+           -L$(3PARTY_PATH)/protobuf/build \
+           -L$(3PARTY_PATH)/protobuf/build/third_party/utf8_range \
            -L$(3PARTY_PATH)/lib -lmariadb \
            -L$(3PARTY_PATH)/lib -lhiredis_vip \
            -L$(3PARTY_PATH)/lib -lcryptopp \
-           -L$(3PARTY_PATH)/lib -lprotobuf \
+           -L$(3PARTY_PATH)/lib -lprotobuf $(ABSL_LINK) \
            -L$(3PARTY_PATH)/lib -llog4cplus \
            -L$(3PARTY_PATH)/lib -lev \
            -L$(3PARTY_PATH)/lib -ljemalloc \

@@ -7,6 +7,8 @@
  * Modify history:
  ******************************************************************************/
 #include "Interface.hpp"
+#include "absl/status/status.h"
+#include "google/protobuf/util/json_util.h"
 #include "labor/Labor.hpp"
 #include "step/MysqlStep.hpp"
 #include "step/RedisStep.hpp"
@@ -114,7 +116,7 @@ bool Json2Pb(const std::string &strJson,google::protobuf::Message &message)
 	if (strJson.size() > 0)//json
     {
         google::protobuf::util::JsonParseOptions oOption;
-        google::protobuf::util::Status oStatus = google::protobuf::util::JsonStringToMessage(strJson,&message, oOption);
+        absl::Status oStatus = google::protobuf::util::JsonStringToMessage(strJson,&message, oOption);
         if(!oStatus.ok())
         {
             LOG4_ERROR("%s() json sbody to MsgBody error(%s)!strJson(%s) message.descriptor(%s)",
@@ -131,11 +133,11 @@ bool Json2Pb(const std::string &strJson,google::protobuf::Message &message)
 bool Pb2Json(const google::protobuf::Message &message, std::string &strJson)
 {
 	google::protobuf::util::JsonPrintOptions oOption;
-	oOption.always_print_primitive_fields = true;
-	google::protobuf::util::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
+	oOption.always_print_fields_with_no_presence = true;
+	absl::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
 	if(!oStatus.ok())
 	{
-		LOG4_ERROR("%s() MessageToJsonString failed error(%u,%s)",__FUNCTION__,oStatus.error_code(),oStatus.error_message().ToString().c_str());
+		LOG4_ERROR("%s() MessageToJsonString failed error(%s)",__FUNCTION__,oStatus.ToString().c_str());
 		return false;
 	}
 	return true;
@@ -145,11 +147,11 @@ bool Pb2Json(const google::protobuf::Message &message, util::CJsonObject& oJson)
 {
 	std::string strJson;
 	google::protobuf::util::JsonPrintOptions oOption;
-	oOption.always_print_primitive_fields = true;
-	google::protobuf::util::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
+	oOption.always_print_fields_with_no_presence = true;
+	absl::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
 	if(!oStatus.ok())
 	{
-		LOG4_ERROR("%s() MessageToJsonString failed error(%u,%s)",__FUNCTION__,oStatus.error_code(),oStatus.error_message().ToString().c_str());
+		LOG4_ERROR("%s() MessageToJsonString failed error(%s)",__FUNCTION__,oStatus.ToString().c_str());
 		return false;
 	}
 	if (!oJson.Parse(strJson))

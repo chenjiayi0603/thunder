@@ -9,6 +9,8 @@
  * Modify history:
  ******************************************************************************/
 #include "hiredis_vip/adapters/libev.h"
+#include "absl/status/status.h"
+#include "google/protobuf/util/json_util.h"
 #include "protocol/oss_sys.pb.h"
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
@@ -2293,7 +2295,7 @@ bool Worker::ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &m
 	else if (oInMsgBody.sbody().size() > 0)//websocket json
     {
         google::protobuf::util::JsonParseOptions oOption;
-        google::protobuf::util::Status oStatus = google::protobuf::util::JsonStringToMessage(oInMsgBody.sbody(),&message, oOption);
+        absl::Status oStatus = google::protobuf::util::JsonStringToMessage(oInMsgBody.sbody(),&message, oOption);
         if(!oStatus.ok())
         {
             LOG4_ERROR("%s() json sbody to MsgBody error(%s)!sbody(%s) message.descriptor(%s)",
@@ -2381,10 +2383,10 @@ bool Worker::BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::prot
     {
         std::string strJson;
         google::protobuf::util::JsonPrintOptions oOption;
-        google::protobuf::util::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
+        absl::Status oStatus = google::protobuf::util::MessageToJsonString(message,&strJson,oOption);
         if(!oStatus.ok())
         {
-            LOG4_ERROR("MessageToJsonString failed error(%u,%s)",oStatus.error_code(),oStatus.error_message().ToString().c_str());
+            LOG4_ERROR("MessageToJsonString failed error(%s)",oStatus.ToString().c_str());
             return false;
         }
         oMsgBody.set_sbody(strJson);

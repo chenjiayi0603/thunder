@@ -8,6 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <netinet/in.h>
+#include "absl/status/status.h"
 #include "google/protobuf/util/json_util.h"
 #include "CodecWebSocketJson.hpp"
 
@@ -238,11 +239,10 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
         if(oSwitchMsgBody.sbody().size() > 0)
         {
             google::protobuf::util::JsonPrintOptions oJsonOption;
-            google::protobuf::util::Status oStatus = google::protobuf::util::MessageToJsonString(oSwitchMsgBody, &strJsonMsg, oJsonOption);
+            absl::Status oStatus = google::protobuf::util::MessageToJsonString(oSwitchMsgBody, &strJsonMsg, oJsonOption);
             if (!oStatus.ok())
             {
-                LOG4_ERROR("failed to MessageToJsonString error(%u,%s)",oStatus.error_code(),
-                                oStatus.error_message().ToString().c_str());
+                LOG4_ERROR("failed to MessageToJsonString error(%s)",oStatus.ToString().c_str());
                 return (CODEC_STATUS_ERR);
             }
         }
@@ -1376,7 +1376,7 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
             return (CODEC_STATUS_PAUSE);
         }
         google::protobuf::util::JsonParseOptions oParseOptions;
-        google::protobuf::util::Status oStatus;
+        absl::Status oStatus;
         if (stMsgHead.encript == 0)       // 未压缩也未加密
         {
             std::string strJsonBody;
@@ -1389,9 +1389,9 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
             oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
             if(!oStatus.ok())
             {
-                LOG4_ERROR("cmd[%u],seq[%lu] json string to MsgBody error(%d,%s)!strJsonBody(%s)",
+                LOG4_ERROR("cmd[%u],seq[%lu] json string to MsgBody error(%s)!strJsonBody(%s)",
                                     oMsgHead.cmd(),oMsgHead.seq(),
-                                    oStatus.error_code(),oStatus.error_message().ToString().c_str(),
+                                    oStatus.ToString().c_str(),
                                     strJsonBody.c_str());
                 return (CODEC_STATUS_ERR);
             }
@@ -1465,9 +1465,9 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
                 if(!oStatus.ok())
                 {
-                    LOG4_ERROR("cmd[%u],seq[%u] json string to MsgBody error(%d,%s)!strUncompressData(%s)",
+                    LOG4_ERROR("cmd[%u],seq[%u] json string to MsgBody error(%s)!strUncompressData(%s)",
                                         oMsgHead.cmd(),oMsgHead.seq(),
-                                        oStatus.error_code(),oStatus.error_message().ToString().c_str(),
+                                        oStatus.ToString().c_str(),
                                         strUncompressData.c_str());
                     return (CODEC_STATUS_ERR);
                 }
@@ -1480,9 +1480,9 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
                 if(!oStatus.ok())
                 {
-                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%u,%s)!strDecryptData(%s)",
+                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%s)!strDecryptData(%s)",
                                         oMsgHead.cmd(), oMsgHead.seq(),
-                                        oStatus.error_code(),oStatus.error_message().ToString().c_str(),
+                                        oStatus.ToString().c_str(),
                                         strDecryptData.c_str());
                     return (CODEC_STATUS_ERR);
                 }
@@ -1502,9 +1502,9 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
                 if(!oStatus.ok())
                 {
-                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%u,%s)!strJsonBody(%s)",
+                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%s)!strJsonBody(%s)",
                                         oMsgHead.cmd(), oMsgHead.seq(),
-                                        oStatus.error_code(),oStatus.error_message().ToString().c_str(),
+                                        oStatus.ToString().c_str(),
                                         strJsonBody.c_str());
                     return (CODEC_STATUS_ERR);
                 }
