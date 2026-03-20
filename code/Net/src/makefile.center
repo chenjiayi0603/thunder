@@ -46,6 +46,7 @@ INC := $(INC) \
        -I $(3PARTY_PATH)/include/mongoc -I $(3PARTY_PATH)/include/bson \
        -I $(3PARTY_PATH)/include/libev \
        -I $(UTIL_PATH)/src -I $(UTIL_PATH)/src/util \
+       -I $(NET_PATH)/include \
        -I $(NET_PATH)/src 
 
 

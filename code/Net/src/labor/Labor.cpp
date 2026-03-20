@@ -7,6 +7,7 @@
  * @note
  * Modify history:
  ******************************************************************************/
+#include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
 #include "Labor.hpp"
@@ -253,8 +254,8 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
         log4cplus::initialize();
         log4cplus::SharedAppenderPtr file_append(new log4cplus::RollingFileAppender(strLogname, iMaxLogFileSize, iMaxLogFileNum));
         file_append->setName(strLogname);
-        std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
-        file_append->setLayout(layout);
+        std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
+        file_append->setLayout(std::move(layout));
         //log4cplus::Logger::getRoot().addAppender(file_append);
         m_oLogger = log4cplus::Logger::getInstance(strLogname);
         m_oLogger.setLogLevel(iLogLevel);
@@ -266,7 +267,7 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
 			ssServerName << strServerName;
             log4cplus::SharedAppenderPtr socket_append(new log4cplus::SocketAppender(strLoggingHost, iLoggingPort, ssServerName.str()));
             socket_append->setName(ssServerName.str());
-            socket_append->setLayout(layout);
+            socket_append->setLayout(std::unique_ptr<log4cplus::Layout>(new log4cplus::PatternLayout(strParttern)));
             socket_append->setThreshold(log4cplus::INFO_LOG_LEVEL);
             m_oLogger.addAppender(socket_append);
         }
@@ -299,7 +300,7 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 			int32 iMaxLogFileNum = 10;
 			int32 iMaxHistory = 24 * 2;//48
 			int32 iLogLevel = log4cplus::INFO_LOG_LEVEL;
-			uint32 iLogschedule = log4cplus::HOURLY;//enum DailyRollingFileSchedule { MONTHLY, WEEKLY, DAILY, TWICE_DAILY, HOURLY, MINUTELY};
+			uint32 iLogschedule = static_cast<uint32>(log4cplus::DailyRollingFileSchedule::HOURLY);//enum class DailyRollingFileSchedule
 			std::string strDataLogPath = "data/";
 			std::string strParttern = "%m%n";
 			std::string fileExt = ".data";
@@ -330,13 +331,13 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 					bImmediateFlush,bCreateDirs,bRollOnClose,""));
 			//std::string strName = "MingingLog";
 			file_append->setName(strLogPreName);
-			std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
-			file_append->setLayout(layout);
+			std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
+			file_append->setLayout(std::move(layout));
 			//log4cplus::Logger::getRoot().addAppender(file_append);
 			m_oDataLogger = log4cplus::Logger::getInstance(strLogPreName);
 			m_oDataLogger.setLogLevel(iLogLevel);
 			m_oDataLogger.addAppender(file_append);
-			LOG4_INFO("max_log_file_size(%ld) log_schedule(%u) max_log_file_num(%d)",iMaxLogFileSize,iLogschedule,iMaxLogFileNum);
+			LOG4_INFO("max_log_file_size(%lld) log_schedule(%u) max_log_file_num(%d)",(long long)iMaxLogFileSize,iLogschedule,iMaxLogFileNum);
 			LOG4_INFO("log_level(%d) bCreateDirs(%d) bRollOnClose(%d) iStartTryCleanFile(%d) iMaxTryCleanFile(%d)",
 							iLogLevel,bCreateDirs,bRollOnClose,iStartTryCleanFile,iMaxTryCleanFile);
 			m_bDataInitLogger = true;

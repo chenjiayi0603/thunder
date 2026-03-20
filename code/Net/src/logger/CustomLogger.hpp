@@ -15,7 +15,7 @@ class CustomDailyRollingFileAppender : public log4cplus::DailyRollingFileAppende
 public:
   // Ctors
 	CustomDailyRollingFileAppender(const log4cplus::tstring& filename,
-			log4cplus::DailyRollingFileSchedule schedule = log4cplus::DAILY,
+			log4cplus::DailyRollingFileSchedule schedule = log4cplus::DailyRollingFileSchedule::DAILY,
 			long maxFileSize_ = 10*1024*1024, // 10 MB
 			int maxBackupIndex_ = 10,
 			bool immediateFlush = true,
@@ -42,7 +42,7 @@ public:
 	  // Ctors
 	FixDailyRollingFileAppender(
 				const log4cplus::tstring& filename,const log4cplus::tstring& fileExt_,
-				log4cplus::DailyRollingFileSchedule schedule = log4cplus::HOURLY,
+				log4cplus::DailyRollingFileSchedule schedule = log4cplus::DailyRollingFileSchedule::HOURLY,
 				long maxFileSize_ = 10*1024*1024, int maxBackupIndex_ = 10,int maxHistory_ = 48,
 				int startTryCleanFile_ = 1,int maxTryCleanFile_ = 3,
 				bool immediateFlush = true,bool createDirs = false,bool rollOnClose = false,
