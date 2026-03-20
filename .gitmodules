@@ -1,9 +1,6 @@
 [submodule "code/3party/libev"]
 	path = code/3party/libev
 	url = https://github.com/enki/libev.git
-[submodule "code/3party/leveldb"]
-	path = code/3party/leveldb
-	url = https://github.com/google/leveldb.git
 [submodule "code/3party/hiredis-vip"]
 	path = code/3party/hiredis-vip
 	url = https://github.com/vipshop/hiredis-vip.git

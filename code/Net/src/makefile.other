@@ -70,7 +70,6 @@ LDFLAGS := $(LDFLAGS) -D_LINUX_OS_ \
            -L$(3PARTY_PATH)/lib -lcares \
            -L$(3PARTY_PATH)/lib -lcurl \
            -L$(3PARTY_PATH)/lib -lmongoc2 -L$(3PARTY_PATH)/lib -lbson2 \
-           -L$(3PARTY_PATH)/lib -lleveldb \
            -L$(SYSTEM_LIB_PATH) -lpthread \
            -L$(SYSTEM_LIB_PATH) -lz -lc -ldl -lrt -lssl
 

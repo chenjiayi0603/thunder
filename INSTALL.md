@@ -1,6 +1,6 @@
 
 # 编译依赖
-第三方库所用版本参考 code/3party/readme.txt
+第三方库说明与 **CMake 统一编译** 见 **`code/3party/readme.md`**；简要路径说明见 `code/3party/readme.txt`。
 
 #   编译（CMake，推荐）
 在仓库根目录或 `code/` 下使用封装脚本：

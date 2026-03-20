@@ -42,7 +42,6 @@ target_include_directories(Util PRIVATE
   "${THUNDER_3PARTY}/include/mongoc/src/libbson/src/bson"
   "${THUNDER_3PARTY}/include/mongoc"
   "${THUNDER_3PARTY}/include/bson"
-  "${THUNDER_3PARTY}/include/leveldb/include"
 )
 
 target_link_options(Util PRIVATE
@@ -61,11 +60,10 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# makefile: -lev -ljemalloc -lleveldb -lbson2 -lmongoc2 -lpthread -lc -ldl -lrt
+# makefile: -lev -ljemalloc -lbson2 -lmongoc2 -lpthread -lc -ldl -lrt
 target_link_libraries(Util PRIVATE
   ev
   jemalloc
-  leveldb
   bson2
   mongoc2
   Threads::Threads

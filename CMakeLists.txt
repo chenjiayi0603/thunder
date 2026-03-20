@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(Thunder LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -24,8 +24,14 @@ include(ThunderCommon)
 option(THUNDER_BUILD_CENTER "Build Center 可执行文件（-DNODE_TYPE_CENTER，对应 makefile.center）" ON)
 option(THUNDER_BUILD_HELLO_PLUGINS "Build Hello ModuleHello.so 插件" ON)
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
+# 第三方库超级构建（code/3party/CMakeLists.txt），默认仅注册目标，不随主工程 all 一起编；见 target thirdparty_deploy
+option(THUNDER_INCLUDE_3PARTY "包含第三方库 CMake 目标（thunder_3party_all、thirdparty_deploy）" ON)
 
 find_package(Threads REQUIRED)
+
+if(THUNDER_INCLUDE_3PARTY)
+  add_subdirectory(code/3party EXCLUDE_FROM_ALL)
+endif()
 
 add_subdirectory(code/Util)
 add_subdirectory(code/Proto)

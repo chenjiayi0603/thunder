@@ -39,8 +39,7 @@ target_include_directories(ModuleHello PRIVATE
   "${THUNDER_3PARTY}/include/mariadb"
 )
 
-find_library(_protobuf_lib protobuf PATHS "${THUNDER_3PARTY}/protobuf/build" NO_DEFAULT_PATH REQUIRED)
-find_library(_utf8_validity utf8_validity PATHS "${THUNDER_3PARTY}/protobuf/build/third_party/utf8_range" NO_DEFAULT_PATH REQUIRED)
+thunder_resolve_protobuf_shared_libs(_protobuf_lib _utf8_validity)
 
 target_link_directories(ModuleHello PRIVATE
   "${THUNDER_3PARTY}/lib"

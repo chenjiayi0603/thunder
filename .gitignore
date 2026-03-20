@@ -24,6 +24,7 @@ deploy/Hello/bin/Hello
 deploy/3lib.zip
 *.log.*
 build
+code/3party/build-3party/
 code/Net/src/Hello
 code/Net/src/Logic
 code/Net/src/Interface
