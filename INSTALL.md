@@ -2,15 +2,27 @@
 # 编译依赖
 第三方库所用版本参考 code/3party/readme.txt
 
-#   编译
-编译所有的服务器执行文件
-code/make.sh all
+#   编译（CMake，推荐）
+在仓库根目录或 `code/` 下使用封装脚本：
 
-编译 proto、Net、Util
-code/make_libs.sh all
+```bash
+cd code && ./make.sh all
+```
 
-编译 所有plugins
-code/make_plugins.sh all
+等价于（仓库根目录）：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j$(nproc)
+cmake --install build
+```
+
+详见 `cmake/BUILD.md`。单 target：`./make.sh Util`、`Proto`、`Net`、`plugin` 等。
+
+多节点插件（Center/Logic/Interface 等子目录）仍可用 `code/plugins.sh`；Hello 的 `ModuleHello.so` 由 CMake 构建。
+
+#   旧说明（已弃用 makefile 主路径）
+# code/make_libs.sh / make_plugins.sh 若仍存在，以仓库内实际脚本为准
 
 # 编译脚本配置说明
 脚本时间通知配置

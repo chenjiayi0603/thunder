@@ -11,4 +11,7 @@
 逻辑服务器       Logic 
 登录			Interface
 
-编译使用在脚本make.sh中有注释说明
+编译（推荐 CMake，在仓库根或 code 目录使用 make.sh 封装）：
+  cd code && ./make.sh all
+  等价：cmake -S .. -B ../build && cmake --build ../build -j$(nproc) && cmake --install ../build
+  说明见仓库根 INSTALL.md、cmake/BUILD.md

@@ -1,4 +1,9 @@
 #!/bin/bash 
+# 多节点插件（plugins.conf：Center / Hello / Interface / Logic 等）仍按各子目录 Makefile 编译并拷贝到 deploy。
+#
+# Hello 的 ModuleHello.so 已由根目录 CMake 构建，推荐：
+#   ./make.sh plugin   或   ./make.sh all
+#
 #编译目录
 MAKE_PATH=`pwd`
 RUN_PATH=${MAKE_PATH}/../deploy

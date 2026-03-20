@@ -1,239 +1,155 @@
-#!/bin/bash
-: << !
-编译脚本说明：
+#!/usr/bin/env bash
+# =============================================================================
+# Thunder 构建入口（已改为 CMake，不再调用 Util/Net 下 makefile）
+#
+# 在 code/ 目录执行，例如：
+#   ./make.sh all              # gen_proto + cmake 全量编译（默认 build/）
+#   ./make.sh Util|Proto|Net|plugin
+#   ./make.sh clean            # cmake --build ... --target clean
+#   ./make.sh install          # cmake --install（默认安装到 ../deploy）
+#   ./make.sh first            # 全量编译 + cmake --install + deploy/install.sh first + restart_nodes
+#
+# 等价于在仓库根目录：
+#   cmake -S . -B build && cmake --build build -j$(nproc) && cmake --install build
+#
+# 环境变量：
+#   THUNDER_BUILD_DIR   构建目录，默认 <仓库根>/build
+#   CMAKE_BUILD_TYPE    默认 RelWithDebInfo
+#   THUNDER_CMAKE_ARGS  追加传给 cmake 配置，如 -DTHUNDER_BUILD_CENTER=OFF
+# =============================================================================
 
-第一次编译并且部署(需要编译哪些可执行文件节点，则配置 server.dep)
-./make.sh first
+: <<'DOC'
+历史说明（原 make.sh + makefile 流程已废弃）：
+  原 ./make.sh Util / Net 曾调用 Util/makefile、Net/src/makefile。
+  现统一由根目录 CMakeLists.txt 生成 Ninja/Makefile 并构建。
+DOC
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+THUNDER_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_DIR="${THUNDER_BUILD_DIR:-${THUNDER_ROOT}/build}"
+JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
-编译全部(需要编译哪些可执行文件节点，则配置 server.dep)
-./make.sh all
+function Usage() {
+  cat <<EOF
+用法（在 code/ 目录下）: ./make.sh <命令>
 
-编译Net.so和可执行文件(需要编译哪些可执行文件节点，则配置 server.dep)
-./make.sh Net
+  all       运行 Proto/codegen + CMake 全量编译（Util、Proto、Net、Hello、Center 等）
+  Util      仅构建 target Util（libUtil.so）
+  Proto     运行 gen_proto.sh + 构建 target Proto
+  Net       仅构建 target Net
+  plugin    仅构建 Hello 插件 target ModuleHello
+  clean     cmake --build ... --target clean
+  install   cmake --install（CMAKE_INSTALL_PREFIX 默认 ../deploy）
+  first     全量编译 + cmake --install + deploy/install.sh first + restart_nodes.sh all
+  firstrun  仅 deploy/install.sh first + restart_nodes（不编译）
+  run       deploy/restart_nodes.sh all
 
-编译Util.so
-./make.sh Util
+其他：
+  多节点插件（Center、Logic、Interface 等）仍用 ./plugins.sh（见 plugins.conf）；协议见 ./make.sh Proto
 
-编译插件逻辑so
-./plugins.sh all
-
-编译proto的so
-./proto.sh 
-
-!
-
-
-MAKE_PATH=`pwd`
-RUN_PATH=${MAKE_PATH}/../deploy
-cd ${MAKE_PATH}
-
-util_so=libUtil.so
-net_so=libNet.so
-
-function Usage()
-{
-	echo -e "plugins.conf is plugins conf dir,like  HelloServer 	/HelloServer/src  /plugins/HelloServer"
-	echo -e "configure plugins.conf before compilation"
-    echo -e "Usage: $0 [OPTION]..."
-    echo -e "options: ./`basename $0` [-h|--help/Util/Net/Proto/all/plugin/clean/install]"
+构建目录: ${BUILD_DIR}
+并行任务: ${JOBS}（可用环境变量 JOBS 覆盖）
+EOF
 }
 
-if [ $# -lt 1 ]; then 
-    Usage
-	exit 1; 
+function make_dir() {
+  find "${SCRIPT_DIR}" -maxdepth 6 -type f -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
+  mkdir -p "${THUNDER_ROOT}/deploy/lib"
+  if [[ ! -e "${SCRIPT_DIR}/3party/lib" ]] && [[ -d "${THUNDER_ROOT}/deploy/3lib" ]]; then
+    ln -sfn "${THUNDER_ROOT}/deploy/3lib" "${SCRIPT_DIR}/3party/lib"
+  fi
+}
+
+function thunder_cmake_configure() {
+  cmake -S "${THUNDER_ROOT}" -B "${BUILD_DIR}" \
+    -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-RelWithDebInfo}" \
+    ${THUNDER_CMAKE_ARGS:-}
+}
+
+function thunder_cmake_build() {
+  local -a extra=()
+  [[ -n "${1:-}" ]] && extra=(--target "$1")
+  thunder_cmake_configure
+  cmake --build "${BUILD_DIR}" "${extra[@]}" --parallel "${JOBS}"
+}
+
+function thunder_cmake_install() {
+  cmake --install "${BUILD_DIR}"
+}
+
+function run_gen_proto() {
+  if [[ -x "${SCRIPT_DIR}/Proto/src/gen_proto.sh" ]]; then
+    (cd "${SCRIPT_DIR}/Proto/src" && ./gen_proto.sh)
+  elif [[ -f "${SCRIPT_DIR}/Proto/src/gen_proto.sh" ]]; then
+    (cd "${SCRIPT_DIR}/Proto/src" && bash ./gen_proto.sh)
+  fi
+}
+
+function do_first() {
+  run_gen_proto
+  thunder_cmake_build
+  thunder_cmake_install
+  (cd "${THUNDER_ROOT}/deploy" && ./install.sh first)
+  (cd "${THUNDER_ROOT}/deploy" && ./restart_nodes.sh all)
+}
+
+function do_firstrun() {
+  (cd "${THUNDER_ROOT}/deploy" && ./install.sh first)
+  (cd "${THUNDER_ROOT}/deploy" && ./restart_nodes.sh all)
+}
+
+function do_run() {
+  (cd "${THUNDER_ROOT}/deploy" && ./restart_nodes.sh all)
+}
+
+# -----------------------------------------------------------------------------
+
+if [[ $# -lt 1 ]]; then
+  Usage
+  exit 1
 fi
 
-function CleanUtil()
-{
-	if [ -d ${MAKE_PATH}/Net/src ];then
-		cd ${MAKE_PATH}/Util
-	    make clean
-	    rm -rf ${MAKE_PATH}/Util/*.o ${MAKE_PATH}/Util/*.so
-	    test -f ${RUN_PATH}/lib/libUtil.so && unlink  ${RUN_PATH}/lib/libUtil.so    
-    else
-	    echo "clear no lib"
-	fi
-}
+make_dir
 
-function MakeUtil()
-{
-	if [ -d ${MAKE_PATH}/Util ];then
-   		echo "making ${util_so}"
-   		CleanUtil
-	    cd ${MAKE_PATH}/Util
-	    make 
-	    echo "${RUN_PATH}/lib"
-	    ls -l  ${RUN_PATH}/lib
-	    return 0 
-   	else
-   		echo "make no lib"    
-   		return 1 
+case "$1" in
+  -h|--help|help)
+    Usage
+    ;;
+  Util|Net|Center|Hello|ModuleHello)
+    thunder_cmake_build "$1"
+    ;;
+  Proto)
+    run_gen_proto
+    thunder_cmake_build Proto
+    ;;
+  plugin)
+    thunder_cmake_build ModuleHello
+    ;;
+  all)
+    run_gen_proto
+    thunder_cmake_build
+    ;;
+  clean)
+    if [[ -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
+      cmake --build "${BUILD_DIR}" --target clean --parallel "${JOBS}"
+    else
+      echo "提示: 尚未配置 ${BUILD_DIR}，跳过 clean"
     fi
-}
-
-function CleanNet()
-{
-	if [ -d ${MAKE_PATH}/Net/src ];then
-		cd ${MAKE_PATH}/Net/src
-	    make clean 
-	    test -f ${RUN_PATH}/lib/${net_so} && unlink  ${RUN_PATH}/lib/${net_so}
-    else
-    	echo "clear no Net"
-	fi
-}
-
-function MakeNet()
-{
-	if [ -d ${MAKE_PATH}/Net/src ];then
-	    CleanNet
-	    echo "making ${net_so}"
-	    cd ${MAKE_PATH}/Net/src
-	    make # && find  ${MAKE_PATH}/Net/src -type f -name "*Server" | xargs -i cp -v {} ${RUN_PATH}/bin && \
-	    cp -v ${MAKE_PATH}/Net/src/${net_so} ${RUN_PATH}/lib 
-	    echo "${RUN_PATH}/bin"
-	    ls -l ${RUN_PATH}/bin 
-	    echo "${RUN_PATH}/lib"
-	    ls -l ${RUN_PATH}/lib 
-	    return 0
-    else
-		echo "make no Net"    
-		return 1 
-	fi
-}
-
-function CleanProto()
-{
-	cd ${MAKE_PATH} && ./proto.sh clean
-}
-
-function MakeProto()
-{
-	cd ${MAKE_PATH} && ./proto.sh all
-}
-
-function CleanPlugins()
-{
-	cd ${MAKE_PATH} && ./plugins.sh clean
-}
-
-function MakePlugins()
-{
-	cd ${MAKE_PATH} && ./plugins.sh all
-}
-
-function MakeDir()
-{
-	#准备工作
-	find ./ -maxdepth 5 -type f -name "*.sh"  |xargs -i chmod +x {}
-	test ! -d ${RUN_PATH}/lib && mkdir ${RUN_PATH}/lib
-	test ! -d ${MAKE_PATH}/3party/lib && test -d ${RUN_PATH}/3lib && ln -s ${RUN_PATH}/3lib ${MAKE_PATH}/3party/lib 
-}
-
-function CleanDeploy()
-{
-	#清除
-	cd ${RUN_PATH} && ./clean.sh all
-}
-
-function InstallDeploy()
-{
-	#安装
-	cd ${RUN_PATH} && ./install.sh all
-}
-
-function InstallFirst()
-{
-	#第一次安装
-	cd ${RUN_PATH} && ./install.sh first
-}
-
-function RunDeploy()
-{
-	#运行
-	cd ${RUN_PATH} && ./restart_nodes.sh all
-}
-
-MakeDir
-
-while  true :
-do
-    case "$1" in
-        -h|--help)
-            Usage
-            break
-            ;;
-        Util)
-            MakeUtil
-            break
-            ;;
-        Net)
-            MakeNet
-            break
-            ;;
-        clean)
-        	CleanProto
-            CleanUtil
-    		CleanNet
-    		CleanPlugins
-            break
-            ;;
-        install)
-            CleanDeploy
-            InstallDeploy
-            break
-            ;;
-        all)
-        	#清理
-        	CleanProto
-            CleanUtil
-    		CleanNet
-    		CleanPlugins
-			#编译
-			cd ${MAKE_PATH} && MakeUtil && MakeNet && MakeProto && MakePlugins
-            break
-            ;;
-        Proto)
-            MakeProto
-            break
-            ;;
-        plugin)
-            MakePlugins
-            break
-            ;;
-        first)
-        	#清除
-        	CleanDeploy
-        	CleanProto
-        	CleanUtil
-    		CleanNet
-        	CleanPlugins
-        	
-			#编译
-			cd ${MAKE_PATH} && MakeUtil && MakeNet && MakeProto && MakePlugins
-
-		    #安装
-		    InstallFirst
-		    
-		    #运行
-		    RunDeploy
-            break
-            ;;
-        firstrun)
-        	#安装
-		    InstallFirst
-		    #运行
-		    RunDeploy
-            break
-			;;
-        run)
-            RunDeploy
-            break
-            ;;
-        *)
-            Usage
-            break
-            ;;
-    esac
-done
- 
+    ;;
+  install)
+    thunder_cmake_install
+    ;;
+  first)
+    do_first
+    ;;
+  firstrun)
+    do_firstrun
+    ;;
+  run)
+    do_run
+    ;;
+  *)
+    Usage
+    exit 1
+    ;;
+esac

@@ -10,15 +10,16 @@ find ./ -name "*.sh" |xargs -i chmod +x {}
 解压第三方库
 tar xvf 3lib.tar.gz 
 
-第一次编译、部署和运行(在目录code)：
+第一次编译、部署和运行(在目录 code)：
 ./make.sh first
 
 其他常用操作(一键部署中已包含)：
 第一次安装依赖库(需要安装rar)
 ./install.sh first
 
-编译所有代码
-cd  ../code && ./make.sh all
+编译所有代码（CMake）
+cd ../code && ./make.sh all
+# 等价：在仓库根执行 cmake -S . -B build && cmake --build build && cmake --install build
 
 安装所有文件
 ./install.sh all
@@ -36,39 +37,25 @@ cd  ../code && ./make.sh all
 代码目录
 /app/thunder/code
 
-# 编译脚本(在目录code) #
-第一次编译并且部署(需要编译哪些可执行文件节点，则配置 server.dep)
+# 编译脚本(在目录 code，已统一为 CMake) #
+第一次编译并且部署
 ./make.sh first
 
-
-编译全部(需要编译哪些可执行文件节点，则配置 server.dep)
+编译全部
 ./make.sh all
 
-编译Net.so和可执行文件(需要编译哪些可执行文件节点，则配置 server.dep)
+单 target 示例
 ./make.sh Net
-
-编译Util.so
 ./make.sh Util
+./make.sh plugin
 
-编译插件逻辑so
+多节点插件（Center/Logic/Interface 等）仍可用
 ./plugins.sh all
 
-编译proto的so
-./proto.sh 
+协议（会先 gen_proto）
+./make.sh Proto
 
-
-# 编译脚本宏定义配置 #
-
-中心节点：Makefile
-makefile.center
-
-架构和其他节点Makefile
-makefile.other
-
-需要编译的节点的配置
-server.dep
-
-详细编译选项说明在文件compile.txt
+说明：详见仓库根 `cmake/BUILD.md`、`INSTALL.md`。旧 makefile.center / makefile.other 仅作历史参考。
 
 
 # 安装执行文件(在目录deploy)#

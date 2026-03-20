@@ -1,2 +1,0 @@
-#需要编译的服务器(只需要指定逻辑服务),如Access
-ORTHER_TARGETS = Hello Logic Interface

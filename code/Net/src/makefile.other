@@ -1,13 +1,7 @@
-server_dep=../../server.dep
-exist_file=$(shell test -f ${server_dep} && echo "exist"||echo "notexist")
-ifeq (exist,${exist_file})
-include ${server_dep}
- $(info  "include ${server_dep}")
-else
- $(warning "${server_dep} not exist")
-endif
+# 需要编译的节点可执行文件（复制 Hello 后改名）；与旧 server.dep 中 ORTHER_TARGETS 一致
+ORTHER_TARGETS = Hello Logic Interface
 
- $(info  $(ORTHER_TARGETS))
+$(info  $(ORTHER_TARGETS))
 CC = gcc
 CXX = g++
 #编译选项 -DDISABLE_COROUTINUE
