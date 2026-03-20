@@ -49,6 +49,7 @@ set(HELLO_SOURCES
     code/Hello/src/ModuleHello/StepHttpRequestCo.cpp
     code/Hello/src/ModuleHello/StepHttpRequestState.cpp
     code/Hello/src/ModuleHello/HttpRequestCo.cpp
+    code/Hello/src/ModuleHello/HttpStateFuncCo.cpp
     code/Net/src/main.cpp
 )
 
@@ -70,9 +71,10 @@ target_link_libraries(thunder_server PRIVATE thunder_core)
 option(ENABLE_TESTS "Enable unit tests" ON)
 option(ENABLE_INTEGRATION_TESTS "Enable integration tests" OFF)
 
-# 查找 Google Test
-find_package(GTest REQUIRED)
-include(GoogleTest)
+if(ENABLE_TESTS)
+    find_package(GTest REQUIRED)
+    include(GoogleTest)
+endif()
 
 if(ENABLE_TESTS)
     # 现有单元测试（转换为 Google Test）

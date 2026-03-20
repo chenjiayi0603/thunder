@@ -23,3 +23,4 @@ deploy/Logic/conf/Logic.json
 deploy/Hello/bin/Hello
 deploy/3lib.zip
 *.log.*
+build

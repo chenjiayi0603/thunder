@@ -1,6 +1,6 @@
 #include "step/StepCoroutine.hpp"
 #include "step/HttpAwaitable.hpp"
-#include "HttpMsg.hpp"
+#include "protocol/http.pb.h"
 #include <exception>
 
 namespace thunder {

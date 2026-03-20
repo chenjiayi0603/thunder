@@ -11,20 +11,24 @@
 #include "step/MysqlStep.hpp"
 #include "step/RedisStep.hpp"
 #include "step/StepNode.hpp"
+#include "step/StepState.hpp"
 
 namespace net
 {
 
 std::string GetConfigPath(){return(GetLabor()->GetWorkPath() + std::string("/conf/"));}
 
-bool Launch(StepState *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
+bool Launch(Step *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
 	if (pStep == nullptr)
 	{
 		LOG4_ERROR("%s() null step",__FUNCTION__);
 		return(false);
 	}
-	pStep->Init(uiTimeOutMax,uiToRetry);
+	if (auto* pState = dynamic_cast<StepState*>(pStep))
+	{
+		pState->Init(uiTimeOutMax,uiToRetry);
+	}
 	return GetLabor()->ExecStep(pStep,dTimeout);
 }
 

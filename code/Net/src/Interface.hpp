@@ -52,13 +52,14 @@ bool GetConfig(util::CJsonObject& oConf,const std::string &strConfFile);
  */
 bool GetFileData(std::string& strFileData,const std::string &strConfFile);
 /*
- * @brief 执行状态步骤（含注册）
+ * @brief 执行步骤（含注册）
+ * @note 支持 StepState（状态机）与 CoroutineState（协程）；前者调用 Init，后者调用 SetTimeoutParams
  * @param uiTimeOutMax 超时次数
  * @param uiToRetry 是否超时重发 1：是 0 否
  * @param dTimeout 超时时间（单位秒，默认使用配置时间）
  * @return 是否成功
  * */
-bool Launch(StepState *step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
+bool Launch(Step *step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
 /*
  * @brief 注册状态步骤（未执行）
  * @param uiTimeOutMax 超时次数

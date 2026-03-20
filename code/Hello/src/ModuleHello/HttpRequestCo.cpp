@@ -4,7 +4,7 @@
 namespace core
 {
 
-net::CoTask<> HttpRequestCo::Run()
+net::CoTask<void> HttpRequestCo::Run()
 {
     LOG4_TRACE("%s() start", __FUNCTION__);
 

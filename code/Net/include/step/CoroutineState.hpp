@@ -4,6 +4,7 @@
 #include "Coroutine20.hpp"
 #include "Step.hpp"
 #include "HttpStep.hpp"
+#include "StepState.hpp"
 #include "Awaitable.hpp"
 #include "RedisAwaitable.hpp"
 #include "NetDefine.hpp"
@@ -13,21 +14,25 @@
 namespace net
 {
 
+/** @brief 协程任务返回类型（与 Coroutine20::Task 一致） */
+template<typename T = void>
+using CoTask = Task<T>;
+
 /**
  * @brief C++20 协程状态基类（过渡期）
- * @note 继承自 Step，保持现有框架上下文，提供协程化接口
+ * @note 继承自 StepState，复用超时/响应成员与 Labor 调度，Emit 内走协程而非状态机
  *       目标：平滑迁移，最终去掉 Step 概念
  */
-class CoroutineState : public HttpStep
+class CoroutineState : public StepState
 {
 public:
     CoroutineState() = default;
     CoroutineState(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead)
-        : HttpStep(stInMsgShell, oInMsgHead) {}
+        : StepState(stInMsgShell, oInMsgHead) {}
     CoroutineState(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
-        : HttpStep(stInMsgShell, oInMsgHead, oInMsgBody) {}
+        : StepState(stInMsgShell, oInMsgHead, oInMsgBody) {}
     CoroutineState(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg)
-        : HttpStep(stInMsgShell, oInHttpMsg) {}
+        : StepState(stInMsgShell, oInHttpMsg) {}
     
     virtual ~CoroutineState() = default;
 
@@ -43,7 +48,7 @@ public:
      * @note 派生类需要重写此函数实现协程逻辑
      *       使用同步写法编写异步代码
      */
-    virtual CoTask Run() = 0;
+    virtual CoTask<void> Run() = 0;
     
     /**
      * @brief 步骤回调函数
@@ -66,12 +71,11 @@ public:
     virtual E_CMD_STATUS Timeout() override;
     
     /**
-     * @brief 设置超时参数
+     * @brief 设置超时参数（与 StepState::Init 等价，便于协程侧命名）
      */
     void SetTimeoutParams(uint32 uiTimeOutMax = 3, uint8 uiTimeOutRetry = 0)
     {
-        m_uiTimeOutMax = uiTimeOutMax;
-        m_uiTimeOutRetry = uiTimeOutRetry;
+        Init(uiTimeOutMax, uiTimeOutRetry);
     }
     
     /**
@@ -91,16 +95,6 @@ public:
      * @return CoTask<bool> 表示发送是否成功
      */
     CoTask<bool> SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
-    
-    /**
-     * @brief 获取 Labor 上下文
-     */
-    Labor* GetLabor() const { return GetLaborPtr(); }
-    
-    /**
-     * @brief 获取编解码器
-     */
-    Codec* GetCodec() const { return GetCodecPtr(); }
     
 protected:
     /**
@@ -136,17 +130,11 @@ protected:
     
 private:
     std::coroutine_handle<> m_coroHandle;
-    uint32 m_uiTimeOutMax = 3;
-    uint8 m_uiTimeOutRetry = 0;
     bool m_bCoroutineRunning = false;
     bool m_bCoroutineCompleted = false;
     int m_iLastErrno = 0;
     std::string m_strLastErrMsg;
 };
-
-// 为兼容性定义 CoTask 类型别名
-template<typename T = void>
-using CoTask = Task<T>;
 
 } // namespace net
 

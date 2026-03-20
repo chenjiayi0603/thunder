@@ -27,7 +27,7 @@ public:
      * @note 使用 co_await 语法编写异步逻辑，看起来像同步代码
      *       将原来的 5 个 State 函数合并为 1 个线性函数
      */
-    virtual net::CoTask<> Run() override;
+    virtual net::CoTask<void> Run() override;
 
 private:
     uint32 m_uiTestVal = 0;

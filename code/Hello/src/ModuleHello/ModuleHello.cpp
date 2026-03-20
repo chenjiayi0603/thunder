@@ -22,6 +22,7 @@
 #include "StepHttpRequestState.hpp"
 #include "StepHttpRequestCo20.hpp"
 #include "HttpRequestCo.hpp"
+#include "HttpStateFuncCo.hpp"
 #include "CustomLogger.hpp"
 
 #include "HelloSession.h"
@@ -200,9 +201,17 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	{
 		TestHttpRequestState(stMsgShell,oInHttpMsg);
 	}
+	else if ("TestHttpRequestStateMachine" == strOption)
+	{
+		TestHttpRequestStateMachine(stMsgShell,oInHttpMsg);
+	}
 	else if ("TestHttpRequestStateFunc" == strOption)
 	{
 		TestHttpRequestStateFunc(stMsgShell,oInHttpMsg);
+	}
+	else if ("TestHttpRequestStateFuncLegacy" == strOption)
+	{
+		TestHttpRequestStateFuncLegacy(stMsgShell,oInHttpMsg);
 	}
 	else if ("TestHttpRequestCo20" == strOption)
 	{
@@ -433,11 +442,16 @@ void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oIn
 
 bool ModuleHello::TestHttpRequestState(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-     // HttpState
-    return net::Launch(new StepHttpRequestState(stMsgShell,oInHttpMsg));
+    // 默认走 CoroutineState（HttpRequestCo），替代原 StepHttpRequestState 多状态机写法
+    return net::Launch(new HttpRequestCo(stMsgShell, oInHttpMsg));
 }
 
-bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+bool ModuleHello::TestHttpRequestStateMachine(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+    return net::Launch(new StepHttpRequestState(stMsgShell, oInHttpMsg));
+}
+
+bool ModuleHello::TestHttpRequestStateFuncLegacy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 	struct StateParam:public net::StepParam
 	{
@@ -506,6 +520,11 @@ bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,co
     pstep->SetFailFunc(stateFuncOnFail);
     pstep->SetData(new StateParam());
     return net::Launch(pstep);
+}
+
+bool ModuleHello::TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+    return net::Launch(new HttpStateFuncCo(stMsgShell, oInHttpMsg));
 }
 
 bool ModuleHello::TestHttpRequestCo20(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)

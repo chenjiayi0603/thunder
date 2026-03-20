@@ -49,13 +49,13 @@ E_CMD_STATUS CoroutineState::Emit(int iErrno, const std::string& strErrMsg, cons
         {
             LOG4_ERROR("%s() coroutine exception: %s", __FUNCTION__, e.what());
             m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_COROUTINE, e.what());
+            OnCoroutineError(ERR_UNKNOWN_CMD, e.what());
         }
         catch (...)
         {
             LOG4_ERROR("%s() unknown coroutine exception", __FUNCTION__);
             m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_COROUTINE, "unknown coroutine exception");
+            OnCoroutineError(ERR_UNKNOWN_CMD, "unknown coroutine exception");
         }
     };
 
@@ -122,30 +122,27 @@ E_CMD_STATUS CoroutineState::Callback(const tagMsgShell& stMsgShell,
 E_CMD_STATUS CoroutineState::Timeout()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-
+    ++m_uiTimeOutCounter;
     if (m_uiTimeOutCounter < m_uiTimeOutMax)
     {
-        ++m_uiTimeOutCounter;
-        LOG4_WARNING("timeout %u times, max %u", m_uiTimeOutCounter, m_uiTimeOutMax);
+        LOG4_WARN("%s() timeout %u times, max %u", __FUNCTION__, m_uiTimeOutCounter, m_uiTimeOutMax);
         return STATUS_CMD_RUNNING;
     }
-    else
-    {
-        LOG4_ERROR("timeout exceed max %u", m_uiTimeOutMax);
-        OnCoroutineError(ERR_TIMEOUT, "operation timeout");
-        return STATUS_CMD_FAULT;
-    }
+    LOG4_ERROR("%s() timeout exceed max %u", __FUNCTION__, m_uiTimeOutMax);
+    OnCoroutineError(ERR_TIMEOUT, "operation timeout");
+    return STATUS_CMD_FAULT;
 }
 
 CoTask<bool> CoroutineState::HttpGetAsync(const std::string& strUrl)
 {
     LOG4_TRACE("%s() url:%s", __FUNCTION__, strUrl.c_str());
 
-    // 创建 HTTP 请求
+    // 创建 HTTP 请求（与 HttpStep::HttpGet 字段一致）
     HttpMsg oHttpMsg;
     oHttpMsg.set_http_major(1);
     oHttpMsg.set_http_minor(1);
-    oHttpMsg.set_method("GET");
+    oHttpMsg.set_type(HTTP_REQUEST);
+    oHttpMsg.set_method(HTTP_GET);
     oHttpMsg.set_url(strUrl);
     oHttpMsg.set_status_code(200);
 
@@ -167,11 +164,11 @@ CoTask<bool> CoroutineState::HttpPostAsync(const std::string& strUrl, const std:
 {
     LOG4_TRACE("%s() url:%s, body size:%zu", __FUNCTION__, strUrl.c_str(), strBody.size());
 
-    // 创建 HTTP 请求
     HttpMsg oHttpMsg;
     oHttpMsg.set_http_major(1);
     oHttpMsg.set_http_minor(1);
-    oHttpMsg.set_method("POST");
+    oHttpMsg.set_type(HTTP_REQUEST);
+    oHttpMsg.set_method(HTTP_POST);
     oHttpMsg.set_url(strUrl);
     oHttpMsg.set_status_code(200);
     oHttpMsg.set_body(strBody);
@@ -210,36 +207,9 @@ CoTask<bool> CoroutineState::SendToAsync(const tagMsgShell& stMsgShell, const Ht
 
 void CoroutineState::OnCoroutineComplete(bool bSuccess)
 {
-    LOG4_TRACE("%s() success:%d", __FUNCTION__, bSuccess);
-
-    if (bSuccess)
-    {
-        // 发送成功响应
-        if (m_stReqMsgShell.iFd > 0)
-        {
-            HttpMsg oHttpMsg;
-            oHttpMsg.set_http_major(1);
-            oHttpMsg.set_http_minor(1);
-            oHttpMsg.set_status_code(200);
-            oHttpMsg.set_body("{\"code\":0,\"msg\":\"success\"}");
-
-            SendTo(m_stReqMsgShell, oHttpMsg);
-        }
-    }
-    else
-    {
-        // 发送错误响应
-        if (m_stReqMsgShell.iFd > 0)
-        {
-            HttpMsg oHttpMsg;
-            oHttpMsg.set_http_major(1);
-            oHttpMsg.set_http_minor(1);
-            oHttpMsg.set_status_code(500);
-            oHttpMsg.set_body("{\"code\":-1,\"msg\":\"internal error\"}");
-
-            SendTo(m_stReqMsgShell, oHttpMsg);
-        }
-    }
+    // 业务协程（如 HttpRequestCo::Run）通常已自行 Response；此处不再默认回包，避免重复发送
+    LOG4_TRACE("%s() success:%d (no default body; override if needed)", __FUNCTION__, static_cast<int>(bSuccess));
+    (void)bSuccess;
 }
 
 void CoroutineState::OnCoroutineError(int iErrno, const std::string& strErrMsg)

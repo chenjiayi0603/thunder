@@ -1,0 +1,30 @@
+[submodule "code/3party/libev"]
+	path = code/3party/libev
+	url = https://github.com/enki/libev.git
+[submodule "code/3party/leveldb"]
+	path = code/3party/leveldb
+	url = https://github.com/google/leveldb.git
+[submodule "code/3party/hiredis-vip"]
+	path = code/3party/hiredis-vip
+	url = https://github.com/vipshop/hiredis-vip.git
+[submodule "code/3party/cryptopp"]
+	path = code/3party/cryptopp
+	url = https://github.com/weidai11/cryptopp.git
+[submodule "code/3party/mongo-c-driver"]
+	path = code/3party/mongo-c-driver
+	url = https://github.com/mongodb/mongo-c-driver.git
+[submodule "code/3party/mariadb-connector-c"]
+	path = code/3party/mariadb-connector-c
+	url = https://github.com/mariadb-corporation/mariadb-connector-c.git
+[submodule "code/3party/curl"]
+	path = code/3party/curl
+	url = https://github.com/curl/curl.git
+[submodule "code/3party/c-ares"]
+	path = code/3party/c-ares
+	url = https://github.com/c-ares/c-ares.git
+[submodule "code/3party/protobuf"]
+	path = code/3party/protobuf
+	url = https://github.com/protocolbuffers/protobuf.git
+[submodule "code/3party/log4cplus"]
+	path = code/3party/log4cplus
+	url = https://github.com/log4cplus/log4cplus.git
