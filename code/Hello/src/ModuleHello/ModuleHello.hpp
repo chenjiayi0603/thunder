@@ -54,6 +54,10 @@ private:
     //stage machine
     bool TestHttpRequestState(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 	bool TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    
+    // C++20 coroutine
+    bool TestHttpRequestCo20(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    bool TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 
     //pb
     void Base64Encode(const char* data,unsigned int datalen,std::string &strEncode);

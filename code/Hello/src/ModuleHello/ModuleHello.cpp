@@ -21,6 +21,7 @@
 #include "util/StringCoder.hpp"
 #include "StepHttpRequestState.hpp"
 #include "StepHttpRequestCo20.hpp"
+#include "HttpRequestCo.hpp"
 #include "CustomLogger.hpp"
 
 #include "HelloSession.h"
@@ -206,6 +207,10 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	else if ("TestHttpRequestCo20" == strOption)
 	{
 		TestHttpRequestCo20(stMsgShell,oInHttpMsg);
+	}
+	else if ("TestHttpRequestCo" == strOption)
+	{
+		TestHttpRequestCo(stMsgShell,oInHttpMsg);
 	}
 	else
 	{
@@ -508,6 +513,13 @@ bool ModuleHello::TestHttpRequestCo20(const net::tagMsgShell& stMsgShell,const H
     LOG4_TRACE("%s()", __FUNCTION__);
     // 使用 C++20 协程的 HTTP 请求步骤
     return net::Launch(new StepHttpRequestCo20(stMsgShell, oInHttpMsg));
+}
+
+bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    // 使用新的 CoroutineState 基类的 HTTP 请求步骤
+    return net::Launch(new HttpRequestCo(stMsgShell, oInHttpMsg));
 }
 
 void ModuleHello::Base64Encode(const char* data,unsigned int datalen,std::string &strEncode)

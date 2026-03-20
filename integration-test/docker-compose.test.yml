@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # Redis 测试服务
+  test-redis:
+    image: redis:7-alpine
+    container_name: thunder-test-redis
+    ports:
+      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    command: [ "redis-server", "--appendonly", "no", "--save", "" ]
+    networks:
+      - thunder-test-network
+
+  # MySQL 测试服务
+  test-mysql:
+    image: mysql:8
+    container_name: thunder-test-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: thunder_test_pass
+      MYSQL_DATABASE: thunder_test_db
+      MYSQL_USER: thunder_test_user
+      MYSQL_PASSWORD: thunder_test_pass
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pthunder_test_pass" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    networks:
+      - thunder-test-network
+
+  # HTTP Mock 服务
+  test-http-mock:
+    image: wiremock/wiremock:latest
+    container_name: thunder-test-http-mock
+    ports:
+      - "1080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    command: [ "--verbose", "--global-response-templating", "--disable-banner" ]
+    volumes:
+      - ./test_services/mock-http/mappings:/home/wiremock/mappings
+      - ./test_services/mock-http/__files:/home/wiremock/__files
+    networks:
+      - thunder-test-network
+
+  # 外部 API Mock 服务
+  test-external-api:
+    image: mockserver/mockserver:latest
+    container_name: thunder-test-external-api
+    ports:
+      - "9090:1080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    environment:
+      MOCKSERVER_LOG_LEVEL: INFO
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /config/initializer.json
+    volumes:
+      - ./test_services/mock-http/mockserver-config.json:/config/initializer.json
+    networks:
+      - thunder-test-network
+
+  # Thunder 测试服务（主服务）
+  thunder-test:
+    build:
+      context: ..
+      dockerfile: Dockerfile.test
+    container_name: thunder-test-runner
+    depends_on:
+      test-redis:
+        condition: service_healthy
+      test-mysql:
+        condition: service_healthy
+      test-http-mock:
+        condition: service_started
+      test-external-api:
+        condition: service_started
+    environment:
+      # 测试服务连接信息
+      REDIS_HOST: test-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      MYSQL_HOST: test-mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: thunder_test_user
+      MYSQL_PASSWORD: thunder_test_pass
+      MYSQL_DATABASE: thunder_test_db
+      HTTP_MOCK_HOST: test-http-mock
+      HTTP_MOCK_PORT: 8080
+      EXTERNAL_API_HOST: test-external-api
+      EXTERNAL_API_PORT: 1080
+
+      # 测试配置
+      CLEANUP_DATA: "true"
+      GENERATE_HTML_REPORT: "true"
+      TEST_REPORT_DIR: "/app/test-reports"
+      LOG_LEVEL: "INFO"
+
+      # 性能测试配置
+      MAX_CONCURRENT_COROUTINES: "1000"
+      TEST_TIMEOUT_SECONDS: "300"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4GB
+        reservations:
+          cpus: '1'
+          memory: 2GB
+    volumes:
+      - ./test-reports:/app/test-reports
+      - ../logs:/app/logs
+    networks:
+      - thunder-test-network
+    # 运行测试
+    command: [ "/app/scripts/run-tests.sh" ]
+
+  # 测试报告查看器（可选）
+  test-report-viewer:
+    image: nginx:alpine
+    container_name: thunder-test-report-viewer
+    ports:
+      - "8081:80"
+    depends_on:
+      - thunder-test
+    volumes:
+      - ./test-reports:/usr/share/nginx/html
+      - ./test_services/nginx.conf:/etc/nginx/nginx.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+    networks:
+      - thunder-test-network
+
+networks:
+  thunder-test-network:
+    driver: bridge
+    name: thunder-test-network
