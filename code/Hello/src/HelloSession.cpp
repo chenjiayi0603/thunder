@@ -100,7 +100,7 @@ void HelloSession::TestLog()
 		std::string strParttern = "%m%n";
 		std::string fileExt = ".data";
 		std::string strLogPreName = strDataLogPath + std::string("/") + getproctitle() + ".HelloSessionTestLog.";// + std::string(".data");
-		uint32 iLogschedule = log4cplus::HOURLY;//enum DailyRollingFileSchedule { MONTHLY, WEEKLY, DAILY, TWICE_DAILY, HOURLY, MINUTELY};
+		uint32 iLogschedule = static_cast<uint32_t>(log4cplus::DailyRollingFileSchedule::HOURLY);//enum class DailyRollingFileSchedule
 		int iStartTryCleanFile = 1, iMaxTryCleanFile = 3;
 		bool bCreateDirs = false;
 		bool bRollOnClose = false;
@@ -115,8 +115,8 @@ void HelloSession::TestLog()
 				bImmediateFlush,bCreateDirs,bRollOnClose,""));
 		//std::string strName = "MingingLog";
 		file_append->setName(strLogPreName);
-		std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
-		file_append->setLayout(layout);
+		std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
+		file_append->setLayout(std::move(layout));
 		//log4cplus::Logger::getRoot().addAppender(file_append);
 		g_oDataLogger = log4cplus::Logger::getInstance(strLogPreName);
 		g_oDataLogger.setLogLevel(iLogLevel);
@@ -151,7 +151,7 @@ void HelloSession::TestLog2()
 		std::string strParttern = "%m%n";
 		std::string fileExt = ".data";
 		std::string strLogPreName = strDataLogPath + std::string("/") + getproctitle() + ".CustomDailyRolling.";// + std::string(".data");
-		uint32 iLogschedule = log4cplus::HOURLY;//enum DailyRollingFileSchedule { MONTHLY, WEEKLY, DAILY, TWICE_DAILY, HOURLY, MINUTELY};
+		uint32 iLogschedule = static_cast<uint32_t>(log4cplus::DailyRollingFileSchedule::HOURLY);//enum class DailyRollingFileSchedule
 		bool bCreateDirs = false;
 		bool bRollOnClose = false;
 		bool bImmediateFlush = true;
@@ -164,8 +164,8 @@ void HelloSession::TestLog2()
 				bImmediateFlush,bCreateDirs,bRollOnClose,""));
 		//std::string strName = "MingingLog";
 		file_append->setName(strLogPreName);
-		std::auto_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
-		file_append->setLayout(layout);
+		std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
+		file_append->setLayout(std::move(layout));
 		//log4cplus::Logger::getRoot().addAppender(file_append);
 		g_oDataLogger = log4cplus::Logger::getInstance(strLogPreName);
 		g_oDataLogger.setLogLevel(iLogLevel);

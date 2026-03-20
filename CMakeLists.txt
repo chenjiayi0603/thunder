@@ -1,97 +1,48 @@
-cmake_minimum_required(VERSION 3.12)
-project(Thunder CXX)
+cmake_minimum_required(VERSION 3.16)
+project(Thunder LANGUAGES CXX C)
 
-# 设置 C++20 标准
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# 添加编译选项
-if(MSVC)
-    add_compile_options(/W4 /std:c++latest)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic -std=c++20)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-# 设置输出目录
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# 默认安装到 deploy/（与 Makefile install 一致）
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deploy" CACHE PATH "Install prefix (bin/lib)" FORCE)
+endif()
 
-# 查找依赖
-find_package(OpenSSL REQUIRED)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(ThunderCommon)
+
+option(THUNDER_BUILD_CENTER "Build Center 可执行文件（-DNODE_TYPE_CENTER，对应 makefile.center）" ON)
+option(THUNDER_BUILD_HELLO_PLUGINS "Build Hello ModuleHello.so 插件" ON)
+option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
+
 find_package(Threads REQUIRED)
 
-# 包含目录
-include_directories(code/Net/include)
-include_directories(code/Net/src)
-include_directories(code/Hello/include)
-include_directories(code/Util/src)
-include_directories(code/3party/include)
-include_directories(code/3party/include/mariadb)
-include_directories(code/3party/log4cplus/include)
-include_directories(code/3party/protobuf/src)
+add_subdirectory(code/Util)
+add_subdirectory(code/Proto)
+add_subdirectory(code/Net)
 
-# 链接目录
-link_directories(${CMAKE_SOURCE_DIR}/deploy/3lib/lib)
-
-# 核心网络库源文件
-set(NET_SOURCES
-    code/Net/src/step/StepState.cpp
-    code/Net/src/step/CoroutineState.cpp
-    code/Net/src/step/HttpStep.cpp
-    code/Net/src/codec/HttpCodec.cpp
-)
-
-# Hello 模块源文件
-set(HELLO_SOURCES
-    code/Hello/src/ModuleHello/StepHttpRequestState.cpp
-    code/Hello/src/ModuleHello/HttpRequestCo.cpp
-    code/Hello/src/ModuleHello/HttpStateFuncCo.cpp
-    code/Net/src/main.cpp
-)
-
-# 创建共享库
-add_library(thunder_core ${NET_SOURCES})
-target_link_libraries(thunder_core PUBLIC 
-    OpenSSL::SSL 
-    OpenSSL::Crypto 
-    Threads::Threads
-    log4cplus
-    protobuf
-)
-
-# 创建可执行文件
-add_executable(thunder_server ${HELLO_SOURCES})
-target_link_libraries(thunder_server PRIVATE thunder_core)
-
-# 测试选项
-option(ENABLE_TESTS "Enable unit tests" ON)
-option(ENABLE_INTEGRATION_TESTS "Enable integration tests" OFF)
-
-if(ENABLE_TESTS)
-    find_package(GTest REQUIRED)
-    include(GoogleTest)
+if(THUNDER_BUILD_HELLO_PLUGINS)
+  add_subdirectory(code/Hello)
 endif()
 
-if(ENABLE_TESTS)
-    # TODO Step 10: 补充 task/ 体系的单元测试（test_when_all, test_sleep_for, test_callback_awaiter 等）
-    enable_testing()
+# cmake --install 与 POST_BUILD 复制布局一致（路径相对于安装前缀，默认 deploy/）
+install(TARGETS Hello RUNTIME DESTINATION Hello/bin)
+install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
+
+if(THUNDER_BUILD_CENTER AND TARGET Center)
+  install(TARGETS Center RUNTIME DESTINATION bin)
 endif()
 
-if(ENABLE_INTEGRATION_TESTS)
-    # 集成测试
-    add_executable(integration_test integration-test/src/integration_test_base.cpp)
-    target_link_libraries(integration_test PRIVATE thunder_core GTest::gtest GTest::gtest_main)
-    gtest_discover_tests(integration_test WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-    
-    # 覆盖率编译选项
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(integration_test PRIVATE -fprofile-arcs -ftest-coverage)
-        target_link_libraries(integration_test PRIVATE gcov)
-    endif()
+if(THUNDER_BUILD_HELLO_PLUGINS AND TARGET ModuleHello)
+  install(TARGETS ModuleHello LIBRARY DESTINATION Hello/plugins)
 endif()
-
-# 安装目标
-install(TARGETS thunder_server DESTINATION bin)
-install(TARGETS thunder_core DESTINATION lib)
-install(DIRECTORY code/Net/include/ DESTINATION include)

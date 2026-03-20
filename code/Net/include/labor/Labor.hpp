@@ -14,7 +14,6 @@
 #include "util/CommonUtils.hpp"
 #include "cmd/CW.hpp"
 #include "dispatcher/Nodes.hpp"
-#include "dispatcher/Coroutine.h"
 #include "Attribution.hpp"
 #include "storage/dataproxy.pb.h"
 namespace netcustomcat {
@@ -39,12 +38,9 @@ typedef void (*io_callback)(struct ev_loop*,ev_io*,int);
 /**
  * @brief 框架层工作者抽象类
  * @note 框架层工作者抽象类，框架层工作者包括Manager和Worker
+ * @note 旧版栈协程 `dispatcher/Coroutine` + `USE_COROUTINE` 已移除；业务协程请用 C++20 `Coroutine20`/`task` 体系。
  */
-#ifdef USE_COROUTINE
-class Labor:public Coroutine
-#else
 class Labor
-#endif
 {
 public:
     Labor();
