@@ -154,7 +154,7 @@ bool Pb2Json(const google::protobuf::Message &message, util::CJsonObject& oJson)
 	}
 	if (!oJson.Parse(strJson))
 	{
-		LOG4_ERROR("%s() oJson.Parse(strJson) failed:%",__FUNCTION__,strJson.c_str());
+		LOG4_ERROR("%s() oJson.Parse(strJson) failed:%s",__FUNCTION__,strJson.c_str());
 		return false;
 	}
 	return true;

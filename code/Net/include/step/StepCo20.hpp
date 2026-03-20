@@ -103,7 +103,9 @@ protected:
      * @brief 响应客户端
      */
     void ResponseToClient(int iCode = 200, const std::string& strBody = "");
-    
+
+    friend struct HttpRespAwaiter;
+
 private:
     // 协程句柄
     std::coroutine_handle<> m_coroHandle;

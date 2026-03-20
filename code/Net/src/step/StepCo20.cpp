@@ -1,4 +1,4 @@
-#include "StepCo20.hpp"
+#include "step/StepCo20.hpp"
 #include "NetError.hpp"
 #include "NetDefine.hpp"
 #include <memory>
@@ -49,13 +49,13 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
         {
             LOG4_ERROR("%s() coroutine exception: %s", __FUNCTION__, e.what());
             m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_COROUTINE, e.what());
+            OnCoroutineError(ERR_UNKNOWN_CMD, e.what());
         }
         catch (...)
         {
             LOG4_ERROR("%s() unknown coroutine exception", __FUNCTION__);
             m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_COROUTINE, "unknown coroutine exception");
+            OnCoroutineError(ERR_UNKNOWN_CMD, "unknown coroutine exception");
         }
     };
     

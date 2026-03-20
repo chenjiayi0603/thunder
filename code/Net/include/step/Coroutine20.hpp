@@ -6,6 +6,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <cstdio>
 #include "NetDefine.hpp"
 
 namespace net
@@ -219,7 +220,7 @@ struct AsyncTask
         void return_void() {}
         void unhandled_exception() noexcept
         {
-            LOG4_ERROR("Exception escaping AsyncTask");
+            std::fprintf(stderr, "Exception escaping net::AsyncTask\n");
             std::terminate();
         }
         std::suspend_never final_suspend() noexcept { return {}; }

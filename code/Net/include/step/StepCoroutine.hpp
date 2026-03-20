@@ -140,6 +140,9 @@ public:
      */
     bool DoHttpRequest(const HttpAwaitable& awaitable);
 
+    /** @brief 最近一次 HTTP 回调的响应（供 HttpAwaitable::await_resume） */
+    const HttpMsg& GetLastHttpResponse() const { return m_oResHttpMsg; }
+
     /**
      * @brief 保存协程句柄（被 HttpAwaitable 调用）
      * @param h 协程句柄

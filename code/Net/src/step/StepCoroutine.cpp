@@ -1,71 +1,140 @@
 #include "step/StepCoroutine.hpp"
-#include "step/HttpAwaitable.hpp"
-#include "protocol/http.pb.h"
-#include <exception>
+#include "NetDefine.hpp"
+#include "NetError.hpp"
 
-namespace thunder {
+namespace net
+{
 
-StepCoroutine::StepCoroutine() : m_coTask(), m_coHandle(nullptr), m_bFirstEmit(true) {}
+StepCoroutine::StepCoroutine() : HttpStep() {}
 
-StepCoroutine::~StepCoroutine() {
-    if (!m_coTask.done()) {
-        m_coTask.destroy();
-    }
+StepCoroutine::StepCoroutine(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead)
+    : HttpStep(stInMsgShell, oInMsgHead)
+{
 }
 
-E_CMD_STATUS StepCoroutine::Emit() {
-    if (m_bFirstEmit) {
-        m_bFirstEmit = false;
-        // 首次调用：启动协程
+StepCoroutine::StepCoroutine(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
+    : HttpStep(stInMsgShell, oInMsgHead, oInMsgBody)
+{
+}
+
+StepCoroutine::StepCoroutine(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg)
+    : HttpStep(stInMsgShell, oInHttpMsg)
+{
+}
+
+StepCoroutine::~StepCoroutine() = default;
+
+bool StepCoroutine::DoHttpRequest(const HttpAwaitable& awaitable)
+{
+    if (awaitable.getRequestType() == HttpRequestType::GET)
+    {
+        return HttpGet(awaitable.getUrl());
+    }
+    if (awaitable.getHeaders().empty())
+    {
+        return HttpPost(awaitable.getUrl(), awaitable.getBody());
+    }
+    return HttpPost(awaitable.getUrl(), awaitable.getBody(), awaitable.getHeaders());
+}
+
+E_CMD_STATUS StepCoroutine::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+{
+    (void)strErrShow;
+    if (iErrno != 0)
+    {
+        m_iErrno = iErrno;
+        m_strErrMsg = strErrMsg;
+        OnFail();
+        return STATUS_CMD_FAULT;
+    }
+
+    if (!m_coStarted)
+    {
+        m_coStarted = true;
         m_coTask = Run();
         m_coTask.resume();
-    } else {
-        // 后续调用：恢复协程
-        if (!m_coTask.done()) {
+        if (!m_coTask.done())
+        {
             m_coTask.resume();
         }
     }
 
-    // 检查协程是否完成
-    if (m_coTask.done()) {
-        // 检查异常
-        if (m_coTask.has_exception()) {
-            try {
-                std::rethrow_exception(m_coTask.exception());
-            } catch (const std::exception& e) {
-                // 异常处理：调用 OnFail
-                return OnFail(STEP_ERR_HTTP, e.what());
+    if (m_coTask.done())
+    {
+        if (m_coTask.hasException())
+        {
+            try
+            {
+                m_coTask.rethrowIfException();
+            }
+            catch (...)
+            {
+                OnFail();
+                return STATUS_CMD_FAULT;
             }
         }
-        // 协程正常完成
-        return OnSucc(0);
+        OnSucc();
+        return STATUS_CMD_COMPLETED;
     }
-
     return STATUS_CMD_RUNNING;
 }
 
-E_CMD_STATUS StepCoroutine::Callback(int iStep, const HttpMsg& oHttpMsg) {
-    // 存储响应消息
-    m_oLastHttpMsg = oHttpMsg;
-
-    // 恢复协程
-    return Emit();
-}
-
-E_CMD_STATUS StepCoroutine::Timeout() {
-    // 超时处理
-    if (!m_coTask.done()) {
-        m_coTask.destroy();
+E_CMD_STATUS StepCoroutine::Callback(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, void* data)
+{
+    (void)data;
+    if (CMD_RSP_SYS_ERROR == oHttpMsg.status_code())
+    {
+        LOG4_ERROR("%s() system response error", __FUNCTION__);
+        return STATUS_CMD_FAULT;
     }
-    return OnFail(STEP_ERR_TIMEOUT, "Step Timeout");
+    m_oResHttpMsg = oHttpMsg;
+    m_uiTimeOutCounter = 0;
+
+    if (m_suspendedHandle && !m_suspendedHandle.done())
+    {
+        m_suspendedHandle.resume();
+    }
+
+    if (m_coTask.done())
+    {
+        if (m_coTask.hasException())
+        {
+            try
+            {
+                m_coTask.rethrowIfException();
+            }
+            catch (...)
+            {
+                OnFail();
+                return STATUS_CMD_FAULT;
+            }
+        }
+        OnSucc();
+        return STATUS_CMD_COMPLETED;
+    }
+    return STATUS_CMD_RUNNING;
 }
 
-HttpAwaitable StepCoroutine::HttpGetAsync(const std::string& url) {
-    return HttpAwaitable(this, url, "GET");
+E_CMD_STATUS StepCoroutine::Callback(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,
+                                     void* data)
+{
+    (void)stMsgShell;
+    (void)oInMsgHead;
+    (void)oInMsgBody;
+    (void)data;
+    return STATUS_CMD_COMPLETED;
 }
 
-HttpAwaitable StepCoroutine::HttpPostAsync(const std::string& url, const std::string& body) {
-    return HttpAwaitable(this, url, "POST", body);
+E_CMD_STATUS StepCoroutine::Timeout()
+{
+    ++m_uiTimeOutCounter;
+    if (m_uiTimeOutCounter < m_uiTimeOutMax)
+    {
+        return STATUS_CMD_RUNNING;
+    }
+    m_coTask.destroy();
+    OnFail();
+    return STATUS_CMD_FAULT;
 }
 
-}  // namespace thunder
+} // namespace net

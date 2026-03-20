@@ -1,15 +1,16 @@
 #pragma once
 #include "step/StepCoroutine.hpp"
 
-namespace hello {
+namespace hello
+{
 
-class StepHttpRequestCo : public thunder::StepCoroutine {
+class StepHttpRequestCo : public net::StepCoroutine
+{
 public:
     StepHttpRequestCo();
     virtual ~StepHttpRequestCo();
 
-    // 协程体
-    thunder::CoTask Run() override;
+    net::CoTask Run() override;
 };
 
-}  // namespace hello
+} // namespace hello
