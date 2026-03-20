@@ -101,7 +101,7 @@ ExternalProject_Add(ep_c_ares
     -DCARES_SHARED=ON
     -DCARES_STATIC=OFF
     -DCARES_BUILD_TESTS=OFF
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
@@ -112,7 +112,7 @@ ExternalProject_Add(ep_libev
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" "CXX=${CMAKE_CXX_COMPILER}"
     <SOURCE_DIR>/configure --prefix=${EP_STAGE}
-  BUILD_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j
+  BUILD_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j1
   INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} install
   BUILD_IN_SOURCE TRUE
 )
@@ -124,7 +124,7 @@ ExternalProject_Add(ep_cryptopp
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E true
   # 必须给 CXXFLAGS 加引号，否则 -fPIC 会被 make 解析成 -f PIC（误把 PIC 当 makefile）
   BUILD_COMMAND
-    bash -c "cd <SOURCE_DIR> && ${CMAKE_MAKE_PROGRAM} -f GNUmakefile dynamic \"CXXFLAGS=-Wno-narrowing -fPIC\" -j"
+    bash -c "cd <SOURCE_DIR> && ${CMAKE_MAKE_PROGRAM} -f GNUmakefile dynamic \"CXXFLAGS=-Wno-narrowing -fPIC\" -j1"
   INSTALL_COMMAND
     bash -c "mkdir -p '${EP_STAGE}/lib' && shopt -s nullglob && cp -a <SOURCE_DIR>/libcryptopp.so* '${EP_STAGE}/lib/' 2>/dev/null || true"
   BUILD_IN_SOURCE TRUE
@@ -135,7 +135,7 @@ ExternalProject_Add(ep_hiredis_vip
   PREFIX "${EP_BUILD_ROOT}/hiredis-vip"
   SOURCE_DIR "${THUNDER_3PARTY}/hiredis-vip"
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E true
-  BUILD_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j
+  BUILD_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j1
   INSTALL_COMMAND
     ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
     ${CMAKE_MAKE_PROGRAM} install "PREFIX=${EP_STAGE}"
@@ -154,7 +154,7 @@ ExternalProject_Add(ep_mariadb
     -DWITH_UNIT_TESTS=OFF
     # 关闭 -Werror，避免上游未使用函数等在 GCC 下导致整库编译失败
     -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
@@ -172,7 +172,7 @@ ExternalProject_Add(ep_mongo_c_driver
     -DENABLE_MAN_PAGES=OFF
     -DENABLE_HTML_DOCS=OFF
     -DENABLE_SSL=OPENSSL
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
@@ -187,7 +187,7 @@ ExternalProject_Add(ep_log4cplus
     -DLOG4CPLUS_BUILD_TESTING=OFF
     -DLOG4CPLUS_BUILD_LOGGINGSERVER=OFF
     -DWITH_UNIT_TESTS=OFF
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
@@ -211,7 +211,7 @@ ExternalProject_Add(ep_curl
     -DUSE_LIBIDN2=OFF
     -DENABLE_CURL_MANUAL=OFF
     -DBUILD_LIBCURL_DOCS=OFF
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
@@ -230,7 +230,7 @@ ExternalProject_Add(ep_protobuf
     -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON
     "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
     "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
-  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 

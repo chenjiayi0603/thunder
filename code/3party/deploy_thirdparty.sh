@@ -13,8 +13,19 @@ PB_BUILD="${5:?}"
 mkdir -p "${THIRD}/lib" "${THIRD}/include" "${DEPLOY3}"
 
 if [[ -d "${STAGE}/lib" ]]; then
-  cp -a "${STAGE}/lib/." "${THIRD}/lib/"
-  cp -a "${STAGE}/lib/." "${DEPLOY3}/"
+  # hiredis-vip 的 install 会 ln -sf 形成 .so -> .so.1 -> .so.1.0 链；若目标目录里残留旧 symlink，
+  # 多次 deploy 合并时可能成环，导致 cp: Too many levels of symbolic links。先清掉再拷。
+  for d in "${THIRD}/lib" "${DEPLOY3}"; do
+    [[ -d "$d" ]] || continue
+    shopt -s nullglob
+    for f in "${d}/libhiredis_vip.so" "${d}/libhiredis_vip.so."*; do
+      [[ -e "$f" ]] && rm -f -- "$f"
+    done
+    shopt -u nullglob
+  done
+  # GNU cp：覆盖前先删目标，避免 symlink 成环时 stat 失败
+  cp -a --remove-destination "${STAGE}/lib/." "${THIRD}/lib/"
+  cp -a --remove-destination "${STAGE}/lib/." "${DEPLOY3}/"
 fi
 
 if [[ -d "${STAGE}/include" ]]; then
