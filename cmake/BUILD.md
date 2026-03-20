@@ -54,4 +54,4 @@ cmake --build build --parallel --target thirdparty_deploy
 
 ## 集成测试（Docker）
 
-仓库根目录保留 **`Dockerfile.test`**，供 `integration-test/docker-compose.test.yml` 构建测试镜像。根目录已移除旧的 `Dockerfile` / `docker-compose.yml`、一键诊断脚本与 `QUICK_*` 文档；日常构建以本节 CMake 命令为准。
+原 **`Dockerfile.test`** + **`integration-test/`** 已移除（未接入 CI / 日常构建）。若需容器化联调，请自行补充 compose 与镜像定义。根目录已移除旧的 `Dockerfile` / `docker-compose.yml`、一键诊断脚本与 `QUICK_*` 文档；日常构建以本节 CMake 命令为准。
