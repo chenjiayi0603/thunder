@@ -65,9 +65,9 @@ cmake --build build-3party --target thirdparty_deploy
 
 ---
 
-## 与 `code/make.sh` 的关系
+## `code/3party/lib` 与 `deploy/3lib`
 
-`code/make.sh` 在缺少 `code/3party/lib` 时会把其 **软链接到 `deploy/3lib`**。完成 **`thirdparty_deploy`** 后，两处的 `.so` 应一致。
+若缺少 **`code/3party/lib`**，可在仓库根执行：`ln -sfn deploy/3lib code/3party/lib`。完成 **`thirdparty_deploy`** 后，两处的 `.so` 应一致。
 
 ---
 

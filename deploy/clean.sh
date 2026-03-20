@@ -7,8 +7,7 @@ log="/log"
 
 function Usage()
 {
-	echo -e "plugins.conf is plugins conf dir,like  HelloServer 	/HelloServer/src  /plugins/HelloServer"
-	echo -e "configure plugins.conf before compilation"
+	echo -e "configure ${config_file} before running (see deploy/server_dir.conf)"
     echo -e "Usage: $0 [OPTION]..."
     echo -e "options: ./`basename $0` [-h|--help/all/plugin/log/bin]"
 }

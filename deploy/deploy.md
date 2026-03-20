@@ -10,16 +10,19 @@ find ./ -name "*.sh" |xargs -i chmod +x {}
 解压第三方库
 tar xvf 3lib.tar.gz 
 
-第一次编译、部署和运行(在目录 code)：
-./make.sh first
+第一次编译、部署和运行（在仓库根）：
+cmake --build build --target Proto
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j"$(nproc)"
+cmake --install build
+cd deploy && ./install.sh first && ./restart_nodes.sh all
 
 其他常用操作(一键部署中已包含)：
 第一次安装依赖库(需要安装rar)
 ./install.sh first
 
-编译所有代码（CMake）
-cd ../code && ./make.sh all
-# 等价：在仓库根执行 cmake -S . -B build && cmake --build build && cmake --install build
+编译所有代码（CMake，仓库根）
+cmake -S . -B build && cmake --build build -j"$(nproc)" && cmake --install build
 
 安装所有文件
 ./install.sh all
@@ -37,25 +40,25 @@ cd ../code && ./make.sh all
 代码目录
 /app/thunder/code
 
-# 编译脚本(在目录 code，已统一为 CMake) #
-第一次编译并且部署
-./make.sh first
+# 编译（已统一为 CMake，在仓库根执行） #
+第一次编译并且部署（含协议、安装、重启节点）
+见上文「第一次编译、部署和运行」
 
 编译全部
-./make.sh all
+cmake -S . -B build && cmake --build build -j"$(nproc)" && cmake --install build
 
 单 target 示例
-./make.sh Net
-./make.sh Util
-./make.sh plugin
+cmake --build build --target Net
+cmake --build build --target Util
+cmake --build build --target ModuleHello
 
-多节点插件（Center/Logic/Interface 等）仍可用
-./plugins.sh all
+多节点插件（Logic/Interface/Center）已由 CMake 构建，例如：
+cmake --build build --target CmdGetToken ModuleInterface CmdElection
 
-协议（会先 gen_proto）
-./make.sh Proto
+协议（CMake 生成 Proto）
+cmake --build build --target Proto
 
-说明：详见仓库根 `cmake/BUILD.md`、`INSTALL.md`。旧 makefile.center / makefile.other 仅作历史参考。
+说明：详见仓库根 `cmake/BUILD.md`、`INSTALL.md`。旧 makefile.center / makefile.other 与各节点 `src/Makefile` 仅作历史参考。
 
 
 # 安装执行文件(在目录deploy)#

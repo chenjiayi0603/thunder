@@ -16,18 +16,33 @@ cmake --install build
 |------------|------|
 | `-DTHUNDER_BUILD_CENTER=ON` | 生成 `Center` 可执行文件（默认开） |
 | `-DTHUNDER_BUILD_HELLO_PLUGINS=ON` | 生成 `ModuleHello.so`（默认开） |
+| `-DTHUNDER_BUILD_NODE_PLUGINS=ON` | 生成 Logic/Interface/Center 节点 `.so` 到 `deploy/plugins/...`（默认开） |
 | `-DTHUNDER_DEPLOY_AUTO=OFF` | 关闭 POST_BUILD 自动复制到 `deploy/` |
 | `-DTHUNDER_INCLUDE_3PARTY=OFF` | 不加载 `code/3party` 超级构建（无 `thirdparty_deploy` 等目标） |
 
-## code/make.sh 封装
+## 协议生成目标（与 `thirdparty_deploy` 用法类似）
 
-在 `code/` 下可使用 `./make.sh`（内部即上述 `cmake` 命令），例如：
+在已 `cmake -S . -B build` 的前提下：
 
-- `./make.sh all` — 运行 `gen_proto` + 全量编译  
-- `./make.sh Util` / `Proto` / `Net` / `plugin` — 单 target  
-- `./make.sh clean` / `install` / `first` — 见 `make.sh` 头部注释  
+```bash
+# 只从 .proto 生成 / 更新 code/Proto/src/*.pb.{cc,h}（不链接 libProto.so）
+cmake --build build --target thunder_proto_gen -j1
 
-多节点插件（Center/Logic/Interface 等子目录 Makefile）仍用 `code/plugins.sh`；Hello 的 `ModuleHello` 优先用 CMake。协议生成与编译：`cd code && ./make.sh Proto`。
+# 生成并编译 libProto.so（含 POST_BUILD 复制到 deploy 等）
+cmake --build build --target Proto -j1
+```
+
+**说明**：`thunder_proto_gen` 与 `thirdparty_deploy` 一样，都是「显式命名的 aggregate target」，便于单独跑；全量 `cmake --build build` 编主工程时会编 `Proto`，仍会按需触发生成步骤。
+
+## 常用命令对照
+
+- **全量编译**：`cmake --build build -j"$(nproc)"`  
+- **协议生成**：在 **`code/Proto/CMakeLists.txt`** 中由 `add_custom_command` 调用 `protoc`、`patch_common_pb_h.py` 与 `cmake/ProtoPatchCommonPbCc.cmake`；改 `.proto` 后推荐 **`cmake --build build --target thunder_proto_gen`**（或 **`--target Proto`** 以生成并链接库）。需先有 **`code/3party/protobuf/build/protoc`**（先 `thirdparty_deploy` 或编 `ep_protobuf`）。兼容：`bash code/Proto/regen_cpp.sh`（内部即 `cmake --build … --target thunder_proto_gen`）。  
+- **单 target**：`cmake --build build --target Util|Proto|Net|Hello|Center|ModuleHello|CmdGetToken|ModuleInterface|CmdElection|...`  
+- **清理**：`cmake --build build --target clean`  
+- **首次部署运行**（编译安装后）：`( cd deploy && ./install.sh first && ./restart_nodes.sh all )`  
+
+若缺少 `code/3party/lib`，可手动：`ln -sfn ../../deploy/3lib "$(pwd)/code/3party/lib"`（在仓库根执行时注意路径），或先完成 **`thirdparty_deploy`**。
 
 ## 第三方库（`code/3party`，已由根 `CMakeLists.txt` 引入）
 

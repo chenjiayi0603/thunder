@@ -1,163 +1,84 @@
+# Thunder 构建与安装
 
-# 编译依赖
-第三方库说明与 **CMake 统一编译** 见 **`code/3party/readme.md`**；简要路径说明见 `code/3party/readme.txt`。
+详细选项见 **`cmake/BUILD.md`**。第三方子模块与 **`code/3party`** 见 **`code/3party/readme.md`**。
 
-#   编译（CMake，推荐）
-在仓库根目录或 `code/` 下使用封装脚本：
+---
+
+## 1. 准备
 
 ```bash
-cd code && ./make.sh all
+git submodule update --init --recursive
 ```
 
-等价于（仓库根目录）：
+首次需能使用 **`code/3party/protobuf/build/protoc`**（见下节「第三方」）。
+
+---
+
+## 2. 配置（仓库根）
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build -j$(nproc)
+```
+
+可选环境变量 / 选项示例：`JOBS`、`THUNDER_CMAKE_ARGS`、`-DTHUNDER_BUILD_CENTER=OFF`、`-DTHUNDER_BUILD_NODE_PLUGINS=OFF`、`-DTHUNDER_DEPLOY_AUTO=OFF` 等，见 **`cmake/BUILD.md`**。
+
+---
+
+## 3. 第三方库（与主工程同一 `build/`）
+
+```bash
+cmake --build build --target thirdparty_deploy -j1
+```
+
+仅编译、不拷贝到 `deploy/3lib`：`cmake --build build --target thunder_3party_all -j1`。
+
+---
+
+## 4. 协议 `.proto` → C++（可选单独跑）
+
+改 **`code/Proto/*.proto`** 后，先生成源码再编主工程：
+
+```bash
+# 只生成 code/Proto/src/*.pb.{cc,h}（不编 libProto.so）
+cmake --build build --target thunder_proto_gen -j1
+
+# 生成并编译 libProto.so
+cmake --build build --target Proto -j1
+```
+
+兼容：`bash code/Proto/regen_cpp.sh`（等价于 `thunder_proto_gen`）。
+
+---
+
+## 5. 全量编译与安装
+
+```bash
+cmake --build build -j"$(nproc)"
 cmake --install build
 ```
 
-详见 `cmake/BUILD.md`。单 target：`./make.sh Util`、`Proto`、`Net`、`plugin` 等。
+默认安装前缀为 **`deploy/`**；`THUNDER_DEPLOY_AUTO=ON`（默认）时还会在构建成功后把产物拷到 `deploy/`（见 `cmake/ThunderDeploy.cmake`）。
 
-多节点插件（Center/Logic/Interface 等子目录）仍可用 `code/plugins.sh`；Hello 的 `ModuleHello.so` 由 CMake 构建。
+单 target 示例：`Util`、`Net`、`Proto`、`Hello`、`Center`、`ModuleHello`、Logic/Interface/Center 插件（如 `CmdGetToken`、`ModuleInterface`、`CmdElection` 等）。
 
-#   旧说明（已弃用 makefile 主路径）
-# code/make_libs.sh / make_plugins.sh 若仍存在，以仓库内实际脚本为准
+---
 
-# 编译脚本配置说明
-脚本时间通知配置
+## 6. 首次部署到运行目录并启动节点（可选）
 
-Net：makefile.access makefile.center makefile.other
+```bash
+( cd deploy && ./install.sh first && ./restart_nodes.sh all )
+```
 
-节点子进程上报管理者、节点上报中心时间间隔配置
-NODE_BEAT=10.0
+日常安装/启停仍用 **`deploy/`** 下脚本（`install.sh`、`start_nodes.sh`、`stop_nodes.sh`、`restart_nodes.sh`），配置见 **`deploy/server_list.conf`**、**`deploy/server_dir.conf`**。更细的说明见 **`deploy/deploy.md`**。
 
-子进程超时被重启时间配置
-WORKER_OVERDUE=120.0
+---
 
-# 安装 
-修改deploy下的配置文件，修改服务器ip
-deploy/install.sh pre
+## 7. 运行与简单验证
 
-安装所有的服务器执行文件到运行目录deploy
-deploy/install.sh all
+- 监听端口：`lsof -Pni4 | grep LISTEN`
+- 日志示例：`deploy/Center/log/`、`deploy/Interface/log/`
+- 示例 HTTP（IP 按本机调整）：
 
-安装所有bin
-deploy/install_bins.sh all
-
-安装所有plugin
-deploy/install_plugins.sh all
-
-安装所有系统动态库
-deploy/install_libs.sh all
-
-
-# 启动
-启动所有的服务器
-deploy/start_nodes.sh all
-
-关闭所有的服务器
-deploy/stop_nodes.sh all
-
-重启所有的服务器
-deploy/restart_nodes.sh all
-
-启动指定服务器
-deploy/start_nodes.sh Interface
-
-关闭指定服务器
-deploy/stop_nodes.sh Interface
-
-重启指定服务器
-deploy/restart_nodes.sh Interface
-
-配置启动、关闭服务节点
-deploy/server_list.conf 启动、关闭服务节点配置
-
-配置安装的服务可执行文件的路径
-deploy/server_dir.conf 服务节点插件路径
-
-
-清理可执行文件
-deploy/clear.sh
-
-
-重新加载插件so
-deploy/restart_nodes.sh reload 重新加载所有正在运行的本机节点的插件so。目前只支持重新加载节点的服务配置，不支持重新加载so的逻辑代码。
-
-在节点目录下
-restart.sh reload 重新加载该节点正在运行的插件so。目前只支持重新加载节点的服务配置，不支持重新加载so的逻辑代码。
-
-# 查看日志
-查看服务器日志
-
-中心服务器日志
-deploy/Center/log/Center_robot.log
-deploy/Center/log/Center_robot_W0.log
-
-网关服务器日志
-deploy/Interface/log/Interface_robot.log
-deploy/Interface/log/Interface_robot_W0.log
-
-网关服务器日志
-deploy/Interface/log/Interface_robot.log
-deploy/Interface/log/Interface_robot_W0.log
-
-# 运行目录结构
-deploy  运行目录
-deploy/3lib  第三方库
-
-deploy/Center  中心服务器
-deploy/Center/log  中心服务器日志
-deploy/Center/conf  中心服务器配置
-deploy/Center/bin  中心服务器执行文件
-
-deploy/Interface  网关服务器
-deploy/Logic  逻辑服务器
-
-# 代码目录结构
-code  代码目录
-code/3party  第三方库
-code/Interface  网关服务器
-code/Logic  逻辑服务器
-
-code/Core/Center  中心服务器
-code/Core/Hello  测试服务器，网关服务器
-
-code/Core/Net  网络库
-code/Core/Util  工具库
-code/Core/Proto  协议库
-
-网络核心代码目录说明（code/Core/Net/src）：
-cmd 系统指令
-codec 系统指令
-labor 工作者与管理者
-protocol 服务器内部与客户端通用协议
-session 会话对象
-step 异步访问对象
-storage 存储接口对象
-
-# 代码统计 #
-脚本code.sh 
-
-统计所有代码 code/code.sh all
-
-统计框架代码 code/code.sh Net
-
-统计指定目录代码 code/code.sh ./
-
-# 测试
-查看服务监听端口
-lsof -Pni4 | grep LISTEN 
-
-Interface\Logic\Center 启动后，Interface从Center注册发现Logic
-
-消息流
-client=>Interface =>Logic
-
-测试指令：
-测试生成token和key
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken"
-
-测试验证token和key合法性
-curl "http://$(hostname -I | awk '{print $1}'):27008/Interface/gentoken?token=7383564435643695105&key=7383564435643695106"
+```bash
+curl "http://127.0.0.1:27008/Interface/gentoken"
+```

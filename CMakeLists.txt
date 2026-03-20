@@ -23,6 +23,7 @@ include(ThunderCommon)
 
 option(THUNDER_BUILD_CENTER "Build Center 可执行文件（-DNODE_TYPE_CENTER，对应 makefile.center）" ON)
 option(THUNDER_BUILD_HELLO_PLUGINS "Build Hello ModuleHello.so 插件" ON)
+option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface/Center 节点 .so 插件（deploy/plugins/...）" ON)
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
 # 第三方库超级构建（code/3party/CMakeLists.txt），默认仅注册目标，不随主工程 all 一起编；见 target thirdparty_deploy
 option(THUNDER_INCLUDE_3PARTY "包含第三方库 CMake 目标（thunder_3party_all、thirdparty_deploy）" ON)
@@ -41,6 +42,12 @@ if(THUNDER_BUILD_HELLO_PLUGINS)
   add_subdirectory(code/Hello)
 endif()
 
+if(THUNDER_BUILD_NODE_PLUGINS)
+  add_subdirectory(code/Logic)
+  add_subdirectory(code/Interface)
+  add_subdirectory(code/Center)
+endif()
+
 # cmake --install 与 POST_BUILD 复制布局一致（路径相对于安装前缀，默认 deploy/）
 install(TARGETS Hello RUNTIME DESTINATION Hello/bin)
 install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
@@ -51,4 +58,18 @@ endif()
 
 if(THUNDER_BUILD_HELLO_PLUGINS AND TARGET ModuleHello)
   install(TARGETS ModuleHello LIBRARY DESTINATION Hello/plugins)
+endif()
+
+if(THUNDER_BUILD_NODE_PLUGINS)
+  if(TARGET CmdGetToken)
+    install(TARGETS CmdGetToken LIBRARY DESTINATION plugins/Logic)
+  endif()
+  if(TARGET ModuleInterface)
+    install(TARGETS ModuleInterface LIBRARY DESTINATION plugins/Interface)
+  endif()
+  if(TARGET CmdElection)
+    install(TARGETS
+      CmdElection CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin
+      LIBRARY DESTINATION plugins/Center)
+  endif()
 endif()

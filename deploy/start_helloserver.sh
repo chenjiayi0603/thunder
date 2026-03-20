@@ -33,20 +33,13 @@ nohup "${DEPLOY_ROOT}/Hello/bin/Hello" "${CONF}" >> log/start_helloserver.log 2>
 echo "PID=$! 日志: ${DEPLOY_ROOT}/Hello/log/start_helloserver.log"
 
 BASE_URL="http://${HELLO_HOST}:${HELLO_PORT}${HELLO_PATH}"
-echo "=== 等待 HTTP 就绪: ${BASE_URL} ==="
-_ready=0
-for ((_i = 0; _i < 60; _i++)); do
-  if curl -sf -o /dev/null -X POST "${BASE_URL}" \
-      -H 'Content-Type: application/json' \
-      -d '{"option":"Echo"}' 2>/dev/null; then
-    _ready=1
-    echo "HTTP 已响应"
-    break
-  fi
-  sleep 0.5
-done
-if [[ "${_ready}" -ne 1 ]]; then
-  echo "错误: 等待 Hello HTTP 超时（请检查 ${DEPLOY_ROOT}/Hello/log/start_helloserver.log）" >&2
+echo "=== HTTP 探测（单条 POST）: ${BASE_URL} ==="
+# 单条请求；响应体打印到 stdout，末尾附 HTTP 状态码（连接失败等非 0 退出）
+if ! curl -sS -X POST "${BASE_URL}" \
+    -H 'Content-Type: application/json' \
+    -d '{"option":"Echo"}' \
+    -w '\n[HTTP %{http_code}]\n'; then
+  echo "错误: curl 请求失败（服务未就绪或网络错误，见 ${DEPLOY_ROOT}/Hello/log/start_helloserver.log）" >&2
   exit 1
 fi
 
