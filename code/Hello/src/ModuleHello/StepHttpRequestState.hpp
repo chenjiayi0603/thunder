@@ -11,7 +11,6 @@
 #define SRC_CMDHELLO_StepHttpRequestState_HPP_
 #include "step/HttpStep.hpp"
 #include "step/StepState.hpp"
-#include "step/StepCo.hpp"
 
 namespace core
 {

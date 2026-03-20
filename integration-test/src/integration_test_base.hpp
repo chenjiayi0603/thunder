@@ -9,8 +9,6 @@
 #include <ctime>
 
 #include "step/CoroutineState.hpp"
-#include "step/HttpAwaitable.hpp"
-#include "step/RedisAwaitable.hpp"
 #include "NetDefine.hpp"
 
 namespace thunder {

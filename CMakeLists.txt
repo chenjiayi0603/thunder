@@ -37,8 +37,6 @@ link_directories(${CMAKE_SOURCE_DIR}/deploy/3lib/lib)
 # 核心网络库源文件
 set(NET_SOURCES
     code/Net/src/step/StepState.cpp
-    code/Net/src/step/StepCoroutine.cpp
-    code/Net/src/step/HttpAwaitable.cpp
     code/Net/src/step/CoroutineState.cpp
     code/Net/src/step/HttpStep.cpp
     code/Net/src/codec/HttpCodec.cpp
@@ -46,7 +44,6 @@ set(NET_SOURCES
 
 # Hello 模块源文件
 set(HELLO_SOURCES
-    code/Hello/src/ModuleHello/StepHttpRequestCo.cpp
     code/Hello/src/ModuleHello/StepHttpRequestState.cpp
     code/Hello/src/ModuleHello/HttpRequestCo.cpp
     code/Hello/src/ModuleHello/HttpStateFuncCo.cpp
@@ -77,16 +74,7 @@ if(ENABLE_TESTS)
 endif()
 
 if(ENABLE_TESTS)
-    # 现有单元测试（转换为 Google Test）
-    add_executable(test_cotask test/test_cotask.cpp)
-    target_link_libraries(test_cotask PRIVATE thunder_core GTest::gtest GTest::gtest_main)
-    gtest_discover_tests(test_cotask)
-    
-    add_executable(test_http_awaitable test/test_http_awaitable.cpp)
-    target_link_libraries(test_http_awaitable PRIVATE thunder_core GTest::gtest GTest::gtest_main)
-    gtest_discover_tests(test_http_awaitable)
-    
-    # 启用测试
+    # TODO Step 10: 补充 task/ 体系的单元测试（test_when_all, test_sleep_for, test_callback_awaiter 等）
     enable_testing()
 endif()
 

@@ -111,7 +111,7 @@ docker run -p 8080:8080 thunder:latest
 
 1. ✅ 本地编译并运行测试
 2. 📖 阅读 `README.md` 了解框架架构
-3. 💻 查看 `code/Hello/src/ModuleHello/StepHttpRequestCo.cpp` 学习协程写法
+3. 💻 查看 `code/Hello/src/ModuleHello/StepHttpRequestCo20.cpp`（`StepCo20` + C++20 协程）学习写法
 4. 🚀 修改 `code/Hello/src/main.cpp` 实现自己的应用
 
 ## 获取帮助

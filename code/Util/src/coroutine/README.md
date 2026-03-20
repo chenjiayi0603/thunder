@@ -10,4 +10,6 @@ But switching context will copy the stack the coroutine used.
 
 Read source for detail.
 
+**Chinese:** [协程栈模型对比.md](./协程栈模型对比.md) — shared-stack+copy vs per-coroutine dedicated stack.
+
 Chinese blog : http://blog.codingnow.com/2012/07/c_coroutine.html
