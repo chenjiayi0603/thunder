@@ -1,21 +1,21 @@
 {
     "node_type": "CENTER",
-    "inner_host": "172.17.218.148",
+    "inner_host": "127.0.0.1",
     "inner_port": 27032,
-    "access_host": "172.17.218.148",
+    "access_host": "127.0.0.1",
     "access_port": 26032,
     "access_codec": 3,
     "center": [
         {
-            "host": "172.17.218.148",
+            "host": "127.0.0.1",
             "port": "27000"
         },
         {
-            "host": "172.17.218.148",
+            "host": "127.0.0.1",
             "port": "27022"
         },
         {
-            "host": "172.17.218.148",
+            "host": "127.0.0.1",
             "port": "27032"
         }
     ],

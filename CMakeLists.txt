@@ -53,7 +53,7 @@ install(TARGETS Hello RUNTIME DESTINATION Hello/bin)
 install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
 
 if(THUNDER_BUILD_CENTER AND TARGET Center)
-  install(TARGETS Center RUNTIME DESTINATION bin)
+  install(TARGETS Center RUNTIME DESTINATION Center/bin)
 endif()
 
 if(THUNDER_BUILD_HELLO_PLUGINS AND TARGET ModuleHello)
@@ -62,14 +62,14 @@ endif()
 
 if(THUNDER_BUILD_NODE_PLUGINS)
   if(TARGET CmdGetToken)
-    install(TARGETS CmdGetToken LIBRARY DESTINATION plugins/Logic)
+    install(TARGETS CmdGetToken LIBRARY DESTINATION Logic/plugins)
   endif()
   if(TARGET ModuleInterface)
-    install(TARGETS ModuleInterface LIBRARY DESTINATION plugins/Interface)
+    install(TARGETS ModuleInterface LIBRARY DESTINATION Interface/plugins)
   endif()
   if(TARGET CmdElection)
     install(TARGETS
       CmdElection CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin
-      LIBRARY DESTINATION plugins/Center)
+      LIBRARY DESTINATION Center/plugins)
   endif()
 endif()

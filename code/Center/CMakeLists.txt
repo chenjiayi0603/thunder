@@ -33,7 +33,7 @@ function(_center_plugin _name _subdir)
   )
   thunder_plugin_link_net_proto_util(${_name})
   if(THUNDER_DEPLOY_AUTO)
-    thunder_deploy_copy(${_name} "plugins/Center/${_name}.so")
+    thunder_deploy_copy(${_name} "Center/plugins/${_name}.so")
   endif()
 endfunction()
 
@@ -62,5 +62,5 @@ thunder_plugin_include_base(ModuleAdmin
 thunder_plugin_link_net_proto_util(ModuleAdmin)
 
 if(THUNDER_DEPLOY_AUTO)
-  thunder_deploy_copy(ModuleAdmin "plugins/Center/ModuleAdmin.so")
+  thunder_deploy_copy(ModuleAdmin "Center/plugins/ModuleAdmin.so")
 endif()

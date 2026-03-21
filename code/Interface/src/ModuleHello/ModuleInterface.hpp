@@ -1,21 +1,13 @@
 /*******************************************************************************
- * Project:  Hello
- * @file     ModuleHello.hpp
- * @brief 
- * @author   cjy
- * @date:    2016年4月19日
- * @note
- * Modify history:
+ * Project:  Interface
+ * @file     ModuleInterface.hpp
+ * @brief    Interface 节点 ModuleHello：gentoken + 与 Hello 对齐的协程 HTTP 测试入口
  ******************************************************************************/
 #ifndef SRC_ModuleInterface_ModuleInterface_HPP_
 #define SRC_ModuleInterface_ModuleInterface_HPP_
+
 #include <map>
 
-#include "google/protobuf/util/json_util.h"
-#include "google/protobuf/map.h"
-#include "google/protobuf/any.pb.h"
-#include "test_proto3.pb.h"
-#include "util/encrypt/base64.h"
 #include "cmd/Module.hpp"
 #include "cmd/Cmd.hpp"
 #include "step/Step.hpp"
@@ -29,19 +21,23 @@ namespace robot
 
 #define GET_TOKEN_GEN (10001)
 
-class ModuleHello: public net::Module
+class ModuleHello : public net::Module
 {
 public:
     ModuleHello();
     virtual ~ModuleHello();
     virtual bool Init();
-    virtual bool AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-    void GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-    void VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    bool AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody) override;
+    void GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    void VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+
 private:
-    void Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode);
+    /// 与 Hello ModuleHello::TestMsg 一致：body JSON 中 option 触发 Echo / 协程演示
+    bool DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    void Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode);
 };
 
-} /* namespace core */
+} /* namespace robot */
 
 #endif /* SRC_ModuleInterface_ModuleInterface_HPP_ */

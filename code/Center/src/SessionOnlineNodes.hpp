@@ -112,6 +112,8 @@ protected:
     void RemoveNodeBroadcast(const NodeReport& oNodeReport);
     void CheckLeader();
     void SendCenterBeat(uint32 uiServerTime = GetLabor()->GetNowTime());
+    /// 客户端首次上报 node_id==0 时分配正式 ID（与 Labor::m_uiNodeId 初始 0 对应）
+    uint16 AllocNextNodeId();
     uint32 m_uiLastSendCenterBeat = 0;
     uint32 m_uiLastCheckLeader = 0;
     uint32 m_uiServerTime = GetLabor()->GetNowTime();
@@ -138,6 +140,8 @@ private:
     std::map<std::string, CenterElection> m_mapCenterElection;
 
     std::map<std::string, std::list<std::pair<NodeNotice,uint32> >> m_mapSendingNodeNotice;//map<to_node_Identify,list<NodeNotice,timestamp>>
+
+    uint16 m_uiNextNodeIdAlloc = 1; ///< 与 NODE_ID_MAX 配合，有效范围 [1, NODE_ID_MAX-1]
 };
 
 inline SessionOnlineNodes* GetSessionOnlineNodes() {return net::GetGlobalConfigSession<SessionOnlineNodes>("CenterCmd.json",1);}

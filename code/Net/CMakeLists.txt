@@ -40,6 +40,21 @@ if(THUNDER_DEPLOY_AUTO)
   thunder_deploy_copy(Net "lib/libNet.so")
   thunder_deploy_copy(Hello "Hello/bin/Hello")
   if(THUNDER_BUILD_CENTER AND TARGET Center)
-    thunder_deploy_copy(Center "bin/Center")
+    # 与 deploy 脚本默认 CENTER_BIN=deploy/Center/bin/Center 一致
+    thunder_deploy_copy(Center "Center/bin/Center")
   endif()
+  # Logic/Interface 节点与 Hello 共用同一 Net 主程序；联调脚本默认 Logic/bin/Logic、Interface/bin/Interface
+  add_custom_command(
+    TARGET Hello
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/Logic/bin"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/Interface/bin"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Hello>"
+            "${THUNDER_DEPLOY_ROOT}/Logic/bin/Logic"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Hello>"
+            "${THUNDER_DEPLOY_ROOT}/Interface/bin/Interface"
+    COMMENT "Deploy: deploy/Logic/bin/Logic + deploy/Interface/bin/Interface"
+  )
 endif()

@@ -4,10 +4,8 @@
 #include <coroutine>
 #include <exception>
 #include <optional>
-#include <type_traits>
 #include <utility>
 #include <cstdio>
-#include "NetDefine.hpp"
 
 namespace net
 {

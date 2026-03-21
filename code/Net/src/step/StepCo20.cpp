@@ -181,6 +181,48 @@ Task<bool> StepCo20::SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& o
     co_return bResult;
 }
 
+Task<bool> StepCo20::SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    oMsgHead.set_seq(GetSequence());
+    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+    bool bSuccess = GetLabor()->SendTo(stMsgShell, oMsgHead, oMsgBody);
+    if (!bSuccess)
+    {
+        co_return false;
+    }
+    HttpRespAwaiter awaiter(this, true);
+    bool bResult = co_await awaiter;
+    co_return bResult;
+}
+
+Task<bool> StepCo20::SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    oMsgHead.set_seq(GetSequence());
+    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+    bool bSuccess = GetLabor()->SendTo(strIdentify, oMsgHead, oMsgBody);
+    if (!bSuccess)
+    {
+        co_return false;
+    }
+    HttpRespAwaiter awaiter(this, true);
+    bool bResult = co_await awaiter;
+    co_return bResult;
+}
+
+Task<bool> StepCo20::SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    oMsgHead.set_seq(GetSequence());
+    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+    bool bSuccess = GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody);
+    if (!bSuccess)
+    {
+        co_return false;
+    }
+    HttpRespAwaiter awaiter(this, true);
+    bool bResult = co_await awaiter;
+    co_return bResult;
+}
+
 void StepCo20::OnCoroutineComplete(bool bSuccess)
 {
     LOG4_TRACE("%s() success:%d", __FUNCTION__, bSuccess);

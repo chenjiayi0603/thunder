@@ -12,3 +12,4 @@ deploy/bin/Interface
 deploy/bin/Logic
 deploy/Hello/bin/Hello
 *.log
+*.pid

@@ -11,13 +11,10 @@
 #define Worker_HPP_
 
 #include "../NetDefine.hpp"
-#include "../NetError.hpp"
 #include "Interface.hpp"
 
 #include "Attribution.hpp"
 #include "labor/Labor.hpp"
-#include "step/StepNode.hpp"
-#include "step/StepState.hpp"
 #include "step/MysqlStep.hpp"
 #include "cmd/Module.hpp"
 
@@ -94,7 +91,7 @@ public:
 	bool IoRead(tagIoWatcherData* pData, struct ev_io* watcher);
 	bool IoWrite(tagIoWatcherData* pData, struct ev_io* watcher);
 	bool IoError(tagIoWatcherData* pData, struct ev_io* watcher);
-	bool IoTimeout(struct ev_timer* watcher, bool bCheckBeat = true);
+	bool IoTimeout(struct ev_timer* watcher, bool bCheckBeat = true)override;
 	bool StepTimeout(Step* pStep, struct ev_timer* watcher);
 	bool SessionTimeout(Session* pSession, struct ev_timer* watcher);
 	bool FdTransfer();

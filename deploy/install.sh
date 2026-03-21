@@ -32,7 +32,7 @@ lib3_path=/app/thunder/deploy/3lib
 config_file="server_dir.conf"
 server_file="server_list.conf"
 
-SRC_IP=172.17.218.148
+SRC_IP=
 #不填则自动识别目标物理地址为本物理机地址
 DST_IP=
 

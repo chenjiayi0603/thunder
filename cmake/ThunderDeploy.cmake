@@ -8,8 +8,11 @@
 #   deploy/lib/libNet.so
 #   deploy/lib/libProto.so
 #   deploy/Hello/bin/Hello
-#   deploy/bin/Center
+#   deploy/Center/bin/Center
 #   deploy/Hello/plugins/ModuleHello.so
+#   deploy/Interface/plugins/ModuleInterface.so
+#   deploy/Logic/plugins/CmdGetToken.so
+#   deploy/Center/plugins/*.so
 #
 # 目标文件使用绝对路径执行 copy；COMMENT 中仅写 deploy/... 相对路径便于阅读与文档。
 

@@ -141,6 +141,16 @@ namespace coor
         }]
     }
      * */
+    uint16 SessionOnlineNodes::AllocNextNodeId()
+    {
+        const uint16 id = m_uiNextNodeIdAlloc;
+        if (++m_uiNextNodeIdAlloc >= static_cast<uint16>(NODE_ID_MAX))
+        {
+            m_uiNextNodeIdAlloc = 1;
+        }
+        return (id == 0 ? static_cast<uint16>(1) : id);
+    }
+
     uint16 SessionOnlineNodes::AddNode(const NodeReport &oNodeReport, bool boRegister)
     {
         LOG4_TRACE("%s() AddNode oNodeReport WorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), oNodeReport.DebugString().c_str());
@@ -149,6 +159,12 @@ namespace coor
         NodeReport oNodeInfoObj = oNodeReport;
         oNodeInfoObj.clear_node();
         oNodeInfoObj.clear_workers();
+        if (oNodeInfoObj.node_id() == 0)
+        {
+            oNodeInfoObj.set_node_id(AllocNextNodeId());
+            LOG4_INFO("%s() first register: assign node_id=%u strNodeIdentify(%s) node_type(%s)", __FUNCTION__,
+                      oNodeInfoObj.node_id(), strNodeIdentify.c_str(), oNodeInfoObj.node_type().c_str());
+        }
 
         auto identify_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
         if (identify_node_iter == m_mapIdentifyNodeId.end())

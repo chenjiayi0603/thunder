@@ -8,9 +8,12 @@ endif()
 
 include("${CMAKE_SOURCE_DIR}/cmake/ThunderPlugin.cmake")
 
+# 各节点插件独立编译：源文件均在 code/Interface/ 下，不引用 Hello/Logic/Center 的 .cpp
 add_library(ModuleInterface SHARED
   "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/ModuleInterface.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/InterfaceSession.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/HttpRequestCo.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/StepHttpRequestCo20.cpp"
 )
 set_target_properties(ModuleInterface PROPERTIES OUTPUT_NAME "ModuleInterface" PREFIX "")
 
@@ -29,5 +32,6 @@ thunder_plugin_link_net_proto_util(ModuleInterface)
 
 if(THUNDER_DEPLOY_AUTO)
   include("${CMAKE_SOURCE_DIR}/cmake/ThunderDeploy.cmake")
-  thunder_deploy_copy(ModuleInterface "plugins/Interface/ModuleInterface.so")
+  # 与 deploy/Interface/conf 中 so_path「plugins/*.so」相对工作目录 deploy/Interface 一致
+  thunder_deploy_copy(ModuleInterface "Interface/plugins/ModuleInterface.so")
 endif()

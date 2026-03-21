@@ -12,8 +12,13 @@ namespace net
 {
 
 /**
- * @brief C++20 协程步骤基类
- * @note 使用 C++20 协程替代 StepState 状态机模式，使异步代码写起来像同步代码
+ * @brief C++20 协程步骤基类（继承 HttpStep）
+ * @note 同步写法、异步调度：
+ *       - HTTP：HttpGetAsync / HttpPostAsync / SendToAsync(HttpMsg)，回调走 Callback(HttpMsg)。
+ *       - 节点间二进制（PB/内部协议）：SendToInternalAsync / SendToInternalByIdentifyAsync，
+ *         发出前将 MsgHead.seq 置为本 Step 的 GetSequence()，与 Worker 按 seq 将响应路由回
+ *         Callback(MsgHead, MsgBody) 的机制一致；co_await 后读 GetLastRspMsgHead() / Body()。
+ *       - HttpRespAwaiter 实际表示「任意一次回调」后的恢复（HTTP 或二进制）。
  */
 class StepCo20 : public HttpStep
 {
@@ -87,7 +92,26 @@ public:
      * @return Task<bool> 表示发送是否成功
      */
     Task<bool> SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
-    
+
+    /**
+     * @brief 向指定连接异步发送内部二进制协议（MsgHead+MsgBody），并挂起直到本次请求的响应回调
+     * @note 自动设置 oMsgHead.seq = GetSequence()、msgbody_len，以便 Worker 按 seq 回调本 Step
+     */
+    Task<bool> SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody);
+
+    /**
+     * @brief 向 strIdentify 对应节点异步发送内部二进制协议（与 Labor::SendTo(identify,...) 一致）
+     */
+    Task<bool> SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody);
+    /**
+     * @brief 向 strNodeType 对应节点异步发送内部二进制协议（与 Labor::SendToSession(nodeType,...) 一致）
+     */
+    Task<bool> SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody);
+
+    const MsgHead& GetLastRspMsgHead() const { return m_oResMsgHead; }
+    const MsgBody& GetLastRspMsgBody() const { return m_oResMsgBody; }
+    const HttpMsg& GetLastRspHttpMsg() const { return m_oResHttpMsg; }
+
 protected:
     /**
      * @brief 协程完成回调
@@ -133,8 +157,7 @@ private:
 };
 
 /**
- * @brief HTTP 响应等待器
- * @note 用于在协程中等待 HTTP 响应
+ * @brief 异步一步回调等待器（HTTP 或内部二进制响应）
  */
 struct HttpRespAwaiter
 {

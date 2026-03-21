@@ -65,8 +65,9 @@ bool CmdNodeRegister::AnyMessage(
         uint16 unNodeId = m_pSessionOnlineNodes->AddNode(oNodeReport,true);
         if (0 == unNodeId)
         {
-			LOG4_ERROR("failed to AddNode !");
-        	oNodeReportRsp.set_errcode(1);
+            LOG4_ERROR("failed to AddNode ! nodeIdentify:%s (unexpected: AddNode should assign id when report node_id was 0)",
+                        strNodeIdentify.c_str());
+            oNodeReportRsp.set_errcode(1);
         }
         else
         {

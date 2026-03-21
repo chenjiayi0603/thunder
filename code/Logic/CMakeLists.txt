@@ -26,5 +26,6 @@ thunder_plugin_link_net_proto_util(CmdGetToken)
 
 if(THUNDER_DEPLOY_AUTO)
   include("${CMAKE_SOURCE_DIR}/cmake/ThunderDeploy.cmake")
-  thunder_deploy_copy(CmdGetToken "plugins/Logic/CmdGetToken.so")
+  # 与 deploy/Logic/conf 中 so_path「plugins/*.so」相对工作目录 deploy/Logic 一致
+  thunder_deploy_copy(CmdGetToken "Logic/plugins/CmdGetToken.so")
 endif()
