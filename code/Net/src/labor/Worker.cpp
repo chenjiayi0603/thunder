@@ -41,7 +41,6 @@
 #include "cmd/sys_cmd/CmdUpdateNodeId.hpp"
 #include "cmd/sys_cmd/CmdNodeNotice.hpp"
 #include "cmd/sys_cmd/CmdBeat.hpp"
-#include "cmd/sys_cmd/CmdSimpleRes.hpp"
 #include "cmd/sys_cmd/CmdHeartBeatRes.hpp"
 #include "cmd/sys_cmd/CmdUpdateConfig.hpp"
 #include "cmd/sys_cmd/CmdSetLogLevel.hpp"

@@ -12,13 +12,7 @@
 #include "cryptopp/cryptlib.h"
 #include "cryptopp/aes.h"
 #include "cryptopp/gzip.h"
-#include "util/encrypt/hconv.h"
 #include "util/encrypt/rc5.h"
-
-// #include "crypto/rsa_encrypt.h"
-// #include "crypto/aes_crypt.h"
-// // #include "crypto/client.h"
-// #include "crypto/comm.h"
 
 #include "ThunderCodec.hpp"
 

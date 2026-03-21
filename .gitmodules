@@ -1,27 +1,50 @@
+# 第三方子模块：可复现构建以父仓库记录的 submodule 提交（gitlink）为准。
+# 克隆后请执行: git submodule update --init --recursive
+# 勿随意使用 submodule update --remote，否则会偏离下列已验证提交。
+# 当前与工程联调一致的提交（更新子模块后请同步修改本段注释）:
+#   c-ares              2870f6b14723b3bb77a365f4745abcbd74c2ffad  (describe: v1.31.0-327-g2870f6b1)
+#   cryptopp            b5242667a24e3db8e4600e77b2e502ef204e5280  (CRYPTOPP_8_9_0-23-gb5242667)
+#   curl                2b3438d486982b5b22c001ab2c601837e83b4787  (curl-8_19_0-26-g2b3438d486)
+#   hiredis-vip         f12060498004494a3e1de11f653a8624f3d218c3  (0.3.0-4-gf120604)
+#   libev               93823e6ca699df195a6c7b8bfa6006ec40ee0003  (master)
+#   log4cplus           505a61e814ece740ce6a116d72f2091a37f472a6  (REL_2_0_2-462-g505a61e8)
+#   mariadb-connector-c 532350d8fc56c7783085d7a4f7747737883f84f7  (v3.4.8-15-g532350d8)
+#   mongo-c-driver      e97ed96e1d1c96ca57cfa0639a42798a67c71836  (1.11.0-2340-ge97ed96e1d)
+#   protobuf            eaec88fea0b95468f293f89bd08e5a0e5ab8490b  (v33-dev-1017-geaec88fea)
+#
 [submodule "code/3party/libev"]
 	path = code/3party/libev
 	url = https://github.com/enki/libev.git
+	branch = master
 [submodule "code/3party/hiredis-vip"]
 	path = code/3party/hiredis-vip
 	url = https://github.com/vipshop/hiredis-vip.git
+	branch = master
 [submodule "code/3party/cryptopp"]
 	path = code/3party/cryptopp
 	url = https://github.com/weidai11/cryptopp.git
+	branch = master
 [submodule "code/3party/mongo-c-driver"]
 	path = code/3party/mongo-c-driver
 	url = https://github.com/mongodb/mongo-c-driver.git
+	branch = master
 [submodule "code/3party/mariadb-connector-c"]
 	path = code/3party/mariadb-connector-c
 	url = https://github.com/mariadb-corporation/mariadb-connector-c.git
+	branch = 3.4
 [submodule "code/3party/curl"]
 	path = code/3party/curl
 	url = https://github.com/curl/curl.git
+	branch = master
 [submodule "code/3party/c-ares"]
 	path = code/3party/c-ares
 	url = https://github.com/c-ares/c-ares.git
+	branch = main
 [submodule "code/3party/protobuf"]
 	path = code/3party/protobuf
 	url = https://github.com/protocolbuffers/protobuf.git
+	branch = main
 [submodule "code/3party/log4cplus"]
 	path = code/3party/log4cplus
 	url = https://github.com/log4cplus/log4cplus.git
+	branch = master
