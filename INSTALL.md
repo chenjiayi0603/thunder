@@ -55,8 +55,10 @@ cmake --install build
 
 ```bash
 # 仅重编并安装 Interface / Hello 插件（改 code/Interface 或 code/Hello 后，不必整工程重编）
-cmake --build build --target InterfacePlugins -j1 # deploy/Interface/plugins/ModuleInterface.so
-cmake --build build --target HelloPlugins -j1 # deploy/Hello/plugins/ModuleHello.so
+# deploy/Interface/plugins/ModuleInterface.so
+cmake --build build --target InterfacePlugins -j1
+# deploy/Hello/plugins/ModuleHello.so 
+cmake --build build --target HelloPlugins -j1 
 ```
 
 ---

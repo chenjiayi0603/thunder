@@ -25,7 +25,8 @@ public:
 
     virtual net::Task<> CoroutineMain() override;
 
-    void Response(int nCode);
+    /// @param pUpstreamRsp 非空时把上游 HTTP 响应的 status/body 一并写入返回 JSON（body 过长会截断）
+    void Response(int nCode, const HttpMsg* pUpstreamRsp = nullptr);
 
 private:
     uint32 m_uiTestVal = 0;
