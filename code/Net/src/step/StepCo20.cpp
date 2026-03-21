@@ -27,6 +27,7 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
     if (m_bCoroutineCompleted)
     {
         LOG4_TRACE("%s() coroutine already completed", __FUNCTION__);
+        m_oAsyncBootstrap.reset();
         OnCoroutineComplete(true);
         return STATUS_CMD_COMPLETED;
     }
@@ -59,9 +60,9 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
         }
     };
     
-    // 启动异步任务
-    coroTask();
-    
+    // 启动异步任务（必须延长 AsyncTask 生命周期，不可 coroTask(); 临时析构）
+    m_oAsyncBootstrap.emplace(coroTask());
+
     return STATUS_CMD_RUNNING;
 }
 

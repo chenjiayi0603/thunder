@@ -666,6 +666,12 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
 										AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
 									}
                             	}
+                                else if (util::CODEC_HTTP == pConn->eCodecType && pConn->dKeepAlive > 0)
+                                {
+                                    // 无 Keep-Alive / Connection 时，上面未刷新定时器；accept 阶段 1s 检测仍在，
+                                    // 异步 Step/协程回包前会误关连接（curl 52 Empty reply）
+                                    AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                                }
                             }
 
                             bDisposeResult = Dispose(pConn, oInHttpMsg, oOutHttpMsg);

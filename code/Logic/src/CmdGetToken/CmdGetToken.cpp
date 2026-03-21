@@ -9,7 +9,6 @@
  ******************************************************************************/
 #include "CmdGetToken.hpp"
 #include "LogicSession.h"
-#include "util/CommonUtils.hpp"
 
 MUDULE_CREATE(robot::CmdGetToken);
 

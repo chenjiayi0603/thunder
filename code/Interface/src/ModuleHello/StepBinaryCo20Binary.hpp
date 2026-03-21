@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Interface 节点独立副本（见 StepBinaryCo20.cpp）
+ * Interface 节点独立副本（见 StepBinaryCo20Binary.cpp）
  ******************************************************************************/
 #ifndef INTERFACE_MODULEHELLO_StepBinaryCo20Binary_HPP_
 #define INTERFACE_MODULEHELLO_StepBinaryCo20Binary_HPP_
@@ -10,8 +10,9 @@ namespace core
 {
 
 /**
- * @brief TestStepCo20Binary：co_await SendToInternalByNodeTypeAsync("LOGIC",...)；HTTP 入口须用 HttpMsg 构造以正确回 HTTP。
- *        发往 LOGIC 的 MsgBody 为客户端消息体原样透传（不再包 option/via/forward），便于 Cmd 侧按 JSON 字段解析。
+ * @brief 协程发往 LOGIC（cmd 10001）：body JSON 的 option 为 GenKey / VerifyKey / TestStepCo20Binary。
+ *        GenKey、VerifyKey 原 SendToCallback 逻辑改为组包后 co_await SendToInternalByNodeTypeAsync；
+ *        TestStepCo20Binary 为消息体原样透传。HTTP 入口须用 HttpMsg 构造以便 ResponseToClient。
  */
 class StepBinaryCo20Binary : public net::StepCo20
 {

@@ -222,7 +222,8 @@ else
   echo "=== [4/4] HTTP：GenKey → VerifyKey（经 Interface → Center → LOGIC）— ${BASE_URL} ==="
 fi
 
-# GenKey：POST 到无 query 的 URL（body 为空）；VerifyKey：POST 到 ?token=&key=
+# GenKey：POST JSON {"option":"GenKey"}；VerifyKey：POST 同路径 JSON {"option":"VerifyKey","token","key"}
+#（与 ModuleInterface DispatchJsonTestsFromBody + StepBinaryCo20Binary 一致）
 # --fail：4xx/5xx 时 curl 非 0
 _parse_genkey_json() {
   local json="$1"
@@ -240,12 +241,25 @@ _parse_genkey_json() {
   return 1
 }
 
+_build_verifykey_json() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg t "${TOKEN}" --arg k "${KEY}" '{option:"VerifyKey",token:$t,key:$k}'
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps({"option":"VerifyKey","token":sys.argv[1],"key":sys.argv[2]}))' "${TOKEN}" "${KEY}"
+    return 0
+  fi
+  echo "错误: 构造 VerifyKey 请求体需要 jq 或 python3" >&2
+  return 1
+}
+
 GENKEY_BODY=""
 if ! GENKEY_BODY=$(_curl_smoke -f -sS -m "${GENKEY_VERIFY_MAXTIME}" -X POST "${BASE_URL}" \
     -H 'Content-Type: application/json' \
-    -d '' \
+    -d '{"option":"GenKey"}' \
     -w '\n[HTTP %{http_code}]\n'); then
-  echo "错误: GenKey 请求失败。(404) 多为未部署 plugins/ModuleInterface.so；(52) 常为 Center/Logic 未起或未注册、或 step 超时" >&2
+  echo "错误: GenKey 请求失败。(404) 多为未部署 plugins/ModuleInterface.so；(52) 常为连接在异步回包前被关闭（需重编 Net/Interface）、Center/Logic 未起、或 step 超时" >&2
   echo "日志: ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log；Center/Logic 见各自 log/start_interfaceserver.log" >&2
   exit 1
 fi
@@ -262,17 +276,15 @@ if [[ -z "${TOKEN}" || -z "${KEY}" ]]; then
   exit 1
 fi
 
-VERIFY_URL=""
-if command -v python3 >/dev/null 2>&1; then
-  VERIFY_URL=$(python3 -c "from urllib.parse import quote; import sys; b,t,k=sys.argv[1:4]; print(b+'?token='+quote(t,safe='')+'&key='+quote(k,safe=''))" "${BASE_URL}" "${TOKEN}" "${KEY}")
-else
-  VERIFY_URL="${BASE_URL}?token=${TOKEN}&key=${KEY}"
+VERIFY_JSON=""
+if ! VERIFY_JSON=$(_build_verifykey_json); then
+  exit 1
 fi
 
 VERIFY_BODY=""
-if ! VERIFY_BODY=$(_curl_smoke -f -sS -m "${GENKEY_VERIFY_MAXTIME}" -X POST "${VERIFY_URL}" \
+if ! VERIFY_BODY=$(_curl_smoke -f -sS -m "${GENKEY_VERIFY_MAXTIME}" -X POST "${BASE_URL}" \
     -H 'Content-Type: application/json' \
-    -d '' \
+    -d "${VERIFY_JSON}" \
     -w '\n[HTTP %{http_code}]\n'); then
   echo "错误: VerifyKey 请求失败。请核对 token/key 与 Logic CmdGetToken 配置；日志见 Interface/Logic" >&2
   echo "日志: ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log" >&2

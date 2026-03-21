@@ -6,8 +6,6 @@
 #ifndef SRC_ModuleInterface_ModuleInterface_HPP_
 #define SRC_ModuleInterface_ModuleInterface_HPP_
 
-#include <map>
-
 #include "cmd/Module.hpp"
 #include "cmd/Cmd.hpp"
 #include "step/Step.hpp"
@@ -19,8 +17,6 @@
 namespace robot
 {
 
-#define GET_TOKEN_GEN (10001)
-
 class ModuleHello : public net::Module
 {
 public:
@@ -28,12 +24,9 @@ public:
     virtual ~ModuleHello();
     virtual bool Init();
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
-    bool AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody) override;
-    void GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
-    void VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
 
 private:
-    /// 与 Hello ModuleHello::TestMsg 一致：body JSON 中 option 触发 Echo / 协程演示
+    /// body JSON 中 option：Echo、TestHttpRequestCo20、GenKey/VerifyKey/TestStepCo20Binary（StepBinaryCo20Binary）等
     bool DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     void Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode);
 };

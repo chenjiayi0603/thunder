@@ -113,26 +113,25 @@ cmake --build build --target HelloPlugins -j1
 
 ---
 
-##  脚本（联调 / 压测，可选）
+## 脚本（联调 / 压测，可选）
 
-目录 `deploy/tests/` 
-均在 **`cmake --install`** 已将产物装进 **`deploy/`** 后使用；工作目录为 **`deploy/`**（脚本在 **`deploy/tests/`**）。
+需已 **`cmake --install`** 到 **`deploy/`**。在 **`deploy/`** 下执行；更多参数见各脚本文件头注释。
 
-**`start_helloserver.sh`** — 启动 Hello 节点（**`deploy/Hello/bin/Hello`**，工作目录 **`deploy/Hello`**）；若已有 Hello 进程会先停再起；启动后用 **wrk** 做一次极短 HTTP 冒烟。可选 **`CONF`**、**`HELLO_*`**、**`WRK_SCRIPT`** 等（见脚本头注释）。
+**`start_helloserver.sh`** — 启动 Hello，并做一次极短 HTTP 冒烟。
 
 ```bash
 cd deploy
 ./tests/start_helloserver.sh
 ```
 
-**`start_interfaceserver.sh`** — 一键联调：**Center → Logic → Interface**，最后对 Interface 做 **GenKey / VerifyKey** HTTP 冒烟（经 Center 到 Logic）。可选 **`SKIP_CENTER_LOGIC`**、各 **`CONF`**、超时等（见脚本头注释）。
+**`start_interfaceserver.sh`** — 按顺序拉起 Center / Logic / Interface，并做 Interface 联调冒烟。
 
 ```bash
 cd deploy
 ./tests/start_interfaceserver.sh
 ```
 
-**`test_helloserver_wrk.sh`** — 用 **wrk** 压测 Hello 的 **`POST /hello/hello`**（**`wrk_helloserver.lua`**，body `{"option":"Echo"}`）。**须先已启动 Hello**（可用上文的 **`start_helloserver.sh`**）。可选 **`HELLO_HOST`**、**`HELLO_PORT`**、**`HELLO_PATH`**、**`WRK_*`**（见脚本头注释）。样例输出见 **`deploy/tests/wrk_test_result.md`**。
+**`test_helloserver_wrk.sh`** — wrk 压测 Hello（须先已启动 Hello）。样例输出见 **`deploy/tests/wrk_test_result.md`**。
 
 ```bash
 cd deploy

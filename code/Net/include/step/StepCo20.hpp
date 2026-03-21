@@ -7,6 +7,7 @@
 #include "NetDefine.hpp"
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace net
 {
@@ -134,6 +135,10 @@ protected:
     std::string m_strStepDesc = "StepCo20";
 
 private:
+    /// 包住「co_await CoroutineMain()」的外层 AsyncTask；不可像临时对象那样在 Emit() 末尾析构，否则挂起后帧被
+    /// destroy，Callback 里 resume 的内层协程完成后会回到已销毁外层（崩溃 / curl 52）。
+    std::optional<AsyncTask> m_oAsyncBootstrap;
+
     // 协程句柄
     std::coroutine_handle<> m_coroHandle;
     
