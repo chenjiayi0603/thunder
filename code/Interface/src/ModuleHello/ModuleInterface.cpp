@@ -4,9 +4,8 @@
  * @brief    gentoken + HTTP/二进制 JSON option 协程演示（协程源在 Interface 目录内，独立于 Hello）
  ******************************************************************************/
 #include "ModuleInterface.hpp"
-#include "HttpRequestCo.hpp"
+#include "StepBinaryCo20Binary.hpp"
 #include "StepHttpRequestCo20.hpp"
-#include "step/StepCo20.hpp"
 #include "util/StringCoder.hpp"
 #include "util/CommonUtils.hpp"
 #include <algorithm>
@@ -19,86 +18,6 @@ namespace robot
 {
 
 namespace {
-
-constexpr uint32_t kCmdToLogicTokenBinaryDemo = 10001u;
-
-/**
- * TestStepCo20Binary：co_await SendToInternalByNodeTypeAsync("LOGIC",...)；HTTP 入口须用 HttpMsg 构造以正确回 HTTP。
- * 发往 LOGIC 的 MsgBody 为客户端消息体原样透传（不再包 option/via/forward），便于 Cmd 侧按 JSON 字段解析。
- */
-class StepBinaryCo20Binary : public net::StepCo20
-{
-public:
-    /// 须用 HttpMsg 构造，保证 ResponseToClient 走 HTTP 分支（m_oReqMsgHead.cmd()==0）
-    StepBinaryCo20Binary(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
-    net::Task<> CoroutineMain() override;
-
-protected:
-    void OnCoroutineComplete(bool bSuccess) override;
-};
-
-StepBinaryCo20Binary::StepBinaryCo20Binary(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
-    : net::StepCo20(stMsgShell, oInHttpMsg)
-{
-    m_strStepDesc = "StepBinaryCo20Binary";
-}
-
-void StepBinaryCo20Binary::OnCoroutineComplete(bool /*bSuccess*/) {}
-
-net::Task<> StepBinaryCo20Binary::CoroutineMain()
-{
-    LOG4_TRACE("%s() cmd %u seq %u", __FUNCTION__, m_oReqMsgHead.cmd(), m_oReqMsgHead.seq());
-
-    // 透传消息体：与 DispatchJsonTestsFromBody 传入的 HttpMsg.body() 一致
-    std::string strPassthrough = m_oInHttpMsg.body();
-    constexpr size_t kMaxPassthroughBytes = 64 * 1024;
-    if (strPassthrough.size() > kMaxPassthroughBytes)
-    {
-        strPassthrough.resize(kMaxPassthroughBytes);
-    }
-
-    MsgBody oOutBody;
-    oOutBody.set_body(std::move(strPassthrough));
-    MsgHead oOutHead;
-    oOutHead.set_cmd(kCmdToLogicTokenBinaryDemo);
-
-    const bool okLogic = co_await SendToInternalByNodeTypeAsync("LOGIC", oOutHead, oOutBody);
-
-    MsgHead logicHeadSnap;
-    MsgBody logicBodySnap;
-    if (okLogic)
-    {
-        logicHeadSnap = GetLastRspMsgHead();
-        logicBodySnap = GetLastRspMsgBody();
-    }
-
-    util::CJsonObject oRsp;
-    oRsp.Add("code", okLogic ? 0 : 1);
-    oRsp.Add("msg", okLogic ? "ok" : "logic step failed");
-    oRsp.Add("demo", "ModuleInterface.cpp: co_await SendToInternalByNodeTypeAsync(LOGIC)");
-    oRsp.Add("ok_logic", okLogic);
-    oRsp.Add("req_cmd", static_cast<int32_t>(m_oReqMsgHead.cmd()));
-    oRsp.Add("req_seq", static_cast<int32_t>(m_oReqMsgHead.seq()));
-    // SendToInternalByNodeTypeAsync 为 false：多为 Worker::SendToNext 找不到 LOGIC（NodesMgr 无节点），
-    // 即 Center 未起、Logic 未注册、或 Interface 与 Center 地址不一致；见 Interface 日志 no tagMsgShell match LOGIC
-    if (!okLogic)
-    {
-        oRsp.Add(
-            "hint",
-            "SendToSession(LOGIC) failed: no LOGIC node in Interface route table (NodesMgr). "
-            "Check Center is listening, Logic registered to Center, Interface.json center matches Center; "
-            "start order Center -> Logic -> Interface. See Interface log: no tagMsgShell match LOGIC");
-    }
-
-    if (okLogic)
-    {
-        const std::string& logicBody = logicBodySnap.body();
-        std::string preview = logicBody.size() > 1024 ? logicBody.substr(0, 1024) + "..." : logicBody;
-        oRsp.Add("logic_rsp_preview", preview);
-    }
-    ResponseToClient(200, oRsp.ToString());
-    co_return;
-}
 
 HttpMsg MakeSyntheticHttpFromJsonBody(const std::string& body)
 {
@@ -155,18 +74,12 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
         return net::Launch(new core::StepHttpRequestCo20(stMsgShell, oHttp));
     }
-    if ("TestHttpRequestCo" == strOption)
-    {
-        LOG4_TRACE("%s TestHttpRequestCo", __FUNCTION__);
-        HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
-        return net::Launch(new core::HttpRequestCo(stMsgShell, oHttp));
-    }
 
     /// StepCo20：HTTP 用 HttpMsg 构造 Step（否则 ResponseToClient 误走二进制回包，curl 会 Empty reply）
     if ("TestStepCo20Binary" == strOption)
     {
         LOG4_TRACE("%s TestStepCo20Binary", __FUNCTION__);
-        return GetLabor()->ExecStep(new StepBinaryCo20Binary(stMsgShell, oInHttpMsg), 0.0);
+        return GetLabor()->ExecStep(new core::StepBinaryCo20Binary(stMsgShell, oInHttpMsg), 0.0);
     }
 
     LOG4_TRACE("%s unknown option %s", __FUNCTION__, strOption.c_str());

@@ -4,18 +4,21 @@
 
 ## 首次构建与运行
 
+**完整流程（含子模块与第三方）**见仓库根 **`INSTALL.md`** 中「一键」命令。
+
+仅当 **`thirdparty_deploy` 已做过**、只需编主工程并安装时，可在仓库根：
+
 ```bash
-# 一次性：配置 + 全量编译 + 安装到 deploy/（协议、libNet/libProto、各节点可执行文件与 *Plugins 等，由主工程一并编出）
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j"$(nproc)" && cmake --install build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j1 && cmake --install build
 
 cd deploy && ./nodes.sh restart all
 ```
 
-若需**先单独**拉协议再编其余，可在已有 `build/` 目录下执行：`cmake --build build --target Proto`，再 `cmake --build build -j"$(nproc)" && cmake --install build`。
+若需**先单独**拉协议再编其余，可在已有 `build/` 下：`cmake --build build --target Proto`，再全量 `cmake --build` / `cmake --install`。
 
 ## 常用命令
 
-- 全量编译并安装（与上文「一次性」相同）：`cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j"$(nproc)" && cmake --install build`
+- 全量编译并安装（第三方已就绪时）：`cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j1 && cmake --install build`（首次请先看 **`INSTALL.md`** 一键流程）
 - 在 `deploy/` 下启动所有节点：`./nodes.sh start all`
 
 单 target 示例：
@@ -41,12 +44,12 @@ cmake --build build --target HelloPlugins      # Hello 节点全部插件（示�
 
 协议（CMake 生成 Proto）：`cmake --build build --target Proto`
 
-说明：旧 makefile.center / makefile.other 与各节点 `src/Makefile` 仅作历史参考。
+说明：业务代码已统一为 CMake；`code/3party` 内第三方上游自带的 Makefile 勿删。
 
 ## 安装（仓库根）
 
 ```bash
-cmake --build build -j"$(nproc)"
+cmake --build build -j1
 cmake --install build
 ```
 
@@ -63,6 +66,8 @@ cmake --install build
 ```
 
 Interface 联调（Center → Logic → Interface，含 GenKey/VerifyKey 冒烟）：`./tests/start_interfaceserver.sh`
+
+**Center 管理 CLI**（Python，`show` / `get` / `set`）：见 **`centercli/README_cn.md`**；仓库根示例：`python3 deploy/centercli/centercli.py --url http://<host>:<port>/admin show nodes`。
 
 指定单节点示例：`./nodes.sh restart Hello`、`./nodes.sh start Interface`
 

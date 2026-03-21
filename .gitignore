@@ -2,6 +2,9 @@
 build/
 code/3party/build-3party/
 code/3party/include/
+# 勿将本地 CMake 生成目录提交入库
+code/3party/log4cplus/build-rel/
+code/3party/mariadb-connector-c/build/
 *.o
 deploy/3lib/
 *.log.*

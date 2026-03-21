@@ -1,4 +1,4 @@
-# Hello 插件：ModuleHello.so（与 ModuleHello/Makefile 对齐：链接 libNet + libProto）
+# Hello 插件：ModuleHello.so（链接 libNet + libProto）
 if(NOT TARGET Net)
   message(FATAL_ERROR "Hello plugins require target 'Net' from code/Net")
 endif()

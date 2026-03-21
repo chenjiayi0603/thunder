@@ -1,4 +1,4 @@
-# Center 节点插件（原 Center/src 下各 Cmd*/Module*/Makefile）
+# Center 节点插件
 if(NOT THUNDER_BUILD_NODE_PLUGINS)
   return()
 endif()

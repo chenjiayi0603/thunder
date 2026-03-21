@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-DEPLOY_ROOT="$(cd "$(dirname "$0")" && pwd)"
+DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HELLO_HOST="${HELLO_HOST:-127.0.0.1}"
 HELLO_PORT="${HELLO_PORT:-27006}"
 HELLO_PATH="${HELLO_PATH:-/hello/hello}"

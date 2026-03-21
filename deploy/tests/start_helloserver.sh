@@ -10,7 +10,8 @@
 
 set -euo pipefail
 
-DEPLOY_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# 脚本在 deploy/tests/，仓库内 deploy 根为其父目录（与 start_interfaceserver.sh 一致）
+DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODE_ROOT="$(cd "${DEPLOY_ROOT}/../code" && pwd)"
 CONF="${CONF:-conf/Hello.json}"
 

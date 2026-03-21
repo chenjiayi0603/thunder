@@ -1,4 +1,4 @@
-# Logic 节点插件（原 code/Logic/src 下 Makefile）
+# Logic 节点插件
 if(NOT THUNDER_BUILD_NODE_PLUGINS)
   return()
 endif()

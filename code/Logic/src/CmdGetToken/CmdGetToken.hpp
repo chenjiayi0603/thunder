@@ -10,7 +10,6 @@
 #ifndef SRC_CMD_GEN_TOKEN_HPP_
 #define SRC_CMD_GEN_TOKEN_HPP_
 #include "cmd/Cmd.hpp"
-#include "common.pb.h"
 #include "RobotError.h"
 #include "../LogicSession.h"
 

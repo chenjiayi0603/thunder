@@ -1,88 +1,150 @@
-# Thunder 构建与安装
+# Thunder 构建与安装（精简）
 
-详细选项见 **`cmake/BUILD.md`**。第三方子模块与 **`code/3party`** 见 **`code/3party/readme.md`**。
+更全的 CMake 选项见 **`cmake/BUILD.md`**；第三方构建细节见 **`code/3party/readme.md`**。
 
 ---
 
-## 1. 准备
+## 一键（仓库根执行）
+
+首次请先装 **OpenSSL 开发包**；需能完整编译 **`code/3party/protobuf`**。
 
 ```bash
+git submodule update --init --recursive \
+  && cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  && cmake --build build --target thirdparty_deploy -j1 \
+  && cmake --build build -j1 \
+  && cmake --install build
+```
+
+默认 **`-j1`**，减轻磁盘与 IO 压力；若本机 IO 足够可改为 **`-j$(nproc)`** 等加速。
+
+仅重编主工程、第三方已部署过时，在已有 **`build/`** 下：
+
+```bash
+cmake --build build -j1 && cmake --install build
+```
+
+---
+
+## 一键等价的分步命令（可逐段复制）
+
+```bash
+# 拉取 code/3party 等子模块（log4cplus 含嵌套 threadpool，须 --recursive）
 git submodule update --init --recursive
 ```
 
-首次需能使用 **`code/3party/protobuf/build/protoc`**（见下节「第三方」）。
-
----
-
-## 2. 配置（仓库根）
-
 ```bash
+# 在 build/ 生成工程；RelWithDebInfo = 接近 Release 优化 + 调试符号，便于 gdb
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
-可选环境变量 / 选项示例：`JOBS`、`THUNDER_CMAKE_ARGS`、`-DTHUNDER_BUILD_CENTER=OFF`、`-DTHUNDER_BUILD_NODE_PLUGINS=OFF`、`-DTHUNDER_DEPLOY_AUTO=OFF` 等，见 **`cmake/BUILD.md`**。
-
----
-
-## 3. 第三方库（与主工程同一 `build/`）
-
 ```bash
+# 编译第三方并部署到 code/3party/lib、deploy/3lib；protoc 在 code/3party/protobuf/build
 cmake --build build --target thirdparty_deploy -j1
 ```
 
-仅编译、不拷贝到 `deploy/3lib`：`cmake --build build --target thunder_3party_all -j1`。
-
----
-
-## 4. 协议 `.proto` → C++（可选单独跑）
-
-改 **`code/Proto/*.proto`** 后，先生成源码再编主工程：
-
 ```bash
-# 只生成 code/Proto/src/*.pb.{cc,h}（不编 libProto.so）
-cmake --build build --target thunder_proto_gen -j1
-
-# 生成并编译 libProto.so
-cmake --build build --target Proto -j1
+# 编译主工程（Net、各节点、插件等）
+cmake --build build -j1
 ```
 
-兼容：`bash code/Proto/regen_cpp.sh`（等价于 `thunder_proto_gen`）。
-
----
-
-## 5. 全量编译与安装
-
 ```bash
-cmake --build build -j"$(nproc)"
+# 安装到 deploy/（默认前缀即为 deploy/）
 cmake --install build
 ```
 
-默认安装前缀为 **`deploy/`**；`THUNDER_DEPLOY_AUTO=ON`（默认）时还会在构建成功后把产物拷到 `deploy/`（见 `cmake/ThunderDeploy.cmake`）。
+---
 
-单 target 示例：`Util`、`Net`、`Proto`、`Hello`、`Center`；各节点全部插件可编 **`LogicPlugins` / `InterfacePlugins` / `CenterPlugins` / `HelloPlugins`**（见 `deploy/deploy.md`）。
+## 第三方库版本（简约）
+
+版本以各子模块 **当前 `HEAD`** 为准（**`.gitmodules`**），勿随意换成上游未验证的「最新版」。
+
+```bash
+git submodule status code/3party
+```
+
+```bash
+cd code/3party/protobuf && git describe --tags --always
+```
+
+- **Protobuf**：只用 **`code/3party/protobuf/build`** 里的 protoc / libprotobuf / absl，勿与系统旧版混用。  
+- **OpenSSL**：非常规路径配置 **`-DOPENSSL_ROOT_DIR=...`**。  
+- **jemalloc**：非子模块，系统包或自行放入 **`deploy/3lib`**。  
+
+示例快照（随子模块变化）：protobuf `v33-dev-…`、curl `curl-8_19_0-…`、mariadb `v3.4.8-…`、cryptopp `CRYPTOPP_8_9_0-…` 等。
 
 ---
 
-## 6. 首次部署到运行目录并启动节点（可选）
+## 常用单独目标（可选）
 
-产物已由 **`cmake --install build`**（及默认 **`THUNDER_DEPLOY_AUTO`**）安装到 **`deploy/`**。启动多节点示例：
+只编第三方、不拷贝到 lib/3lib：
+
+```bash
+cmake --build build --target thunder_3party_all -j1
+```
+
+只由 **`code/Proto/coor.proto`** 生成 **`code/Proto/src/*.pb.{cc,h}`**：
+
+```bash
+cmake --build build --target thunder_proto_gen -j1
+```
+
+生成并编译 **libProto.so**：
+
+```bash
+cmake --build build --target Proto -j1
+```
+
+只编某个节点或库（示例）：
+
+```bash
+cmake --build build --target Net -j1
+```
+
+```bash
+cmake --build build --target Hello -j1
+```
+
+```bash
+cmake --build build --target HelloPlugins -j1
+```
+
+更多 target 见 **`deploy/deploy.md`**。
+
+---
+
+##  脚本（联调 / 压测，可选）
+
+目录 `deploy/tests/` 
+均在 **`cmake --install`** 已将产物装进 **`deploy/`** 后使用；工作目录为 **`deploy/`**（脚本在 **`deploy/tests/`**）。
+
+**`start_helloserver.sh`** — 启动 Hello 节点（**`deploy/Hello/bin/Hello`**，工作目录 **`deploy/Hello`**）；若已有 Hello 进程会先停再起；启动后用 **wrk** 做一次极短 HTTP 冒烟。可选 **`CONF`**、**`HELLO_*`**、**`WRK_SCRIPT`** 等（见脚本头注释）。
+
+```bash
+cd deploy
+./tests/start_helloserver.sh
+```
+
+**`start_interfaceserver.sh`** — 一键联调：**Center → Logic → Interface**，最后对 Interface 做 **GenKey / VerifyKey** HTTP 冒烟（经 Center 到 Logic）。可选 **`SKIP_CENTER_LOGIC`**、各 **`CONF`**、超时等（见脚本头注释）。
+
+```bash
+cd deploy
+./tests/start_interfaceserver.sh
+```
+
+**`test_helloserver_wrk.sh`** — 用 **wrk** 压测 Hello 的 **`POST /hello/hello`**（**`wrk_helloserver.lua`**，body `{"option":"Echo"}`）。**须先已启动 Hello**（可用上文的 **`start_helloserver.sh`**）。可选 **`HELLO_HOST`**、**`HELLO_PORT`**、**`HELLO_PATH`**、**`WRK_*`**（见脚本头注释）。样例输出见 **`deploy/tests/wrk_test_result.md`**。
+
+```bash
+cd deploy
+./tests/test_helloserver_wrk.sh
+```
+
+---
+
+## 部署与验证
 
 ```bash
 ( cd deploy && ./nodes.sh restart all )
 ```
 
-日常启停、清理统一用 **`deploy/nodes.sh`**（子命令 `start` / `stop` / `restart` / `clean`；节点列表与清理路径见脚本内「配置」段）。说明见 **`deploy/deploy.md`**。
-
-> 已移除旧版 **`install.sh` / `install_*.sh`**（与当前 CMake 安装重复）；请仅用 CMake 构建与安装。
-
----
-
-## 7. 运行与简单验证
-
-- 监听端口：`lsof -Pni4 | grep LISTEN`
-- 日志示例：`deploy/Center/log/`、`deploy/Interface/log/`
-- 示例 HTTP（IP 按本机调整）：
-
-```bash
-curl "http://127.0.0.1:27008/Interface/gentoken"
-```
+启停见 **`deploy/deploy.md`**。端口检查：`lsof -Pni4 | grep LISTEN`。示例：`curl "http://127.0.0.1:27008/Interface/gentoken"`（按本机配置改 IP/端口）。

@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-# 默认安装到 deploy/（与 Makefile install 一致）
+# 默认安装到 deploy/
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deploy" CACHE PATH "Install prefix (bin/lib)" FORCE)
 endif()
@@ -21,7 +21,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(ThunderCommon)
 
-option(THUNDER_BUILD_CENTER "Build Center 可执行文件（-DNODE_TYPE_CENTER，对应 makefile.center）" ON)
+option(THUNDER_BUILD_CENTER "Build Center 可执行文件（定义 NODE_TYPE_CENTER）" ON)
 option(THUNDER_BUILD_HELLO_PLUGINS "Build Hello ModuleHello.so 插件" ON)
 option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface/Center 节点 .so 插件（deploy/plugins/...）" ON)
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)

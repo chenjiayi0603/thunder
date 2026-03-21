@@ -1,6 +1,4 @@
-# libProto.so：.proto 由 CMake 在构建前生成（原 regen_cpp.sh 逻辑）
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
+# libProto.so：.proto 由 CMake 在构建前生成（当前仅 coor.proto，供 Center 等使用 Election）
 set(_proto_root "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_proto_src "${_proto_root}/src")
 set(_protoc "${THUNDER_3PARTY}/protobuf/build/protoc")
@@ -8,7 +6,7 @@ set(_proto_ld_path
   "${THUNDER_3PARTY}/protobuf/build:${THUNDER_3PARTY}/protobuf/build/third_party/utf8_range"
 )
 
-set(_proto_names common coor enum test_proto3 user user_basic)
+set(_proto_names coor)
 set(_PROTO_INPUTS "")
 foreach(_n IN LISTS _proto_names)
   list(APPEND _PROTO_INPUTS "${_proto_root}/${_n}.proto")
@@ -38,15 +36,10 @@ add_custom_command(
           "-I${_proto_root}"
           "--cpp_out=${_proto_src}"
           ${_PROTO_INPUTS}
-  COMMAND ${Python3_EXECUTABLE} "${_proto_root}/patch_common_pb_h.py"
-  COMMAND ${CMAKE_COMMAND} -P "${CMAKE_SOURCE_DIR}/cmake/ProtoPatchCommonPbCc.cmake"
-          "${_proto_src}/common.pb.cc"
   WORKING_DIRECTORY ${_proto_root}
   DEPENDS
     ${_PROTO_INPUTS}
-    "${_proto_root}/patch_common_pb_h.py"
-    "${CMAKE_SOURCE_DIR}/cmake/ProtoPatchCommonPbCc.cmake"
-  COMMENT "Generate protobuf C++ (protoc + patch_common_pb_h + ProtoPatchCommonPbCc)"
+  COMMENT "Generate protobuf C++ from coor.proto (protoc)"
   VERBATIM
 )
 

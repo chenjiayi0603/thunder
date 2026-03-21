@@ -37,7 +37,7 @@ cmake --build build --target Proto -j1
 ## 常用命令对照
 
 - **全量编译**：`cmake --build build -j"$(nproc)"`  
-- **协议生成**：在 **`code/Proto/CMakeLists.txt`** 中由 `add_custom_command` 调用 `protoc`、`patch_common_pb_h.py` 与 `cmake/ProtoPatchCommonPbCc.cmake`；改 `.proto` 后推荐 **`cmake --build build --target thunder_proto_gen`**（或 **`--target Proto`** 以生成并链接库）。需先有 **`code/3party/protobuf/build/protoc`**（先 `thirdparty_deploy` 或编 `ep_protobuf`）。兼容：`bash code/Proto/regen_cpp.sh`（内部即 `cmake --build … --target thunder_proto_gen`）。  
+- **协议生成**：在 **`code/Proto/CMakeLists.txt`** 中由 `add_custom_command` 调用 `protoc` 生成 `coor.pb.{cc,h}`；改 **`code/Proto/coor.proto`** 后推荐 **`cmake --build build --target thunder_proto_gen`**（或 **`--target Proto`** 以生成并链接库）。需先有 **`code/3party/protobuf/build/protoc`**（先 `thirdparty_deploy` 或编 `ep_protobuf`）。  
 - **单 target**：`cmake --build build --target Util|Proto|Net|Hello|Center|HelloPlugins|LogicPlugins|InterfacePlugins|CenterPlugins|...`（各节点全部插件可用聚合 target `*Plugins`，见各 `code/<节点>/CMakeLists.txt`）  
 - **清理**：`cmake --build build --target clean`  
 - **首次部署运行**（编译安装后）：`cmake --install build`，再在 `deploy/` 下按需 `./nodes.sh restart all`（见 `INSTALL.md`）  

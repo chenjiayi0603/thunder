@@ -8,7 +8,7 @@ set(THUNDER_NET_SRC "${THUNDER_NET}/src" CACHE INTERNAL "")
 set(THUNDER_PROTO "${THUNDER_CODE}/Proto" CACHE INTERNAL "")
 set(THUNDER_DEPLOY "${THUNDER_ROOT}/deploy" CACHE INTERNAL "")
 
-# 与 makefile.other / makefile.center 对齐的宏与选项
+# 与历史 Net 主程序一致的宏与选项
 function(thunder_apply_common_compile_options _target)
   target_compile_definitions(${_target} PRIVATE
     _GNU_SOURCE=1
@@ -29,7 +29,7 @@ function(thunder_apply_common_compile_options _target)
   endif()
 endfunction()
 
-# 供可执行文件 / 插件使用的头文件路径（与 Makefile INC 一致）
+# 供可执行文件 / 插件使用的头文件路径
 function(thunder_target_include_net _target)
   target_include_directories(${_target} PRIVATE
     "${THUNDER_NET}/include"
@@ -86,7 +86,7 @@ function(thunder_resolve_protobuf_shared_libs _out_pb _out_utf8)
   endif()
 endfunction()
 
-# 与 makefile.other 顺序一致的第三方链接（SHARED 目标）
+# 第三方链接顺序（SHARED 目标）
 # 注意：protobuf + utf8_validity + 全部 libabsl*.a 必须包在同一 -Wl,--start-group 内，
 # 否则 CMake 会把 --start-group/--end-group 排到最前且中间为空，导致 absl 符号未解析。
 function(thunder_link_thirdparty_shared _target)
@@ -109,7 +109,7 @@ function(thunder_link_thirdparty_shared _target)
     "${THUNDER_3PARTY}/protobuf/build/_deps/absl-build"
   )
 
-  # Util / DB / 其它（在 absl 组之前，与 Makefile 一致：cryptopp 在 protobuf 前）
+  # Util / DB / 其它（在 absl 组之前；cryptopp 在 protobuf 前）
   if(TARGET Util)
     target_link_libraries(${_target} PRIVATE Util)
   else()
@@ -122,7 +122,7 @@ function(thunder_link_thirdparty_shared _target)
     cryptopp
   )
 
-  # 与 makefile: -lprotobuf -lutf8_validity $(ABSL_LINK) 同一组，消除循环依赖
+  # protobuf + utf8_validity + absl 同一组，消除循环依赖
   if(_absl)
     target_link_libraries(${_target} PRIVATE
       "-Wl,--start-group"

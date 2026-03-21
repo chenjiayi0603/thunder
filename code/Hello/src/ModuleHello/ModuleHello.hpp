@@ -15,7 +15,6 @@
 #include "google/protobuf/util/json_util.h"
 #include "google/protobuf/map.h"
 #include "google/protobuf/any.pb.h"
-#include "test_proto3.pb.h"
 #include "util/encrypt/base64.h"
 #include "cmd/Module.hpp"
 #include "cmd/Cmd.hpp"

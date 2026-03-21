@@ -14,7 +14,6 @@
 #include <string>
 #include <string.h>
 #include <list>
-#include "enum.pb.h"
 #include "util/json/CJsonObject.hpp"
 #include "storage/MemOperator.hpp"
 #include "storage/dataproxy.pb.h"
