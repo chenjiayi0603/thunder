@@ -9,9 +9,8 @@
  * Modify history:
  ******************************************************************************/
 #include <memory>
-#include "hiredis_vip/adapters/libev.h"
 #include "hiredis_vip/async.h"
-#include "hiredis_vip/hircluster.h"
+#include "storage/RedisClusterLibevAttach.hpp"
 #include "absl/status/status.h"
 #include "google/protobuf/util/json_util.h"
 #include "protocol/oss_sys.pb.h"

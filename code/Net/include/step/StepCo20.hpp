@@ -2,11 +2,8 @@
 #define SRC_StepCo20_HPP_
 
 #include "Coroutine20.hpp"
-#include "Step.hpp"
 #include "HttpStep.hpp"
 #include "NetDefine.hpp"
-#include <functional>
-#include <memory>
 #include <optional>
 
 namespace net

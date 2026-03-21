@@ -20,3 +20,4 @@ code/Net/src/Center
 deploy/Hello/bin/Hello
 *.log
 *.pid
+deploy/Logic/bin/Logic

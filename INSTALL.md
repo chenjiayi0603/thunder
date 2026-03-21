@@ -16,6 +16,8 @@ git submodule update --init --recursive \
   && cmake --install build
 ```
 
+上式第 4 步构建的是默认目标 **all**，已包含 **Proto**（按需调用 **`code/3party/protobuf/build/protoc`** 生成 **`coor.pb`**），**一般不必**再单独执行 `cmake --build build --target Proto`。若只改了 **`code/Proto/coor.proto`**，可单独：`cmake --build build --target thunder_proto_gen -j1` 或 `--target Proto`。
+
 默认 **`-j1`**，减轻磁盘与 IO 压力；若本机 IO 足够可改为 **`-j$(nproc)`** 等加速。
 
 仅重编主工程、第三方已部署过时，在已有 **`build/`** 下：
