@@ -13,6 +13,10 @@ deploy/bin/Center
 deploy/bin/Hello
 deploy/bin/Interface
 deploy/bin/Logic
+deploy/Center/bin/Center
+deploy/Interface/bin/Interface
+code/Net/src/Hello
+code/Net/src/Center
 deploy/Hello/bin/Hello
 *.log
 *.pid
