@@ -37,3 +37,5 @@ if(THUNDER_DEPLOY_AUTO)
   include("${CMAKE_SOURCE_DIR}/cmake/ThunderDeploy.cmake")
   thunder_deploy_copy(ModuleHello "Hello/plugins/ModuleHello.so")
 endif()
+
+add_custom_target(HelloPlugins DEPENDS ModuleHello)

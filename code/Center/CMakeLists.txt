@@ -64,3 +64,6 @@ thunder_plugin_link_net_proto_util(ModuleAdmin)
 if(THUNDER_DEPLOY_AUTO)
   thunder_deploy_copy(ModuleAdmin "Center/plugins/ModuleAdmin.so")
 endif()
+
+add_custom_target(CenterPlugins DEPENDS
+  CmdElection CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin)

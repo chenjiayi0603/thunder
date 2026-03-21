@@ -1,94 +1,74 @@
-# 初始部署处理 #
-拷贝代码目录code和部署目录deploy到目录/app/thunder
-或者 建立软连接 类似
-/home/chen/thunderworkon/code# mkdir /app
-/home/chen/thunderworkon/code# ln -s /home/chen/thunderworkon /app/thunder
+# 部署说明（`deploy/`）
 
-变更权限
-find ./ -name "*.sh" |xargs -i chmod +x {}
+在**仓库根**用 CMake 构建与安装；默认安装前缀为 **`deploy/`**（详见仓库根 **`INSTALL.md`**、**`cmake/BUILD.md`**）。
 
-解压第三方库
-tar xvf 3lib.tar.gz 
+## 首次构建与运行
 
-第一次编译、部署和运行（在仓库根）：
-cmake --build build --target Proto
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build -j"$(nproc)"
-cmake --install build
-cd deploy && ./restart_nodes.sh all
+```bash
+# 一次性：配置 + 全量编译 + 安装到 deploy/（协议、libNet/libProto、各节点可执行文件与 *Plugins 等，由主工程一并编出）
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j"$(nproc)" && cmake --install build
 
-其他常用操作：
-编译所有代码（CMake，仓库根）
-cmake -S . -B build && cmake --build build -j"$(nproc)" && cmake --install build
+cd deploy && ./nodes.sh restart all
+```
 
-（旧版 `install.sh` / `install_*.sh` 已删除，请仅用 CMake 安装到 `deploy/`。）
+若需**先单独**拉协议再编其余，可在已有 `build/` 目录下执行：`cmake --build build --target Proto`，再 `cmake --build build -j"$(nproc)" && cmake --install build`。
 
-启动所有节点
-./start_nodes.sh all
+## 常用命令
 
-# 程序目录 #
-整个目录固定放置在 
-/app/thunder
+- 全量编译并安装（与上文「一次性」相同）：`cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j"$(nproc)" && cmake --install build`
+- 在 `deploy/` 下启动所有节点：`./nodes.sh start all`
 
-部署目录
-/app/thunder/deploy
+单 target 示例：
 
-代码目录
-/app/thunder/code
-
-# 编译（已统一为 CMake，在仓库根执行） #
-第一次编译并且部署（含协议、安装、重启节点）
-见上文「第一次编译、部署和运行」
-
-编译全部
-cmake -S . -B build && cmake --build build -j"$(nproc)" && cmake --install build
-
-单 target 示例
+```bash
 cmake --build build --target Net
 cmake --build build --target Util
-cmake --build build --target ModuleHello
+cmake --build build --target HelloPlugins
+```
 
-多节点插件（Logic/Interface/Center）已由 CMake 构建，例如：
-cmake --build build --target CmdGetToken ModuleInterface CmdElection
+多节点插件：每个节点目录下可有**多个** `.so`；CMake 为每类节点提供**聚合 target**（依赖该节点全部插件库，见各 `code/<节点>/CMakeLists.txt` 末尾）：
 
-协议（CMake 生成 Proto）
-cmake --build build --target Proto
+```bash
+cmake --build build --target LogicPlugins      # Logic 节点全部插件
+cmake --build build --target InterfacePlugins  # Interface 节点全部插件
+cmake --build build --target CenterPlugins     # Center 节点全部插件
+cmake --build build --target HelloPlugins      # Hello 节点全部插件（示例）
+```
 
-说明：详见仓库根 `cmake/BUILD.md`、`INSTALL.md`。旧 makefile.center / makefile.other 与各节点 `src/Makefile` 仅作历史参考。
+新增某节点的 `.so` 时，在该节点 `CMakeLists.txt` 里 `add_library` 后，把新库名加入对应 `*Plugins` 的 `DEPENDS`。
 
+全量构建时插件会随主工程一并生成；也可 **`cmake --build build && cmake --install build`** 安装到 `deploy/`。
 
-# 安装（在仓库根，CMake）#
+协议（CMake 生成 Proto）：`cmake --build build --target Proto`
+
+说明：旧 makefile.center / makefile.other 与各节点 `src/Makefile` 仅作历史参考。
+
+## 安装（仓库根）
+
 ```bash
 cmake --build build -j"$(nproc)"
 cmake --install build
 ```
-默认安装前缀为 **`deploy/`**；详见仓库根 **`INSTALL.md`**、**`cmake/BUILD.md`**。
 
-# 运行脚本及其节点配置(在目录deploy) #
-服务节点插件路径
-server_dir.conf 
+## 运行脚本（在目录 `deploy/`）
 
-运行启动、关闭服务节点配置
-server_list.conf 
+统一部署脚本 **`nodes.sh`**（合并原 `start_nodes` / `stop_nodes` / `restart_nodes` / `clean` 及原 `server_list.conf`、`server_dir.conf` 配置；修改节点顺序或清理路径请编辑脚本内「配置」段）：
 
-清理服务运行可执行文件和日志脚本
-./clean.sh all  
-
-重启、启动、停止所有服务程序文件脚本
-./restart_nodes.sh all
-./start_nodes.sh all
-./stop_nodes.sh all
+```text
+./nodes.sh start all | <节点名>
+./nodes.sh stop all | force | <节点名>
+./nodes.sh restart all | reload | force | <节点名>
+./nodes.sh restartforce all | <节点名>   # 强制重启（pkill 后再 start，stop 杀不掉时用）
+./nodes.sh clean all | plugins | log | bin | core
+```
 
 Interface 联调（Center → Logic → Interface，含 GenKey/VerifyKey 冒烟）：`./tests/start_interfaceserver.sh`
 
-重启、启动、停止指定服务程序，如
-./restart_nodes.sh Access
-./start_nodes.sh Access
-./stop_nodes.sh Access
+指定单节点示例：`./nodes.sh restart Hello`、`./nodes.sh start Interface`
 
-# 云环境更新节点代码（概要）#
+## 云环境更新节点代码（概要）
+
 1. 在联调环境 **`cmake --build`** 所需 target，再 **`cmake --install build`**（或依赖 **`THUNDER_DEPLOY_AUTO`** 已拷贝到 `deploy/`）。
-2. 测试通过后，将 **`deploy/`** 下对应 **`bin/`、`lib/`、各节点 `plugins/`** 同步到目标机 **`deploy/`**（按 **`server_dir.conf`** 布局）。
-3. 目标机上 **`./restart_nodes.sh <组名>`** 或单节点脚本启停。
-
+2. 测试通过后，将 **`deploy/`** 下对应 **`bin/`、`lib/`、各节点 `plugins/`** 同步到目标机 **`deploy/`**（目录布局与 **`nodes.sh`** 内「配置」一致）。
+3. 目标机上 **`./nodes.sh restart <节点名>`** 或 **`./nodes.sh start all`** 等启停。
 

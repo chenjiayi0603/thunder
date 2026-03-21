@@ -35,3 +35,5 @@ if(THUNDER_DEPLOY_AUTO)
   # 与 deploy/Interface/conf 中 so_path「plugins/*.so」相对工作目录 deploy/Interface 一致
   thunder_deploy_copy(ModuleInterface "Interface/plugins/ModuleInterface.so")
 endif()
+
+add_custom_target(InterfacePlugins DEPENDS ModuleInterface)

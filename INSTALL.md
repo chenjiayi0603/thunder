@@ -59,7 +59,7 @@ cmake --install build
 
 默认安装前缀为 **`deploy/`**；`THUNDER_DEPLOY_AUTO=ON`（默认）时还会在构建成功后把产物拷到 `deploy/`（见 `cmake/ThunderDeploy.cmake`）。
 
-单 target 示例：`Util`、`Net`、`Proto`、`Hello`、`Center`、`ModuleHello`、Logic/Interface/Center 插件（如 `CmdGetToken`、`ModuleInterface`、`CmdElection` 等）。
+单 target 示例：`Util`、`Net`、`Proto`、`Hello`、`Center`；各节点全部插件可编 **`LogicPlugins` / `InterfacePlugins` / `CenterPlugins` / `HelloPlugins`**（见 `deploy/deploy.md`）。
 
 ---
 
@@ -68,10 +68,10 @@ cmake --install build
 产物已由 **`cmake --install build`**（及默认 **`THUNDER_DEPLOY_AUTO`**）安装到 **`deploy/`**。启动多节点示例：
 
 ```bash
-( cd deploy && ./restart_nodes.sh all )
+( cd deploy && ./nodes.sh restart all )
 ```
 
-日常启停可用 **`deploy/`** 下 **`start_nodes.sh` / `stop_nodes.sh` / `restart_nodes.sh`**，配置见 **`deploy/server_list.conf`**、**`deploy/server_dir.conf`**。说明见 **`deploy/deploy.md`**。
+日常启停、清理统一用 **`deploy/nodes.sh`**（子命令 `start` / `stop` / `restart` / `clean`；节点列表与清理路径见脚本内「配置」段）。说明见 **`deploy/deploy.md`**。
 
 > 已移除旧版 **`install.sh` / `install_*.sh`**（与当前 CMake 安装重复）；请仅用 CMake 构建与安装。
 

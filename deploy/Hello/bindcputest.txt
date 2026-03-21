@@ -1,7 +1,7 @@
 测试进程绑定cpu性能
 
 绑定单核
-[imdev@node3 deploy]$ ./restart_nodes.sh Hello
+[imdev@node3 deploy]$ ./nodes.sh restart Hello
 Hello_dem
 kill 9163    Hello_demo
 target_server:Hello_demo

@@ -29,3 +29,6 @@ if(THUNDER_DEPLOY_AUTO)
   # 与 deploy/Logic/conf 中 so_path「plugins/*.so」相对工作目录 deploy/Logic 一致
   thunder_deploy_copy(CmdGetToken "Logic/plugins/CmdGetToken.so")
 endif()
+
+# 聚合：本节点全部 .so 插件（新增插件时请把依赖加到此 target）
+add_custom_target(LogicPlugins DEPENDS CmdGetToken)
