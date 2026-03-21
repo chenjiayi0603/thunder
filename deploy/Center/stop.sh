@@ -12,7 +12,7 @@ SERVER_CONF3=${SERVER_HOME}/conf3
 SERVER_LIB=${SERVER_HOME}/lib  
 SERVER_3LIB=${SERVER_HOME}/../3lib
 SERVER_LOG=${SERVER_HOME}/log
-# libNet、MariaDB、protobuf 等：deploy/lib + code/3party（与 tests/start_interfaceserver.sh 一致）
+# libNet、MariaDB、protobuf 等：deploy/lib + code/3party（与 tests/test_interfaceserver.sh 一致）
 _THUNDER_DEPLOY="$(cd "${SERVER_HOME}/.." && pwd)"
 _CODE="$(cd "${_THUNDER_DEPLOY}/../code" && pwd)"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${SERVER_LIB}:${SERVER_3LIB}:${_THUNDER_DEPLOY}/lib:${_CODE}/3party/lib:${_CODE}/3party/lib/mariadb:${_CODE}/3party/protobuf/build"

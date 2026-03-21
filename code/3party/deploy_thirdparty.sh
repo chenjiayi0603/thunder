@@ -32,6 +32,36 @@ if [[ -d "${STAGE}/include" ]]; then
   cp -a "${STAGE}/include/." "${THIRD}/include/"
 fi
 
+# libev 的 autotools install 把头放在 include/ev.h；本仓库统一按 libev/ev.h 引用（Util、Net 等）
+mkdir -p "${THIRD}/include/libev"
+for _evf in ev.h ev++.h event.h; do
+  if [[ -f "${THIRD}/include/${_evf}" ]]; then
+    cp -a "${THIRD}/include/${_evf}" "${THIRD}/include/libev/"
+  fi
+done
+
+# libmongoc 把头放在 include/bson-<ver>/bson/；源码用 bson/bson.h，补一层符号链接
+shopt -s nullglob
+for _b in "${THIRD}/include"/bson-*/bson; do
+  if [[ -d "${_b}" ]]; then
+    rm -rf "${THIRD}/include/bson"
+    ln -sfn "$(basename "$(dirname "${_b}")")/bson" "${THIRD}/include/bson"
+    break
+  fi
+done
+shopt -u nullglob
+
+# hiredis-vip 安装目录名为 hiredis-vip；源码 #include "hiredis_vip/…"
+if [[ -d "${THIRD}/include/hiredis-vip" ]]; then
+  rm -rf "${THIRD}/include/hiredis_vip"
+  ln -sfn hiredis-vip "${THIRD}/include/hiredis_vip"
+fi
+# make install 可能未更新 adapters/*.h；以仓库内子模块为准（含 Cluster + libev 等补丁）
+if [[ -d "${THIRD}/hiredis-vip/adapters" ]]; then
+  mkdir -p "${THIRD}/include/hiredis-vip/adapters"
+  cp -a "${THIRD}/hiredis-vip/adapters/." "${THIRD}/include/hiredis-vip/adapters/"
+fi
+
 # protobuf 仍建在源码树 protobuf/build（Thunder 链接 absl 等依赖该目录）；额外把 .so / protoc 同步到 lib 与 3lib
 if [[ -d "${PB_BUILD}" ]]; then
   shopt -s nullglob

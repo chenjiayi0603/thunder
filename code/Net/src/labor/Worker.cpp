@@ -140,45 +140,45 @@ void Worker::SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watch
 
 void Worker::RedisConnectCallback(const redisAsyncContext *c, int status)
 {
-    if (c->userData != nullptr)
+    if (c->data != nullptr)
     {
-        Worker* pWorker = (Worker*)c->userData;
+        Worker* pWorker = (Worker*)c->data;
         pWorker->OnRedisConnect(c, status);
     }
 }
 
 void Worker::RedisDisconnectCallback(const redisAsyncContext *c, int status)
 {
-    if (c->userData != nullptr)
+    if (c->data != nullptr)
     {
-        Worker* pWorker = (Worker*)c->userData;
+        Worker* pWorker = (Worker*)c->data;
         pWorker->OnRedisDisconnect(c, status);
     }
 }
 
 void Worker::RedisCmdCallback(redisAsyncContext *c, void *reply, void *privdata)
 {
-    if (c->userData != nullptr)
+    if (c->data != nullptr)
     {
-        Worker* pWorker = (Worker*)c->userData;
+        Worker* pWorker = (Worker*)c->data;
         pWorker->OnRedisCmdResult(c, reply, privdata);
     }
 }
 
 void Worker::RedisClusterConnectCallback(const redisAsyncContext *c, int status)
 {
-    if (c->userData != nullptr)
+    if (c->data != nullptr)
     {
-        Worker* pWorker = (Worker*)c->userData;
+        Worker* pWorker = (Worker*)c->data;
         LOG4_INFO("%s",__FUNCTION__);
     }
 }
 
 void Worker::RedisClusterDisconnectCallback(const redisAsyncContext *c, int status)
 {
-    if (c->userData != nullptr)
+    if (c->data != nullptr)
     {
-        Worker* pWorker = (Worker*)c->userData;//目前当做集群是高可用的
+        Worker* pWorker = (Worker*)c->data;//目前当做集群是高可用的
         LOG4_INFO("%s",__FUNCTION__);
     }
 }
@@ -3346,7 +3346,7 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
         LOG4_ERROR("error: %s", c->errstr);
         return(false);
     }
-    c->userData = this;
+    c->data = this;
     tagRedisAttr* pRedisAttr = new tagRedisAttr();
     pRedisAttr->ulSeq = GetFdSequence();
     pRedisAttr->listWaitData.push_back(pRedisStep);
@@ -3409,7 +3409,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             argv[i] = c_iter->first.c_str();
             arglen[i] = c_iter->first.size();
         }
-        //redisAsyncContext->userData 为传入的privdata参数,RedisClusterCmdCallback 的privdata也是传入的privdata参数
+        // redisAsyncContext->data 存 Worker；RedisClusterCmdCallback 的 privdata 为传入的 this
         int iCmdStatus = redisClusterAsyncCommandArgv(acc, RedisClusterCmdCallback, this, args_size, argv, arglen);
         if (iCmdStatus == REDIS_OK)
         {

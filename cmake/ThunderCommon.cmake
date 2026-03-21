@@ -36,6 +36,8 @@ function(thunder_target_include_net _target)
     "${THUNDER_NET}/src"
     "${THUNDER_UTIL}/src"
     "${THUNDER_UTIL}/src/Util"
+    # cryptopp/*.h 在子模块根目录，源码里写作 #include "cryptopp/…"
+    "${THUNDER_3PARTY}"
     "${THUNDER_3PARTY}/protobuf/src"
     "${THUNDER_3PARTY}/protobuf/build/_deps/absl-src"
     "${THUNDER_3PARTY}/include"

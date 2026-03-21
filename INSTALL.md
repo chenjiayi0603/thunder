@@ -53,6 +53,12 @@ cmake --build build -j1
 cmake --install build
 ```
 
+```bash
+# 仅重编并安装 Interface / Hello 插件（改 code/Interface 或 code/Hello 后，不必整工程重编）
+cmake --build build --target InterfacePlugins -j1 # deploy/Interface/plugins/ModuleInterface.so
+cmake --build build --target HelloPlugins -j1 # deploy/Hello/plugins/ModuleHello.so
+```
+
 ---
 
 ## 第三方库版本（简约）
@@ -109,6 +115,10 @@ cmake --build build --target Hello -j1
 cmake --build build --target HelloPlugins -j1
 ```
 
+```bash
+cmake --build build --target InterfacePlugins -j1
+```
+
 更多 target 见 **`deploy/deploy.md`**。
 
 ---
@@ -117,18 +127,18 @@ cmake --build build --target HelloPlugins -j1
 
 需已 **`cmake --install`** 到 **`deploy/`**。在 **`deploy/`** 下执行；更多参数见各脚本文件头注释。
 
-**`start_helloserver.sh`** — 启动 Hello，并做一次极短 HTTP 冒烟。
+**`test_helloserver.sh`** — 启动 Hello，并做一次极短 HTTP 冒烟。
 
 ```bash
 cd deploy
-./tests/start_helloserver.sh
+./tests/test_helloserver.sh
 ```
 
-**`start_interfaceserver.sh`** — 按顺序拉起 Center / Logic / Interface，并做 Interface 联调冒烟。
+**`test_interfaceserver.sh`** — 按顺序拉起 Center / Logic / Interface，并做 Interface 联调冒烟。
 
 ```bash
 cd deploy
-./tests/start_interfaceserver.sh
+./tests/test_interfaceserver.sh
 ```
 
 **`test_helloserver_wrk.sh`** — wrk 压测 Hello（须先已启动 Hello）。样例输出见 **`deploy/tests/wrk_test_result.md`**。

@@ -17,7 +17,7 @@
 
 仓库提供 **wrk** 脚本，对默认 **ModuleHello** 的 HTTP 路径做压测（`POST` + `application/json`，body `{"option":"Echo"}`），与 **[deploy/tests/wrk_helloserver.lua](deploy/tests/wrk_helloserver.lua)**、**[deploy/tests/test_helloserver_wrk.sh](deploy/tests/test_helloserver_wrk.sh)** 一致。
 
-**前置**：在 `deploy/` 下已启动 Hello（例如 **`./tests/start_helloserver.sh`**，见脚本注释）。端口、路径需与 **`deploy/Hello/conf/Hello.json`** 中 `access_host` / `access_port` 及 ModuleHello 的 `url_path` 一致（默认 `127.0.0.1:27006`，路径 `/hello/hello`）。
+**前置**：在 `deploy/` 下已启动 Hello（例如 **`./tests/test_helloserver.sh`**，见脚本注释）。端口、路径需与 **`deploy/Hello/conf/Hello.json`** 中 `access_host` / `access_port` 及 ModuleHello 的 `url_path` 一致（默认 `127.0.0.1:27006`，路径 `/hello/hello`）。
 
 **执行**（在 `deploy/` 目录）：
 

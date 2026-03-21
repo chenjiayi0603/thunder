@@ -2,7 +2,7 @@
 # 使用 wrk 压测 Helloserver 的 HTTP 接入（默认 ModuleHello：POST /hello/hello）
 #
 # 前置：已启动 Hello，例如：
-#   cd deploy && ./start_helloserver.sh
+#   cd deploy && ./test_helloserver.sh
 #
 # 环境变量（可选）：
 #   HELLO_HOST       默认 127.0.0.1（与 deploy/Hello/conf/Hello.json 中 access_host 一致）

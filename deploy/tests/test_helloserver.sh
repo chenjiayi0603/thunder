@@ -2,15 +2,15 @@
 # 启动 Hello 节点（deploy/Hello/bin/Hello，工作目录 deploy/Hello）
 # 若已有 Hello_robot 进程则先结束；启动后用 wrk 做一次简短冒烟（默认 1 线程 1 连接 1 秒）。
 #
-# 用法: ./start_helloserver.sh
-#       CONF=conf/Hello.json ./start_helloserver.sh
+# 用法: ./test_helloserver.sh
+#       CONF=conf/Hello.json ./test_helloserver.sh
 #
 # 可选环境变量（与 test_helloserver_wrk.sh 一致）：
 #   HELLO_HOST HELLO_PORT HELLO_PATH WRK_SCRIPT
 
 set -euo pipefail
 
-# 脚本在 deploy/tests/，仓库内 deploy 根为其父目录（与 start_interfaceserver.sh 一致）
+# 脚本在 deploy/tests/，仓库内 deploy 根为其父目录（与 test_interfaceserver.sh 一致）
 DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODE_ROOT="$(cd "${DEPLOY_ROOT}/../code" && pwd)"
 CONF="${CONF:-conf/Hello.json}"
@@ -40,8 +40,8 @@ cd "${DEPLOY_ROOT}/Hello"
 mkdir -p log
 
 echo "=== 后台启动 Hello (${CONF}) ==="
-nohup "${DEPLOY_ROOT}/Hello/bin/Hello" "${CONF}" >> log/start_helloserver.log 2>&1 &
-echo "PID=$! 日志: ${DEPLOY_ROOT}/Hello/log/start_helloserver.log"
+nohup "${DEPLOY_ROOT}/Hello/bin/Hello" "${CONF}" >> log/test_helloserver.log 2>&1 &
+echo "PID=$! 日志: ${DEPLOY_ROOT}/Hello/log/test_helloserver.log"
 
 sleep "${STARTUP_WAIT_SEC:-2}"
 
@@ -52,7 +52,7 @@ if ! _curl_smoke -sS -X POST "${BASE_URL}" \
     -H 'Content-Type: application/json' \
     -d '{"option":"Echo"}' \
     -w '\n[HTTP %{http_code}]\n'; then
-  echo "错误: curl 请求失败（服务未就绪或网络错误，见 ${DEPLOY_ROOT}/Hello/log/start_helloserver.log）" >&2
+  echo "错误: curl 请求失败（服务未就绪或网络错误，见 ${DEPLOY_ROOT}/Hello/log/test_helloserver.log）" >&2
   exit 1
 fi
 
@@ -70,6 +70,6 @@ fi
 echo "=== wrk 冒烟 (-t1 -c1 -d1s) ==="
 wrk -t1 -c1 -d1s -s"${WRK_SCRIPT}" --latency "${BASE_URL}"
 
-echo "=== Hello 已在后台运行，查看日志: tail -f ${DEPLOY_ROOT}/Hello/log/start_helloserver.log ==="
+echo "=== Hello 已在后台运行，查看日志: tail -f ${DEPLOY_ROOT}/Hello/log/test_helloserver.log ==="
 echo "=== 进程列表: ==="
 ps -ef | grep Hello_robot

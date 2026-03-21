@@ -10,8 +10,8 @@
 #
 # 工作目录：deploy/Interface，配置默认 conf/Interface.json。
 #
-# 用法（在 deploy 目录下）: ./tests/start_interfaceserver.sh
-#       CONF=conf/Interface.json ./tests/start_interfaceserver.sh
+# 用法（在 deploy 目录下）: ./tests/test_interfaceserver.sh
+#       CONF=conf/Interface.json ./tests/test_interfaceserver.sh
 #
 # 可选环境变量：
 #   SKIP_CENTER_LOGIC=1                           — 不启动/不检查 Center 与 Logic（仅 Interface；无法验证发往 LOGIC）
@@ -147,16 +147,16 @@ if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
   mkdir -p "${DEPLOY_ROOT}/Center/log"
   (
     cd "${DEPLOY_ROOT}/Center"
-    nohup "${CENTER_BIN}" "${CENTER_CONF}" >> log/start_interfaceserver.log 2>&1 &
-    echo $! >log/start_interfaceserver_center.pid
+    nohup "${CENTER_BIN}" "${CENTER_CONF}" >> log/test_interfaceserver.log 2>&1 &
+    echo $! >log/test_interfaceserver_center.pid
   )
-  echo "Center PID 见 ${DEPLOY_ROOT}/Center/log/start_interfaceserver_center.pid"
+  echo "Center PID 见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid"
   for _i in $(seq 1 30); do
     _tcp_listening "${CENTER_PORT}" && break
     sleep 1
   done
   if ! _tcp_listening "${CENTER_PORT}"; then
-    echo "错误: Center 未在 ${CENTER_PORT} 监听，见 ${DEPLOY_ROOT}/Center/log/start_interfaceserver.log" >&2
+    echo "错误: Center 未在 ${CENTER_PORT} 监听，见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver.log" >&2
     exit 1
   fi
 
@@ -177,16 +177,16 @@ if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
   mkdir -p "${DEPLOY_ROOT}/Logic/log"
   (
     cd "${DEPLOY_ROOT}/Logic"
-    nohup "${LOGIC_BIN}" "${LOGIC_CONF}" >> log/start_interfaceserver.log 2>&1 &
-    echo $! >log/start_interfaceserver_logic.pid
+    nohup "${LOGIC_BIN}" "${LOGIC_CONF}" >> log/test_interfaceserver.log 2>&1 &
+    echo $! >log/test_interfaceserver_logic.pid
   )
-  echo "Logic PID 见 ${DEPLOY_ROOT}/Logic/log/start_interfaceserver_logic.pid"
+  echo "Logic PID 见 ${DEPLOY_ROOT}/Logic/log/test_interfaceserver_logic.pid"
   for _i in $(seq 1 30); do
     _tcp_listening "${LOGIC_PORT}" && break
     sleep 1
   done
   if ! _tcp_listening "${LOGIC_PORT}"; then
-    echo "错误: Logic 未在 ${LOGIC_PORT} 监听，见 ${DEPLOY_ROOT}/Logic/log/start_interfaceserver.log 与 Logic_robot.log" >&2
+    echo "错误: Logic 未在 ${LOGIC_PORT} 监听，见 ${DEPLOY_ROOT}/Logic/log/test_interfaceserver.log 与 Logic_robot.log" >&2
     echo "常见原因: conf/Logic.json 中 inner_host 非本机地址（日志或见 error 99 Cannot assign requested address，请改为 127.0.0.1）；" >&2
     echo "  LD_LIBRARY_PATH 缺 libmariadb；或 plugins/CmdGetToken.so 未就绪。" >&2
     exit 1
@@ -210,8 +210,8 @@ cd "${DEPLOY_ROOT}/Interface"
 mkdir -p log
 
 echo "=== 后台启动 Interface (${CONF})，HTTP 对外入口 ==="
-nohup "${BIN}" "${CONF}" >> log/start_interfaceserver.log 2>&1 &
-echo "PID=$! 可执行: ${BIN}  日志: ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log"
+nohup "${BIN}" "${CONF}" >> log/test_interfaceserver.log 2>&1 &
+echo "PID=$! 可执行: ${BIN}  日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log"
 
 sleep "${STARTUP_WAIT_SEC:-2}"
 
@@ -260,7 +260,7 @@ if ! GENKEY_BODY=$(_curl_smoke -f -sS -m "${GENKEY_VERIFY_MAXTIME}" -X POST "${B
     -d '{"option":"GenKey"}' \
     -w '\n[HTTP %{http_code}]\n'); then
   echo "错误: GenKey 请求失败。(404) 多为未部署 plugins/ModuleInterface.so；(52) 常为连接在异步回包前被关闭（需重编 Net/Interface）、Center/Logic 未起、或 step 超时" >&2
-  echo "日志: ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log；Center/Logic 见各自 log/start_interfaceserver.log" >&2
+  echo "日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log；Center/Logic 见各自 log/test_interfaceserver.log" >&2
   exit 1
 fi
 echo "=== GenKey 响应（节选）==="
@@ -287,13 +287,13 @@ if ! VERIFY_BODY=$(_curl_smoke -f -sS -m "${GENKEY_VERIFY_MAXTIME}" -X POST "${B
     -d "${VERIFY_JSON}" \
     -w '\n[HTTP %{http_code}]\n'); then
   echo "错误: VerifyKey 请求失败。请核对 token/key 与 Logic CmdGetToken 配置；日志见 Interface/Logic" >&2
-  echo "日志: ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log" >&2
+  echo "日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log" >&2
   exit 1
 fi
 echo "=== VerifyKey 响应（节选）==="
 echo "${VERIFY_BODY}" | head -n -1
 echo "=== VerifyKey 完成 ==="
 
-echo "=== Interface 已在后台运行，查看日志: tail -f ${DEPLOY_ROOT}/Interface/log/start_interfaceserver.log ==="
+echo "=== Interface 已在后台运行，查看日志: tail -f ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log ==="
 echo "=== 相关进程（Center / Logic / Interface）: ==="
 ps -ef | grep -E 'Center_robot|Logic_robot|Interface_robot' | grep -v grep || true

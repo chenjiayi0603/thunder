@@ -3,10 +3,11 @@
 # 统一部署脚本：启停、重启、清理
 # 用法（在 deploy 目录下）:
 #   ./nodes.sh start all | <节点名>     # 节点名：Interface、Logic、Hello、Center（与 SERVER_LIST 一致）；例：./nodes.sh start Interface
-#   ./nodes.sh stop all | force | <节点名>   # 例：./nodes.sh stop Logic
+#   ./nodes.sh stop all | all force | force | <节点名>   # all force：先各节点 stop.sh 再 pkill 兜底（netstat 杀不净时）
 #   ./nodes.sh restart all | reload | force | <节点名>   # 例：./nodes.sh restart Hello
 #   ./nodes.sh restartforce all | <节点名>   # 强制重启：先 pkill 该节点进程再 start（stop 杀不掉时用）
 #   ./nodes.sh clean all | plugins | log | bin | core
+#   ./nodes.sh status | query              # 查节点：列出配置与运行中的 *_robot 进程
 #
 # 修改节点列表或清理路径：编辑本脚本「配置」段。
 #
@@ -85,10 +86,11 @@ Usage: $(basename "$0") <command> [args]
 
 Commands:
   start      all | <node>              启动全部或单节点
-  stop       all | force | <node>      停止全部；force 强杀 _im；或单节点
+  stop       all | all force | force | <node>  停止全部；all force 再强杀各节点进程；force 仅强杀 _im；或单节点
   restart    all | reload | force | <node>
   restartforce all | <node>            强制重启（pkill 后再 start）
   clean      all | plugins | log | bin | core
+  status | query                       查节点：配置列表 + 运行中 *_robot 进程
 
 Nodes: $(_list_servers | tr '\n' ' ')
 
@@ -97,7 +99,20 @@ Examples:
   $(basename "$0") restart Hello
   $(basename "$0") restartforce all
   $(basename "$0") clean log
+  $(basename "$0") status
+  $(basename "$0") stop all force
 EOF
+}
+
+_cmd_status() {
+  echo "=== 配置节点（SERVER_LIST）==="
+  local s
+  for s in "${SERVER_LIST[@]}"; do
+    echo "  ${s}"
+  done
+  echo ""
+  echo "=== 运行中的 *_robot 进程（pid, lstart, etime, cmd）==="
+  _ps_robots
 }
 
 CleanPlugin() {
@@ -167,8 +182,9 @@ _cmd_start() {
 _cmd_stop() {
   _chmod_scripts
   local arg="${1:-}"
+  local arg2="${2:-}"
   if [[ -z "$arg" ]]; then
-    echo "USAGE: $(basename "$0") stop all/force/nodetype" >&2
+    echo "USAGE: $(basename "$0") stop all | all force | force | <nodetype>" >&2
     exit 1
   fi
   if [[ "$arg" == "all" ]]; then
@@ -176,6 +192,12 @@ _cmd_stop() {
     for s in "${SERVER_LIST[@]}"; do
       "${SERVER_HOME}/${s}/stop.sh" "yes"
     done
+    if [[ "$arg2" == "force" ]]; then
+      echo "=== stop all force: 各节点 stop.sh 后再 pkill 兜底 ===" >&2
+      for s in "${SERVER_LIST[@]}"; do
+        _force_kill_node "${s}"
+      done
+    fi
     return 0
   fi
   if [[ "$arg" == "force" ]]; then
@@ -193,7 +215,7 @@ _cmd_stop() {
       exit 0
     fi
   done
-  echo "USAGE: $(basename "$0") stop all/force/nodetype" >&2
+  echo "USAGE: $(basename "$0") stop all | all force | force | <nodetype>" >&2
   _list_servers
   exit 1
 }
@@ -351,9 +373,12 @@ main() {
     clean)
       _cmd_clean "$@"
       ;;
+    status | query)
+      _cmd_status "$@"
+      ;;
     *)
       echo "Unknown command: $cmd" >&2
-      echo "提示: 子命令为 start | stop | restart | restartforce | clean（例如: $(basename "$0") restart all）" >&2
+      echo "提示: 子命令为 start | stop | restart | restartforce | clean | status | query（例如: $(basename "$0") restart all）" >&2
       _usage
       exit 1
       ;;

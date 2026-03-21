@@ -71,11 +71,11 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         return net::Launch(new core::StepHttpRequestCo20(stMsgShell, oHttp));
     }
 
-    /// StepBinaryCo20Binary：GenKey / VerifyKey / TestStepCo20Binary（协程 co_await→LOGIC）
-    if ("GenKey" == strOption || "VerifyKey" == strOption || "TestStepCo20Binary" == strOption)
+    // GenKey / VerifyKey （协程 co_await→LOGIC）
+    if ("GenKey" == strOption || "VerifyKey" == strOption)
     {
         LOG4_TRACE("%s StepBinaryCo20Binary option=%s", __FUNCTION__, strOption.c_str());
-        return GetLabor()->ExecStep(new core::StepBinaryCo20Binary(stMsgShell, oInHttpMsg), 0.0);
+        return net::Launch(new core::StepBinaryCo20Binary(stMsgShell, oInHttpMsg));
     }
 
     LOG4_TRACE("%s unknown option %s", __FUNCTION__, strOption.c_str());
