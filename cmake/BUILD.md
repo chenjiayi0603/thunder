@@ -40,7 +40,7 @@ cmake --build build --target Proto -j1
 - **协议生成**：在 **`code/Proto/CMakeLists.txt`** 中由 `add_custom_command` 调用 `protoc`、`patch_common_pb_h.py` 与 `cmake/ProtoPatchCommonPbCc.cmake`；改 `.proto` 后推荐 **`cmake --build build --target thunder_proto_gen`**（或 **`--target Proto`** 以生成并链接库）。需先有 **`code/3party/protobuf/build/protoc`**（先 `thirdparty_deploy` 或编 `ep_protobuf`）。兼容：`bash code/Proto/regen_cpp.sh`（内部即 `cmake --build … --target thunder_proto_gen`）。  
 - **单 target**：`cmake --build build --target Util|Proto|Net|Hello|Center|ModuleHello|CmdGetToken|ModuleInterface|CmdElection|...`  
 - **清理**：`cmake --build build --target clean`  
-- **首次部署运行**（编译安装后）：`( cd deploy && ./install.sh first && ./restart_nodes.sh all )`  
+- **首次部署运行**（编译安装后）：`cmake --install build`，再在 `deploy/` 下按需 `./restart_nodes.sh all`（见 `INSTALL.md`）  
 
 若缺少 `code/3party/lib`，可手动：`ln -sfn ../../deploy/3lib "$(pwd)/code/3party/lib"`（在仓库根执行时注意路径），或先完成 **`thirdparty_deploy`**。
 

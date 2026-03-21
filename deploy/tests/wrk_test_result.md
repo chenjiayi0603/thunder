@@ -1,4 +1,4 @@
-./test_helloserver_wrk.sh
+# 在 deploy/ 下：./tests/test_helloserver_wrk.sh
 
 output:
 

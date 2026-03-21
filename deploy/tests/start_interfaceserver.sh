@@ -12,7 +12,6 @@
 #
 # 用法（在 deploy 目录下）: ./tests/start_interfaceserver.sh
 #       CONF=conf/Interface.json ./tests/start_interfaceserver.sh
-#       亦可在 deploy 根目录执行同名包装脚本: ./start_interfaceserver.sh
 #
 # 可选环境变量：
 #   SKIP_CENTER_LOGIC=1                           — 不启动/不检查 Center 与 Logic（仅 Interface；无法验证发往 LOGIC）

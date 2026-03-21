@@ -65,11 +65,15 @@ cmake --install build
 
 ## 6. 首次部署到运行目录并启动节点（可选）
 
+产物已由 **`cmake --install build`**（及默认 **`THUNDER_DEPLOY_AUTO`**）安装到 **`deploy/`**。启动多节点示例：
+
 ```bash
-( cd deploy && ./install.sh first && ./restart_nodes.sh all )
+( cd deploy && ./restart_nodes.sh all )
 ```
 
-日常安装/启停仍用 **`deploy/`** 下脚本（`install.sh`、`start_nodes.sh`、`stop_nodes.sh`、`restart_nodes.sh`），配置见 **`deploy/server_list.conf`**、**`deploy/server_dir.conf`**。更细的说明见 **`deploy/deploy.md`**。
+日常启停可用 **`deploy/`** 下 **`start_nodes.sh` / `stop_nodes.sh` / `restart_nodes.sh`**，配置见 **`deploy/server_list.conf`**、**`deploy/server_dir.conf`**。说明见 **`deploy/deploy.md`**。
+
+> 已移除旧版 **`install.sh` / `install_*.sh`**（与当前 CMake 安装重复）；请仅用 CMake 构建与安装。
 
 ---
 
