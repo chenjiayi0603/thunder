@@ -447,7 +447,7 @@ void Labor::AddSignal(int iSignum,signal_callback callback)
 
 void Labor::AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback)
 {
-	ev_timer* pTimeoutWatcher = (ev_timer*)malloc(sizeof(ev_timer));
+	ev_timer* pTimeoutWatcher = new ev_timer();
 	if (0.0 == dTimeout)
 	{
 		pStep->SetTimeout(m_dStepTimeout);
@@ -465,7 +465,7 @@ void Labor::AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callb
 {
 	if (dTimeout != 0)
 	{
-		ev_timer* pTimeoutWatcher = (ev_timer*)malloc(sizeof(ev_timer));
+		ev_timer* pTimeoutWatcher = new ev_timer();
 		pSession->m_pTimeoutWatcher = pTimeoutWatcher;
 		pTimeoutWatcher->data = (void*)pSession;
 		AddEvent(pSession->GetTimeout(),pTimeoutWatcher, callback);

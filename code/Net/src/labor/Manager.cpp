@@ -7,6 +7,7 @@
  * @note
  * Modify history:
  ******************************************************************************/
+#include <memory>
 #include "protocol/oss_sys.pb.h"
 #include "Manager.hpp"
 #include "Interface.hpp"
@@ -314,7 +315,7 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
     }
     else
     {
-    	tagConnectionAttr* pConn = conn_iter->second;
+    	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pData->ulSeq != pConn->ulSeq)
         {
             LOG4_TRACE("callback seq %llu not match the conn attr seq %llu",pData->ulSeq, conn_iter->second->ulSeq);
@@ -424,7 +425,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     }
     else
     {
-    	tagConnectionAttr* pConn = attr_iter->second;
+    	tagConnectionAttr* pConn = attr_iter->second.get();
         if ((pData->ulSeq != pConn->ulSeq) || (pData->iFd != pConn->iFd))
         {
             LOG4_TRACE("callback seq %llu or ifd(%d) not match the conn attr seq %llu or ifd(%d)",pData->ulSeq, pData->iFd,pConn->ulSeq,pConn->iFd);
@@ -600,14 +601,14 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
     }
     else
     {
-    	tagConnectionAttr* pConn = iter->second;
+    	tagConnectionAttr* pConn = iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             int iErrno = 0;
             int iWriteLen = 0;
             int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
-            iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff, pConn->pWaitForSendBuff->ReadableBytes());
+            iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
                 iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
@@ -667,7 +668,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
     }
     else
     {
-    	tagConnectionAttr* pConn = iter->second;
+    	tagConnectionAttr* pConn = iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             int iErrno = 0;
@@ -1084,19 +1085,14 @@ bool Manager::Init()
 void Manager::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    for (auto& cmd_iter : m_mapSysCmd)
-    {
-    	SAFE_DELETE(cmd_iter.second);
-    }
     m_mapSysCmd.clear();
     m_mapWorker.clear();
     m_mapWorkerFdPid.clear();
     m_mapWorkerRestartNum.clear();
-    for (auto iter = m_mapFdAttr.begin();iter != m_mapFdAttr.end(); ++iter)
+    while (!m_mapFdAttr.empty())
     {
-        DestroyConnect(iter);
+        DestroyConnect(m_mapFdAttr.begin());
     }
-    m_mapFdAttr.clear();
     m_mapClientConnFrequency.clear();
 
     SAFE_FREE(m_pPeriodicTaskWatcher);
@@ -1278,7 +1274,7 @@ bool Manager::CreateEvents()
 void Manager::AddCmd(Cmd* pCmd,int iCmd)
 {
 	pCmd->SetCmd(iCmd);
-	m_mapSysCmd.insert(std::make_pair(iCmd, pCmd));
+	m_mapSysCmd.insert(std::make_pair(iCmd, std::unique_ptr<Cmd>(pCmd)));
 }
 
 void Manager::PreloadCmd()
@@ -1581,38 +1577,16 @@ tagConnectionAttr* Manager::CreateFdAttr(int iFd, uint32 ulSeq)
     auto fd_attr_iter = m_mapFdAttr.find(iFd);
     if (fd_attr_iter == m_mapFdAttr.end())
     {
-        tagConnectionAttr* pConnAttr = new tagConnectionAttr();
-        if (pConnAttr == nullptr)
-        {
-            LOG4_ERROR("new pConnAttr for fd %d error!", iFd);
-            return(nullptr);
-        }
+        auto pConnAttr = std::make_unique<tagConnectionAttr>();
         pConnAttr->iFd = iFd;
-        pConnAttr->pRecvBuff = new util::CBuffer();
-        if (pConnAttr->pRecvBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pRecvBuff for fd%d error!", iFd);
-            return(nullptr);
-        }
-        pConnAttr->pSendBuff = new util::CBuffer();
-        if (pConnAttr->pSendBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pSendBuff for fd %d error!", iFd);
-            return(nullptr);
-        }
-        pConnAttr->pWaitForSendBuff = new util::CBuffer();
-        if (pConnAttr->pWaitForSendBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pWaitForSendBuff for fd %d error!", iFd);
-            return(nullptr);
-        }
+        pConnAttr->pRecvBuff = std::make_unique<util::CBuffer>();
+        pConnAttr->pSendBuff = std::make_unique<util::CBuffer>();
+        pConnAttr->pWaitForSendBuff = std::make_unique<util::CBuffer>();
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
-        m_mapFdAttr.insert(std::make_pair(iFd, pConnAttr));
-        return(pConnAttr);
+        tagConnectionAttr* pRaw = pConnAttr.get();
+        m_mapFdAttr.insert(std::make_pair(iFd, std::move(pConnAttr)));
+        return(pRaw);
     }
     else
     {
@@ -1621,7 +1595,7 @@ tagConnectionAttr* Manager::CreateFdAttr(int iFd, uint32 ulSeq)
     }
 }
 
-bool Manager::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter)
+bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter)
 {
     if (iter == m_mapFdAttr.end())
     {
@@ -1637,7 +1611,6 @@ bool Manager::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterat
     }
     DelEvent(iter->second->pIoWatcher,(tagManagerIoWatcherData*)iter->second->pIoWatcher->data);
     close(iter->first);
-    SAFE_DELETE(iter->second);
     m_mapFdAttr.erase(iter);
     return(true);
 }
@@ -1925,7 +1898,7 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
         if (worker_conn_iter != m_mapFdAttr.end())
         {
         	LOG4_TRACE("send cmd %d seq %u to worker %d", oMsgHead.cmd(), oMsgHead.seq(), worker_iter.second.iWorkerIndex);
-        	if (SendTo(worker_conn_iter->second,oMsgHead,oMsgBody))
+        	if (SendTo(worker_conn_iter->second.get(),oMsgHead,oMsgBody))
 			{
         		LOG4_TRACE("send to worker %d success, cmd %d seq %u",worker_iter.second.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
 			}
@@ -1955,7 +1928,7 @@ bool Manager::SendTo(tagConnectionAttr* pConn,const MsgHead& oMsgHead, const Msg
 
 bool Manager::SendTo(tagConnectionAttr* pConn)
 {
-	util::CBuffer* pSendBuff = pConn->pSendBuff;
+	util::CBuffer* pSendBuff = pConn->pSendBuff.get();
 	int iWriteLen = 0;
 	int iErrno = 0;
 	int iNeedWriteLen = pSendBuff->ReadableBytes();
@@ -1998,7 +1971,7 @@ bool Manager::SendToWorkerWithMod(uint64 uiModFactor,const MsgHead& oMsgHead, co
             auto worker_conn_iter = m_mapFdAttr.find(worker_iter.second.iControlFd);
             if (worker_conn_iter != m_mapFdAttr.end())
             {
-            	if (SendTo(worker_conn_iter->second,oMsgHead,oMsgBody))
+            	if (SendTo(worker_conn_iter->second.get(),oMsgHead,oMsgBody))
 				{
 					LOG4_TRACE("send to worker %d success, cmd %d seq %u",worker_iter.second.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
 				}
@@ -2283,7 +2256,7 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
             oOutMsgHead.set_msgbody_len(oOutMsgBody.ByteSize());
             pConn->pSendBuff->Write(oOutMsgHead.SerializeAsString().c_str(), oOutMsgHead.ByteSize());
             pConn->pSendBuff->Write(oOutMsgBody.SerializeAsString().c_str(), oOutMsgBody.ByteSize());
-            pConn->pSendBuff->Write(pConn->pWaitForSendBuff, pConn->pWaitForSendBuff->ReadableBytes());
+            pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (!SendTo(pConn))
             {
             	LOG4_ERROR("send to fd %d error %d: %s",stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));

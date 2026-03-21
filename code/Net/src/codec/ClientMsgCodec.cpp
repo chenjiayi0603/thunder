@@ -315,7 +315,7 @@ E_CODEC_STATUS ClientMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, M
 
 E_CODEC_STATUS ClientMsgCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    E_CODEC_STATUS status = Decode(pConn->pRecvBuff,oMsgHead,oMsgBody);
+    E_CODEC_STATUS status = Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
     if (eConnectStatus_init == pConn->ucConnectStatus)//连接状态处理为解码一个消息成功，则连接状态完成
     {
         if (CODEC_STATUS_OK == status)

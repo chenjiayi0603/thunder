@@ -8,6 +8,7 @@
  ******************************************************************************/
 #ifndef SRC_LABOR_INTERFACE_HPP_
 #define SRC_LABOR_INTERFACE_HPP_
+#include <memory>
 #include "NetDefine.hpp"
 #include "storage/dataproxy.pb.h"
 namespace net
@@ -58,6 +59,7 @@ bool GetFileData(std::string& strFileData,const std::string &strConfFile);
  * @param dTimeout 超时时间（单位秒，默认使用配置时间）
  * @return 是否成功
  * */
+bool Launch(std::unique_ptr<Step> step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
 bool Launch(Step *step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
 /*
  * @brief 注册状态步骤（未执行）

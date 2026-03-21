@@ -1,6 +1,7 @@
 #ifndef __MYSQL_CONN__
 #define __MYSQL_CONN__
 
+#include <memory>
 #include <mysql.h>
 #include <stdint.h>
 #include <assert.h>
@@ -35,10 +36,10 @@ public:
 
 struct SqlTask {
 	SqlTask(const std::string& s,eSqlTaskOper o,MysqlHandler *h);
-	virtual ~SqlTask(){if (handler){delete handler;handler=NULL;}}
+	virtual ~SqlTask() = default;
 	std::string sql;
 	eSqlTaskOper oper;
-	MysqlHandler *handler;
+	std::unique_ptr<MysqlHandler> handler;
 	int iErrno;
 	std::string errmsg;
 };

@@ -1159,7 +1159,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(tagConnectionAttr* pConn,MsgHead& oMs
     {
     	return DecodeHandShake(pConn,oMsgHead,oMsgBody);
     }
-    return Decode(pConn->pRecvBuff,oMsgHead,oMsgBody);
+    return Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
 }
 
 /*
@@ -1412,7 +1412,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::DecodeHandShake(tagConnectionAttr* pConn,Msg
 			LOG4_TRACE("%s() pBuff->ReadableBytes() = %lu:%s", __FUNCTION__,
 							pConn->pRecvBuff->ReadableBytes(), pConn->pRecvBuff->ToString().c_str());
 			HttpMsg oHttpMsg;
-			E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff, oHttpMsg);
+			E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(), oHttpMsg);
 			if (CODEC_STATUS_OK == eCodecStatus)
 			{
 				std::string upgrade;

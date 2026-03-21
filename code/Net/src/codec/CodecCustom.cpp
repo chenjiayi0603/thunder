@@ -101,7 +101,7 @@ E_CODEC_STATUS CodecCustom::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgB
 
 E_CODEC_STATUS CodecCustom::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff, oMsgHead, oMsgBody);
+    E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(), oMsgHead, oMsgBody);
     if (CODEC_STATUS_OK == eCodecStatus)//连接状态处理
     {
         if(eConnectStatus_ok != pConn->ucConnectStatus)// 连接尚未完成

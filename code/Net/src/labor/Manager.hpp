@@ -9,6 +9,7 @@
  ******************************************************************************/
 #ifndef NodeManager_HPP_
 #define NodeManager_HPP_
+#include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
 #include "Attribution.hpp"
@@ -143,7 +144,7 @@ protected:
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq);
     tagConnectionAttr* CreateReadFdAttr(int iFd, uint32 ulSeq);
     tagConnectionAttr* CreateAcceptFdAttr(int iFd, uint32 ulSeq);
-    bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter);
+    bool DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter);
     /**
 	 * @brief 子进程负载、重启、检查心跳
 	 */
@@ -199,10 +200,10 @@ private:
     std::unordered_map<int32, int32> m_mapWorkerFdPid;            ///< 工作进程通信FD对应的进程号
     std::unordered_map<std::string, tagMsgShell> m_mapCenterMsgShell; ///< 到center服务器的连接
 
-    std::unordered_map<int32, tagConnectionAttr*> m_mapFdAttr;  ///< 连接的文件描述符属性
+    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>> m_mapFdAttr;  ///< 连接的文件描述符属性
     std::unordered_map<uint32, int32> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
     std::unordered_map<in_addr_t, uint32> m_mapClientConnFrequency; ///< 客户端连接频率 (unsigned long,uint32)
-    std::unordered_map<int32, Cmd*> m_mapSysCmd;
+    std::unordered_map<int32, std::unique_ptr<Cmd>> m_mapSysCmd;
 
     std::unordered_map<std::string, std::unordered_map<std::string, Session*> > m_mapCallbackSession;
 

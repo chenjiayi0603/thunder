@@ -8,7 +8,10 @@
  * @note
  * Modify history:
  ******************************************************************************/
+#include <memory>
 #include "hiredis_vip/adapters/libev.h"
+#include "hiredis_vip/async.h"
+#include "hiredis_vip/hircluster.h"
 #include "absl/status/status.h"
 #include "google/protobuf/util/json_util.h"
 #include "protocol/oss_sys.pb.h"
@@ -439,7 +442,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
     }
     else
     {
-    	tagConnectionAttr* pConn = conn_iter->second;
+    	tagConnectionAttr* pConn = conn_iter->second.get();
     	pConn->dActiveTime = ev_now(m_loop);
         if (pData->ulSeq != pConn->ulSeq)
         {
@@ -463,7 +466,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                 DestroyConnect(conn_iter);
                 return(false);
             }
-            ThunderCodec* pCodec = codec_iter->second;
+            ThunderCodec* pCodec = codec_iter->second.get();
             while (pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize)
             {
                 oInMsgHead.Clear();
@@ -574,7 +577,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         }
                         if (oOutMsgHead.ByteSize() > 0)
                         {
-                            eCodecStatus = pCodec->Encode(oOutMsgHead, oOutMsgBody, pConn->pSendBuff);
+                            eCodecStatus = pCodec->Encode(oOutMsgHead, oOutMsgBody, pConn->pSendBuff.get());
                             if (CODEC_STATUS_OK == eCodecStatus)
                             {
                                 conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
@@ -696,7 +699,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                             }
                             if (oOutHttpMsg.ByteSize() > 0)
                             {
-                                eCodecStatus = (pCodec)->Encode(oOutHttpMsg, pConn->pSendBuff);
+                                eCodecStatus = (pCodec)->Encode(oOutHttpMsg, pConn->pSendBuff.get());
                                 if (CODEC_STATUS_OK == eCodecStatus)
                                 {
                                     conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
@@ -814,7 +817,7 @@ bool Worker::IoWrite(tagIoWatcherData* pData, struct ev_io* watcher)
     }
     else
     {
-    	tagConnectionAttr* pConn = attr_iter->second;
+    	tagConnectionAttr* pConn = attr_iter->second.get();
         if (pData->ulSeq != pConn->ulSeq || pData->iFd != pConn->iFd)
         {
             LOG4_TRACE("callback seq %u iFd %d not match the conn attr seq %u ifd %d",
@@ -927,7 +930,7 @@ bool Worker::IoTimeout(struct ev_timer* watcher, bool bCheckBeat)
     }
     else
     {
-    	tagConnectionAttr* pConn = iter->second;
+    	tagConnectionAttr* pConn = iter->second.get();
         if (pConn->ulSeq != pData->ulSeq)      // 文件描述符数值相等，但已不是原来的文件描述符
         {
             LOG4_TRACE("%s() ulSeq(%u) not found",__FUNCTION__,pData->ulSeq);
@@ -1083,17 +1086,17 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
             {
             	net::RedisOperator oRedisOperator(0, attr_iter->second->strPassword,"","AUTH");//"AUTH %s", redis_password
             	StepAuthRedis* pStepAuthRedis = new StepAuthRedis(oRedisOperator.MakeMemOperate()->redis_operate(),attr_iter->second);
-            	attr_iter->second->listWaitData.push_front(pStepAuthRedis);
+            	attr_iter->second->listWaitData.push_front(std::unique_ptr<RedisStep>(static_cast<RedisStep*>(pStepAuthRedis)));
             }
             else
             {
             	attr_iter->second->bIsReady = true;//异步连接的后续处理
             }
             int iCmdStatus;
-            for (std::list<RedisStep*>::iterator step_iter = attr_iter->second->listWaitData.begin();
+            for (auto step_iter = attr_iter->second->listWaitData.begin();
                             step_iter != attr_iter->second->listWaitData.end(); )
             {
-                RedisStep* pRedisStep = (RedisStep*)(*step_iter);
+                RedisStep* pRedisStep = step_iter->get();
 
                 if (pRedisStep->RedisCmd()->GetRawCmds().size() > 0)
 				{//批处理指令
@@ -1109,7 +1112,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 							if (!boPush)
 							{
 								boPush = true;
-								attr_iter->second->listData.push_back(pRedisStep);
+								attr_iter->second->listData.push_back(std::move(*step_iter));
 							}
 							pRedisStep->AddSendCounter();
 						}
@@ -1143,7 +1146,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 					if (iCmdStatus == REDIS_OK)
 					{
 						LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
-						attr_iter->second->listData.push_back(pRedisStep);
+						attr_iter->second->listData.push_back(std::move(*step_iter));
 						attr_iter->second->listWaitData.erase(step_iter++);
 						pRedisStep->AddSendCounter();
 					}
@@ -1156,12 +1159,10 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
         }
         else
         {//连接失败则放弃步骤
-            for (std::list<RedisStep *>::iterator step_iter = attr_iter->second->listWaitData.begin();
+            for (auto step_iter = attr_iter->second->listWaitData.begin();
                             step_iter != attr_iter->second->listWaitData.end(); ++step_iter)
             {
-                RedisStep* pRedisStep = (RedisStep*)(*step_iter);
-                pRedisStep->Callback(c, status, NULL);
-                delete pRedisStep;
+                step_iter->get()->Callback(c, status, NULL);
             }
             attr_iter->second->listWaitData.clear();
             SAFE_DELETE(attr_iter->second);
@@ -1183,7 +1184,6 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
             step_iter->Callback(c, c->err, NULL);
-            SAFE_DELETE(step_iter);
         }
         attr_iter->second->listData.clear();
 
@@ -1192,7 +1192,6 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
             step_iter->Callback(c, c->err, NULL);
-            SAFE_DELETE(step_iter);
         }
         attr_iter->second->listWaitData.clear();
 
@@ -1209,7 +1208,7 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
     std::unordered_map<redisAsyncContext*, tagRedisAttr*>::iterator attr_iter = m_mapRedisAttr.find((redisAsyncContext*)c);
     if (attr_iter != m_mapRedisAttr.end())
     {
-        std::list<RedisStep*>::iterator step_iter = attr_iter->second->listData.begin();
+        auto step_iter = attr_iter->second->listData.begin();
         if (nullptr == reply)
         {//结果失效，放弃连接
             std::unordered_map<const redisAsyncContext*, std::string>::iterator identify_iter = m_mapContextIdentify.find(c);
@@ -1219,10 +1218,9 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
             }
             for ( ; step_iter != attr_iter->second->listData.end(); ++step_iter)
             {
-            	RedisStep* pRedisStep = (*step_iter);
+            	RedisStep* pRedisStep = step_iter->get();
                 LOG4_ERROR("callback error %d of redis cmd: %s", c->err, pRedisStep->GetRedisCmd()->ToString().c_str());
                 pRedisStep->Callback(c, c->err, (redisReply*)reply);
-                SAFE_DELETE(pRedisStep);
             }
             attr_iter->second->listData.clear();
             SAFE_DELETE(attr_iter->second);
@@ -1233,13 +1231,12 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
         {
             if (step_iter != attr_iter->second->listData.end())
             {
-            	RedisStep* pRedisStep = (*step_iter);
+            	RedisStep* pRedisStep = step_iter->get();
                 LOG4_TRACE("callback of redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
                 /** @note 注意，若Callback返回STATUS_CMD_RUNNING，则该步骤需要继续进行 */
                 pRedisStep->AddCallBackCounter();
                 if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, REDIS_OK, (redisReply*)reply))
                 {
-                	SAFE_DELETE(pRedisStep);
                 	attr_iter->second->listData.erase(step_iter);
                 }
                 //freeReplyObject(reply);
@@ -1264,15 +1261,14 @@ bool Worker::OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *reply,
         cobj.err = acc->err;
         cobj.errstr = acc->errstr;
         redisAsyncContext *c = &cobj;
-        std::list<RedisStep*>::iterator step_iter = attr_iter->second->listData.begin();
+        auto step_iter = attr_iter->second->listData.begin();
         if (nullptr == reply)
         {//结果失效，放弃连接
             for ( ; step_iter != attr_iter->second->listData.end(); ++step_iter)
             {
-            	RedisStep* pRedisStep = (*step_iter);
+            	RedisStep* pRedisStep = step_iter->get();
                 LOG4_ERROR("callback error %d of redis cmd: %s", c->err, pRedisStep->GetRedisCmd()->ToString().c_str());
                 pRedisStep->Callback(c, c->err, (redisReply*)reply);
-                SAFE_DELETE(pRedisStep);
             }
             attr_iter->second->listData.clear();
 
@@ -1283,13 +1279,12 @@ bool Worker::OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *reply,
         {
             if (step_iter != attr_iter->second->listData.end())
             {
-            	RedisStep* pRedisStep = (*step_iter);
+            	RedisStep* pRedisStep = step_iter->get();
                 LOG4_TRACE("callback of redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
                 /** @note 注意，若Callback返回STATUS_CMD_RUNNING，则该步骤需要继续进行 */
                 pRedisStep->AddCallBackCounter();
                 if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, REDIS_OK, (redisReply*)reply))
                 {
-                	SAFE_DELETE(pRedisStep);
                 	attr_iter->second->listData.erase(step_iter);
                 }
                 //freeReplyObject(reply);
@@ -1329,7 +1324,7 @@ bool Worker::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
     }
     pStep->SetRegistered();
     pStep->SetActiveTime(ev_now(m_loop));
-    auto ret = m_mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), pStep));
+    auto ret = m_mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), std::unique_ptr<Step>(pStep)));
     if (ret.second)
     {
     	AddStep(pStep,dTimeout,StepTimeoutCallback);
@@ -1363,7 +1358,7 @@ bool Worker::RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTime
     pStep->SetRegistered();
     pStep->SetActiveTime(ev_now(m_loop));
 
-    auto ret = m_mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), pStep));
+    auto ret = m_mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), std::unique_ptr<Step>(pStep)));
     if (ret.second)
     {
     	AddStep(pStep,dTimeout,StepTimeoutCallback);
@@ -1400,7 +1395,6 @@ void Worker::DeleteCallback(Step* pStep)
     if (callback_iter != m_mapCallbackStep.end())
     {
         LOG4_TRACE("delete step(seq %u)", pStep->GetSequence());
-        delete pStep;
         m_mapCallbackStep.erase(callback_iter);
     }
 }
@@ -1412,7 +1406,7 @@ void Worker::DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
     {
         return;
     }
-    std::unordered_map<uint32, Step*>::iterator callback_iter;
+    std::unordered_map<uint32, std::unique_ptr<Step>>::iterator callback_iter;
     for (auto step_seq_iter = pStep->m_setPreStepSeq.begin();step_seq_iter != pStep->m_setPreStepSeq.end(); )//检查前面的步骤，有则延长自己
     {
         callback_iter = m_mapCallbackStep.find(*step_seq_iter);
@@ -1442,7 +1436,6 @@ void Worker::DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
     if (callback_iter != m_mapCallbackStep.end())
     {
         LOG4_TRACE("step[%u] try to delete step[%u,%p]", uiSelfStepSeq, pStep->GetSequence(),pStep);
-        delete pStep;
         m_mapCallbackStep.erase(callback_iter);
     }
 }
@@ -1584,7 +1577,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 						if (!boPush)
 						{
 							boPush = true;
-							iter->second->listData.push_back(pRedisStep);
+							iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
 						}
 						pRedisStep->AddSendCounter();
 					}
@@ -1613,7 +1606,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				if (status == REDIS_OK)
 				{
 					LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
-					iter->second->listData.push_back(pRedisStep);
+					iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
 					pRedisStep->AddSendCounter();
 					return(true);
 				}
@@ -1634,7 +1627,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				return(false);
 			}
             LOG4_TRACE("listWaitData.push_back()");
-            iter->second->listWaitData.push_back(pRedisStep);
+            iter->second->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
             return(true);
         }
     }
@@ -1777,14 +1770,14 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s) iServerSocketBackLog(%d)",
         		__FUNCTION__,nPid,m_iPortForServer,m_strHostForServer.c_str(),m_iServerSocketBackLog);
 
-    m_mapCodec.insert(std::make_pair(util::CODEC_PB_INTERNAL, new ProtoCodec(util::CODEC_PB_INTERNAL)));
-    m_mapCodec.insert(std::make_pair(util::CODEC_HTTP, new HttpCodec(util::CODEC_HTTP)));
-    m_mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, new ClientMsgCodec(util::CODEC_PRIVATE)));
-    m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, new CodecWebSocketJson(util::CODEC_WEBSOCKET_EX_JS)));
-    m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, new CodecWebSocketPb(util::CODEC_WEBSOCKET_EX_PB)));
-	m_mapCodec.insert(std::make_pair(util::CODEC_TEST, new CodecCustom(util::CODEC_TEST)));
-	m_mapCodec.insert(std::make_pair(util::CODEC_APP, new AppMsgCodec(util::CODEC_APP)));
-	m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, new CodecWebSocketPbApp(util::CODEC_WEBSOCKET_EX_PB_APP)));
+    m_mapCodec.insert(std::make_pair(util::CODEC_PB_INTERNAL, std::make_unique<ProtoCodec>(util::CODEC_PB_INTERNAL)));
+    m_mapCodec.insert(std::make_pair(util::CODEC_HTTP, std::make_unique<HttpCodec>(util::CODEC_HTTP)));
+    m_mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, std::make_unique<ClientMsgCodec>(util::CODEC_PRIVATE)));
+    m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, std::make_unique<CodecWebSocketJson>(util::CODEC_WEBSOCKET_EX_JS)));
+    m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, std::make_unique<CodecWebSocketPb>(util::CODEC_WEBSOCKET_EX_PB)));
+	m_mapCodec.insert(std::make_pair(util::CODEC_TEST, std::make_unique<CodecCustom>(util::CODEC_TEST)));
+	m_mapCodec.insert(std::make_pair(util::CODEC_APP, std::make_unique<AppMsgCodec>(util::CODEC_APP)));
+	m_mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, std::make_unique<CodecWebSocketPbApp>(util::CODEC_WEBSOCKET_EX_PB_APP)));
 
     bool bCpuAffinity = false;
 	oJsonConf.Get("cpu_affinity", bCpuAffinity);
@@ -1837,7 +1830,7 @@ bool Worker::CreateEvents()
 void Worker::AddCmd(Cmd* pCmd,int iCmd)
 {
 	pCmd->SetCmd(iCmd);
-	m_mapSysCmd.insert(std::make_pair(iCmd, pCmd));
+	m_mapSysCmd.insert(std::make_pair(iCmd, std::unique_ptr<Cmd>(pCmd)));
 }
 
 void Worker::PreloadCmd()
@@ -1861,34 +1854,17 @@ void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     m_mapHttpAttr.clear();
-    for (auto& cmd_iter:m_mapSysCmd)
-    {
-    	SAFE_DELETE(cmd_iter.second);
-    }
     m_mapSysCmd.clear();
 
-    for (auto& so_iter:m_mapSo)
-    {
-    	SAFE_DELETE(so_iter.second);
-    }
     m_mapSo.clear();
 
-    for (auto& module_iter:m_mapModule)
-    {
-    	SAFE_DELETE(module_iter.second);
-    }
     m_mapModule.clear();
 
-    for (auto attr_iter = m_mapFdAttr.begin();attr_iter != m_mapFdAttr.end(); ++attr_iter)
+    while (!m_mapFdAttr.empty())
     {
-        LOG4_TRACE("for (std::unordered_map<int, tagConnectionAttr*>::iterator attr_iter = m_mapFdAttr.begin();");
-        DestroyConnect(attr_iter);
+        DestroyConnect(m_mapFdAttr.begin());
     }
 
-    for (auto& codec_iter:m_mapCodec)
-    {
-    	SAFE_DELETE(codec_iter.second);
-    }
     m_mapCodec.clear();
 
     if (m_loop != nullptr)
@@ -2229,14 +2205,14 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell)
     }
     else
     {
-    	tagConnectionAttr* pConn = iter->second;
+    	tagConnectionAttr* pConn = iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             int iErrno = 0;
             int iWriteLen = 0;
             int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
-            iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff, pConn->pWaitForSendBuff->ReadableBytes());
+            iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
                 iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
@@ -2628,7 +2604,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
     }
     else
     {
-    	tagConnectionAttr* pConn = conn_iter->second;
+    	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             auto codec_iter = m_mapCodec.find(conn_iter->second->eCodecType);
@@ -2647,7 +2623,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                     if (oMsgHead.cmd() <= CMD_RSP_TELL_WORKER)   // 创建连接的过程
                     {
                         LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff);
+                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
                         if(oMsgHead.cmd() == CMD_RSP_TELL_WORKER)
                         {
                             conn_iter->second->ucConnectStatus = eConnectStatus_ok;
@@ -2660,7 +2636,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                     else    // 创建连接过程中的其他数据发送请求
                     {
                         LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pWaitForSendBuff);
+                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pWaitForSendBuff.get());
                         if (CODEC_STATUS_OK == eCodecStatus)//其他请求在连接过程中先不发送
                         {
                             return(true);
@@ -2671,13 +2647,13 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                 else//连接已完成
                 {
                     LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                    eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff);
+                    eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
                 }
             }
             else
             {
                 LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff);
+                eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
             }
             if (CODEC_STATUS_OK == eCodecStatus)
             {
@@ -3062,7 +3038,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
     }
     else
     {
-    	tagConnectionAttr* pConn = conn_iter->second;
+    	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
             auto codec_iter = m_mapCodec.find(pConn->eCodecType);
@@ -3080,12 +3056,12 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
 			{
 				if (pConn->pWaitForSendBuff->ReadableBytes() > 0)   // 正在连接
 				{
-					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pWaitForSendBuff);
+					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pWaitForSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pWaitForSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pWaitForSendBuff->ReadableBytes());
 				}
 				else
 				{
-					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pSendBuff);
+					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff->ReadableBytes());
 				}
 			}
@@ -3102,7 +3078,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
                 {   // 正在监听fd的写事件，说明发送缓冲区满，此时直接返回，等待EV_WRITE事件再执行WriteFD
                     return(true);
                 }
-                LOG4_TRACE("fd[%d], seq[%u], pConn->pSendBuff %p", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff);
+                LOG4_TRACE("fd[%d], seq[%u], pConn->pSendBuff %p", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff.get());
                 int iErrno = 0;
                 int iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
                 int iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
@@ -3268,7 +3244,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 		DestroyConnect(m_mapFdAttr.find(iFd));
 		return(false);
 	}
-	E_CODEC_STATUS eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, pConn->pWaitForSendBuff);
+	E_CODEC_STATUS eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, pConn->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
 		++m_iSendNum;
@@ -3309,7 +3285,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(m_mapFdAttr.find(iFd));
 		return(false);
 	}
-	E_CODEC_STATUS eCodecStatus = ((HttpCodec*)codec_iter->second)->Encode(oHttpMsg, pConnAttr->pWaitForSendBuff);
+	E_CODEC_STATUS eCodecStatus = ((HttpCodec*)codec_iter->second.get())->Encode(oHttpMsg, pConnAttr->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
 		++m_iSendNum;
@@ -3340,16 +3316,21 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
 {
     LOG4_TRACE("%s() redisAsyncConnect(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     redisAsyncContext *c = redisAsyncConnect(strHost.c_str(), iPort);
+    if (c == nullptr)
+    {
+        LOG4_ERROR("%s() redisAsyncConnect returned nullptr", __FUNCTION__);
+        return(false);
+    }
     if (c->err)
     {
-        /* Let *c leak for now... */
         LOG4_ERROR("error: %s", c->errstr);
+        redisAsyncFree(c);
         return(false);
     }
     c->data = this;
     tagRedisAttr* pRedisAttr = new tagRedisAttr();
     pRedisAttr->ulSeq = GetFdSequence();
-    pRedisAttr->listWaitData.push_back(pRedisStep);
+    pRedisAttr->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
     if (strPassword.size() > 0)
     {
     	pRedisAttr->strPassword = strPassword;
@@ -3380,9 +3361,15 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
     if (it == m_mapRedisClusterContext.end())
     {
         acc = redisClusterAsyncConnect(sAddrList.c_str(),HIRCLUSTER_FLAG_NULL);
+        if (acc == nullptr)
+        {
+            LOG4_ERROR("%s() redisClusterAsyncConnect returned nullptr", __FUNCTION__);
+            return(false);
+        }
         if (acc->err)
         {
             LOG4_ERROR("error: %s", acc->errstr);
+            redisClusterAsyncFree(acc);
             return(false);
         }
         LOG4_TRACE("%s new redisClusterAsyncConnect(%s,%d)", __FUNCTION__,acc->cc->ip,acc->cc->port);
@@ -3426,7 +3413,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             {
                 ptagRedisAttr = acc_iter->second;
             }
-            ptagRedisAttr->listData.push_back(pRedisStep);
+            ptagRedisAttr->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
         }
         else    // 命令执行失败，不再继续执行，等待下一次回调
         {
@@ -3808,7 +3795,7 @@ const tagConnectionAttr* Worker::GetConnectionAttr(const tagMsgShell& stMsgShell
 	}
 	if (iter->second->ulSeq == stMsgShell.ulSeq)
 	{
-		return iter->second;
+		return iter->second.get();
 	}
 	LOG4_WARN("%s() iter->second->ulSeq(%u) == stMsgShell.ulSeq(%u) error",__FUNCTION__,iter->second->ulSeq,stMsgShell.ulSeq);
 	return(nullptr);
@@ -3827,7 +3814,7 @@ bool Worker::ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno,
     	int nRet = step_iter->second->Emit(iErrno, strErrMsg, strErrShow);
         if (net::STATUS_CMD_RUNNING != nRet)
         {
-            DeleteCallback(uiCallerStepSeq, step_iter->second);
+            DeleteCallback(uiCallerStepSeq, step_iter->second.get());
             step_iter = m_mapCallbackStep.find(uiCallerStepSeq);// 处理调用者step的NextStep
             if (step_iter != m_mapCallbackStep.end())
             {
@@ -3855,7 +3842,7 @@ bool Worker::ExecStep(uint32 uiStepSeq,int iErrno, const std::string& strErrMsg,
     	int nRet = step_iter->second->Emit(iErrno, strErrMsg, strErrShow);
         if (net::STATUS_CMD_RUNNING != nRet)
         {
-            DeleteCallback(step_iter->second);
+            DeleteCallback(step_iter->second.get());
         }
         if (nRet != net::STATUS_CMD_FAULT)return true;
     }
@@ -3888,7 +3875,7 @@ bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::stri
     else
     {
     	int nRet = step_iter->second->Emit(iErrno, strErrMsg, strErrShow);
-        if (net::STATUS_CMD_RUNNING != nRet)DeleteCallback(step_iter->second);
+        if (net::STATUS_CMD_RUNNING != nRet)DeleteCallback(step_iter->second.get());
         if (net::STATUS_CMD_FAULT != nRet)return true;
         LOG4_ERROR("step Emit failed.");
     }
@@ -3919,7 +3906,7 @@ Step* Worker::GetStep(uint32 uiStepSeq)
 	{
 		return nullptr;
 	}
-	return iter->second;
+	return iter->second.get();
 }
 
 void Worker::LoadSo(util::CJsonObject& oSoConf,bool boForce)
@@ -3929,7 +3916,7 @@ void Worker::LoadSo(util::CJsonObject& oSoConf,bool boForce)
     int iVersion = 0;
     bool bIsload = false;
     std::string strSoPath;
-    std::unordered_map<int, tagSo*>::iterator cmd_iter;
+    std::unordered_map<int, std::unique_ptr<tagSo>>::iterator cmd_iter;
     tagSo* pSo = nullptr;
     for (int i = 0; i < oSoConf.GetArraySize(); ++i)
     {
@@ -3991,7 +3978,7 @@ void Worker::ReloadSo(util::CJsonObject& oCmds)
     int iVersion = 0;
     std::string strSoPath;
     std::string strSymbol;
-    std::unordered_map<int, tagSo*>::iterator cmd_iter;
+    std::unordered_map<int, std::unique_ptr<tagSo>>::iterator cmd_iter;
     tagSo* pSo = nullptr;
     for (int i = 0; i < oCmds.GetArraySize(); ++i)
     {
@@ -4052,7 +4039,7 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
         if (pSo != nullptr)
         {
             pSo->pSoHandle = pHandle;
-            pSo->pCmd = pCmd;
+            pSo->pCmd.reset(pCmd);
             pSo->strSoPath = strSoPath;
             pSo->strSymbol = strSymbol;
             pSo->iVersion = iVersion;
@@ -4065,7 +4052,7 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
             }
             LOG4_INFO("succeed in loading(%s) strLoadTime(%s) pHandle:%p pCreateCmd:%p pCmd:%p",
                     strSoPath.c_str(),pSo->strLoadTime.c_str(),pHandle,pCreateCmd,pCmd);
-            m_mapSo.insert(std::make_pair(iCmd,pSo));
+            m_mapSo.insert(std::make_pair(iCmd, std::unique_ptr<tagSo>(pSo)));
             return pSo;
         }
         else
@@ -4081,13 +4068,12 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
 void Worker::UnloadSoAndDeleteCmd(int iCmd)
 {
     LOG4_TRACE("%s() iCmd:%d", __FUNCTION__,iCmd);
-    std::unordered_map<int, tagSo*>::iterator mapSoIt = m_mapSo.find(iCmd);
+    auto mapSoIt = m_mapSo.find(iCmd);
     if (mapSoIt != m_mapSo.end())
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
                                 mapSoIt->second->strSoPath.c_str(),mapSoIt->second->strLoadTime.c_str(),util::GetCurrentTime(20).c_str());
         void* pSoHandle = mapSoIt->second->pSoHandle;
-        delete mapSoIt->second;
         if(pSoHandle)
         {
             LOG4_TRACE("%s() dlclose iCmd:%d", __FUNCTION__,iCmd);
@@ -4105,7 +4091,7 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
     int iVersion = 0;
     bool bIsload = false;
     std::string strSoPath;
-    std::unordered_map<std::string, tagModule*>::iterator module_iter;
+    std::unordered_map<std::string, std::unique_ptr<tagModule>>::iterator module_iter;
     tagModule* pModule = nullptr;
     LOG4_TRACE("oModuleConf.GetArraySize() = %d,oModuleConf(%s)", oModuleConf.GetArraySize(),
                     oModuleConf.ToString().c_str());
@@ -4156,7 +4142,7 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
 void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    std::unordered_map<std::string, tagModule*>::iterator module_iter;
+    std::unordered_map<std::string, std::unique_ptr<tagModule>>::iterator module_iter;
     tagModule* pModule = nullptr;
     LOG4_TRACE("oUrlPaths.GetArraySize() = %d,oUrlPaths(%s)", oUrlPaths.GetArraySize(),
                     oUrlPaths.ToString().c_str());
@@ -4219,7 +4205,7 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         if (pSo != nullptr)
         {
             pSo->pSoHandle = pHandle;
-            pSo->pModule = pModule;
+            pSo->pModule.reset(pModule);
             pSo->strSoPath = strSoPath;
             pSo->strSymbol = strSymbol;
             pSo->iVersion = iVersion;
@@ -4230,7 +4216,7 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
                 delete pSo;
                 return nullptr;
             }
-            m_mapModule.insert(std::make_pair(strModulePath,pSo));
+            m_mapModule.insert(std::make_pair(strModulePath, std::unique_ptr<tagModule>(pSo)));
         }
         else
         {
@@ -4245,13 +4231,12 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
 void Worker::UnloadSoAndDeleteModule(const std::string& strModulePath)
 {
     LOG4_TRACE("%s() strModulePath:%s", __FUNCTION__,strModulePath.c_str());
-    std::unordered_map<std::string, tagModule*>::iterator mapMoIt = m_mapModule.find(strModulePath);
+    auto mapMoIt = m_mapModule.find(strModulePath);
     if (mapMoIt != m_mapModule.end())
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
                 mapMoIt->second->strSoPath.c_str(),mapMoIt->second->strLoadTime.c_str(),util::GetCurrentTime(20).c_str());
         void* pSoHandle = mapMoIt->second->pSoHandle;
-        delete mapMoIt->second;
         if(pSoHandle)
         {
             LOG4_TRACE("%s() dlclose strModulePath:%s", __FUNCTION__, strModulePath.c_str());
@@ -4462,46 +4447,18 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
     auto fd_attr_iter = m_mapFdAttr.find(iFd);
     if (fd_attr_iter == m_mapFdAttr.end())
     {
-        tagConnectionAttr* pConnAttr = new tagConnectionAttr();
-        if (pConnAttr == nullptr)
-        {
-            LOG4_ERROR("new pConnAttr for fd %d error!", iFd);
-            return(nullptr);
-        }
+        auto pConnAttr = std::make_unique<tagConnectionAttr>();
         pConnAttr->iFd = iFd;
-        pConnAttr->pRecvBuff = new util::CBuffer();
-        if (pConnAttr->pRecvBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pRecvBuff for fd %d error!", iFd);
-            return(nullptr);
-        }
-        pConnAttr->pSendBuff = new util::CBuffer();
-        if (pConnAttr->pSendBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pSendBuff for fd %d error!", iFd);
-            return(nullptr);
-        }
-        pConnAttr->pWaitForSendBuff = new util::CBuffer();
-        if (pConnAttr->pWaitForSendBuff == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pWaitForSendBuff for fd %d error!", iFd);
-            return(nullptr);
-        }
-        pConnAttr->pClientData = new util::CBuffer();
-        if (pConnAttr->pClientData == nullptr)
-        {
-            delete pConnAttr;
-            LOG4_ERROR("new pConnAttr->pClientData for fd %d error!", iFd);
-            return(nullptr);
-        }
+        pConnAttr->pRecvBuff = std::make_unique<util::CBuffer>();
+        pConnAttr->pSendBuff = std::make_unique<util::CBuffer>();
+        pConnAttr->pWaitForSendBuff = std::make_unique<util::CBuffer>();
+        pConnAttr->pClientData = std::make_unique<util::CBuffer>();
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
         pConnAttr->eCodecType = eCodecType;
-        m_mapFdAttr.insert(std::make_pair(iFd, pConnAttr));
-        return(pConnAttr);
+        tagConnectionAttr* pRaw = pConnAttr.get();
+        m_mapFdAttr.insert(std::make_pair(iFd, std::move(pConnAttr)));
+        return(pRaw);
     }
     else
     {
@@ -4561,13 +4518,13 @@ tagConnectionAttr* Worker::CreateManagerFdAttr(int iFd,uint32 ulSeq)
 }
 
 
-bool Worker::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice)
+bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter, bool bMsgShellNotice)
 {
     if (iter == m_mapFdAttr.end())
     {
         return(false);
     }
-    tagConnectionAttr* pConn = iter->second;
+    tagConnectionAttr* pConn = iter->second.get();
     if (pConn->iFd == m_iManagerControlFd || pConn->iFd == m_iManagerDataFd)//收到父进程通信fd关闭
     {
     	LOG4_ERROR("pConn->iFd(%u) m_iManagerControlFd(%u) m_iManagerDataFd(%u)",
@@ -4606,7 +4563,6 @@ bool Worker::DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterato
 		LOG4_TRACE("%s() timer ev_timer_stop",__FUNCTION__);
 		DelEvent(pConn->pTimeWatcher,(tagIoWatcherData*)pConn->pTimeWatcher->data);
 	}
-	SAFE_DELETE(pConn);
     m_mapFdAttr.erase(iter);
     return(true);
 }
@@ -4724,7 +4680,7 @@ bool Worker::Dispose(const tagConnectionAttr* pConn,const MsgHead& oInMsgHead, c
 		if (step_iter != m_mapCallbackStep.end())
 		{
 			LOG4_TRACE("receive message, cmd = %u",uiCmd);
-			Step* pStep = step_iter->second;
+			Step* pStep = step_iter->second.get();
 			pStep->SetActiveTime(ev_now(m_loop));
 			LOG4_TRACE("cmd %u, seq %u, step_seq %u, step addr %p, active_time %lf",
 							uiCmd, oInMsgHead.seq(), pStep->GetSequence(),pStep, pStep->GetActiveTime());
@@ -4806,21 +4762,21 @@ bool Worker::Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, H
                 if (step_iter != m_mapCallbackStep.end())   // 步骤回调
                 {
                     step_iter->second->SetActiveTime(ev_now(m_loop));
-                    BaseTask* pBaseTask = dynamic_cast<BaseTask*>(step_iter->second);
+                    BaseTask* pBaseTask = dynamic_cast<BaseTask*>(step_iter->second.get());
                     if (pBaseTask != nullptr)
                     {
                         pBaseTask->ResumeWithHttpResponse(stMsgShell, oInHttpMsg);
                         if (pBaseTask->IsCoroutineDone())
                         {
-                            DeleteCallback(step_iter->second);
+                            DeleteCallback(step_iter->second.get());
                         }
                     }
                     else
                     {
-                        E_CMD_STATUS eResult = ((HttpStep*)step_iter->second)->Callback(stMsgShell, oInHttpMsg);
+                        E_CMD_STATUS eResult = ((HttpStep*)step_iter->second.get())->Callback(stMsgShell, oInHttpMsg);
                         if (eResult != STATUS_CMD_RUNNING)
                         {
-                            DeleteCallback(step_iter->second);
+                            DeleteCallback(step_iter->second.get());
                         }
                     }
                 }
@@ -4843,21 +4799,21 @@ bool Worker::Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, H
 
 bool Worker::Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet)
 {
-	auto step_iter = m_mapCallbackStep.find(((CustomMysqlHandler*)task->handler)->m_uiMysqlStepSeq);
+	auto step_iter = m_mapCallbackStep.find(((CustomMysqlHandler*)task->handler.get())->m_uiMysqlStepSeq);
 	if (step_iter != m_mapCallbackStep.end() && step_iter->second != nullptr)   // 步骤回调
 	{
 		E_CMD_STATUS eResult;
 		step_iter->second->SetActiveTime(ev_now(m_loop));
-		eResult = ((MysqlStep*)step_iter->second)->Callback(c,task,pResultSet);
+		eResult = ((MysqlStep*)step_iter->second.get())->Callback(c,task,pResultSet);
 		if (eResult != STATUS_CMD_RUNNING)
 		{
-			DeleteCallback(step_iter->second);
+			DeleteCallback(step_iter->second.get());
 		}
 	}
 	else
 	{
 		snprintf(m_pErrBuff, gc_iErrBuffLen, "no callback or the callback for MysqlStepSeq %u had been timeout!",
-				((CustomMysqlHandler*)task->handler)->m_uiMysqlStepSeq);
+				((CustomMysqlHandler*)task->handler.get())->m_uiMysqlStepSeq);
 		LOG4_WARN("%s", m_pErrBuff);
 	}
 	return(true);

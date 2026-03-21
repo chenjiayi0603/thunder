@@ -9,6 +9,7 @@
  ******************************************************************************/
 #ifndef SRC_STEP_REDISSTEP_HPP_
 #define SRC_STEP_REDISSTEP_HPP_
+#include <memory>
 #include <set>
 #include <list>
 #include "dbi/redis/RedisCmd.hpp"
@@ -75,26 +76,12 @@ struct tagRedisAttr
     redisReply* pReply = nullptr;           ///< redis命令执行结果
     bool bIsReady = false;                  ///< redis连接是否准备就绪
     bool bIsAuthFail = false;
-    std::list<RedisStep*> listData;         ///< redis连接回调数据
-    std::list<RedisStep*> listWaitData;     ///< redis等待连接成功需执行命令的数据
+    std::list<std::unique_ptr<RedisStep>> listData;         ///< redis连接回调数据
+    std::list<std::unique_ptr<RedisStep>> listWaitData;     ///< redis等待连接成功需执行命令的数据
 
     std::string strPassword;
 
     tagRedisAttr() = default;
-    ~tagRedisAttr()
-    {
-        //freeReplyObject(pReply);  redisProcessCallbacks()函数中有自动回收
-		for (auto& iter:listData)
-        {
-			SAFE_DELETE(iter);
-        }
-        listData.clear();
-        for (auto& iter:listWaitData)
-        {
-        	SAFE_DELETE(iter);
-        }
-        listWaitData.clear();
-    }
 };
 
 } /* namespace net */

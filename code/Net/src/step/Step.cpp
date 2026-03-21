@@ -45,7 +45,7 @@ Step::~Step()
     {
         LOG4_TRACE("step %u destruct, m_pNextStep 0x%p", GetSequence(), m_pNextStep);
     }
-    SAFE_FREE(m_pTimeoutWatcher);
+    SAFE_DELETE(m_pTimeoutWatcher);
     if (m_pNextStep)
     {
         if (!m_pNextStep->IsRegistered())

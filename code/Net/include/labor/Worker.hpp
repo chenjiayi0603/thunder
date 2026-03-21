@@ -10,6 +10,7 @@
 #ifndef Worker_HPP_
 #define Worker_HPP_
 
+#include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
 #include "Interface.hpp"
@@ -20,6 +21,7 @@
 #include "step/StepState.hpp"
 #include "step/MysqlStep.hpp"
 #include "cmd/Module.hpp"
+#include "codec/ThunderCodec.hpp"
 
 namespace net
 {
@@ -33,25 +35,23 @@ class Worker;
 struct tagSo
 {
     void* pSoHandle = nullptr;//不在本对象内管理
-    Cmd* pCmd = nullptr;
+    std::unique_ptr<Cmd> pCmd;
     int iVersion = 0;
     std::string strSoPath;
     std::string strSymbol;
     std::string strLoadTime = util::GetCurrentTime(20);
     tagSo() = default;
-    ~tagSo(){SAFE_DELETE(pCmd);}
 };
 
 struct tagModule
 {
     void* pSoHandle = nullptr;//不在本对象内管理
-    Module* pModule = nullptr;
+    std::unique_ptr<Module> pModule;
     int iVersion = 0;
     std::string strSoPath;
     std::string strSymbol;
     std::string strLoadTime = util::GetCurrentTime(20);
     tagModule() = default;
-    ~tagModule(){SAFE_DELETE(pModule);}
 };
 
 struct tagIoWatcherData
@@ -320,7 +320,7 @@ protected:
     tagConnectionAttr* CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODEC_TYPE eCodecType);
     tagConnectionAttr* CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::string & strIdentify);
 
-    bool DestroyConnect(std::unordered_map<int, tagConnectionAttr*>::iterator iter, bool bMsgShellNotice = true);
+    bool DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter, bool bMsgShellNotice = true);
 
     //消息
     void MsgShellNotice(const tagConnectionAttr* pConn);
@@ -353,15 +353,15 @@ private:
 
     uint32 m_iInnerFdCounter = 0;  //服务端之间连接的文件描述符数量
 
-    std::unordered_map<int32, ThunderCodec*> m_mapCodec;   ///< 编解码器 util::E_CODEC_TYPE, ThunderCodec*
-    std::unordered_map<int32, tagConnectionAttr*> m_mapFdAttr;   ///< 连接的文件描述符属性
+    std::unordered_map<int32, std::unique_ptr<ThunderCodec>> m_mapCodec;   ///< 编解码器 util::E_CODEC_TYPE, ThunderCodec*
+    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>> m_mapFdAttr;   ///< 连接的文件描述符属性
     std::unordered_map<uint32, int32> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
 
-    std::unordered_map<int32, Cmd*> m_mapSysCmd;                  ///< 预加载逻辑处理命令（一般为系统级命令）
-    std::unordered_map<int32, tagSo*> m_mapSo;                   ///< 动态加载业务逻辑处理命令
-    std::unordered_map<std::string, tagModule*> m_mapModule;   ///< 动态加载的http逻辑处理模块
+    std::unordered_map<int32, std::unique_ptr<Cmd>> m_mapSysCmd;                  ///< 预加载逻辑处理命令（一般为系统级命令）
+    std::unordered_map<int32, std::unique_ptr<tagSo>> m_mapSo;                   ///< 动态加载业务逻辑处理命令
+    std::unordered_map<std::string, std::unique_ptr<tagModule>> m_mapModule;   ///< 动态加载的http逻辑处理模块
 
-    std::unordered_map<uint32, Step*> m_mapCallbackStep;
+    std::unordered_map<uint32, std::unique_ptr<Step>> m_mapCallbackStep;
     std::unordered_map<int32, std::list<uint32> > m_mapHttpAttr;       ///< TODO 以类似处理redis回调的方式来处理http回调
     std::unordered_map<redisAsyncContext*, tagRedisAttr*> m_mapRedisAttr;    ///< Redis连接属性
     std::unordered_map<std::string, std::unordered_map<std::string, Session*> > m_mapCallbackSession;

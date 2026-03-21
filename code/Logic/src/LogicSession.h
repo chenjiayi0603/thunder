@@ -9,14 +9,7 @@
 #include <string>
 #include <map>
 #include <sys/time.h>
-#include "RobotErrorMapping.h"
 #include "session/Session.hpp"
-#include "NetError.hpp"
-#include "RobotError.h"
-#include "step/Step.hpp"
-#include "cmd/Cmd.hpp"
-#include "Define.h"
-#include <unordered_map>
 #include "util/CommonUtils.hpp"
 
 #define ROBOT_SESSIN_ID (1000)
@@ -46,7 +39,7 @@ public:
 	LogicSession(uint64 ulSessionId, ev_tstamp dSessionTimeout, const std::string& strSessionClass)
 	: net::Session(ulSessionId, dSessionTimeout,strSessionClass),
 	  boInit(false),m_currenttime(0){}
-    virtual ~LogicSession(){}
+    virtual ~LogicSession();
     bool Init(const util::CJsonObject& conf);
     net::E_CMD_STATUS Timeout();
     void setCurrentTime(){m_currenttime = ::time(NULL);}
@@ -94,8 +87,6 @@ private:
 };
 
 LogicSession* GetLogicSession();
-
-extern LogicSession* g_pLogicSession;
 
 }
 

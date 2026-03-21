@@ -11,6 +11,7 @@
 #define SRC_LABOR_DUTY_ATTRIBUTION_HPP_
 
 #include <stdlib.h>
+#include <memory>
 #include <unordered_map>
 #include <sys/mman.h>
 #include "libev/ev.h"
@@ -93,10 +94,10 @@ struct tagConnectionAttr
      *  CMD_RSP_TELL_WORKER 收到对方worker响应，连接已就绪）
      */
     unsigned char ucConnectStatus = 0;
-    util::CBuffer* pRecvBuff = nullptr;           ///< 在结构体析构时回收
-    util::CBuffer* pSendBuff = nullptr;           ///< 在结构体析构时回收
-    util::CBuffer* pWaitForSendBuff = nullptr;    ///< 等待发送的数据缓冲区（数据到达时，连接并未建立，等连接建立并且pSendBuff发送完毕后立即发送）
-    util::CBuffer* pClientData = nullptr;         ///< 客户端相关数据（例如IM里的用户昵称、头像等，登录或连接时保存起来，后续发消息或其他操作无须客户端再带上来）
+    std::unique_ptr<util::CBuffer> pRecvBuff;           ///< 在结构体析构时回收
+    std::unique_ptr<util::CBuffer> pSendBuff;           ///< 在结构体析构时回收
+    std::unique_ptr<util::CBuffer> pWaitForSendBuff;    ///< 等待发送的数据缓冲区（数据到达时，连接并未建立，等连接建立并且pSendBuff发送完毕后立即发送）
+    std::unique_ptr<util::CBuffer> pClientData;         ///< 客户端相关数据（例如IM里的用户昵称、头像等，登录或连接时保存起来，后续发消息或其他操作无须客户端再带上来）
     char szRemoteAddr[32] = {0};                  ///< 对端IP地址（不是客户端地址，但可能跟客户端地址相同）
     util::E_CODEC_TYPE eCodecType = util::CODEC_PB_INTERNAL;      ///< 协议（编解码）类型
     ev_tstamp dActiveTime = 0;              ///< 最后一次访问时间
@@ -116,13 +117,6 @@ struct tagConnectionAttr
 
     tagConnectionAttr() = default;
 
-    ~tagConnectionAttr()
-    {
-    	SAFE_DELETE(pRecvBuff);
-    	SAFE_DELETE(pSendBuff);
-    	SAFE_DELETE(pWaitForSendBuff);
-    	SAFE_DELETE(pClientData);
-    }
     bool IsVerify() const
 	{
 		return(pClientData != nullptr && pClientData->ReadableBytes() > 0);

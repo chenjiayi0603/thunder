@@ -83,6 +83,7 @@ struct ConVirtualNode {//虚节点
 };
 
 class ConHash {
+	friend class ChannelConHash;
 public:
 	HashFunction hash_func_;
 	typedef std::map<uint32_t, ConVirtualNode*> VNodeMap;
@@ -223,6 +224,13 @@ public:
 			hash_func_(ConHash_FNVHash_Func) {
 	}
 	~ChannelConHash() {
+		for (ConHash::NodeList_IT nodeit = m_ConHashProxy.m_node_list.begin();
+				nodeit != m_ConHashProxy.m_node_list.end(); ++nodeit) {
+			if ((*nodeit)->nodedata) {
+				delete static_cast<ServerInfo*>((*nodeit)->nodedata);
+				(*nodeit)->nodedata = nullptr;
+			}
+		}
 		m_server_info_map.clear();
 	}
 	//频道哈希列表
@@ -244,14 +252,30 @@ public:
 	int removeNode(const std::string &strIdentify) {
 		ServerInfoMap_IT it = m_server_info_map.find(strIdentify);
 		if (it == m_server_info_map.end()) return 0;
+		ServerInfo* pinfo = nullptr;
+		for (ConHash::NodeList_IT nodeit = m_ConHashProxy.m_node_list.begin();
+				nodeit != m_ConHashProxy.m_node_list.end(); ++nodeit) {
+			if ((*nodeit)->getIdentify() == it->second.getIdentify()) {
+				pinfo = static_cast<ServerInfo*>((*nodeit)->getData());
+				break;
+			}
+		}
 		int status = m_ConHashProxy.removeNode(it->second.getIdentify());
 		if (status == 0) return status;
+		delete pinfo;
 		m_server_info_map.erase(it);
 		return 0;
 	}
 
 	//删除服务器列表信息
 	void clear() {
+		for (ConHash::NodeList_IT nodeit = m_ConHashProxy.m_node_list.begin();
+				nodeit != m_ConHashProxy.m_node_list.end(); ++nodeit) {
+			if ((*nodeit)->nodedata) {
+				delete static_cast<ServerInfo*>((*nodeit)->nodedata);
+				(*nodeit)->nodedata = nullptr;
+			}
+		}
 		m_ConHashProxy.clear();
 		m_server_info_map.clear();
 	}

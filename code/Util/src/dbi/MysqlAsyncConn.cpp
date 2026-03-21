@@ -22,7 +22,7 @@ const char* state_descs[] = {
 #define _LOGSTR_ERROR(str,nError,sError)
 #endif
 
-SqlTask::SqlTask(const std::string& s,eSqlTaskOper o,MysqlHandler *h){sql = s;oper = o;handler=h;iErrno =0;}
+SqlTask::SqlTask(const std::string& s,eSqlTaskOper o,MysqlHandler *h): sql(s), oper(o), handler(h), iErrno(0) {}
 
 MysqlAsyncConn::MysqlAsyncConn()
 {

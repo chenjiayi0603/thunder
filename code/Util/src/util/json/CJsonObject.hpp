@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <math.h>
 #include <float.h>
+#include <memory>
 #include <string>
 #include <map>
 #include <vector>
@@ -139,8 +140,8 @@ private:
     cJSON* m_pJsonData;
     cJSON* m_pExternJsonDataRef;
     std::string m_strErrMsg;
-    std::unordered_map<unsigned int, CJsonObject*> m_mapJsonArrayRef;
-	std::unordered_map<std::string, CJsonObject*> m_mapJsonObjectRef;
+    std::unordered_map<unsigned int, std::unique_ptr<CJsonObject>> m_mapJsonArrayRef;
+	std::unordered_map<std::string, std::unique_ptr<CJsonObject>> m_mapJsonObjectRef;
 };
 
 }

@@ -7,17 +7,10 @@
 #ifndef CODE_COLLECTSERVER_SRC_COLLECTSESSION_H_
 #define CODE_COLLECTSERVER_SRC_COLLECTSESSION_H_
 #include <string>
-#include <map>
-#include <set>
 
 #include "util/json/CJsonObject.hpp"
-#include "dbi/MysqlDbi.hpp"
 #include "session/Session.hpp"
 #include "NetDefine.hpp"
-#include "NetError.hpp"
-#include "step/Step.hpp"
-#include "cmd/Cmd.hpp"
-#include "RobotError.h"
 
 #define HELLO_SESSIN_ID (20000)
 

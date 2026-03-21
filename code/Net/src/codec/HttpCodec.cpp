@@ -55,7 +55,7 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
     {
         LOG4_TRACE("%s() pBuff->ReadableBytes() = %u:%s", __FUNCTION__,
                         pConn->pRecvBuff->ReadableBytes(), pConn->pRecvBuff->ToString().c_str());
-        E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff,oMsgHead,oMsgBody);
+        E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
         if (CODEC_STATUS_OK == eCodecStatus)//第一个消息解析成功则连接初始化成功
         {
             pConn->ucConnectStatus = eConnectStatus_ok;//协议接收成功，表示连接成功
@@ -67,7 +67,7 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
         }
         return eCodecStatus;
     }
-    return Decode(pConn->pRecvBuff,oMsgHead,oMsgBody);
+    return Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
 }
 
 E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, MsgBody& oMsgBody)

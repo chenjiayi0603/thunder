@@ -4,14 +4,24 @@
  *  Created on: 2017年1月19日
  *      Author: chenjiayi
  */
-#include <iostream>
 #include "LogicSession.h"
 #include "util/json/CJsonObject.hpp"
 
 namespace robot
 {
 
-LogicSession* g_pLogicSession = NULL;
+namespace
+{
+LogicSession* g_pCachedLogicSession = nullptr;
+}
+
+LogicSession::~LogicSession()
+{
+    if (g_pCachedLogicSession == this)
+    {
+        g_pCachedLogicSession = nullptr;
+    }
+}
 
 bool LogicSession::Init(const util::CJsonObject& conf)
 {
@@ -43,7 +53,7 @@ net::E_CMD_STATUS LogicSession::Timeout()
 
 LogicSession* GetLogicSession()
 {
-	if (g_pLogicSession) return g_pLogicSession;
+	if (g_pCachedLogicSession) return g_pCachedLogicSession;
 	LOG4_INFO("GetWorkPath(%s) GetConfigPath(%s)!",GetLabor()->GetWorkPath().c_str(),net::GetConfigPath().c_str());
 	std::string strConfigPath = net::GetConfigPath() + std::string("LogicCmd.json");
     util::CJsonObject oCurrentConf;       ///< 当前加载的配置
@@ -53,7 +63,7 @@ LogicSession* GetLogicSession()
     	return NULL;
     }
 	LOG4_INFO("Open conf (%s)!",oCurrentConf.ToString().c_str());
-    return (g_pLogicSession = net::MakeSession<LogicSession>(ROBOT_SESSIN_ID,std::string("robot::LogicSession"),1.0,oCurrentConf));
+    return (g_pCachedLogicSession = net::MakeSession<LogicSession>(ROBOT_SESSIN_ID,std::string("robot::LogicSession"),1.0,oCurrentConf));
 }
 
 

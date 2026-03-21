@@ -1116,7 +1116,7 @@ E_CODEC_STATUS CodecWebSocketPb::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHe
                 LOG4_TRACE("%s() pBuff->ReadableBytes() = %u:%s", __FUNCTION__,
                                 pConn->pRecvBuff->ReadableBytes(), pConn->pRecvBuff->ToString().c_str());
                 HttpMsg oHttpMsg;
-                E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff, oHttpMsg);
+                E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(), oHttpMsg);
                 if (CODEC_STATUS_OK == eCodecStatus)
                 {
                     std::string upgrade;
@@ -1145,7 +1145,7 @@ E_CODEC_STATUS CodecWebSocketPb::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHe
         LOG4_TRACE("%s()　CodecWebSocketPb　need to init connect status with http request",__FUNCTION__);
         return CODEC_STATUS_PAUSE;
     }
-    return Decode(pConn->pRecvBuff,oMsgHead,oMsgBody);
+    return Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
 }
 
 E_CODEC_STATUS CodecWebSocketPb::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, MsgBody& oMsgBody)
