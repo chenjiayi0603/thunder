@@ -52,7 +52,7 @@ bool GetConfig(util::CJsonObject& oConf,const std::string &strConfFile);
 bool GetFileData(std::string& strFileData,const std::string &strConfFile);
 /*
  * @brief 执行步骤（含注册）
- * @note `MysqlStep` 走 `Register` 时会 `Init(超时次数, 重试)`；StepCo20 等协程 Step 继承 HttpStep，通常用 Launch，超时请 SetTimeoutParams
+ * @note `MysqlStep` 走 `Register` 时会 `Init(超时次数, 重试)`；StepCo20 等协程 Step 继承 HttpStep，通常用 Launch；协程便捷入口 `LaunchCo` 声明见 `coro/StepCo20Func.hpp`，实现在 `Interface.cpp`
  * @param uiTimeOutMax 超时次数
  * @param uiToRetry 是否超时重发 1：是 0 否
  * @param dTimeout 超时时间（单位秒，默认使用配置时间）

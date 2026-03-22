@@ -106,8 +106,9 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         LOG4_TRACE("%s TestStepHttpRequestCo (StepCo20Func)", __FUNCTION__);
         HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
         auto pTestVal = std::make_shared<uint32_t>(0);
-        return net::Launch(new net::StepCo20Func(stMsgShell, oHttp,
+        return net::LaunchCo(stMsgShell, oHttp,
             [pTestVal](net::StepCo20& step) -> net::AsyncTask {
+                const net::StepCo20::EmitSuccessGuard emitDone{step};
                 LOG4_TRACE("TestStepHttpRequestCo lambda start");
                 try
                 {
@@ -117,7 +118,6 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     {
                         LOG4_ERROR("HttpGet http://example.com/ error");
                         SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-                        step.NotifyEmitCoroutineSuccess();
                         co_return;
                     }
 
@@ -134,17 +134,17 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     LOG4_ERROR("TestStepHttpRequestCo unknown exception");
                     SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
                 }
-                step.NotifyEmitCoroutineSuccess();
                 co_return;
-            }));
+            });
     }
 
     // GenKey / VerifyKey （协程 co_await→LOGIC，StepCo20Func + lambda）
     if ("GenKey" == strOption || "VerifyKey" == strOption)
     {
         LOG4_TRACE("%s StepCo20Func GenKey/VerifyKey option=%s", __FUNCTION__, strOption.c_str());
-        return net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
+        return net::LaunchCo(stMsgShell, oInHttpMsg,
             [](net::StepCo20& step) -> net::AsyncTask {
+                const net::StepCo20::EmitSuccessGuard emitDone{step};
                 LOG4_TRACE("GenKeyVerifyKeyCo20 cmd %u seq %u", step.GetReqMsgHead().cmd(),
                            step.GetReqMsgHead().seq());
 
@@ -152,14 +152,12 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                 if (!obj.Parse(step.m_oInHttpMsg.body()))
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"invalid json body"})");
-                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
                 std::string opt;
                 if (!obj.Get("option", opt) || opt.empty())
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"missing option"})");
-                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -190,7 +188,6 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     if (strToken.empty() || strKey.empty())
                     {
                         step.ResponseToClient(400, R"({"code":1,"msg":"token or key empty"})");
-                        step.NotifyEmitCoroutineSuccess();
                         co_return;
                     }
                     util::CJsonObject oJson;
@@ -213,7 +210,6 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                 else
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"option not handled by StepCo20Func"})");
-                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -249,7 +245,6 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                         }
                     }
                     step.ResponseToClient(httpCode, logicBody);
-                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -277,9 +272,8 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     oRsp.Add("logic_rsp_preview", preview);
                 }
                 step.ResponseToClient(200, oRsp.ToString());
-                step.NotifyEmitCoroutineSuccess();
                 co_return;
-            }));
+            });
     }
 
     LOG4_TRACE("%s unknown option %s", __FUNCTION__, strOption.c_str());

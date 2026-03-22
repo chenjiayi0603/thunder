@@ -12,13 +12,8 @@ namespace net
  *        业务体内自行 co_await HttpGetAsync / SendToInternalAsync 等；正常结束用 StepCo20::EmitSuccessGuard 或手写 NotifyEmitCoroutineSuccess()。
  *
  * 用法示例：
- *   net::Launch(new net::StepCo20Func(shell, httpMsg,
- *       [](net::StepCo20& step) -> net::AsyncTask {
- *           const net::StepCo20::EmitSuccessGuard emitDone{step};
- *           const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
- *           step.ResponseToClient(ok ? 200 : 500, ok ? "{}" : R"({"code":1})");
- *           co_return;
- *       }));
+ *   net::LaunchCo(shell, httpMsg, [](net::StepCo20& step) -> net::AsyncTask { ... });
+ *   net::LaunchCo(shell, msgHead, [](net::StepCo20& step) -> net::AsyncTask { ... });
  */
 class StepCo20Func : public StepCo20
 {
@@ -50,6 +45,17 @@ public:
 private:
     CoroFn m_fn;
 };
+
+/**
+ * @brief `Launch(new StepCo20Func(stMsgShell, oHttpMsg, std::move(fn)))` 的便捷封装（沿用 `Launch` 默认超时参数），实现在 `Interface.cpp`。
+ */
+bool LaunchCo(const tagMsgShell& stMsgShell,
+              const HttpMsg& oHttpMsg,
+              StepCo20Func::CoroFn fn);
+
+bool LaunchCo(const tagMsgShell& stMsgShell,
+              const MsgHead& oMsgHead,
+              StepCo20Func::CoroFn fn);
 
 } // namespace net
 

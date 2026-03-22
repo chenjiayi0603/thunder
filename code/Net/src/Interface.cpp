@@ -10,10 +10,9 @@
 #include <utility>
 #include "absl/status/status.h"
 #include "google/protobuf/util/json_util.h"
+#include "coro/StepCo20Func.hpp"
 #include "labor/Labor.hpp"
 #include "step/MysqlStep.hpp"
-#include "step/RedisStep.hpp"
-#include "step/StepNode.hpp"
 
 namespace net
 {
@@ -33,6 +32,20 @@ bool Launch(std::unique_ptr<Step> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 bool Launch(Step *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
 	return Launch(std::unique_ptr<Step>(pStep), uiTimeOutMax, uiToRetry, dTimeout);
+}
+
+bool LaunchCo(const tagMsgShell& stMsgShell,
+              const HttpMsg& oHttpMsg,
+              StepCo20Func::CoroFn fn)
+{
+	return Launch(new StepCo20Func(stMsgShell, oHttpMsg, std::move(fn)));
+}
+
+bool LaunchCo(const tagMsgShell& stMsgShell,
+              const MsgHead& oMsgHead,
+              StepCo20Func::CoroFn fn)
+{
+	return Launch(new StepCo20Func(stMsgShell, oMsgHead, std::move(fn)));
 }
 
 bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
