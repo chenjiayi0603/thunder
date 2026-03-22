@@ -21,3 +21,5 @@ deploy/Hello/bin/Hello
 *.log
 *.pid
 deploy/Logic/bin/Logic
+build_asan/
+core.*

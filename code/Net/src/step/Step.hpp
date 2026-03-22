@@ -38,10 +38,10 @@ struct StepParam
 class Step
 {
 public:
-    Step(Step* pNextStep = nullptr);
-    Step(const tagMsgShell& stReqMsgShell, Step* pNextStep = nullptr);
-    Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, Step* pNextStep = nullptr);
-    Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody,Step* pNextStep = nullptr);
+    Step();
+    Step(const tagMsgShell& stReqMsgShell);
+    Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead);
+    Step(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody);
     virtual ~Step();
     /**
      * @brief 提交，发出
@@ -154,25 +154,6 @@ public:
 		if (m_oReqMsgHead.cmd() == 0) return GetLabor()->SendToClient(m_stReqMsgShell,m_oInHttpMsg,strBody,nCode);
 		else return GetLabor()->SendToClient(m_stReqMsgShell,m_oReqMsgHead,strBody);
 	}
-public:
-	/*
-	 * 步骤管理
-	 * */
-    //延迟下一个步骤的超时时间
-    void DelayNextStep();
-    // 执行下一步
-    bool NextStep(Step* pNextStep, int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrClientShow = "");
-    bool NextStep(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrClientShow = "");
-    net::Step* GetNextStep(){return(m_pNextStep);}
-    void SetNextStepNull();
-    /**
-	 * @brief 添加上一步骤
-	 * @note 用于设置步骤间的依赖关系，框架在当前步骤终止并销毁前检查是否仍有以当前步骤为下一步的步骤尚未
-	 * 结束，若有则延长当前步骤的生命期。
-	 * @param pStep 上一步骤
-	 */
-	void AddPreStepSeq(Step* pStep);
-	void RemovePreStepSeq(Step* pStep);
 protected:
     /**
      * @brief 设置为已注册状态
@@ -183,7 +164,6 @@ protected:
      * @note 当且仅当UnRegisterCallback(Step*)时由框架调用
      */
     void UnsetRegistered(){m_bRegistered = false;}
-    void AddNextStepSeq(Step* pStep);
 public:  // 请求端的上下文信息，通过Step构造函数初始化，若调用的是不带参数的构造函数Step()，则这几个成员不会被初始化
     const tagMsgShell& GetReqMsgShell()const {return m_stReqMsgShell;}
     const MsgHead& GetReqMsgHead()const {return m_oReqMsgHead;}
@@ -202,9 +182,6 @@ private:
     ev_tstamp m_dTimeout = 0.5;
     ev_timer* m_pTimeoutWatcher = nullptr;
     std::string m_strClassName;
-    Step* m_pNextStep = nullptr;
-    std::set<uint32> m_setNextStepSeq;
-    std::set<uint32> m_setPreStepSeq;
 
 	uint32 m_uiUserId = 0;
 	uint32 m_uiCmd = 0;

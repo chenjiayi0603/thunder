@@ -2,8 +2,8 @@
 
 namespace net
 {
-StepAuthRedis::StepAuthRedis(const DataMem::MemOperate::RedisOperate& oRedisOperate,tagRedisAttr*& ptagRedisAttr,Step* pNextStep):
-        net::RedisStep(pNextStep),m_oRedisOperate(oRedisOperate),m_ptagRedisAttr(ptagRedisAttr)
+StepAuthRedis::StepAuthRedis(const DataMem::MemOperate::RedisOperate& oRedisOperate,tagRedisAttr*& ptagRedisAttr):
+        net::RedisStep(),m_oRedisOperate(oRedisOperate),m_ptagRedisAttr(ptagRedisAttr)
 {
 	Build();
 }

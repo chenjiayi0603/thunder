@@ -18,6 +18,11 @@ _THUNDER_DEPLOY="$(cd "${SERVER_HOME}/.." && pwd)"
 _CODE="$(cd "${_THUNDER_DEPLOY}/../code" && pwd)"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${SERVER_LIB}:${SERVER_3LIB}:${_THUNDER_DEPLOY}/lib:${_CODE}/3party/lib:${_CODE}/3party/lib/mariadb:${_CODE}/3party/protobuf/build"
 
+# C++ Worker loads libNet.so from deploy/lib (see LD_LIBRARY_PATH). After `cmake --build … --target Net`, restart Interface or this mtime stays old.
+if [ -f "${_THUNDER_DEPLOY}/lib/libNet.so" ]; then
+    echo "[${SCRIPT_NAME}] libNet.so -> $(ls -l "${_THUNDER_DEPLOY}/lib/libNet.so" | awk '{print $6,$7,$8}')"
+fi
+
 LOG_FILE="${SERVER_HOME}/log/${SCRIPT_NAME}.log"
 
 . ${SERVER_HOME}/scripts/script_func.sh

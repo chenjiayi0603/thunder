@@ -76,13 +76,27 @@ void Worker::IoCallback(struct ev_loop* loop, struct ev_io* watcher, int revents
     {
         tagIoWatcherData* pData = (tagIoWatcherData*)watcher->data;
         Worker* pWorker = (Worker*)pData->pWorker;
+        int iFd = pData->iFd;
+        uint32 ulSeq = pData->ulSeq;
         if (revents & EV_READ)
         {
             pWorker->IoRead(pData, watcher);
+            // IoRead may have called DestroyConnect which frees pData; re-validate before use
+            auto iter = pWorker->m_mapFdAttr.find(iFd);
+            if (iter == pWorker->m_mapFdAttr.end() || iter->second->ulSeq != ulSeq)
+            {
+                return;
+            }
         }
         if (revents & EV_WRITE)
         {
             pWorker->IoWrite(pData, watcher);
+            // IoWrite may have called DestroyConnect (e.g. send error); re-validate before IoError
+            auto iterW = pWorker->m_mapFdAttr.find(iFd);
+            if (iterW == pWorker->m_mapFdAttr.end() || iterW->second->ulSeq != ulSeq)
+            {
+                return;
+            }
         }
         if (revents & EV_ERROR)
         {
@@ -1341,14 +1355,6 @@ bool Worker::RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTime
     LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep, dTimeout);
     if (pStep == nullptr)return(false);
 
-	if (pStep->m_setNextStepSeq.find(uiSelfStepSeq) != pStep->m_setNextStepSeq.end())// 登记前置step
-	{
-		auto callback_iter = m_mapCallbackStep.find(uiSelfStepSeq);
-		if (callback_iter != m_mapCallbackStep.end())
-		{
-			callback_iter->second->m_setPreStepSeq.insert(pStep->GetSequence());
-		}
-	}
     if (pStep->IsRegistered())  // 已注册过，不必重复注册，不过认为本次注册成功
     {
         return(true);
@@ -1373,20 +1379,6 @@ void Worker::DeleteCallback(Step* pStep)
     {
         return;
     }
-    for (auto step_seq_iter = pStep->m_setPreStepSeq.begin();step_seq_iter != pStep->m_setPreStepSeq.end(); )
-    {
-        auto callback_iter = m_mapCallbackStep.find(*step_seq_iter);
-        if (callback_iter == m_mapCallbackStep.end())
-        {
-            pStep->m_setPreStepSeq.erase(step_seq_iter++);
-        }
-        else
-        {
-            LOG4_TRACE("step %u had pre step %u running, delay delete callback.", pStep->GetSequence(), *step_seq_iter);
-            pStep->DelayTimeout();
-            return;
-        }
-    }
     DelEvent(pStep->m_pTimeoutWatcher);
 
     auto callback_iter = m_mapCallbackStep.find(pStep->GetSequence());
@@ -1404,33 +1396,9 @@ void Worker::DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
     {
         return;
     }
-    std::unordered_map<uint32, std::unique_ptr<Step>>::iterator callback_iter;
-    for (auto step_seq_iter = pStep->m_setPreStepSeq.begin();step_seq_iter != pStep->m_setPreStepSeq.end(); )//检查前面的步骤，有则延长自己
-    {
-        callback_iter = m_mapCallbackStep.find(*step_seq_iter);
-        if (callback_iter == m_mapCallbackStep.end())
-        {
-            LOG4_TRACE("try to erase seq[%u] from pStep->m_setPreStepSeq", *step_seq_iter);
-            pStep->m_setPreStepSeq.erase(step_seq_iter++);
-        }
-        else
-        {
-            if (*step_seq_iter != uiSelfStepSeq)
-            {
-                LOG4_TRACE("step[%u] try to delete step[%u], but step[%u] had pre step[%u] running, delay delete callback.",
-                                uiSelfStepSeq, pStep->GetSequence(), pStep->GetSequence(), *step_seq_iter);
-                pStep->DelayTimeout();
-                return;
-            }
-            else
-            {
-                step_seq_iter++;
-            }
-        }
-    }
     DelEvent(pStep->m_pTimeoutWatcher);
 
-    callback_iter = m_mapCallbackStep.find(pStep->GetSequence());
+    auto callback_iter = m_mapCallbackStep.find(pStep->GetSequence());
     if (callback_iter != m_mapCallbackStep.end())
     {
         LOG4_TRACE("step[%u] try to delete step[%u,%p]", uiSelfStepSeq, pStep->GetSequence(),pStep);
@@ -1765,6 +1733,8 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     InitLogger(oJsonConf);
     InitDataLogger(oJsonConf);
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
+    LOG4_INFO("NetWorker build marker: DelEvent-before-close, stack_http_parser, http_init_log_trim, fix-coro-self-destroy (%s %s)",
+              __DATE__, __TIME__);
     LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s) iServerSocketBackLog(%d)",
         		__FUNCTION__,nPid,m_iPortForServer,m_strHostForServer.c_str(),m_iServerSocketBackLog);
 
@@ -1848,6 +1818,33 @@ void Worker::PreloadCmd()
     AddCmd(new CmdReloadCustom(),CMD_REQ_SET_NODE_CUSTOM_CONFIG);
 }
 
+void Worker::RemoveFdAttrForShutdown(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter)
+{
+    if (iter == m_mapFdAttr.end())
+    {
+        return;
+    }
+    tagConnectionAttr* pConn = iter->second.get();
+    tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+    DelInnerFd(stMsgShell);
+    auto http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
+    if (http_step_iter != m_mapHttpAttr.end())
+    {
+        m_mapHttpAttr.erase(http_step_iter);
+    }
+    DelMsgShell(pConn->strIdentify, stMsgShell);
+    if (pConn->pIoWatcher != nullptr)
+    {
+        DelEvent(pConn->pIoWatcher, (tagIoWatcherData*)pConn->pIoWatcher->data);
+    }
+    if (pConn->pTimeWatcher != nullptr)
+    {
+        DelEvent(pConn->pTimeWatcher, (tagIoWatcherData*)pConn->pTimeWatcher->data);
+    }
+    (void)::close(pConn->iFd);
+    m_mapFdAttr.erase(iter);
+}
+
 void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
@@ -1860,7 +1857,24 @@ void Worker::Destroy()
 
     while (!m_mapFdAttr.empty())
     {
-        DestroyConnect(m_mapFdAttr.begin());
+        auto it = m_mapFdAttr.begin();
+        tagConnectionAttr* pConn = it->second.get();
+        if (pConn->iFd == m_iManagerControlFd || pConn->iFd == m_iManagerDataFd)
+        {
+            LOG4_TRACE("%s() shutdown teardown manager ipc fd %d", __FUNCTION__, pConn->iFd);
+            RemoveFdAttrForShutdown(it);
+            continue;
+        }
+        const int iFdKey = it->first;
+        if (!DestroyConnect(it))
+        {
+            auto again = m_mapFdAttr.find(iFdKey);
+            if (again != m_mapFdAttr.end())
+            {
+                LOG4_WARN("%s() DestroyConnect left fd %d in map; forced shutdown teardown", __FUNCTION__, iFdKey);
+                RemoveFdAttrForShutdown(again);
+            }
+        }
     }
 
     m_mapCodec.clear();
@@ -2444,7 +2458,6 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
-	pUpperStep->AddPreStepSeq(pStep);
     if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
     {
         DeleteCallback(pStep);
@@ -2510,7 +2523,6 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
-    pUpperStep->AddPreStepSeq(pStep);
     if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
     {
         DeleteCallback(pStep);
@@ -2576,7 +2588,6 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
-    pUpperStep->AddPreStepSeq(pStep);
     if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
     {
         DeleteCallback(pStep);
@@ -3813,14 +3824,6 @@ bool Worker::ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno,
         if (net::STATUS_CMD_RUNNING != nRet)
         {
             DeleteCallback(uiCallerStepSeq, step_iter->second.get());
-            step_iter = m_mapCallbackStep.find(uiCallerStepSeq);// 处理调用者step的NextStep
-            if (step_iter != m_mapCallbackStep.end())
-            {
-                if (step_iter->second->m_pNextStep != nullptr && step_iter->second->m_pNextStep->GetSequence() == uiCalledStepSeq)
-                {
-                    step_iter->second->m_pNextStep = nullptr;
-                }
-            }
         }
         if (nRet != net::STATUS_CMD_FAULT)return true;
     }
@@ -4525,24 +4528,11 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     tagConnectionAttr* pConn = iter->second.get();
     if (pConn->iFd == m_iManagerControlFd || pConn->iFd == m_iManagerDataFd)//收到父进程通信fd关闭
     {
-    	LOG4_ERROR("pConn->iFd(%u) m_iManagerControlFd(%u) m_iManagerDataFd(%u)",
+    	LOG4_TRACE("refuse DestroyConnect on manager ipc fd(%u) control(%u) data(%u)",
     			pConn->iFd,m_iManagerControlFd,m_iManagerDataFd);
     	return false;
     }
     LOG4_TRACE("%s disconnect, identify %s", pConn->szRemoteAddr, pConn->strIdentify.c_str());
-    int iResult = close(iter->first);
-    if (0 != iResult)
-    {
-        if (EINTR != errno)
-        {
-            LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
-            return(false);
-        }
-        else
-        {
-            LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
-        }
-    }
     tagMsgShell stMsgShell(pConn->iFd,pConn->ulSeq);
     DelInnerFd(stMsgShell);
     auto http_step_iter = m_mapHttpAttr.find(stMsgShell.iFd);
@@ -4555,17 +4545,33 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     {
         MsgShellNotice(pConn);
     }
-    DelEvent(pConn->pIoWatcher,(tagIoWatcherData*)pConn->pIoWatcher->data);
+    // Stop libev watchers before close(): if the fd is reused immediately, pending/old watchers corrupt the loop (Manager does DelEvent before close).
+    if (pConn->pIoWatcher != nullptr)
+    {
+        DelEvent(pConn->pIoWatcher, (tagIoWatcherData*)pConn->pIoWatcher->data);
+    }
 	if (pConn->pTimeWatcher != nullptr)//移除io定时器（即刻回收连接资源）
 	{
 		LOG4_TRACE("%s() timer ev_timer_stop",__FUNCTION__);
 		DelEvent(pConn->pTimeWatcher,(tagIoWatcherData*)pConn->pTimeWatcher->data);
 	}
+    int iResult = close(iter->first);
+    if (0 != iResult)
+    {
+        if (EINTR != errno)
+        {
+            LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+        }
+        else
+        {
+            LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+        }
+    }
     m_mapFdAttr.erase(iter);
     return(true);
 }
 
-void Worker::MsgShellNotice(const tagConnectionAttr* pConn)//const tagMsgShell& stMsgShell, const std::string& strIdentify, util::CBuffer* pClientData
+void Worker::MsgShellNotice(const tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     auto cmd_iter = m_mapSo.find(CMD_REQ_DISCONNECT);

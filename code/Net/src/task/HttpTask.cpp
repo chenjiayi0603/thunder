@@ -4,18 +4,18 @@
 
 namespace net {
 
-HttpTask::HttpTask(Step* pNextStep) : BaseTask(pNextStep) {}
+HttpTask::HttpTask() : BaseTask() {}
 
-HttpTask::HttpTask(const tagMsgShell& shell, const HttpMsg& httpMsg, Step* pNextStep)
-    : BaseTask(shell, pNextStep) {
+HttpTask::HttpTask(const tagMsgShell& shell, const HttpMsg& httpMsg)
+    : BaseTask(shell) {
     m_oInHttpMsg = httpMsg;
 }
 
-HttpTask::HttpTask(const tagMsgShell& shell, const MsgHead& head, Step* pNextStep)
-    : BaseTask(shell, head, pNextStep) {}
+HttpTask::HttpTask(const tagMsgShell& shell, const MsgHead& head)
+    : BaseTask(shell, head) {}
 
-HttpTask::HttpTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body, Step* pNextStep)
-    : BaseTask(shell, head, body, pNextStep) {}
+HttpTask::HttpTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body)
+    : BaseTask(shell, head, body) {}
 
 bool HttpTask::HttpPost(const std::string& strUrl, const std::string& strBody,
                         const std::unordered_map<std::string, std::string>& mapHeaders) {

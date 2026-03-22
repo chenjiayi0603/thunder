@@ -3,15 +3,15 @@
 
 namespace net {
 
-BaseTask::BaseTask(Step* pNextStep) : Step(pNextStep) {}
+BaseTask::BaseTask() : Step() {}
 
-BaseTask::BaseTask(const tagMsgShell& shell, Step* pNextStep) : Step(shell, pNextStep) {}
+BaseTask::BaseTask(const tagMsgShell& shell) : Step(shell) {}
 
-BaseTask::BaseTask(const tagMsgShell& shell, const MsgHead& head, Step* pNextStep)
-    : Step(shell, head, pNextStep) {}
+BaseTask::BaseTask(const tagMsgShell& shell, const MsgHead& head)
+    : Step(shell, head) {}
 
-BaseTask::BaseTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body, Step* pNextStep)
-    : Step(shell, head, body, pNextStep) {}
+BaseTask::BaseTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body)
+    : Step(shell, head, body) {}
 
 BaseTask::~BaseTask() = default;
 

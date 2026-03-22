@@ -12,14 +12,14 @@
 namespace net
 {
 
-RedisStep::RedisStep(Step* pNextStep)
-    : Step(pNextStep)
+RedisStep::RedisStep()
+    : Step()
 {
     m_pRedisCmd = new util::RedisCmd();
 }
 
-RedisStep::RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep)
-    : Step(stReqMsgShell, oReqMsgHead, oReqMsgBody, pNextStep)
+RedisStep::RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody)
+    : Step(stReqMsgShell, oReqMsgHead, oReqMsgBody)
 {
     m_pRedisCmd = new util::RedisCmd();
 }

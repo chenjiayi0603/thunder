@@ -53,8 +53,9 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
 {
     if (eConnectStatus_init == pConn->ucConnectStatus)
     {
-        LOG4_TRACE("%s() pBuff->ReadableBytes() = %u:%s", __FUNCTION__,
-                        pConn->pRecvBuff->ReadableBytes(), pConn->pRecvBuff->ToString().c_str());
+        // Do not pass full recv buffer into LOG4 %s: binary/NULs and large snapshots can corrupt log4cplus buffers (seen as mangled __FILE__ on next line).
+        LOG4_TRACE("%s() pBuff->ReadableBytes() = %u (init http, body omitted from log)", __FUNCTION__,
+                        pConn->pRecvBuff->ReadableBytes());
         E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
         if (CODEC_STATUS_OK == eCodecStatus)//第一个消息解析成功则连接初始化成功
         {
@@ -72,7 +73,7 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
 
 E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s()", __FUNCTION__);
+    LOG4_TRACE("%s() readable=%u", __FUNCTION__, pBuff ? (unsigned)pBuff->ReadableBytes() : 0u);
     if (pBuff->ReadableBytes() == 0)
     {
         LOG4_TRACE("no data...");
@@ -650,17 +651,18 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
     m_parser_setting.on_message_complete = OnMessageComplete;
     m_parser_setting.on_chunk_header = OnChunkHeader;
     m_parser_setting.on_chunk_complete = OnChunkComplete;
-    m_parser.data = &oHttpMsg;
-    http_parser_init(&m_parser, HTTP_BOTH);
+    http_parser parser;
+    http_parser_init(&parser, HTTP_BOTH);
+    parser.data = &oHttpMsg;
     size_t uiReadableBytes = pBuff->ReadableBytes();
-    size_t uiLen = http_parser_execute(&m_parser, &m_parser_setting,
+    size_t uiLen = http_parser_execute(&parser, &m_parser_setting,
                     pBuff->GetRawReadBuffer(), uiReadableBytes);
     if (!oHttpMsg.is_decoding())
     {
-        if(m_parser.http_errno != HPE_OK)
+        if(parser.http_errno != HPE_OK)
         {
             LOG4_ERROR("Failed to parse http message for cause:%s",
-                            http_errno_name((http_errno)m_parser.http_errno));
+                            http_errno_name((http_errno)parser.http_errno));
             return(CODEC_STATUS_ERR);
         }
         pBuff->AdvanceReadIndex(uiLen);

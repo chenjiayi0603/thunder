@@ -23,8 +23,33 @@
 #   INTERFACE_BIN                                 — 可执行文件路径（默认优先 Interface/bin/Interface，否则回退 Hello/bin/Hello）
 #   GENKEY_VERIFY_MAXTIME                         — GenKey/VerifyKey 单次 curl 超时秒数（默认 120，与 step_timeout 对齐）
 #   SKIP_CLEAN_LOGS=1                             — 启动前不删除 Center/Interface/Logic 目录下 *.log
+#
+# 测试结束（成功或中途失败）后，会自动关闭本脚本本次启动的 Center / Logic / Interface 进程（SKIP_CENTER_LOGIC=1 时仅 Interface）。
 
 set -euo pipefail
+
+# 本脚本启动的进程 PID（用于 EXIT 时统一关闭）
+CENTER_TEST_PID=""
+LOGIC_TEST_PID=""
+INTERFACE_TEST_PID=""
+
+# 按依赖逆序停止：Interface → Logic → Center
+_cleanup_test_servers() {
+  if [[ -n "${INTERFACE_TEST_PID}" ]] && kill -0 "${INTERFACE_TEST_PID}" 2>/dev/null; then
+    kill "${INTERFACE_TEST_PID}" 2>/dev/null || true
+    wait "${INTERFACE_TEST_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${LOGIC_TEST_PID}" ]] && kill -0 "${LOGIC_TEST_PID}" 2>/dev/null; then
+    kill "${LOGIC_TEST_PID}" 2>/dev/null || true
+    wait "${LOGIC_TEST_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${CENTER_TEST_PID}" ]] && kill -0 "${CENTER_TEST_PID}" 2>/dev/null; then
+    kill "${CENTER_TEST_PID}" 2>/dev/null || true
+    wait "${CENTER_TEST_PID}" 2>/dev/null || true
+  fi
+}
+
+trap _cleanup_test_servers EXIT
 
 # 本脚本位于 deploy/tests/，deploy 根目录为其父目录
 DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -103,17 +128,18 @@ if [[ ! -f "${PLUGIN_SO}" ]]; then
   fi
 fi
 
-# 启动前清理 deploy/Center|Interface|Logic/log 下扩展名为 .log 的文件（便于本次联调日志干净）
+# 启动前清理 deploy/Center|Interface|Logic/log 下日志文件（便于本次联调日志干净）
+# 注意：仅 -name '*.log' 不会匹配 log4cplus 轮转名 *.log.1、*.log.10 等（不以 .log 结尾）
 mkdir -p "${DEPLOY_ROOT}/Center/log" "${DEPLOY_ROOT}/Interface/log" "${DEPLOY_ROOT}/Logic/log"
 if [[ "${SKIP_CLEAN_LOGS:-0}" != "1" ]]; then
-  echo "=== 清理日志: Center/log Interface/log Logic/log 下 *.log ==="
+  echo "=== 清理日志: Center/log Interface/log Logic/log 下 *.log 与 *.log.*（轮转）==="
   _cleaned="$(find "${DEPLOY_ROOT}/Center/log" "${DEPLOY_ROOT}/Interface/log" "${DEPLOY_ROOT}/Logic/log" \
-    -maxdepth 1 -type f -name '*.log' -print 2>/dev/null | wc -l)"
+    -maxdepth 1 -type f \( -name '*.log' -o -name '*.log.*' \) -print 2>/dev/null | wc -l)"
   find "${DEPLOY_ROOT}/Center/log" "${DEPLOY_ROOT}/Interface/log" "${DEPLOY_ROOT}/Logic/log" \
-    -maxdepth 1 -type f -name '*.log' -delete 2>/dev/null || true
-  echo "已删除 ${_cleaned} 个 .log 文件（SKIP_CLEAN_LOGS=1 可跳过）"
+    -maxdepth 1 -type f \( -name '*.log' -o -name '*.log.*' \) -delete 2>/dev/null || true
+  echo "已删除 ${_cleaned} 个日志文件（SKIP_CLEAN_LOGS=1 可跳过）"
 else
-  echo "提示: SKIP_CLEAN_LOGS=1，未清理 *.log"
+  echo "提示: SKIP_CLEAN_LOGS=1，未清理 *.log / *.log.*"
 fi
 
 if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
@@ -150,7 +176,8 @@ if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
     nohup "${CENTER_BIN}" "${CENTER_CONF}" >> log/test_interfaceserver.log 2>&1 &
     echo $! >log/test_interfaceserver_center.pid
   )
-  echo "Center PID 见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid"
+  CENTER_TEST_PID="$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid")"
+  echo "Center PID=${CENTER_TEST_PID}（见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid）"
   for _i in $(seq 1 30); do
     _tcp_listening "${CENTER_PORT}" && break
     sleep 1
@@ -180,7 +207,8 @@ if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
     nohup "${LOGIC_BIN}" "${LOGIC_CONF}" >> log/test_interfaceserver.log 2>&1 &
     echo $! >log/test_interfaceserver_logic.pid
   )
-  echo "Logic PID 见 ${DEPLOY_ROOT}/Logic/log/test_interfaceserver_logic.pid"
+  LOGIC_TEST_PID="$(cat "${DEPLOY_ROOT}/Logic/log/test_interfaceserver_logic.pid")"
+  echo "Logic PID=${LOGIC_TEST_PID}（见 ${DEPLOY_ROOT}/Logic/log/test_interfaceserver_logic.pid）"
   for _i in $(seq 1 30); do
     _tcp_listening "${LOGIC_PORT}" && break
     sleep 1
@@ -211,7 +239,9 @@ mkdir -p log
 
 echo "=== 后台启动 Interface (${CONF})，HTTP 对外入口 ==="
 nohup "${BIN}" "${CONF}" >> log/test_interfaceserver.log 2>&1 &
-echo "PID=$! 可执行: ${BIN}  日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log"
+INTERFACE_TEST_PID=$!
+echo "${INTERFACE_TEST_PID}" >log/test_interfaceserver_interface.pid
+echo "PID=${INTERFACE_TEST_PID} 可执行: ${BIN}  日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log"
 
 sleep "${STARTUP_WAIT_SEC:-2}"
 
@@ -294,6 +324,7 @@ echo "=== VerifyKey 响应（节选）==="
 echo "${VERIFY_BODY}" | head -n -1
 echo "=== VerifyKey 完成 ==="
 
-echo "=== Interface 已在后台运行，查看日志: tail -f ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log ==="
-echo "=== 相关进程（Center / Logic / Interface）: ==="
-ps -ef | grep -E 'Center_robot|Logic_robot|Interface_robot' | grep -v grep || true
+echo "=== 测试结束，正在关闭本次脚本启动的进程（Interface → Logic → Center）==="
+trap - EXIT
+_cleanup_test_servers
+echo "=== 已关闭。联调日志仍保留: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log 等 ==="

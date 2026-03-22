@@ -11,7 +11,7 @@ namespace net
 class StepAuthRedis: public net::RedisStep
 {
 public:
-    StepAuthRedis(const DataMem::MemOperate::RedisOperate& oRedisOperate,tagRedisAttr*& ptagRedisAttr,Step* pNextStep = nullptr);
+    StepAuthRedis(const DataMem::MemOperate::RedisOperate& oRedisOperate,tagRedisAttr*& ptagRedisAttr);
     virtual ~StepAuthRedis() = default;
     virtual net::E_CMD_STATUS Emit(int iErrno, const std::string& strErrMsg = "", const std::string& strErrShow = "");
     virtual net::E_CMD_STATUS Callback(const redisAsyncContext *c,int status,redisReply* pReply);

@@ -61,13 +61,27 @@ void Manager::IoCallback(struct ev_loop* loop, struct ev_io* watcher, int revent
     {
         tagManagerIoWatcherData* pData = (tagManagerIoWatcherData*)watcher->data;
         Manager* pManager = pData->pManager;
+        int iFd = pData->iFd;
+        uint64 ulSeq = pData->ulSeq;
         if (revents & EV_READ)
         {
             pManager->IoRead(pData, watcher);
+            // IoRead may have called DestroyConnect which frees pData; re-validate before use
+            auto iter = pManager->m_mapFdAttr.find(iFd);
+            if (iter == pManager->m_mapFdAttr.end() || iter->second->ulSeq != ulSeq)
+            {
+                return;
+            }
         }
         if (revents & EV_WRITE)
         {
             pManager->IoWrite(pData, watcher);
+            // IoWrite may have called DestroyConnect (e.g. send error); re-validate before IoError
+            auto iterW = pManager->m_mapFdAttr.find(iFd);
+            if (iterW == pManager->m_mapFdAttr.end() || iterW->second->ulSeq != ulSeq)
+            {
+                return;
+            }
         }
         if (revents & EV_ERROR)
         {
@@ -509,12 +523,13 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
             DelEvent(watcher,pData);
             return(false);
         }
+        int iFdSaved = pData->iFd;
         DestroyConnect(iter);
-    }
-    auto worker_fd_iter = m_mapWorkerFdPid.find(pData->iFd);
-    if (worker_fd_iter != m_mapWorkerFdPid.end())
-    {
-        kill(worker_fd_iter->first, SIGINT);
+        auto worker_fd_iter = m_mapWorkerFdPid.find(iFdSaved);
+        if (worker_fd_iter != m_mapWorkerFdPid.end())
+        {
+            kill(worker_fd_iter->first, SIGINT);
+        }
     }
     return(true);
 }

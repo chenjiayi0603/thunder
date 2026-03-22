@@ -2,26 +2,25 @@
 
 namespace net {
 
-CoroutineTask::CoroutineTask(Step* pNextStep) : HttpTask(pNextStep) {
+CoroutineTask::CoroutineTask() : HttpTask() {
     SetTaskDesc("CoroutineTask");
     SetClassName("CoroutineTask");
 }
 
-CoroutineTask::CoroutineTask(const tagMsgShell& shell, const HttpMsg& httpMsg, Step* pNextStep)
-    : HttpTask(shell, httpMsg, pNextStep) {
+CoroutineTask::CoroutineTask(const tagMsgShell& shell, const HttpMsg& httpMsg)
+    : HttpTask(shell, httpMsg) {
     SetTaskDesc("CoroutineTask");
     SetClassName("CoroutineTask");
 }
 
-CoroutineTask::CoroutineTask(const tagMsgShell& shell, const MsgHead& head, Step* pNextStep)
-    : HttpTask(shell, head, pNextStep) {
+CoroutineTask::CoroutineTask(const tagMsgShell& shell, const MsgHead& head)
+    : HttpTask(shell, head) {
     SetTaskDesc("CoroutineTask");
     SetClassName("CoroutineTask");
 }
 
-CoroutineTask::CoroutineTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body,
-                             Step* pNextStep)
-    : HttpTask(shell, head, body, pNextStep) {
+CoroutineTask::CoroutineTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body)
+    : HttpTask(shell, head, body) {
     SetTaskDesc("CoroutineTask");
     SetClassName("CoroutineTask");
 }

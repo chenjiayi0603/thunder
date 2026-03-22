@@ -25,8 +25,8 @@ namespace net
 class RedisStep: public Step
 {
 public:
-    RedisStep(Step* pNextStep = nullptr);
-    RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody, Step* pNextStep = nullptr);
+    RedisStep();
+    RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead, const MsgBody& oReqMsgBody);
     virtual ~RedisStep();
     /**
      * @brief redis步骤回调

@@ -27,8 +27,8 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
     if (m_bCoroutineCompleted)
     {
         LOG4_TRACE("%s() coroutine already completed", __FUNCTION__);
-        m_oAsyncBootstrap.reset();
-        OnCoroutineComplete(true);
+        // Do not reset m_oAsyncBootstrap here: the outer coroutine is still suspended at
+        // final_suspend (suspend_always) and will be destroyed when DeleteCallback deletes this.
         return STATUS_CMD_COMPLETED;
     }
     
@@ -42,9 +42,12 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
             co_await CoroutineMain();
             m_bCoroutineCompleted = true;
             m_bCoroutineRunning = false;
-            
-            // 协程完成后，需要重新调度 Emit 来处理完成状态
-            GetLabor()->ExecStep(this, 0.0);
+            OnCoroutineComplete(true);
+            // Do NOT call GetLabor()->ExecStep(this, 0.0) here.  That call would re-enter
+            // Emit while this coroutine is still on the real call stack, causing Emit to
+            // reset m_oAsyncBootstrap and destroy the running coroutine frame (UB / UAF).
+            // Instead, Callback detects m_bCoroutineCompleted after resume() and returns
+            // STATUS_CMD_COMPLETED so Worker::Dispose calls DeleteCallback for us.
         }
         catch (const std::exception& e)
         {
@@ -89,8 +92,17 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
     if (m_coroHandle && !m_coroHandle.done())
     {
         m_coroHandle.resume();
+        // resume() drives the full chain via symmetric transfer: CoroutineMain →
+        // outer lambda → final_suspend(suspend_always).  By the time resume() returns,
+        // m_bCoroutineCompleted is true and the outer frame is suspended (not destroyed).
     }
     
+    if (m_bCoroutineCompleted)
+    {
+        // Signal Worker::Dispose to call DeleteCallback, which destroys this step and
+        // safely cleans up m_oAsyncBootstrap while the outer coroutine is suspended.
+        return STATUS_CMD_COMPLETED;
+    }
     return STATUS_CMD_RUNNING;
 }
 
@@ -111,6 +123,10 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
         m_coroHandle.resume();
     }
     
+    if (m_bCoroutineCompleted)
+    {
+        return STATUS_CMD_COMPLETED;
+    }
     return STATUS_CMD_RUNNING;
 }
 

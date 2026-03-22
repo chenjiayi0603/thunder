@@ -223,7 +223,10 @@ struct AsyncTask
             std::fprintf(stderr, "Exception escaping net::AsyncTask\n");
             std::terminate();
         }
-        std::suspend_never final_suspend() noexcept { return {}; }
+        // suspend_always so the frame stays alive until the owning AsyncTask is destroyed,
+        // preventing the double-destroy that occurs when the owner resets the AsyncTask handle
+        // while the coroutine is still executing a synchronous call on the real stack.
+        std::suspend_always final_suspend() noexcept { return {}; }
     };
 
 private:

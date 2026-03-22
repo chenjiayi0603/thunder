@@ -174,14 +174,8 @@ net::E_CMD_STATUS StepNode::Callback(const net::tagMsgShell& stMsgShell,const Ms
         LOG4_ERROR("m_callbackSession and m_callbackStep null!");
         return net::STATUS_CMD_FAULT;
     }
-    if (m_uiUpperStepSeq)//有之前步骤的往上回调
+    if (m_uiUpperStepSeq)
     {
-    	Step* pUpperStep = GetLabor()->GetStep(m_uiUpperStepSeq);
-    	if (pUpperStep)
-    	{
-    		LOG4_TRACE("step %u RemovePreStepSeq for pUpperStep seq %u",GetSequence(),m_uiUpperStepSeq);
-    		pUpperStep->RemovePreStepSeq(this);
-    	}
     	GetLabor()->ExecStep(m_uiUpperStepSeq);
     }
     return net::STATUS_CMD_COMPLETED;

@@ -318,6 +318,8 @@ protected:
     tagConnectionAttr* CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::string & strIdentify);
 
     bool DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter, bool bMsgShellNotice = true);
+    /** Worker 退出时从 map/libev 摘除连接（含 Manager IPC），避免 Destroy() 在受保护 fd 上死循环 */
+    void RemoveFdAttrForShutdown(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter);
 
     //消息
     void MsgShellNotice(const tagConnectionAttr* pConn);

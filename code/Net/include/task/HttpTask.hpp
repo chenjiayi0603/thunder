@@ -15,10 +15,10 @@ class HttpPostAwaiter;
 
 class HttpTask : public BaseTask {
 public:
-    HttpTask(Step* pNextStep = nullptr);
-    HttpTask(const tagMsgShell& shell, const HttpMsg& httpMsg, Step* pNextStep = nullptr);
-    HttpTask(const tagMsgShell& shell, const MsgHead& head, Step* pNextStep = nullptr);
-    HttpTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body, Step* pNextStep = nullptr);
+    HttpTask();
+    HttpTask(const tagMsgShell& shell, const HttpMsg& httpMsg);
+    HttpTask(const tagMsgShell& shell, const MsgHead& head);
+    HttpTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body);
     ~HttpTask() override = default;
 
     bool HttpGet(const std::string& strUrl);

@@ -19,10 +19,10 @@ class Worker;
  */
 class BaseTask : public Step {
 public:
-    BaseTask(Step* pNextStep = nullptr);
-    BaseTask(const tagMsgShell& shell, Step* pNextStep = nullptr);
-    BaseTask(const tagMsgShell& shell, const MsgHead& head, Step* pNextStep = nullptr);
-    BaseTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body, Step* pNextStep = nullptr);
+    BaseTask();
+    BaseTask(const tagMsgShell& shell);
+    BaseTask(const tagMsgShell& shell, const MsgHead& head);
+    BaseTask(const tagMsgShell& shell, const MsgHead& head, const MsgBody& body);
     ~BaseTask() override;
 
     virtual Task<void> Run() = 0;

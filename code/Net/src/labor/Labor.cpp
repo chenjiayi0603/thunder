@@ -425,7 +425,8 @@ void Labor::DelEvent(ev_io* io_watcher)
 {
     if (io_watcher)
     {
-    	ev_io_stop (m_loop, io_watcher);
+        ev_clear_pending(m_loop, io_watcher);
+    	ev_io_stop(m_loop, io_watcher);
     }
 }
 
@@ -433,7 +434,8 @@ void Labor::DelEvent(ev_timer* timer_watcher)
 {
     if (timer_watcher)
     {
-    	ev_timer_stop (m_loop, timer_watcher);
+        ev_clear_pending(m_loop, timer_watcher);
+        ev_timer_stop(m_loop, timer_watcher);
     }
 }
 
