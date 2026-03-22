@@ -161,7 +161,14 @@ private:
 };
 
 /**
- * @brief 异步一步回调等待器（HTTP 或内部二进制响应）
+ * @brief 在 Step 协程体内 `co_await HttpRespAwaiter(this)`，把当前协程挂起直到 Worker 回调里 `m_coroHandle.resume()`。
+ * @note 触发顺序（相对 `Task::continuation_` 独立，用 Step 侧槽位接异步）：
+ *       1. 求值 `co_await` 时构造本 awaiter（构造函数）。
+ *       2. `await_ready()`：恒 false，总是进入挂起路径。
+ *       3. `await_suspend(handle)`：handle 为**当前正在 co_await 的这条 Step 协程帧**（多为 HttpGetAsync 等子 Task 本体），
+ *          写入 `pStep->m_coroHandle`，供 `StepCo20::Callback` 在填好 `m_oResHttpMsg` 等之后 resume。
+ *       4. `await_resume()`：`Callback`（或等价路径）已 `resume` 且协程继续执行到 `co_await` 的恢复点时调用；
+ *          此时读 `m_oResHttpMsg` 判定成功与否，返回值作为 `co_await` 表达式的结果。
  */
 struct HttpRespAwaiter
 {
@@ -169,14 +176,16 @@ struct HttpRespAwaiter
 
     explicit HttpRespAwaiter(StepCo20* step) : pStep(step) {}
 
+    /// 每次进入该 `co_await` 时由运行时先问；恒 false 表示必须挂起，不能同步继续。
     bool await_ready() const noexcept { return false; }
 
+    /// 父协程（此处即 co_await 所在的那条 Step 协程）即将挂起时调用；handle 为该帧句柄，非 Labor/Worker。
     void await_suspend(std::coroutine_handle<> handle) noexcept
     {
         pStep->m_coroHandle = handle;
     }
 
-    /// HTTP 响应：按 status_code 判断；二进制回调时 m_oResHttpMsg 非 RESPONSE，视为成功
+    /// 异步路径已 `m_coroHandle.resume()` 后，在 `co_await` 恢复点调用；HTTP 按 status_code；非 RESPONSE 视为成功。
     bool await_resume() noexcept
     {
         const HttpMsg& rsp = pStep->m_oResHttpMsg;

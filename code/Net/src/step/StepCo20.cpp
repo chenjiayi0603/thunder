@@ -156,6 +156,58 @@ E_CMD_STATUS StepCo20::Timeout()
     return STATUS_CMD_FAULT;
 }
 
+/**
+ * @brief 异步 HTTP GET（`Task<bool>` 协程体）。
+ ```
+  父协程  StepCo20::CoroutineMain()  (Task<void>)
+           |
+           |  co_await HttpGetAsync(url)
+           v
+  +------------------------+
+  | Task<bool>::co_await   |  task_awaiter::await_suspend(父句柄 h)
+  | continuation_ <- 父 h   |  return 子 coro_  ->  runtime resume(子)
+  +------------------------+
+           |
+           v
+  +------------------------+
+  | 子协程 HttpGetAsync    |  get_return_object / initial_suspend 后进体
+  +------------------------+
+           |
+           v
+      HttpGet(url) / SentTo(...)
+           |
+     +-----+-----+
+     |           |
+     v           v
+  返回 false   返回 true（已入队）
+     |           |
+     |           v
+     |      co_await HttpRespAwaiter
+     |           |  await_suspend: m_coroHandle = 当前子帧
+     |           v
+     |      [Worker 发送 / 收包 … 异步]
+     |           |
+     |           v
+     |      Callback(...) -> m_coroHandle.resume()
+     |           |
+     |           v
+     |      await_resume -> 得到 bool，继续子协程体
+     +-----+-----+
+           |
+           v
+  co_return <bool>  ->  return_value -> final_suspend
+           |
+           v
+  final_awaiter: return continuation_(父)  ->  resume(父)
+           |
+           v
+  父协程在 co_await 点:  task_awaiter::await_resume -> result() -> bool
+```
+
+说明（与上图对应）：`Task` 父子衔接用 `promise.continuation_`；等待 HTTP 响应用 Step 侧 `m_coroHandle`，与 `continuation_` 无关。帧生命周期见 `~Task` / `coro_.destroy()`，细节仍以源码为准。
+
+ */
+ 
 Task<bool> StepCo20::HttpGetAsync(const std::string& strUrl)
 {
     bool bSuccess = HttpGet(strUrl);
@@ -163,8 +215,7 @@ Task<bool> StepCo20::HttpGetAsync(const std::string& strUrl)
     {
         co_return false;
     }
-    
-    // 等待 HTTP 响应
+
     HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
