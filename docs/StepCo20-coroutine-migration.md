@@ -56,3 +56,128 @@ Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改�
 - 协程 Step 基类：`code/Net/include/step/StepCo20.hpp`、`code/Net/src/step/StepCo20.cpp`
 - 通用 Awaitable：`code/Net/include/step/Awaitable.hpp`
 - Redis 协程封装：`code/Net/include/step/RedisAwaitable.hpp`、`code/Net/src/step/RedisAwaitable.cpp`
+
+---
+
+## `HttpGetAsync` 返回 `Task<bool>`：字符流程图（图中标注 `Task` / `promise`）
+
+[`Coroutine20.hpp`](code/Net/include/step/Coroutine20.hpp) · [`StepCo20.cpp`](code/Net/src/step/StepCo20.cpp)
+
+```
+父协程体（例: net::Task<void> StepCo20::CoroutineMain()）
+  co_await net::Task<bool> StepCo20::HttpGetAsync(const std::string& strUrl)
+    |
+    |  [子 Task<bool> 可被 co_await 时]
+    |  net::Task<bool>::operator co_await() const -> task_awaiter{ coro_ }
+    |  bool task_awaiter::await_ready() 常为 false
+    |  std::coroutine_handle<> task_awaiter::await_suspend(std::coroutine_handle<> h_父)
+    |    -> 子帧 promise_type::set_continuation(h_父)
+    |    -> 子 promise.continuation_: std::coroutine_handle<> = h_父
+    |    -> return 子 coro_（去跑子协程体；子结束时 final_suspend 再 resume 父）
+    v
++--- 子协程帧：Task<bool> HttpGetAsync 本体（编译器生成 + promise_type） ----------------+
+|  [协程首次调用入口，先于函数体]                                                        |
+|  net::Task<bool> promise_type::get_return_object()                                    |
+|    -> Task<bool>{ handle_type coro_ }   // handle_type = std::coroutine_handle<promise_type> |
+|  std::suspend_always promise_type::initial_suspend()   // 首段挂起，外层 resume 后进函数体 |
+|  ~Task<bool> 时 coro_.destroy() 释帧                                                  |
+|                                                                                        |
+|  bool HttpStep::HttpGet(const std::string& strUrl)                                     |
+|    -> GetLabor()->SentTo(strHost, iPort, strPath, const HttpMsg&, Step* this)           |
+|    |                                                                                   |
+|    +-- false（发起失败）--------------------------------------------------------------|
+|    |  co_return false                                                                 |
+|    |  void promise_type::return_value(bool) / 写入 std::optional<bool> value_          |
+|    |  void promise_type::unhandled_exception() 若未捕获 -> std::exception_ptr exception_ |
+|    |  auto promise_type::final_suspend() -> final_awaiter                             |
+|    |    final_awaiter::await_suspend(子句柄) return continuation_  // resume 父协程      |
+|    |  父侧 task_awaiter::await_resume() -> promise_type::result() -> bool（读 value_）   |
+|    |                                                                                   |
+|    true（请求已入队，响应未到）                                                        |
+|    |                                                                                   |
+|    co_await HttpRespAwaiter   // 与 Task::continuation_ 无关，用 Step 侧槽位            |
+|      explicit HttpRespAwaiter(StepCo20* pStep)                                         |
+|      bool HttpRespAwaiter::await_ready() noexcept -> false                             |
+|      void HttpRespAwaiter::await_suspend(std::coroutine_handle<> h_本帧) noexcept      |
+|        -> pStep->m_coroHandle = h_本帧    // StepCo20::m_coroHandle: std::coroutine_handle<> |
+|    |                                                                                   |
+|    |  [事件循环 / Worker，异步]                                                        |
+|    |  Labor::SentTo -> Worker::AutoSend -> HttpCodec::Encode -> pWaitForSendBuff       |
+|    |    -> connect(非阻塞) -> EV_WRITE -> Worker::IoWrite -> SendTo -> WriteFD        |
+|    |    -> 收包 -> 路由到等待本 Step 的 HTTP 回调                                       |
+|    |                                                                                   |
+|    |  E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,                    |
+|    |                     const HttpMsg& oHttpMsg, void* data = nullptr)                 |
+|    |    m_oResHttpMsg: HttpMsg = oHttpMsg    // 另有 MsgHead/MsgBody 回调分支同理       |
+|    |    m_uiTimeOutCounter = 0                                                         |
+|    |    if (m_coroHandle && !m_coroHandle.done()) m_coroHandle.resume();               |
+|    |                                                                                   |
+|    bool HttpRespAwaiter::await_resume() noexcept                                       |
+|      <- 依据 pStep->m_oResHttpMsg.type() / status_code() 等得到 bool                   |
+|    co_return bool b                                                                   |
+|      void promise_type::return_value(bool) -> value_                                  |
+|      final_suspend -> final_awaiter -> resume(continuation_) 回到父协程                |
+|      父 co_await 表达式：task_awaiter::await_resume() -> result() 得 bool              |
++----------------------------------------------------------------------------------------+
+```
+
+---
+
+## 补充：`Emit`～`HttpGetAsync`（Mermaid）
+
+### 从 `Emit` 到一次 `HttpGetAsync`
+
+```mermaid
+sequenceDiagram
+    participant Caller as Launch_net_Launch
+    participant Step as StepCo20
+    participant Outer as optional_AsyncTask_m_oAsyncBootstrap
+    participant Main as Task_void_CoroutineMain
+    participant HGA as Task_bool_HttpGetAsync
+    participant Labor as Labor_Worker_SentTo
+    participant CB as StepCo20_Callback_HttpMsg
+
+    Caller->>Step: E_CMD_STATUS Emit(int, string, string)
+    Step->>Outer: m_oAsyncBootstrap.emplace(AsyncTask coroTask())
+    Outer->>Main: co_await Task_void CoroutineMain()
+    Main->>HGA: co_await Task_bool HttpGetAsync(const string& url)
+    HGA->>Labor: bool HttpGet -> SentTo -> AutoSend...
+    HGA->>HGA: co_await HttpRespAwaiter: await_suspend sets m_coroHandle
+    Note over Labor: 网络 I/O，响应到达
+    Labor->>CB: 分发 HTTP 响应
+    CB->>Step: HttpMsg m_oResHttpMsg = oHttpMsg
+    CB->>HGA: m_coroHandle.resume()  // std::coroutine_handle<>
+    HGA->>Main: bool await_resume()，co_return
+    Main-->>Outer: CoroutineMain 结束
+    Outer->>Step: bool m_bCoroutineCompleted = true
+    CB->>CB: E_CMD_STATUS: STATUS_CMD_COMPLETED 若已完成
+```
+
+### Mermaid：`HttpGetAsync` 内部分支
+
+```mermaid
+flowchart TD
+    start(["Task<bool> HttpGetAsync(const std::string& strUrl)"])
+    hg["bool HttpGet(const std::string& strUrl)"]
+    fail{"HttpGet == true?"}
+    crFalse["co_return false"]
+    awaiter["HttpRespAwaiter awaiter(StepCo20* this)"]
+    cawait["co_await: await_suspend(std::coroutine_handle<> h) -> m_coroHandle = h"]
+    resume["Callback(const tagMsgShell&, const HttpMsg&, void*): 写 m_oResHttpMsg 后 resume"]
+    crBool["co_return bool await_resume()"]
+    endNode(["Task<bool> 完成"])
+
+    start --> hg
+    hg --> fail
+    fail -->|false| crFalse --> endNode
+    fail -->|true| awaiter --> cawait --> resume --> crBool --> endNode
+```
+
+### 与「LazyCoroutine + 手动 resume」的对比（选型备忘）
+
+| 方式 | 适用场景 |
+|------|----------|
+| **LazyCoroutine**：`initial_suspend` + 外部 `handle.resume()` | 教学、生成器、**与事件循环无关**的步调控制。 |
+| **HttpRespAwaiter + Worker::Callback** | 响应由 **libev / Worker** 在任意时刻到达，必须把 **`resume` 接到既有回调链**；自定义 awaiter 是合理做法。 |
+
+因此在本框架里**不能**只靠 `std::suspend_always` 或 Lazy 风格替代 **`HttpRespAwaiter`**，除非把整个 HTTP 完成通知改到同一套驱动模型里。

@@ -33,7 +33,6 @@
 #include "step/RedisStep.hpp"
 #include "step/StepAuthRedis.hpp"
 #include "step/HttpStep.hpp"
-#include "task/BaseTask.hpp"
 #include "session/Session.hpp"
 #include "cmd/sys_cmd/CmdConnectWorker.hpp"
 #include "cmd/sys_cmd/CmdToldWorker.hpp"
@@ -3158,16 +3157,6 @@ bool Worker::SentTo(const std::string& strHost, int iPort, const std::string& st
     LOG4_TRACE("%s(identify: %s)", __FUNCTION__, szIdentify);
     return(AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pStep));
     // 向外部发起http请求不复用连接
-//    std::unordered_map<std::string, tagMsgShell>::iterator shell_iter = m_mapMsgShell.find(szIdentify);
-//    if (shell_iter == m_mapMsgShell.end())
-//    {
-//        LOG4_TRACE("no tagMsgShell match %s.", szIdentify);
-//        return(AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pHttpStep));
-//    }
-//    else
-//    {
-//        return(SendTo(shell_iter->second, oHttpMsg, pHttpStep));
-//    }
 }
 
 bool Worker::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)
@@ -3310,15 +3299,9 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 	{
 		m_mapHttpAttr[stMsgShell.iFd].push_back(pStep->GetSequence());
 	}
-//	else
-//	{
-//		m_mapHttpAttr[stMsgShell.iFd] = std::list<uint32>();
-//	}
+    // 向外部发起http请求不复用连接
 	return(true);
-// 向外部发起http请求不复用连接
-//  char szIdentify[256] = {0};
-//  snprintf(szIdentify, sizeof(szIdentify), "%s:%d%s", strHost.c_str(), iPort, strUrlPath.c_str());
-//  return(AddMsgShell(szIdentify, stMsgShell));
+
 }
 
 bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword)
@@ -4766,22 +4749,10 @@ bool Worker::Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, H
                 if (step_iter != m_mapCallbackStep.end())   // 步骤回调
                 {
                     step_iter->second->SetActiveTime(ev_now(m_loop));
-                    BaseTask* pBaseTask = dynamic_cast<BaseTask*>(step_iter->second.get());
-                    if (pBaseTask != nullptr)
+                    E_CMD_STATUS eResult = ((HttpStep*)step_iter->second.get())->Callback(stMsgShell, oInHttpMsg);
+                    if (eResult != STATUS_CMD_RUNNING)
                     {
-                        pBaseTask->ResumeWithHttpResponse(stMsgShell, oInHttpMsg);
-                        if (pBaseTask->IsCoroutineDone())
-                        {
-                            DeleteCallback(step_iter->second.get());
-                        }
-                    }
-                    else
-                    {
-                        E_CMD_STATUS eResult = ((HttpStep*)step_iter->second.get())->Callback(stMsgShell, oInHttpMsg);
-                        if (eResult != STATUS_CMD_RUNNING)
-                        {
-                            DeleteCallback(step_iter->second.get());
-                        }
+                        DeleteCallback(step_iter->second.get());
                     }
                 }
                 else

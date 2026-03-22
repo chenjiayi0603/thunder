@@ -11,6 +11,8 @@
 #include "StepHttpRequestCo.hpp"
 #include "HttpRequestCo.hpp"
 #include "CustomLogger.hpp"
+#include "Interface.hpp"
+#include "step/StepCo20Func.hpp"
 
 MUDULE_CREATE(core::ModuleHello);
 
@@ -76,30 +78,37 @@ bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& o
 
 void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
-	std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
-	std::string strKey = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+	const std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
+	const std::string strKey   = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
 
 	{
 		util::CJsonObject oRsp;
 		oRsp.Add("token", strToken);
 		oRsp.Add("key", strKey);
-		GetLabor()->SendToClient(stMsgShell,oInHttpMsg,oRsp.ToString(),200);
+		GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
 	}
-	{
-		auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
-		{
-			LOG4_TRACE("callback %s",oInMsgBody.body().c_str());
-		};
-		util::CJsonObject oJson;
-		std::string address = GetLabor()->GetClientAddr(stMsgShell);
-		oJson.Add("token", strToken);
-		oJson.Add("key", strKey);
-		oJson.Add("genkey", "1");
 
-		oJson.Add("address",address);
-		LOG4_TRACE("oJson(%s)",oJson.ToString().c_str());
-		GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
-	}
+	// 异步通知 LOGIC（fire-and-forget：客户端响应已发出，lambda 仅记录结果）
+	util::CJsonObject oJson;
+	const std::string address = GetLabor()->GetClientAddr(stMsgShell);
+	oJson.Add("token",   strToken);
+	oJson.Add("key",     strKey);
+	oJson.Add("genkey",  "1");
+	oJson.Add("address", address);
+	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
+
+	net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
+		[oJson, address](net::StepCo20& step) -> net::Task<> {
+			MsgHead head;
+			head.set_cmd(GET_TOKEN_GEN);
+			MsgBody body;
+			body.set_body(oJson.ToString());
+			body.set_targetid(address); // 路由因子，与旧 strModFactor 等价
+			const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+			LOG4_TRACE("GenKey LOGIC response ok=%d body=%s", ok,
+			           ok ? step.GetLastRspMsgBody().body().c_str() : "");
+			// fire-and-forget：不调用 ResponseToClient（客户端响应已在外层发出）
+		}));
 }
 
 void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
@@ -120,20 +129,35 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oI
 		GetLabor()->SendToClient(stMsgShell,oInHttpMsg,"strToken empty or strKey empty",400);
 		return;
 	}
-	auto callback = [] (const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,net::StepParam* data,net::Step*pStep)
-	{
-		LOG4_TRACE("callback %s",oInMsgBody.body().c_str());
-		util::CJsonObject oJson;
-		oJson.Parse(oInMsgBody.body());
-		int code(1);
-		oJson.Get("code",code);
-		pStep->SendToClient(oInMsgBody.body(), code == 0 ? 200 : 401);
-	};
 	oJson.Add("verifykey", "1");
-	std::string address = GetLabor()->GetClientAddr(stMsgShell);
-	oJson.Add("address",address);
-	LOG4_TRACE("oJson(%s)",oJson.ToString().c_str());
-	GetLabor()->SendToCallback(new net::DataStep(stMsgShell,oInHttpMsg),GET_TOKEN_GEN,oJson.ToString(),callback,"LOGIC",address);
+	const std::string address = GetLabor()->GetClientAddr(stMsgShell);
+	oJson.Add("address", address);
+	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
+
+	const std::string reqBody = oJson.ToString();
+	net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
+		[reqBody, address](net::StepCo20& step) -> net::Task<> {
+			MsgHead head;
+			head.set_cmd(GET_TOKEN_GEN);
+			MsgBody body;
+			body.set_body(reqBody);
+			body.set_targetid(address);
+			const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+			if (!ok)
+			{
+				step.ResponseToClient(500, R"({"code":1})");
+				co_return;
+			}
+			const std::string& logicBody = step.GetLastRspMsgBody().body();
+			LOG4_TRACE("VerifyKey LOGIC body %s", logicBody.c_str());
+			util::CJsonObject rspJson;
+			int code = 1;
+			if (rspJson.Parse(logicBody))
+			{
+				rspJson.Get("code", code);
+			}
+			step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
+		}));
 }
 
 void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg,int iCode)
