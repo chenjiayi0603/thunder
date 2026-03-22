@@ -21,7 +21,7 @@ public:
 
     virtual ~HttpRequestCo() = default;
 
-    virtual net::Task<> CoroutineMain() override;
+    virtual net::AsyncTask StepAsync() override;
 
 private:
     uint32 m_uiTestVal = 0;

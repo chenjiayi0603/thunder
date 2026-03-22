@@ -21,7 +21,7 @@ public:
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
 
 private:
-    /// body JSON 中 option：Echo、TestStepHttpRequestCo、GenKey/VerifyKey（均为 net::StepCo20Func + lambda）等
+    /// body JSON 中 option：Echo、TestStepHttpRequestCo、GenKey/VerifyKey（均为 StepCo20Func + `AsyncTask` lambda）等
     bool DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     void Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode);
 };

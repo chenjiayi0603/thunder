@@ -27,10 +27,21 @@
 | 删除 | `code/Net/include/step/CoroutineState.hpp`、`code/Net/src/step/CoroutineState.cpp` |
 | Redis | `RedisAwaitable` / `RedisCoHelper` 由 `CoroutineState*` 改为 `StepCo20*`；`StepCo20` 对 `RedisAwaitable` 声明 `friend`；实现见 `code/Net/src/step/RedisAwaitable.cpp` |
 | 上下文 | `coro/Awaitable.hpp` 中 `CoroutineContext::state` 类型改为 `StepCo20*` |
-| Hello 示例 | `HttpRequestCo` 继承 `StepCo20`，入口为 `CoroutineMain()`，返回 `net::Task<>` |
+| Hello 示例 | `HttpRequestCo` / `StepHttpRequestCo` 继承 `StepCo20`，实现 `StepAsync()`，返回 `net::AsyncTask`；正常结束前调用 `NotifyEmitCoroutineSuccess()` |
 | Interface 注释 | `Interface.hpp`：`Register`/`Init` 针对 `MysqlStep`；协程 Step 多用 `Launch`，超时用 `SetTimeoutParams` |
 
 `code/Net/CMakeLists.txt` 对 `step/*.cpp` 使用 GLOB，删除 `CoroutineState.cpp` 后无需再显式维护该文件名。
+
+## Emit 与 StepAsync（去掉 CoroutineMain 叠层）
+
+**现状**：`Emit()` 不再构造「外层 `AsyncTask` lambda + `co_await CoroutineMain()`」；改为 **`m_oAsyncBootstrap.emplace(StepAsync())`**，即 **唯一** 持久化的外层帧来自 **`virtual AsyncTask StepAsync()`**。
+
+| 方式 | 说明 |
+|------|------|
+| **直接继承 `StepCo20`** | 实现 `AsyncTask StepAsync() override`，在协程体内 `co_await HttpGetAsync` / `SendToInternalAsync` 等；在 **所有正常结束路径**（含早退与 try/catch 末尾）在最后的 `co_return` 前调用 **`NotifyEmitCoroutineSuccess()`**（与旧版 Emit 里 try 块成功收尾等价，供 `Callback` 返回 `COMPLETED`）。 |
+| **`StepCo20Func` + lambda** | 传入 **`std::function<AsyncTask(StepCo20&)>`**（`CoroFn`）。`StepAsync()` 实现为 **`return m_fn(*this)`**，`Emit` emplace 的 **就是** 用户那条 `AsyncTask`，**不再**在 Func 壳内 `co_await` 一层 `Task<>`。正常结束可 **`StepCo20::EmitSuccessGuard`**（协程体开头构造，任意 `co_return` 前自动 `Notify`）或手写 **`NotifyEmitCoroutineSuccess()`**；异常请自行 try/catch（不再由 Func 统一包一层）。 |
+
+**迁移**：将原 `Task<> CoroutineMain() override` 改为 `AsyncTask StepAsync() override`；`StepCo20Func` 的 lambda 改为 **`-> AsyncTask`**，用 **`EmitSuccessGuard`** 或各出口 **`NotifyEmitCoroutineSuccess()`**。
 
 ## StepCo20 后续改进（可靠性）
 
@@ -54,6 +65,7 @@ Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改�
 
 - 协程 Task / AsyncTask：`code/Net/include/coro/Coroutine20.hpp`
 - 协程 Step 基类：`code/Net/include/coro/StepCo20.hpp`、`code/Net/src/step/StepCo20.cpp`
+- `StepCo20Func`：`code/Net/include/coro/StepCo20Func.hpp`（`StepAsync` 内联 `return m_fn(*this)`）
 - 通用 Awaitable：`code/Net/include/coro/Awaitable.hpp`
 - Redis 协程封装：`code/Net/include/coro/RedisAwaitable.hpp`、`code/Net/src/step/RedisAwaitable.cpp`
 
@@ -64,7 +76,7 @@ Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改�
 [`Coroutine20.hpp`](code/Net/include/coro/Coroutine20.hpp) · [`StepCo20.cpp`](code/Net/src/step/StepCo20.cpp)
 
 ```
-  父协程  StepCo20::CoroutineMain()  (Task<void>)
+  父协程  StepAsync() / StepCo20Func 用户 lambda 的 AsyncTask 体内，与 `co_await HttpGetAsync` 相对的那一帧
            |
            |  co_await HttpGetAsync(url)
            v
@@ -247,11 +259,11 @@ Step 3  被 resume 后取结果
 
 ### 父协程 co_await 子协程：数据流动全图
 
-以 `CoroutineMain co_await HttpGetAsync` 为例：
+以 `StepAsync`（或 Func 内用户 Task）里 `co_await HttpGetAsync` 为例：
 
 ```
   ┌──────────────────────────────────────────────────────────────────┐
-  │  父协程帧（CoroutineMain）                                        │
+  │  父协程帧（用户 Task 或 StepAsync 内与 co_await 相对的那条帧）      │
   │  promise.continuation_ = noop（初始）                            │
   └──────────────────────────────────────────────────────────────────┘
           │
@@ -293,7 +305,7 @@ Step 3  被 resume 后取结果
           │ 对称转移回父帧，父协程继续执行
           ▼
   ┌──────────────────────────────────────────────────────────────────┐
-  │  父协程帧（CoroutineMain）继续                                    │
+  │  父协程帧继续                                                      │
   │  ④ task_awaiter.await_resume()                                   │
   │       return 子帧.promise.result()  ← 取出 bool，重抛异常（若有）│
   │  父协程拿到 bool，继续往下跑                                      │
@@ -323,7 +335,7 @@ Step 3  被 resume 后取结果
 
   两者独立，互不干扰：
   Callback resume(m_coroHandle) 后，子帧继续 → co_return → final_suspend
-  → 通过 continuation_ 对称转移回父帧，一路传到 AsyncTask final_suspend。
+  → 通过 continuation_ 对称转移回父帧，直至最外层用户 `AsyncTask` 的 final_suspend（`StepCo20Func` 与用户子类均为单条 `AsyncTask`）。
 ```
 
 ---

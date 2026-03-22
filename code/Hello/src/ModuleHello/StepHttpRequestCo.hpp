@@ -21,7 +21,7 @@ public:
 
     virtual ~StepHttpRequestCo() = default;
 
-    virtual net::Task<> CoroutineMain() override;
+    virtual net::AsyncTask StepAsync() override;
 
     void Response(int nCode);
 

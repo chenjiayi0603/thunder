@@ -34,39 +34,23 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
     
     // 启动协程
     m_bCoroutineRunning = true;
-    
-    // 创建协程任务
-    auto coroTask = [this]() -> AsyncTask {
-        try
-        {
-            co_await CoroutineMain();
-            m_bCoroutineCompleted = true;
-            m_bCoroutineRunning = false;
-            OnCoroutineComplete(true);
-            // Do NOT call GetLabor()->ExecStep(this, 0.0) here.  That call would re-enter
-            // Emit while this coroutine is still on the real call stack, causing Emit to
-            // reset m_oAsyncBootstrap and destroy the running coroutine frame (UB / UAF).
-            // Instead, Callback detects m_bCoroutineCompleted after resume() and returns
-            // STATUS_CMD_COMPLETED so Worker::Dispose calls DeleteCallback for us.
-        }
-        catch (const std::exception& e)
-        {
-            LOG4_ERROR("%s() coroutine exception: %s", __FUNCTION__, e.what());
-            m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_UNKNOWN_CMD, e.what());
-        }
-        catch (...)
-        {
-            LOG4_ERROR("%s() unknown coroutine exception", __FUNCTION__);
-            m_bCoroutineRunning = false;
-            OnCoroutineError(ERR_UNKNOWN_CMD, "unknown coroutine exception");
-        }
-    };
-    
-    // 启动异步任务（必须延长 AsyncTask 生命周期，不可 coroTask(); 临时析构）
-    m_oAsyncBootstrap.emplace(coroTask());
+
+    // 单条 AsyncTask：由 StepAsync() 提供；必须延长生命周期，不可 StepAsync() 临时析构
+    m_oAsyncBootstrap.emplace(StepAsync());
 
     return STATUS_CMD_RUNNING;
+}
+
+void StepCo20::NotifyEmitCoroutineSuccess()
+{
+    m_bCoroutineCompleted = true;
+    m_bCoroutineRunning = false;
+    OnCoroutineComplete(true);
+    // Do NOT call GetLabor()->ExecStep(this, 0.0) here.  That call would re-enter
+    // Emit while this coroutine is still on the real call stack, causing Emit to
+    // reset m_oAsyncBootstrap and destroy the running coroutine frame (UB / UAF).
+    // Instead, Callback detects m_bCoroutineCompleted after resume() and returns
+    // STATUS_CMD_COMPLETED so Worker::Dispose calls DeleteCallback for us.
 }
 
 E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
@@ -92,8 +76,8 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
     if (m_coroHandle && !m_coroHandle.done())
     {
         m_coroHandle.resume();
-        // resume() drives the full chain via symmetric transfer: CoroutineMain →
-        // outer lambda → final_suspend(suspend_always).  By the time resume() returns,
+        // resume() drives the full chain via symmetric transfer: inner Task → StepAsync
+        // AsyncTask → final_suspend(suspend_always).  By the time resume() returns,
         // m_bCoroutineCompleted is true and the outer frame is suspended (not destroyed).
     }
     
@@ -159,7 +143,7 @@ E_CMD_STATUS StepCo20::Timeout()
 /**
  * @brief 异步 HTTP GET（`Task<bool>` 协程体）。
  ```
-  父协程  StepCo20::CoroutineMain()  (Task<void>)
+  父协程  StepCo20::StepAsync()  (AsyncTask) 或 Func 内 co_await 的用户 Task
            |
            |  co_await HttpGetAsync(url)
            v

@@ -98,7 +98,8 @@ void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHt
 	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
 
 	net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
-		[oJson, address](net::StepCo20& step) -> net::Task<> {
+		[oJson, address](net::StepCo20& step) -> net::AsyncTask {
+			const net::StepCo20::EmitSuccessGuard emitDone{step};
 			MsgHead head;
 			head.set_cmd(GET_TOKEN_GEN);
 			MsgBody body;
@@ -107,7 +108,8 @@ void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHt
 			const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
 			LOG4_TRACE("GenKey LOGIC response ok=%d body=%s", ok,
 			           ok ? step.GetLastRspMsgBody().body().c_str() : "");
-			// fire-and-forget：不调用 ResponseToClient（客户端响应已在外层发出）
+			// fire-and-forget：不调用 ResponseToClient（客户端响应已在外层发出）；emitDone 在 co_return 前 Notify
+			co_return;
 		}));
 }
 
@@ -136,7 +138,8 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oI
 
 	const std::string reqBody = oJson.ToString();
 	net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
-		[reqBody, address](net::StepCo20& step) -> net::Task<> {
+		[reqBody, address](net::StepCo20& step) -> net::AsyncTask {
+			const net::StepCo20::EmitSuccessGuard emitDone{step};
 			MsgHead head;
 			head.set_cmd(GET_TOKEN_GEN);
 			MsgBody body;
@@ -157,6 +160,7 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oI
 				rspJson.Get("code", code);
 			}
 			step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
+			co_return;
 		}));
 }
 

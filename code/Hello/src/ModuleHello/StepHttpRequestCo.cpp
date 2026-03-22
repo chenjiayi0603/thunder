@@ -4,7 +4,7 @@
 namespace core
 {
 
-net::Task<> StepHttpRequestCo::CoroutineMain()
+net::AsyncTask StepHttpRequestCo::StepAsync()
 {
     LOG4_TRACE("%s() start", __FUNCTION__);
 
@@ -17,6 +17,7 @@ net::Task<> StepHttpRequestCo::CoroutineMain()
         {
             LOG4_ERROR("HttpGet http://www.baidu.com/ error");
             Response(1);
+            NotifyEmitCoroutineSuccess();
             co_return;
         }
 
@@ -27,6 +28,7 @@ net::Task<> StepHttpRequestCo::CoroutineMain()
         {
             LOG4_ERROR("HttpGet http://www.sogou.com/ error");
             Response(1);
+            NotifyEmitCoroutineSuccess();
             co_return;
         }
 
@@ -37,6 +39,7 @@ net::Task<> StepHttpRequestCo::CoroutineMain()
         {
             LOG4_ERROR("HttpGet http://www.alipay.com/ error");
             Response(1);
+            NotifyEmitCoroutineSuccess();
             co_return;
         }
 
@@ -55,6 +58,7 @@ net::Task<> StepHttpRequestCo::CoroutineMain()
         Response(1);
     }
 
+    NotifyEmitCoroutineSuccess();
     co_return;
 }
 

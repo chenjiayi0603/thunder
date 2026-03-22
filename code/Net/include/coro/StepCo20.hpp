@@ -39,11 +39,37 @@ public:
                               const std::string& strErrShow = "") override;
     
     /**
-     * @brief 协程主函数
-     * @note 派生类需要重写此函数实现协程逻辑 
-     触发时机：Emit() 被调用时自动调度，派生类需重写以实现协程步骤逻辑
+     * @brief 单条最外层 AsyncTask：Emit() 将其 emplace 进 m_oAsyncBootstrap，不在此帧外再 co_await 一层 Task<void>。
+     * @note StepCo20Func 的 StepAsync 直接 return 用户 `AsyncTask`；直接继承本类时请在本协程体内 co_await HttpGetAsync 等，
+     *       并在正常结束前调用 NotifyEmitCoroutineSuccess()，或使用 EmitSuccessGuard 自动于 co_return 前触发。
      */
-    virtual Task<> CoroutineMain() = 0;
+    virtual AsyncTask StepAsync() = 0;
+
+    /**
+     * @brief 标记协程体已正常跑完，供 Callback 返回 COMPLETED（与旧 Emit 中外层 try 块尾部逻辑一致）。
+     */
+    void NotifyEmitCoroutineSuccess();
+
+    /**
+     * @brief 放在返回 AsyncTask 的协程体**开头**；任意路径执行到 co_return 时，标准会先按块析构局部变量，再
+     *        promise.return_void，故本守卫析构中的 Notify 等价于「在 co_return 之前」调用。
+     * @note co_await 挂起不会析构本对象。不应与手写 NotifyEmitCoroutineSuccess 叠用（会重复 OnCoroutineComplete）。
+     *       若某条路径不应标记完成，可在该路径上先 dismiss()。
+     */
+    struct EmitSuccessGuard
+    {
+        StepCo20* step_{};
+
+        explicit EmitSuccessGuard(StepCo20& s) noexcept : step_(&s) {}
+        EmitSuccessGuard(const EmitSuccessGuard&) = delete;
+        EmitSuccessGuard& operator=(const EmitSuccessGuard&) = delete;
+        void dismiss() noexcept { step_ = nullptr; }
+        ~EmitSuccessGuard()
+        {
+            if (step_)
+                step_->NotifyEmitCoroutineSuccess();
+        }
+    };
     
     /**
      * @brief 步骤回调函数
@@ -134,7 +160,7 @@ protected:
     std::string m_strStepDesc = "StepCo20";
 
 private:
-    /// 包住「co_await CoroutineMain()」的外层 AsyncTask；不可像临时对象那样在 Emit() 末尾析构，否则挂起后帧被
+    /// 包住 StepAsync() 的单条 AsyncTask；不可像临时对象那样在 Emit() 末尾析构，否则挂起后帧被
     /// destroy，Callback 里 resume 的内层协程完成后会回到已销毁外层（崩溃 / curl 52）。
     std::optional<AsyncTask> m_oAsyncBootstrap;
 

@@ -107,7 +107,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
         auto pTestVal = std::make_shared<uint32_t>(0);
         return net::Launch(new net::StepCo20Func(stMsgShell, oHttp,
-            [pTestVal](net::StepCo20& step) -> net::Task<> {
+            [pTestVal](net::StepCo20& step) -> net::AsyncTask {
                 LOG4_TRACE("TestStepHttpRequestCo lambda start");
                 try
                 {
@@ -117,6 +117,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     {
                         LOG4_ERROR("HttpGet http://example.com/ error");
                         SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
+                        step.NotifyEmitCoroutineSuccess();
                         co_return;
                     }
 
@@ -133,6 +134,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     LOG4_ERROR("TestStepHttpRequestCo unknown exception");
                     SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
                 }
+                step.NotifyEmitCoroutineSuccess();
                 co_return;
             }));
     }
@@ -142,7 +144,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
     {
         LOG4_TRACE("%s StepCo20Func GenKey/VerifyKey option=%s", __FUNCTION__, strOption.c_str());
         return net::Launch(new net::StepCo20Func(stMsgShell, oInHttpMsg,
-            [](net::StepCo20& step) -> net::Task<> {
+            [](net::StepCo20& step) -> net::AsyncTask {
                 LOG4_TRACE("GenKeyVerifyKeyCo20 cmd %u seq %u", step.GetReqMsgHead().cmd(),
                            step.GetReqMsgHead().seq());
 
@@ -150,12 +152,14 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                 if (!obj.Parse(step.m_oInHttpMsg.body()))
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"invalid json body"})");
+                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
                 std::string opt;
                 if (!obj.Get("option", opt) || opt.empty())
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"missing option"})");
+                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -186,6 +190,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     if (strToken.empty() || strKey.empty())
                     {
                         step.ResponseToClient(400, R"({"code":1,"msg":"token or key empty"})");
+                        step.NotifyEmitCoroutineSuccess();
                         co_return;
                     }
                     util::CJsonObject oJson;
@@ -208,6 +213,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                 else
                 {
                     step.ResponseToClient(400, R"({"code":1,"msg":"option not handled by StepCo20Func"})");
+                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -243,6 +249,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                         }
                     }
                     step.ResponseToClient(httpCode, logicBody);
+                    step.NotifyEmitCoroutineSuccess();
                     co_return;
                 }
 
@@ -270,6 +277,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
                     oRsp.Add("logic_rsp_preview", preview);
                 }
                 step.ResponseToClient(200, oRsp.ToString());
+                step.NotifyEmitCoroutineSuccess();
                 co_return;
             }));
     }

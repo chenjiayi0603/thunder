@@ -11,10 +11,11 @@ class TestableStepCo20OneAwait : public net::StepCo20
 public:
     bool awaiterResult = false;
 
-    net::Task<> CoroutineMain() override
+    net::AsyncTask StepAsync() override
     {
         net::HttpRespAwaiter awaiter(this);
         awaiterResult = co_await awaiter;
+        NotifyEmitCoroutineSuccess();
         co_return;
     }
 
@@ -28,7 +29,7 @@ class TestableStepCo20TwoAwait : public net::StepCo20
 public:
     int phase = 0;
 
-    net::Task<> CoroutineMain() override
+    net::AsyncTask StepAsync() override
     {
         {
             net::HttpRespAwaiter a1(this);
@@ -40,6 +41,7 @@ public:
             co_await a2;
         }
         ++phase;
+        NotifyEmitCoroutineSuccess();
         co_return;
     }
 
@@ -128,8 +130,9 @@ TEST(StepCo20Func, lambda_executes)
     net::tagMsgShell shell{};
     HttpMsg req;
 
-    net::StepCo20Func step(shell, req, [&](net::StepCo20&) -> net::Task<> {
+    net::StepCo20Func step(shell, req, [&](net::StepCo20& st) -> net::AsyncTask {
         ran = true;
+        st.NotifyEmitCoroutineSuccess();
         co_return;
     });
 
@@ -143,10 +146,11 @@ TEST(StepCo20Func, lambda_single_await)
     net::tagMsgShell shell{};
     HttpMsg req;
 
-    net::StepCo20Func step(shell, req, [&](net::StepCo20& self) -> net::Task<> {
+    net::StepCo20Func step(shell, req, [&](net::StepCo20& self) -> net::AsyncTask {
         net::HttpRespAwaiter awaiter(&self);
         (void)co_await awaiter;
         afterAwait = true;
+        self.NotifyEmitCoroutineSuccess();
         co_return;
     });
 
