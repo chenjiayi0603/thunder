@@ -1025,7 +1025,7 @@ AsyncTask::~AsyncTask()
 
 ### 12.4 修复方案
 
-**修改一：`Coroutine20.hpp` — `final_suspend` 改为 `suspend_always`**
+**修改一：`coro/Coroutine20.hpp` — `final_suspend` 改为 `suspend_always`**
 
 ```cpp
 // 修复前

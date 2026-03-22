@@ -4,7 +4,7 @@
  * @brief    gentoken + HTTP/二进制 JSON option 协程演示（协程源在 Interface 目录内，独立于 Hello）
  ******************************************************************************/
 #include "ModuleInterface.hpp"
-#include "step/StepCo20Func.hpp"
+#include "coro/StepCo20Func.hpp"
 #include "util/CommonUtils.hpp"
 
 #include <memory>

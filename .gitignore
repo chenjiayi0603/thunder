@@ -24,3 +24,7 @@ deploy/Logic/bin/Logic
 build_asan/
 core.*
 deploy/Logic/bin/Logic
+deploy/include/gmock/
+deploy/include/gtest/
+*.a
+deploy/lib/

@@ -12,7 +12,7 @@
 #include "HttpRequestCo.hpp"
 #include "CustomLogger.hpp"
 #include "Interface.hpp"
-#include "step/StepCo20Func.hpp"
+#include "coro/StepCo20Func.hpp"
 
 MUDULE_CREATE(core::ModuleHello);
 

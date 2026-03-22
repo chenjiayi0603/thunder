@@ -2,7 +2,7 @@
 #define SRC_StepCo20_HPP_
 
 #include "Coroutine20.hpp"
-#include "HttpStep.hpp"
+#include "step/HttpStep.hpp"
 #include "NetDefine.hpp"
 #include <optional>
 
@@ -40,7 +40,8 @@ public:
     
     /**
      * @brief 协程主函数
-     * @note 派生类需要重写此函数实现协程逻辑
+     * @note 派生类需要重写此函数实现协程逻辑 
+     触发时机：Emit() 被调用时自动调度，派生类需重写以实现协程步骤逻辑
      */
     virtual Task<> CoroutineMain() = 0;
     

@@ -12,7 +12,7 @@ add_executable(thunder_test_coroutine
   coroutine/test_coroutine20.cpp
 )
 target_include_directories(thunder_test_coroutine PRIVATE
-  "${THUNDER_NET}/include/step"
+  "${THUNDER_NET}/include/coro"
 )
 target_compile_features(thunder_test_coroutine PRIVATE cxx_std_20)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

@@ -26,7 +26,7 @@
 |------|------|
 | 删除 | `code/Net/include/step/CoroutineState.hpp`、`code/Net/src/step/CoroutineState.cpp` |
 | Redis | `RedisAwaitable` / `RedisCoHelper` 由 `CoroutineState*` 改为 `StepCo20*`；`StepCo20` 对 `RedisAwaitable` 声明 `friend`；实现见 `code/Net/src/step/RedisAwaitable.cpp` |
-| 上下文 | `Awaitable.hpp` 中 `CoroutineContext::state` 类型改为 `StepCo20*` |
+| 上下文 | `coro/Awaitable.hpp` 中 `CoroutineContext::state` 类型改为 `StepCo20*` |
 | Hello 示例 | `HttpRequestCo` 继承 `StepCo20`，入口为 `CoroutineMain()`，返回 `net::Task<>` |
 | Interface 注释 | `Interface.hpp`：`Register`/`Init` 针对 `MysqlStep`；协程 Step 多用 `Launch`，超时用 `SetTimeoutParams` |
 
@@ -52,16 +52,16 @@ Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改�
 
 ## 相关文件索引
 
-- 协程 Task / AsyncTask：`code/Net/include/step/Coroutine20.hpp`
-- 协程 Step 基类：`code/Net/include/step/StepCo20.hpp`、`code/Net/src/step/StepCo20.cpp`
-- 通用 Awaitable：`code/Net/include/step/Awaitable.hpp`
-- Redis 协程封装：`code/Net/include/step/RedisAwaitable.hpp`、`code/Net/src/step/RedisAwaitable.cpp`
+- 协程 Task / AsyncTask：`code/Net/include/coro/Coroutine20.hpp`
+- 协程 Step 基类：`code/Net/include/coro/StepCo20.hpp`、`code/Net/src/step/StepCo20.cpp`
+- 通用 Awaitable：`code/Net/include/coro/Awaitable.hpp`
+- Redis 协程封装：`code/Net/include/coro/RedisAwaitable.hpp`、`code/Net/src/step/RedisAwaitable.cpp`
 
 ---
 
 ## `HttpGetAsync` 返回 `Task<bool>`：字符流程图（图中标注 `Task` / `promise`）
 
-[`Coroutine20.hpp`](code/Net/include/step/Coroutine20.hpp) · [`StepCo20.cpp`](code/Net/src/step/StepCo20.cpp)
+[`Coroutine20.hpp`](code/Net/include/coro/Coroutine20.hpp) · [`StepCo20.cpp`](code/Net/src/step/StepCo20.cpp)
 
 ```
 父协程体（例: net::Task<void> StepCo20::CoroutineMain()）

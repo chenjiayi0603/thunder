@@ -1,5 +1,5 @@
-#include "step/StepCo20.hpp"
-#include "step/StepCo20Func.hpp"
+#include "coro/StepCo20.hpp"
+#include "coro/StepCo20Func.hpp"
 
 #include <gtest/gtest.h>
 
