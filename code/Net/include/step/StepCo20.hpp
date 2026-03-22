@@ -110,6 +110,11 @@ public:
     const MsgBody& GetLastRspMsgBody() const { return m_oResMsgBody; }
     const HttpMsg& GetLastRspHttpMsg() const { return m_oResHttpMsg; }
 
+    /**
+     * @brief 响应客户端（对 StepCo20Func 等传入的 lambda 公开，便于协程体调用）
+     */
+    void ResponseToClient(int iCode = 200, const std::string& strBody = "");
+
 protected:
     /**
      * @brief 协程完成回调
@@ -120,11 +125,6 @@ protected:
      * @brief 协程错误处理
      */
     virtual void OnCoroutineError(int iErrno, const std::string& strErrMsg);
-    
-    /**
-     * @brief 响应客户端
-     */
-    void ResponseToClient(int iCode = 200, const std::string& strBody = "");
 
     friend struct HttpRespAwaiter;
     friend class RedisAwaitable;

@@ -44,7 +44,7 @@
 - **`HttpRequestCo`**：另一路协程 HTTP 演示（含更多站点 / 不同 JSON 字段）。  
   - JSON **`option`**：`TestHttpRequestCo`。
 
-Interface 插件中同样使用 **`StepHttpRequestCo`** + **`TestStepHttpRequestCo`**；联调脚本见 `deploy/tests/test_interface_http_co20.sh`。
+Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改为 **`net::StepCo20Func` + lambda**（见 `ModuleInterface.cpp`）；Hello 仍保留独立类 **`StepHttpRequestCo`**。联调脚本见 `deploy/tests/test_interface_http_co20.sh`。
 
 ## StepState 已删除
 

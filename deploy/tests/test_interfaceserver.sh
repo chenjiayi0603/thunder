@@ -253,7 +253,7 @@ else
 fi
 
 # GenKey：POST JSON {"option":"GenKey"}；VerifyKey：POST 同路径 JSON {"option":"VerifyKey","token","key"}
-#（与 ModuleInterface DispatchJsonTestsFromBody + StepBinaryCo20Binary 一致）
+#（与 ModuleInterface DispatchJsonTestsFromBody + StepCo20Func 一致）
 # --fail：4xx/5xx 时 curl 非 0
 _parse_genkey_json() {
   local json="$1"

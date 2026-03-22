@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Interface ModuleInterface：JSON option TestStepHttpRequestCo（与 code/Interface/.../ModuleInterface.cpp 中分支一致）
-# → 启动 StepHttpRequestCo 协程，外呼 http://example.com/（小页面），成功则 HTTP 响应体 JSON 中 code=0。
+# Interface ModuleInterface：JSON option TestStepHttpRequestCo（与 ModuleInterface.cpp 中 StepCo20Func 分支一致）
+# → 外呼 http://example.com/（小页面），成功则 HTTP 响应体 JSON 中 code=0。
 #
 # 参考同目录 test_interfaceserver.sh 的环境变量与 curl 用法；本脚本默认只拉起 Interface，不依赖 Center/Logic。
 #
