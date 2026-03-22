@@ -28,26 +28,28 @@ MysqlStep::MysqlStep(const util::tagDbConnInfo &dbConnInfo)
 }
 
 MysqlStep::MysqlStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead,const util::tagDbConnInfo &dbConnInfo)
-:StepState(stReqMsgShell,oReqMsgHead)
+:Step(stReqMsgShell,oReqMsgHead)
 {
 	Init(dbConnInfo.m_szDbHost,dbConnInfo.m_uiDbPort,dbConnInfo.m_szDbName,
 			dbConnInfo.m_szDbUser,dbConnInfo.m_szDbPwd,dbConnInfo.m_szDbCharSet,dbConnInfo.uiTimeOut);
 }
 MysqlStep::MysqlStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHead,const std::string& strHost, int iPort,const std::string& dbname,
 		const std::string& user,const std::string& passwd,const std::string &dbcharacterset,uint32 uiTimeOut)
-:StepState(stReqMsgShell,oReqMsgHead)
+:Step(stReqMsgShell,oReqMsgHead)
 {
 	Init(strHost,iPort,dbname,user,passwd,dbcharacterset,uiTimeOut);
 }
 MysqlStep::MysqlStep(const tagMsgShell& stReqMsgShell, const HttpMsg& oInHttpMsg,const std::string& strHost, int iPort,const std::string& dbname,
 		const std::string& user,const std::string& passwd,const std::string &dbcharacterset,uint32 uiTimeOut)
-:StepState(stReqMsgShell,oInHttpMsg)
+:Step(stReqMsgShell)
 {
+	(void)oInHttpMsg;
 	Init(strHost,iPort,dbname,user,passwd,dbcharacterset,uiTimeOut);
 }
 MysqlStep::MysqlStep(const tagMsgShell& stReqMsgShell, const HttpMsg& oInHttpMsg,const util::tagDbConnInfo &dbConnInfo)
-:StepState(stReqMsgShell,oInHttpMsg)
+:Step(stReqMsgShell)
 {
+	(void)oInHttpMsg;
 	Init(dbConnInfo.m_szDbHost,dbConnInfo.m_uiDbPort,dbConnInfo.m_szDbName,
 				dbConnInfo.m_szDbUser,dbConnInfo.m_szDbPwd,dbConnInfo.m_szDbCharSet,dbConnInfo.uiTimeOut);
 }
@@ -95,6 +97,28 @@ MysqlStep::~MysqlStep()
 	SAFE_DELETE(m_pMysqlResSet);
 }
 
+E_CMD_STATUS MysqlStep::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+{
+	(void)strErrShow;
+	if (0 != iErrno)
+	{
+		m_iErrno = iErrno;
+		m_strErrMsg = strErrMsg;
+		LOG4_WARN("%s() Fail strStepDesc(%s)", __FUNCTION__, m_strStepDesc.c_str());
+		return STATUS_CMD_FAULT;
+	}
+	return STATUS_CMD_COMPLETED;
+}
+
+E_CMD_STATUS MysqlStep::Callback(const tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, void* data)
+{
+	(void)stMsgShell;
+	(void)oInMsgHead;
+	(void)oInMsgBody;
+	(void)data;
+	return STATUS_CMD_COMPLETED;
+}
+
 E_CMD_STATUS MysqlStep::Callback(util::MysqlAsyncConn *c,util::SqlTask *task,MYSQL_RES *pResultSet)
 {
 	LOG4_TRACE("%s()",__FUNCTION__);
@@ -110,8 +134,24 @@ E_CMD_STATUS MysqlStep::Callback(util::MysqlAsyncConn *c,util::SqlTask *task,MYS
 
 E_CMD_STATUS MysqlStep::Timeout()
 {
-    LOG4_WARN("%s() mysql m_strLastCmd(%s)",__FUNCTION__,m_strLastCmd.c_str());
-    return StepState::Timeout();
+	LOG4_WARN("%s() mysql m_strLastCmd(%s)", __FUNCTION__, m_strLastCmd.c_str());
+	++m_uiTimeOutCounter;
+	if (m_uiTimeOutCounter < m_uiTimeOutMax)
+	{
+		if (m_uiTimeOutRetry > 0)
+		{
+			LOG4_WARN("%s() retry. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u)",
+				__FUNCTION__, m_uiTimeOutCounter, m_uiTimeOutMax, m_uiTimeOutRetry);
+#ifdef _RUN_CLOCK
+			m_RunClock.TotalRunTime();
+#endif
+			return Emit();
+		}
+		return STATUS_CMD_RUNNING;
+	}
+	LOG4_ERROR("%s() uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u)",
+		__FUNCTION__, m_uiTimeOutCounter, m_uiTimeOutMax, m_uiTimeOutRetry);
+	return STATUS_CMD_FAULT;
 }
 
 bool MysqlStep::Launch(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
@@ -130,7 +170,7 @@ bool MysqlStep::Launch(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 	{
 		if (!net::Register(pStep,uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
 		{
-			LOG4_ERROR("%s() StepState::Register error",__FUNCTION__);
+			LOG4_ERROR("%s() Register error",__FUNCTION__);
 			return(false);
 		}
 	}

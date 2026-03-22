@@ -14,7 +14,6 @@
 #include "step/MysqlStep.hpp"
 #include "step/RedisStep.hpp"
 #include "step/StepNode.hpp"
-#include "step/StepState.hpp"
 
 namespace net
 {
@@ -28,10 +27,6 @@ bool Launch(std::unique_ptr<Step> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 		LOG4_ERROR("%s() null step",__FUNCTION__);
 		return(false);
 	}
-	if (auto* pState = dynamic_cast<StepState*>(pStep.get()))
-	{
-		pState->Init(uiTimeOutMax,uiToRetry);
-	}
 	return GetLabor()->ExecStep(pStep.release(),dTimeout);
 }
 
@@ -40,7 +35,7 @@ bool Launch(Step *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 	return Launch(std::unique_ptr<Step>(pStep), uiTimeOutMax, uiToRetry, dTimeout);
 }
 
-bool Register(StepState *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
+bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
 	if (!GetLabor()->RegisterCallback(pStep,dTimeout))
 	{

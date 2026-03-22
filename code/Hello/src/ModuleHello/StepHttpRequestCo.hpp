@@ -8,7 +8,7 @@ namespace core
 
 /**
  * @brief 使用 C++20 协程的 HTTP 请求步骤示例
- * @note 展示如何使用 StepCo20 替代 StepState 状态机模式
+ * @note 展示如何使用 StepCo20 编写异步 HTTP Step（无需手写状态向量）
  */
 class StepHttpRequestCo : public net::StepCo20
 {

@@ -13,7 +13,6 @@
 #include <list>
 #include "dbi/MysqlAsyncConn.h"
 #include "Step.hpp"
-#include "StepState.hpp"
 
 namespace net
 {
@@ -32,9 +31,9 @@ struct SendToMysqlParam:public StepParam
 
 /**
  * @brief Mysql访问步骤
- * @note 在同一个状态下只有一个mysql访问任务，不同状态下可以追加不同任务，设置任务后会异步发送到mysql，在访问结果到达之后，会进入下一个状态
+ * @note 异步提交 SQL，结果在 Callback(MysqlAsyncConn*, ...) 中返回；超时与重试由 MysqlStep 自身字段控制。
  */
-class MysqlStep: public StepState
+class MysqlStep: public Step
 {
 public:
 	MysqlStep(const std::string& strHost, int iPort,const std::string& dbname,const std::string& user,
@@ -48,6 +47,13 @@ public:
 	MysqlStep(const tagMsgShell& stReqMsgShell, const HttpMsg& oInHttpMsg,const util::tagDbConnInfo &dbConnInfo);
 	void Init(const std::string& strHost, int iPort,const std::string& dbname,
 			const std::string& user,const std::string& passwd,const std::string &dbcharacterset,uint32 uiTimeOut=3);
+	/** @brief 由 Register 设置步骤级超时次数与是否超时重试 */
+	void Init(uint32 uiTimeOutMax, uint8 uiTimeOutRetry)
+	{
+		m_uiTimeOutMax = uiTimeOutMax;
+		m_uiTimeOutRetry = uiTimeOutRetry;
+	}
+	void SetStepDesc(const std::string& s) { m_strStepDesc = s; }
 
 	virtual ~MysqlStep();
 	/**
@@ -73,10 +79,11 @@ public:
      * @param pResultSet 执行结果集
      */
     virtual E_CMD_STATUS Callback(util::MysqlAsyncConn *c,util::SqlTask *task,MYSQL_RES *pResultSet);
+    E_CMD_STATUS Callback(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,void* data = nullptr) override;
     /**
 	 * @brief 执行步骤
 	 */
-    virtual E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return StepState::Emit(iErrno,strErrMsg,strErrShow);}
+    E_CMD_STATUS Emit(int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "") override;
     /**
      * @brief 超时回调
      * @return 回调状态
@@ -134,6 +141,14 @@ public:
     uint8 m_uiCmdType = 0;
 	//回调结果
 	util::MysqlResSet *m_pMysqlResSet = nullptr;
+
+	int m_iErrno = 0;
+	std::string m_strStepDesc = "MysqlStep";
+	std::string m_strErrMsg;
+protected:
+	uint32 m_uiTimeOutCounter = 0;
+	uint32 m_uiTimeOutMax = 3;
+	uint8 m_uiTimeOutRetry = 0;
 };
 
 class CustomMysqlHandler: public util::MysqlHandler {

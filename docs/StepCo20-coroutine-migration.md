@@ -4,7 +4,7 @@
 
 ## 结论
 
-统一使用 **`net::StepCo20`**（继承 `HttpStep`）作为 C++20 协程型 Step 的基类；**`CoroutineState` 已删除**，不再与 `StepState` 叠层。
+统一使用 **`net::StepCo20`**（继承 `HttpStep`）作为 C++20 协程型 Step 的基类；**`CoroutineState` 与 `StepState` 均已删除**，协程基类不再与旧状态机叠层。
 
 ## 为何选 StepCo20 而非 CoroutineState
 
@@ -28,7 +28,7 @@
 | Redis | `RedisAwaitable` / `RedisCoHelper` 由 `CoroutineState*` 改为 `StepCo20*`；`StepCo20` 对 `RedisAwaitable` 声明 `friend`；实现见 `code/Net/src/step/RedisAwaitable.cpp` |
 | 上下文 | `Awaitable.hpp` 中 `CoroutineContext::state` 类型改为 `StepCo20*` |
 | Hello 示例 | `HttpRequestCo` 继承 `StepCo20`，入口为 `CoroutineMain()`，返回 `net::Task<>` |
-| Interface 注释 | `Interface.hpp`：`Register`/`Init` 针对 `StepState`；协程 Step 多用 `Launch`，超时用 `SetTimeoutParams` |
+| Interface 注释 | `Interface.hpp`：`Register`/`Init` 针对 `MysqlStep`；协程 Step 多用 `Launch`，超时用 `SetTimeoutParams` |
 
 `code/Net/CMakeLists.txt` 对 `step/*.cpp` 使用 GLOB，删除 `CoroutineState.cpp` 后无需再显式维护该文件名。
 
@@ -46,9 +46,9 @@
 
 Interface 插件中同样使用 **`StepHttpRequestCo`** + **`TestStepHttpRequestCo`**；联调脚本见 `deploy/tests/test_interface_http_co20.sh`。
 
-## 与 StepState 的关系（未在本迁移中删除）
+## StepState 已删除
 
-**`StepState` 仍存在**：例如 `MysqlStep`、状态机式 `Register(StepState*)` + `Init` 路径。若将来全面协程化，需单独评估迁移与 API 统一；见仓库根 `todo.md` 中的后续想法。
+**`StepState` 已从代码库移除**（2025–2026 重构）。`MysqlStep` 直接继承 `Step`，超时/错误字段在类内维护；`net::Register(MysqlStep*, …)` 仅用于注册未执行的 MySQL 异步步骤。协程 HTTP 仍用 `StepCo20` + `Launch` / `SetTimeoutParams`。
 
 ## 相关文件索引
 

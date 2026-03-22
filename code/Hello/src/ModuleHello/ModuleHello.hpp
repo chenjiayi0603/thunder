@@ -50,12 +50,6 @@ private:
     void TestCoroutinue();
     void TestCoroutinueAuto();
 
-    //stage machine（遗留 StepState 演示，见 TestHttpRequestStateMachine / TestHttpRequestStateFuncLegacy）
-    bool TestHttpRequestState(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-    bool TestHttpRequestStateMachine(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-	bool TestHttpRequestStateFunc(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-    bool TestHttpRequestStateFuncLegacy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
-    
     // C++20 coroutine
     bool TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     bool TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);

@@ -18,7 +18,6 @@
 #include "Attribution.hpp"
 #include "labor/Labor.hpp"
 #include "step/StepNode.hpp"
-#include "step/StepState.hpp"
 #include "step/MysqlStep.hpp"
 #include "cmd/Module.hpp"
 #include "codec/ThunderCodec.hpp"
