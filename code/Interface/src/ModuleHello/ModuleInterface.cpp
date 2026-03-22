@@ -5,7 +5,7 @@
  ******************************************************************************/
 #include "ModuleInterface.hpp"
 #include "StepBinaryCo20Binary.hpp"
-#include "StepHttpRequestCo20.hpp"
+#include "StepHttpRequestCo.hpp"
 #include "util/CommonUtils.hpp"
 
 MUDULE_CREATE(robot::ModuleHello);
@@ -64,11 +64,11 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         return true;
     }
 
-    if ("TestHttpRequestCo20" == strOption)
+    if ("TestStepHttpRequestCo" == strOption)
     {
-        LOG4_TRACE("%s TestHttpRequestCo20", __FUNCTION__);
+        LOG4_TRACE("%s TestStepHttpRequestCo", __FUNCTION__);
         HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
-        return net::Launch(new core::StepHttpRequestCo20(stMsgShell, oHttp));
+        return net::Launch(new core::StepHttpRequestCo(stMsgShell, oHttp));
     }
 
     // GenKey / VerifyKey （协程 co_await→LOGIC）

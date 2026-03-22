@@ -12,7 +12,7 @@ include("${CMAKE_SOURCE_DIR}/cmake/ThunderPlugin.cmake")
 add_library(ModuleInterface SHARED
   "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/ModuleInterface.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/InterfaceSession.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/StepHttpRequestCo20.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/StepHttpRequestCo.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleHello/StepBinaryCo20Binary.cpp"
 )
 set_target_properties(ModuleInterface PROPERTIES OUTPUT_NAME "ModuleInterface" PREFIX "")

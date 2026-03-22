@@ -8,7 +8,7 @@
 #include "util/CommonUtils.hpp"
 #include "util/StringCoder.hpp"
 #include "ModuleHello.hpp"
-#include "StepHttpRequestCo20.hpp"
+#include "StepHttpRequestCo.hpp"
 #include "HttpRequestCo.hpp"
 #include "CustomLogger.hpp"
 
@@ -47,9 +47,9 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 		TestCoroutinue();
 		Response(stMsgShell,oInHttpMsg,0);
 	}
-	else if ("TestHttpRequestCo20" == strOption)
+	else if ("TestStepHttpRequestCo" == strOption)
 	{
-		return TestHttpRequestCo20(stMsgShell,oInHttpMsg);
+		return TestStepHttpRequestCo(stMsgShell, oInHttpMsg);
 	}
 	else if ("TestHttpRequestCo" == strOption)
 	{
@@ -174,10 +174,10 @@ void ModuleHello::TestCoroutinue()
 #endif
 }
 
-bool ModuleHello::TestHttpRequestCo20(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
+bool ModuleHello::TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::Launch(new StepHttpRequestCo20(stMsgShell, oInHttpMsg));
+	return net::Launch(new StepHttpRequestCo(stMsgShell, oInHttpMsg));
 }
 
 bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)

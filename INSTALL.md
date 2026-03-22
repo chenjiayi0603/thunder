@@ -1,6 +1,6 @@
 # Thunder 构建与安装（精简）
 
-更全的 CMake 选项见 **`cmake/BUILD.md`**；第三方构建细节见 **`code/3party/readme.md`**。
+更全的 CMake 选项见 **`cmake/BUILD.md`**；第三方构建细节见 **`code/3party/readme.md`**。协程基类从 `CoroutineState` 迁到 **`StepCo20`** 的说明见 **`docs/StepCo20-coroutine-migration.md`**。
 
 ---
 
@@ -141,8 +141,7 @@ cd deploy
 **`test_interfaceserver.sh`** — 按顺序拉起 Center / Logic / Interface，并做 Interface 联调冒烟。
 
 ```bash
-cd deploy
-./tests/test_interfaceserver.sh
+bash deploy/tests/test_interfaceserver.sh
 ```
 
 **`test_helloserver_wrk.sh`** — wrk 压测 Hello（须先已启动 Hello）。样例输出见 **`deploy/tests/wrk_test_result.md`**。

@@ -4,7 +4,7 @@
 namespace core
 {
 
-net::CoTask<void> HttpRequestCo::Run()
+net::Task<> HttpRequestCo::CoroutineMain()
 {
     LOG4_TRACE("%s() start", __FUNCTION__);
 
@@ -88,7 +88,7 @@ void HttpRequestCo::Response(int nCode)
     oJsonObj.Add("code", nCode);
     oJsonObj.Add("msg", "ok");
     oJsonObj.Add("testVal", m_uiTestVal);
-    oJsonObj.Add("stepType", "CoroutineState");
+    oJsonObj.Add("stepType", "HttpRequestCo_StepCo20");
     oHttpMsg.set_body(oJsonObj.ToString());
     GetLabor()->SendTo(m_stReqMsgShell, oHttpMsg);
 }

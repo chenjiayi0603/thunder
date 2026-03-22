@@ -57,7 +57,7 @@ private:
     bool TestHttpRequestStateFuncLegacy(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
     
     // C++20 coroutine
-    bool TestHttpRequestCo20(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
+    bool TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     bool TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 
     //pb

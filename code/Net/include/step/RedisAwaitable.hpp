@@ -19,7 +19,8 @@
 namespace net
 {
 
-class CoroutineState;
+class StepCo20;
+class RedisStepBridge;
 
 /**
  * @brief Redis 命令类型枚举
@@ -81,15 +82,17 @@ struct RedisReply
  */
 class RedisAwaitable
 {
+    friend class RedisStepBridge;
+
 public:
     /**
      * @brief 构造函数
-     * @param pState 所属的 CoroutineState
+     * @param pState 所属的 StepCo20
      * @param strHost Redis 服务器地址
      * @param iPort Redis 端口
      * @param strCommand Redis 命令
      */
-    RedisAwaitable(CoroutineState* pState, 
+    RedisAwaitable(StepCo20* pState, 
                    const std::string& strHost,
                    int iPort,
                    const std::string& strCommand)
@@ -103,13 +106,13 @@ public:
     
     /**
      * @brief 构造函数（带参数列表）
-     * @param pState 所属的 CoroutineState
+     * @param pState 所属的 StepCo20
      * @param strHost Redis 服务器地址
      * @param iPort Redis 端口
      * @param cmdType 命令类型
      * @param args 命令参数
      */
-    RedisAwaitable(CoroutineState* pState,
+    RedisAwaitable(StepCo20* pState,
                    const std::string& strHost,
                    int iPort,
                    RedisCommandType cmdType,
@@ -218,7 +221,7 @@ private:
         }
     }
 
-    CoroutineState* m_pState;
+    StepCo20* m_pState;
     std::string m_strHost;
     int m_iPort;
     std::string m_strCommand;
@@ -234,7 +237,7 @@ private:
 class RedisCoHelper
 {
 public:
-    explicit RedisCoHelper(CoroutineState* pState, 
+    explicit RedisCoHelper(StepCo20* pState, 
                            const std::string& strHost = "127.0.0.1",
                            int iPort = 6379)
         : m_pState(pState)
@@ -307,7 +310,7 @@ public:
     }
     
 private:
-    CoroutineState* m_pState;
+    StepCo20* m_pState;
     std::string m_strHost;
     int m_iPort;
 };

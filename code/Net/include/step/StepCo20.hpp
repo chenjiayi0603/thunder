@@ -127,6 +127,7 @@ protected:
     void ResponseToClient(int iCode = 200, const std::string& strBody = "");
 
     friend struct HttpRespAwaiter;
+    friend class RedisAwaitable;
 
 protected:
     std::string m_strStepDesc = "StepCo20";
@@ -164,19 +165,27 @@ private:
 struct HttpRespAwaiter
 {
     StepCo20* pStep;
-    bool bSuccess;
-    
-    HttpRespAwaiter(StepCo20* step, bool success) : pStep(step), bSuccess(success) {}
-    
+
+    explicit HttpRespAwaiter(StepCo20* step) : pStep(step) {}
+
     bool await_ready() const noexcept { return false; }
-    
+
     void await_suspend(std::coroutine_handle<> handle) noexcept
     {
-        // 保存协程句柄，等待回调时恢复
         pStep->m_coroHandle = handle;
     }
-    
-    bool await_resume() noexcept { return bSuccess; }
+
+    /// HTTP 响应：按 status_code 判断；二进制回调时 m_oResHttpMsg 非 RESPONSE，视为成功
+    bool await_resume() noexcept
+    {
+        const HttpMsg& rsp = pStep->m_oResHttpMsg;
+        if (rsp.type() == HTTP_RESPONSE)
+        {
+            const int code = rsp.status_code();
+            return code >= 200 && code < 400;
+        }
+        return true;
+    }
 };
 
 } // namespace net

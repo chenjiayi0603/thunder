@@ -24,7 +24,7 @@ namespace net
 
 // 前置声明
 class Step;
-class CoroutineState;
+class StepCo20;
 
 /**
  * @brief 通用 Awaitable 模板类
@@ -337,7 +337,7 @@ private:
 struct CoroutineContext
 {
     std::coroutine_handle<> handle;
-    CoroutineState* state = nullptr;
+    StepCo20* state = nullptr;
     ev_timer* timer = nullptr;
     void* userData = nullptr;
 };

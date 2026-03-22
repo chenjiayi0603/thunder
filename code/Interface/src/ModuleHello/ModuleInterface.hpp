@@ -26,7 +26,7 @@ public:
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
 
 private:
-    /// body JSON 中 option：Echo、TestHttpRequestCo20、GenKey/VerifyKey/TestStepCo20Binary（StepBinaryCo20Binary）等
+    /// body JSON 中 option：Echo、TestStepHttpRequestCo、GenKey/VerifyKey/TestStepCo20Binary（StepBinaryCo20Binary）等
     bool DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     void Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode);
 };

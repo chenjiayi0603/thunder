@@ -149,7 +149,7 @@ Task<bool> StepCo20::HttpGetAsync(const std::string& strUrl)
     }
     
     // 等待 HTTP 响应
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
@@ -163,7 +163,7 @@ Task<bool> StepCo20::HttpPostAsync(const std::string& strUrl, const std::string&
     }
     
     // 等待 HTTP 响应
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
@@ -177,7 +177,7 @@ Task<bool> StepCo20::SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& o
     }
     
     // 等待响应
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
@@ -191,7 +191,7 @@ Task<bool> StepCo20::SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead 
     {
         co_return false;
     }
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
@@ -205,7 +205,7 @@ Task<bool> StepCo20::SendToInternalByIdentifyAsync(const std::string& strIdentif
     {
         co_return false;
     }
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
@@ -219,7 +219,7 @@ Task<bool> StepCo20::SendToInternalByNodeTypeAsync(const std::string& strNodeTyp
     {
         co_return false;
     }
-    HttpRespAwaiter awaiter(this, true);
+    HttpRespAwaiter awaiter(this);
     bool bResult = co_await awaiter;
     co_return bResult;
 }
