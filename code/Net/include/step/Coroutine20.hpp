@@ -105,6 +105,9 @@ struct [[nodiscard]] Task
         return task_awaiter{coro_};
     }
 
+    /// 非 co_await 路径下驱动协程（如单元测试）；须保证不会在帧存活期间 double-destroy。
+    handle_type native_handle() const noexcept { return coro_; }
+
 private:
     handle_type coro_;
 };
@@ -183,6 +186,8 @@ struct [[nodiscard]] Task<void>
         return task_awaiter{coro_};
     }
 
+    handle_type native_handle() const noexcept { return coro_; }
+
 private:
     handle_type coro_;
 };
@@ -228,6 +233,8 @@ struct AsyncTask
         // while the coroutine is still executing a synchronous call on the real stack.
         std::suspend_always final_suspend() noexcept { return {}; }
     };
+
+    handle_type native_handle() const noexcept { return coro_; }
 
 private:
     handle_type coro_;

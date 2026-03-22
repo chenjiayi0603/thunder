@@ -53,8 +53,11 @@
 #define SAFE_FREE(p) {if (p) {free(p);p = nullptr;}}
 #endif
 
-//如果是调试版本则定义_DEBUG，否则就注释掉
-#ifndef _DEBUG
+// 如果是调试版本则定义 _DEBUG，否则就注释掉。
+// 单元测试等无 Labor 场景：目标可定义 THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG，避免自动 #define _DEBUG，
+// 从而使 LOG4_TRACE 为空（不调用 GetLabor()->GetLogger()）。
+#if defined(THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG)
+#elif !defined(_DEBUG)
 #define _DEBUG
 #endif
 

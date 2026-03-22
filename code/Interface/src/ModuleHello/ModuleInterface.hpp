@@ -7,12 +7,7 @@
 #define SRC_ModuleInterface_ModuleInterface_HPP_
 
 #include "cmd/Module.hpp"
-#include "cmd/Cmd.hpp"
-#include "step/Step.hpp"
-#include "step/HttpStep.hpp"
 #include "RobotError.h"
-#include "../InterfaceSession.h"
-#include "util/CommonUtils.hpp"
 
 namespace robot
 {

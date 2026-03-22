@@ -1,0 +1,4 @@
+# clangd 使用 CMake 生成的 compile_commands.json（需先配置构建目录）：
+#   cmake -S . -B build -DTHUNDER_BUILD_NODE_PLUGINS=ON
+# Interface 插件（ModuleInterface.cpp）仅在开启 NODE 插件时才会出现在数据库中。
+CompilationDatabase: build

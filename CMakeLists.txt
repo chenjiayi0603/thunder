@@ -38,6 +38,11 @@ add_subdirectory(code/Util)
 add_subdirectory(code/Proto)
 add_subdirectory(code/Net)
 
+option(THUNDER_BUILD_TESTS "Build unit tests" OFF)
+if(THUNDER_BUILD_TESTS)
+  add_subdirectory(code/test)
+endif()
+
 if(THUNDER_BUILD_HELLO_PLUGINS)
   add_subdirectory(code/Hello)
 endif()
