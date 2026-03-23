@@ -7,58 +7,60 @@ namespace core
 net::AsyncTask StepHttpRequestCo::StepAsync()
 {
     LOG4_TRACE("%s() start", __FUNCTION__);
+    return AsyncBody(*this);
+}
+
+net::AsyncTask StepHttpRequestCo::AsyncBody(net::StepCo20& st)
+{
+    auto& self = static_cast<StepHttpRequestCo&>(st);
 
     try
     {
         // 状态0: 请求百度
-        LOG4_TRACE("%s() state 0: request baidu, testVal:%u", __FUNCTION__, ++m_uiTestVal);
-        bool bSuccess = co_await HttpGetAsync("http://www.baidu.com/");
+        LOG4_TRACE("StepHttpRequestCo::StepAsync state 0: request baidu, testVal:%u", ++self.m_uiTestVal);
+        bool bSuccess = co_await self.HttpGetAsync("http://www.baidu.com/");
         if (!bSuccess)
         {
             LOG4_ERROR("HttpGet http://www.baidu.com/ error");
-            Response(1);
-            NotifyEmitCoroutineSuccess();
+            self.Response(1);
             co_return;
         }
 
         // 状态1: 请求搜狗
-        LOG4_TRACE("%s() state 1: request sogou, testVal:%u", __FUNCTION__, ++m_uiTestVal);
-        bSuccess = co_await HttpGetAsync("http://www.sogou.com/");
+        LOG4_TRACE("StepHttpRequestCo::StepAsync state 1: request sogou, testVal:%u", ++self.m_uiTestVal);
+        bSuccess = co_await self.HttpGetAsync("http://www.sogou.com/");
         if (!bSuccess)
         {
             LOG4_ERROR("HttpGet http://www.sogou.com/ error");
-            Response(1);
-            NotifyEmitCoroutineSuccess();
+            self.Response(1);
             co_return;
         }
 
         // 状态2: 请求支付宝
-        LOG4_TRACE("%s() state 2: request alipay, testVal:%u", __FUNCTION__, ++m_uiTestVal);
-        bSuccess = co_await HttpGetAsync("http://www.alipay.com/");
+        LOG4_TRACE("StepHttpRequestCo::StepAsync state 2: request alipay, testVal:%u", ++self.m_uiTestVal);
+        bSuccess = co_await self.HttpGetAsync("http://www.alipay.com/");
         if (!bSuccess)
         {
             LOG4_ERROR("HttpGet http://www.alipay.com/ error");
-            Response(1);
-            NotifyEmitCoroutineSuccess();
+            self.Response(1);
             co_return;
         }
 
         // 状态3: 完成
-        LOG4_TRACE("%s() state 3: complete, testVal:%u", __FUNCTION__, ++m_uiTestVal);
-        Response(0);
+        LOG4_TRACE("StepHttpRequestCo::StepAsync state 3: complete, testVal:%u", ++self.m_uiTestVal);
+        self.Response(0);
     }
     catch (const std::exception& e)
     {
-        LOG4_ERROR("%s() exception: %s", __FUNCTION__, e.what());
-        Response(1);
+        LOG4_ERROR("StepHttpRequestCo::StepAsync exception: %s", e.what());
+        self.Response(1);
     }
     catch (...)
     {
-        LOG4_ERROR("%s() unknown exception", __FUNCTION__);
-        Response(1);
+        LOG4_ERROR("StepHttpRequestCo::StepAsync unknown exception");
+        self.Response(1);
     }
 
-    NotifyEmitCoroutineSuccess();
     co_return;
 }
 

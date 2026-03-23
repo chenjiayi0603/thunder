@@ -6,18 +6,18 @@
 namespace
 {
 
+class TestableStepCo20OneAwait;
+class TestableStepCo20TwoAwait;
+
+net::AsyncTask OneAwaitCo(net::StepCo20& st);
+net::AsyncTask TwoAwaitCo(net::StepCo20& st);
+
 class TestableStepCo20OneAwait : public net::StepCo20
 {
 public:
     bool awaiterResult = false;
 
-    net::AsyncTask StepAsync() override
-    {
-        net::HttpRespAwaiter awaiter(this);
-        awaiterResult = co_await awaiter;
-        NotifyEmitCoroutineSuccess();
-        co_return;
-    }
+    net::AsyncTask StepAsync() override { return OneAwaitCo(*this); }
 
     void OnCoroutineComplete(bool /*bSuccess*/) override {}
 
@@ -29,26 +29,50 @@ class TestableStepCo20TwoAwait : public net::StepCo20
 public:
     int phase = 0;
 
-    net::AsyncTask StepAsync() override
-    {
-        {
-            net::HttpRespAwaiter a1(this);
-            co_await a1;
-        }
-        ++phase;
-        {
-            net::HttpRespAwaiter a2(this);
-            co_await a2;
-        }
-        ++phase;
-        NotifyEmitCoroutineSuccess();
-        co_return;
-    }
+    net::AsyncTask StepAsync() override { return TwoAwaitCo(*this); }
 
     void OnCoroutineComplete(bool /*bSuccess*/) override {}
 
     void OnCoroutineError(int /*iErrno*/, const std::string& /*strErrMsg*/) override {}
 };
+
+net::AsyncTask OneAwaitCo(net::StepCo20& st)
+{
+    auto& self = static_cast<TestableStepCo20OneAwait&>(st);
+    net::HttpRespAwaiter awaiter(&self);
+    self.awaiterResult = co_await awaiter;
+    co_return;
+}
+
+net::AsyncTask TwoAwaitCo(net::StepCo20& st)
+{
+    auto& self = static_cast<TestableStepCo20TwoAwait&>(st);
+    {
+        net::HttpRespAwaiter a1(&self);
+        co_await a1;
+    }
+    ++self.phase;
+    {
+        net::HttpRespAwaiter a2(&self);
+        co_await a2;
+    }
+    ++self.phase;
+    co_return;
+}
+
+net::AsyncTask FuncExecCo(net::StepCo20& /*st*/, bool* ranOut)
+{
+    *ranOut = true;
+    co_return;
+}
+
+net::AsyncTask SingleAwaitCo(net::StepCo20& st, bool* afterOut)
+{
+    net::HttpRespAwaiter awaiter(&st);
+    (void)co_await awaiter;
+    *afterOut = true;
+    co_return;
+}
 
 } // namespace
 
@@ -130,10 +154,8 @@ TEST(StepCo20Func, lambda_executes)
     net::tagMsgShell shell{};
     HttpMsg req;
 
-    net::StepCo20Func step(shell, req, [&](net::StepCo20& st) -> net::AsyncTask {
-        ran = true;
-        st.NotifyEmitCoroutineSuccess();
-        co_return;
+    net::StepCo20Func step(shell, req, [&ran](net::StepCo20& st) -> net::AsyncTask {
+        return FuncExecCo(st, &ran);
     });
 
     (void)step.Emit();
@@ -146,12 +168,8 @@ TEST(StepCo20Func, lambda_single_await)
     net::tagMsgShell shell{};
     HttpMsg req;
 
-    net::StepCo20Func step(shell, req, [&](net::StepCo20& self) -> net::AsyncTask {
-        net::HttpRespAwaiter awaiter(&self);
-        (void)co_await awaiter;
-        afterAwait = true;
-        self.NotifyEmitCoroutineSuccess();
-        co_return;
+    net::StepCo20Func step(shell, req, [&afterAwait](net::StepCo20& st) -> net::AsyncTask {
+        return SingleAwaitCo(st, &afterAwait);
     });
 
     ASSERT_EQ(step.Emit(), net::STATUS_CMD_RUNNING);

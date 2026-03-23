@@ -24,6 +24,9 @@ public:
     virtual net::AsyncTask StepAsync() override;
 
 private:
+    /// 协程第一形参 StepCo20& → promise_type(StepCo20&)；静态成员可访问本类私有成员
+    static net::AsyncTask AsyncBody(net::StepCo20& st);
+
     uint32 m_uiTestVal = 0;
 
     void Response(int nCode);

@@ -26,6 +26,8 @@ public:
     void Response(int nCode);
 
 private:
+    static net::AsyncTask AsyncBody(net::StepCo20& st);
+
     uint32 m_uiTestVal = 0;
 };
 

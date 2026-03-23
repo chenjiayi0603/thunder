@@ -71,8 +71,8 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
     // 单条 AsyncTask：由 StepAsync() 提供；必须延长生命周期，不可 StepAsync() 临时析构
     m_oAsyncBootstrap.emplace(StepAsync());
 
-    // 若在 emplace 内全程未挂起（例如 co_await SendToInternalByNodeTypeAsync 因无路由同步 co_return false），
-    // EmitSuccessGuard 已触发 NotifyEmitCoroutineSuccess()；必须返回 COMPLETED，否则 Step 仍挂超时并最终对已关闭的 HTTP fd SendTo。
+    // 若在 emplace 内全程未挂起（例如 co_await SendToInternalByNodeTypeAsync 因无路由同步 co_return），
+    // promise.return_void 已 NotifyEmitCoroutineSuccess()；必须返回 COMPLETED，否则 Step 仍挂超时并最终对已关闭的 HTTP fd SendTo。
     if (m_bCoroutineCompleted)
     {
         LOG4_TRACE("%s() coroutine finished synchronously (no suspend)", __FUNCTION__);
@@ -84,6 +84,10 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
 
 void StepCo20::NotifyEmitCoroutineSuccess()
 {
+    if (m_bCoroutineCompleted)
+    {
+        return;
+    }
     m_bCoroutineCompleted = true;
     m_bCoroutineRunning = false;
     OnCoroutineComplete(true);
@@ -370,6 +374,14 @@ void StepCo20::ResponseToClient(int iCode, const std::string& strBody)
     {
         // 普通消息响应
         GetLabor()->SendToClient(m_stReqMsgShell, m_oReqMsgHead, strBody);
+    }
+}
+
+void async_task_promise_notify_if(StepCo20* step) noexcept
+{
+    if (step)
+    {
+        step->NotifyEmitCoroutineSuccess();
     }
 }
 

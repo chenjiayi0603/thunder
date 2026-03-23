@@ -52,6 +52,37 @@ void SendTestStepHttpRequestCoJsonResponse(net::StepCo20& step, int nCode,
     GetLabor()->SendTo(step.m_stReqMsgShell, oHttpMsg);
 }
 
+net::AsyncTask TestStepHttpRequestCoLogicCo(net::StepCo20& step,
+                                            std::shared_ptr<uint32_t> pTestVal)
+{
+    LOG4_TRACE("TestStepHttpRequestCo lambda start");
+    try
+    {
+        LOG4_TRACE("TestStepHttpRequestCo request example.com, testVal:%u", ++*pTestVal);
+        const bool bSuccess = co_await step.HttpGetAsync("http://example.com/");
+        if (!bSuccess)
+        {
+            LOG4_ERROR("HttpGet http://example.com/ error");
+            SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
+            co_return;
+        }
+
+        LOG4_TRACE("TestStepHttpRequestCo complete, testVal:%u", ++*pTestVal);
+        SendTestStepHttpRequestCoJsonResponse(step, 0, &step.GetLastRspHttpMsg(), *pTestVal);
+    }
+    catch (const std::exception& e)
+    {
+        LOG4_ERROR("TestStepHttpRequestCo exception: %s", e.what());
+        SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
+    }
+    catch (...)
+    {
+        LOG4_ERROR("TestStepHttpRequestCo unknown exception");
+        SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
+    }
+    co_return;
+}
+
 HttpMsg MakeSyntheticHttpFromJsonBody(const std::string& body)
 {
     HttpMsg oHttp;
@@ -62,6 +93,138 @@ HttpMsg MakeSyntheticHttpFromJsonBody(const std::string& body)
     oHttp.set_http_major(1);
     oHttp.set_http_minor(1);
     return oHttp;
+}
+
+net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
+{
+    LOG4_TRACE("GenKeyVerifyKeyCo20 cmd %u seq %u", step.GetReqMsgHead().cmd(),
+               step.GetReqMsgHead().seq());
+
+    util::CJsonObject obj;
+    if (!obj.Parse(step.m_oInHttpMsg.body()))
+    {
+        step.ResponseToClient(400, R"({"code":1,"msg":"invalid json body"})");
+        co_return;
+    }
+    std::string opt;
+    if (!obj.Get("option", opt) || opt.empty())
+    {
+        step.ResponseToClient(400, R"({"code":1,"msg":"missing option"})");
+        co_return;
+    }
+
+    std::string strPassthrough;
+    bool forwardRawLogicBody = false;
+
+    if (opt == "GenKey")
+    {
+        const std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
+        util::CJsonObject oJson;
+        oJson.Add("token",
+                  std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
+                                                 GetLabor()->GetWorkerIndex())));
+        oJson.Add("key",
+                  std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
+                                                     GetLabor()->GetWorkerIndex())));
+        oJson.Add("genkey", "1");
+        oJson.Add("address", address);
+        strPassthrough = oJson.ToString();
+        forwardRawLogicBody = true;
+    }
+    else if (opt == "VerifyKey")
+    {
+        std::string strToken;
+        std::string strKey;
+        obj.Get("token", strToken);
+        obj.Get("key", strKey);
+        if (strToken.empty() || strKey.empty())
+        {
+            step.ResponseToClient(400, R"({"code":1,"msg":"token or key empty"})");
+            co_return;
+        }
+        util::CJsonObject oJson;
+        oJson.Add("token", strToken);
+        oJson.Add("key", strKey);
+        oJson.Add("verifykey", "1");
+        oJson.Add("address", GetLabor()->GetClientAddr(step.GetReqMsgShell()));
+        strPassthrough = oJson.ToString();
+        forwardRawLogicBody = true;
+    }
+    else if (opt == "TestStepCo20Binary")
+    {
+        strPassthrough = step.m_oInHttpMsg.body();
+        if (strPassthrough.size() > kMaxPassthroughBytes)
+        {
+            strPassthrough.resize(kMaxPassthroughBytes);
+        }
+        forwardRawLogicBody = false;
+    }
+    else
+    {
+        step.ResponseToClient(400, R"({"code":1,"msg":"option not handled by StepCo20Func"})");
+        co_return;
+    }
+
+    if (strPassthrough.size() > kMaxPassthroughBytes)
+    {
+        strPassthrough.resize(kMaxPassthroughBytes);
+    }
+
+    MsgBody oOutBody;
+    oOutBody.set_body(std::move(strPassthrough));
+    MsgHead oOutHead;
+    oOutHead.set_cmd(kCmdToLogicTokenBinaryDemo);
+
+    const bool okLogic = co_await step.SendToInternalByNodeTypeAsync("LOGIC", oOutHead, oOutBody);
+
+    MsgBody logicBodySnap;
+    if (okLogic)
+    {
+        logicBodySnap = step.GetLastRspMsgBody();
+    }
+
+    if (okLogic && forwardRawLogicBody)
+    {
+        const std::string& logicBody = logicBodySnap.body();
+        util::CJsonObject oJson;
+        int httpCode = 400;
+        if (oJson.Parse(logicBody))
+        {
+            int code = 1;
+            if (oJson.Get("code", code) && code == 0)
+            {
+                httpCode = 200;
+            }
+        }
+        step.ResponseToClient(httpCode, logicBody);
+        co_return;
+    }
+
+    util::CJsonObject oRsp;
+    oRsp.Add("code", okLogic ? 0 : 1);
+    oRsp.Add("msg", okLogic ? "ok" : "logic step failed");
+    oRsp.Add("demo", "StepCo20Func: co_await SendToInternalByNodeTypeAsync(LOGIC)");
+    oRsp.Add("ok_logic", okLogic);
+    oRsp.Add("req_cmd", static_cast<int32_t>(step.GetReqMsgHead().cmd()));
+    oRsp.Add("req_seq", static_cast<int32_t>(step.GetReqMsgHead().seq()));
+    if (!okLogic)
+    {
+        oRsp.Add(
+            "hint",
+            "SendToSession(LOGIC) failed: no LOGIC node in Interface route table (NodesMgr). "
+            "Check Center is listening, Logic registered to Center, Interface.json center matches Center; "
+            "start order Center -> Logic -> Interface. See Interface log: no tagMsgShell match LOGIC");
+    }
+
+    if (okLogic)
+    {
+        const std::string& logicBody = logicBodySnap.body();
+        std::string preview =
+            logicBody.size() > 1024 ? logicBody.substr(0, 1024) + "..." : logicBody;
+        oRsp.Add("logic_rsp_preview", preview);
+    }
+    step.ResponseToClient(200, oRsp.ToString());
+    co_return;
 }
 
 } // namespace
@@ -93,7 +256,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         return false;
     }
 
-    auto replyOk = [&](int code) { Response(stMsgShell, oInHttpMsg, code); };
+    auto replyOk = [&](int code)->void { Response(stMsgShell, oInHttpMsg, code); return; };
 
     if ("Echo" == strOption)
     {
@@ -106,35 +269,10 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
         LOG4_TRACE("%s TestStepHttpRequestCo (StepCo20Func)", __FUNCTION__);
         HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
         auto pTestVal = std::make_shared<uint32_t>(0);
+        // 仅在此 lambda 捕获 pTestVal；协程体放在 TestStepHttpRequestCoLogicCo（带捕获的 lambda 不宜直接作 AsyncTask 协程体）
         return net::LaunchCo(stMsgShell, oHttp,
             [pTestVal](net::StepCo20& step) -> net::AsyncTask {
-                const net::StepCo20::EmitSuccessGuard emitDone{step};
-                LOG4_TRACE("TestStepHttpRequestCo lambda start");
-                try
-                {
-                    LOG4_TRACE("TestStepHttpRequestCo request example.com, testVal:%u", ++*pTestVal);
-                    const bool bSuccess = co_await step.HttpGetAsync("http://example.com/");
-                    if (!bSuccess)
-                    {
-                        LOG4_ERROR("HttpGet http://example.com/ error");
-                        SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-                        co_return;
-                    }
-
-                    LOG4_TRACE("TestStepHttpRequestCo complete, testVal:%u", ++*pTestVal);
-                    SendTestStepHttpRequestCoJsonResponse(step, 0, &step.GetLastRspHttpMsg(), *pTestVal);
-                }
-                catch (const std::exception& e)
-                {
-                    LOG4_ERROR("TestStepHttpRequestCo exception: %s", e.what());
-                    SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-                }
-                catch (...)
-                {
-                    LOG4_ERROR("TestStepHttpRequestCo unknown exception");
-                    SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-                }
-                co_return;
+                return TestStepHttpRequestCoLogicCo(step, pTestVal);
             });
     }
 
@@ -143,137 +281,7 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
     {
         LOG4_TRACE("%s StepCo20Func GenKey/VerifyKey option=%s", __FUNCTION__, strOption.c_str());
         return net::LaunchCo(stMsgShell, oInHttpMsg,
-            [](net::StepCo20& step) -> net::AsyncTask {
-                const net::StepCo20::EmitSuccessGuard emitDone{step};
-                LOG4_TRACE("GenKeyVerifyKeyCo20 cmd %u seq %u", step.GetReqMsgHead().cmd(),
-                           step.GetReqMsgHead().seq());
-
-                util::CJsonObject obj;
-                if (!obj.Parse(step.m_oInHttpMsg.body()))
-                {
-                    step.ResponseToClient(400, R"({"code":1,"msg":"invalid json body"})");
-                    co_return;
-                }
-                std::string opt;
-                if (!obj.Get("option", opt) || opt.empty())
-                {
-                    step.ResponseToClient(400, R"({"code":1,"msg":"missing option"})");
-                    co_return;
-                }
-
-                std::string strPassthrough;
-                bool forwardRawLogicBody = false;
-
-                if (opt == "GenKey")
-                {
-                    const std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
-                    util::CJsonObject oJson;
-                    oJson.Add("token",
-                              std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
-                                                             GetLabor()->GetWorkerIndex())));
-                    oJson.Add("key",
-                              std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
-                                                             GetLabor()->GetWorkerIndex())));
-                    oJson.Add("genkey", "1");
-                    oJson.Add("address", address);
-                    strPassthrough = oJson.ToString();
-                    forwardRawLogicBody = true;
-                }
-                else if (opt == "VerifyKey")
-                {
-                    std::string strToken;
-                    std::string strKey;
-                    obj.Get("token", strToken);
-                    obj.Get("key", strKey);
-                    if (strToken.empty() || strKey.empty())
-                    {
-                        step.ResponseToClient(400, R"({"code":1,"msg":"token or key empty"})");
-                        co_return;
-                    }
-                    util::CJsonObject oJson;
-                    oJson.Add("token", strToken);
-                    oJson.Add("key", strKey);
-                    oJson.Add("verifykey", "1");
-                    oJson.Add("address", GetLabor()->GetClientAddr(step.GetReqMsgShell()));
-                    strPassthrough = oJson.ToString();
-                    forwardRawLogicBody = true;
-                }
-                else if (opt == "TestStepCo20Binary")
-                {
-                    strPassthrough = step.m_oInHttpMsg.body();
-                    if (strPassthrough.size() > kMaxPassthroughBytes)
-                    {
-                        strPassthrough.resize(kMaxPassthroughBytes);
-                    }
-                    forwardRawLogicBody = false;
-                }
-                else
-                {
-                    step.ResponseToClient(400, R"({"code":1,"msg":"option not handled by StepCo20Func"})");
-                    co_return;
-                }
-
-                if (strPassthrough.size() > kMaxPassthroughBytes)
-                {
-                    strPassthrough.resize(kMaxPassthroughBytes);
-                }
-
-                MsgBody oOutBody;
-                oOutBody.set_body(std::move(strPassthrough));
-                MsgHead oOutHead;
-                oOutHead.set_cmd(kCmdToLogicTokenBinaryDemo);
-
-                const bool okLogic = co_await step.SendToInternalByNodeTypeAsync("LOGIC", oOutHead, oOutBody);
-
-                MsgBody logicBodySnap;
-                if (okLogic)
-                {
-                    logicBodySnap = step.GetLastRspMsgBody();
-                }
-
-                if (okLogic && forwardRawLogicBody)
-                {
-                    const std::string& logicBody = logicBodySnap.body();
-                    util::CJsonObject oJson;
-                    int httpCode = 400;
-                    if (oJson.Parse(logicBody))
-                    {
-                        int code = 1;
-                        if (oJson.Get("code", code) && code == 0)
-                        {
-                            httpCode = 200;
-                        }
-                    }
-                    step.ResponseToClient(httpCode, logicBody);
-                    co_return;
-                }
-
-                util::CJsonObject oRsp;
-                oRsp.Add("code", okLogic ? 0 : 1);
-                oRsp.Add("msg", okLogic ? "ok" : "logic step failed");
-                oRsp.Add("demo", "StepCo20Func: co_await SendToInternalByNodeTypeAsync(LOGIC)");
-                oRsp.Add("ok_logic", okLogic);
-                oRsp.Add("req_cmd", static_cast<int32_t>(step.GetReqMsgHead().cmd()));
-                oRsp.Add("req_seq", static_cast<int32_t>(step.GetReqMsgHead().seq()));
-                if (!okLogic)
-                {
-                    oRsp.Add(
-                        "hint",
-                        "SendToSession(LOGIC) failed: no LOGIC node in Interface route table (NodesMgr). "
-                        "Check Center is listening, Logic registered to Center, Interface.json center matches Center; "
-                        "start order Center -> Logic -> Interface. See Interface log: no tagMsgShell match LOGIC");
-                }
-
-                if (okLogic)
-                {
-                    const std::string& logicBody = logicBodySnap.body();
-                    std::string preview =
-                        logicBody.size() > 1024 ? logicBody.substr(0, 1024) + "..." : logicBody;
-                    oRsp.Add("logic_rsp_preview", preview);
-                }
-                step.ResponseToClient(200, oRsp.ToString());
-                co_return;
-            });
+            [](net::StepCo20& step) -> net::AsyncTask { return GenKeyVerifyKeyStepCo20(step); });
     }
 
     LOG4_TRACE("%s unknown option %s", __FUNCTION__, strOption.c_str());

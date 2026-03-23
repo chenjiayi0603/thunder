@@ -76,6 +76,49 @@ bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& o
 	return true;
 }
 
+namespace
+{
+
+net::AsyncTask GenKeyNotifyLogicCo(net::StepCo20& step, std::string jsonBody, std::string address)
+{
+	MsgHead head;
+	head.set_cmd(GET_TOKEN_GEN);
+	MsgBody body;
+	body.set_body(std::move(jsonBody));
+	body.set_targetid(std::move(address));
+	const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+	LOG4_TRACE("GenKey LOGIC response ok=%d body=%s", ok,
+	           ok ? step.GetLastRspMsgBody().body().c_str() : "");
+	co_return;
+}
+
+net::AsyncTask VerifyKeyLogicCo(net::StepCo20& step, std::string reqBody, std::string address)
+{
+	MsgHead head;
+	head.set_cmd(GET_TOKEN_GEN);
+	MsgBody body;
+	body.set_body(std::move(reqBody));
+	body.set_targetid(std::move(address));
+	const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+	if (!ok)
+	{
+		step.ResponseToClient(500, R"({"code":1})");
+		co_return;
+	}
+	const std::string& logicBody = step.GetLastRspMsgBody().body();
+	LOG4_TRACE("VerifyKey LOGIC body %s", logicBody.c_str());
+	util::CJsonObject rspJson;
+	int code = 1;
+	if (rspJson.Parse(logicBody))
+	{
+		rspJson.Get("code", code);
+	}
+	step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
+	co_return;
+}
+
+} // namespace
+
 void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 	const std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),GetLabor()->GetWorkerIndex()));
@@ -99,17 +142,7 @@ void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHt
 
 	net::LaunchCo(stMsgShell, oInHttpMsg,
 		[oJson, address](net::StepCo20& step) -> net::AsyncTask {
-			const net::StepCo20::EmitSuccessGuard emitDone{step};
-			MsgHead head;
-			head.set_cmd(GET_TOKEN_GEN);
-			MsgBody body;
-			body.set_body(oJson.ToString());
-			body.set_targetid(address); // 路由因子，与旧 strModFactor 等价
-			const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
-			LOG4_TRACE("GenKey LOGIC response ok=%d body=%s", ok,
-			           ok ? step.GetLastRspMsgBody().body().c_str() : "");
-			// fire-and-forget：不调用 ResponseToClient（客户端响应已在外层发出）；emitDone 在 co_return 前 Notify
-			co_return;
+			return GenKeyNotifyLogicCo(step, oJson.ToString(), address);
 		});
 }
 
@@ -139,28 +172,7 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oI
 	const std::string reqBody = oJson.ToString();
 	net::LaunchCo(stMsgShell, oInHttpMsg,
 		[reqBody, address](net::StepCo20& step) -> net::AsyncTask {
-			const net::StepCo20::EmitSuccessGuard emitDone{step};
-			MsgHead head;
-			head.set_cmd(GET_TOKEN_GEN);
-			MsgBody body;
-			body.set_body(reqBody);
-			body.set_targetid(address);
-			const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
-			if (!ok)
-			{
-				step.ResponseToClient(500, R"({"code":1})");
-				co_return;
-			}
-			const std::string& logicBody = step.GetLastRspMsgBody().body();
-			LOG4_TRACE("VerifyKey LOGIC body %s", logicBody.c_str());
-			util::CJsonObject rspJson;
-			int code = 1;
-			if (rspJson.Parse(logicBody))
-			{
-				rspJson.Get("code", code);
-			}
-			step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
-			co_return;
+			return VerifyKeyLogicCo(step, reqBody, address);
 		});
 }
 

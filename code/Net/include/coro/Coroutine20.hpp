@@ -251,19 +251,24 @@ public:
     handle_type native_handle() const noexcept { return coro_; }
 };
 
+class StepCo20;
+/** StepCo20.cpp / 测试桩：return_void 里调用 NotifyEmitCoroutineSuccess */
+void async_task_promise_notify_if(StepCo20* step) noexcept;
+
 /**
- * @brief 异步任务类型（无 co_await）
- * @note 与 Task 不同：initial_suspend=suspend_never 立即进入协程体；final_suspend=suspend_always 使帧活到本对象析构。
- *       coro_ 仍为「本协程」帧句柄，不提供 operator co_await，由持有者（如 StepCo20::m_oAsyncBootstrap）管生命周期。
+ * @brief 异步任务类型（无 co_await），StepCo20 路径协程管理：首参须为 `StepCo20&`，可有更多形参。
+ * @note 与 Task 不同：initial_suspend=suspend_never；final_suspend=suspend_always。
+ *       `promise_type(StepCo20&, Extra...)` 仅从首参取 step，`return_void` 时 Notify。
+ *       GCC 下 lambda 不宜直接作协程体，请用具名函数/静态成员协程，或非协程 lambda 仅 `return Body(step,...)`。
  */
 struct AsyncTask
 {
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
 
-    AsyncTask(handle_type h) : coro_(h) {}
+    explicit AsyncTask(handle_type h) : coro_(h) {}
     AsyncTask(const AsyncTask&) = delete;
-    AsyncTask(AsyncTask&& other) noexcept : coro_(other.coro_) { other.coro_ = nullptr; }
+    explicit AsyncTask(AsyncTask&& other) noexcept : coro_(other.coro_) { other.coro_ = nullptr; }
     ~AsyncTask() { if (coro_) coro_.destroy(); }
 
     AsyncTask& operator=(const AsyncTask&) = delete;
@@ -280,15 +285,19 @@ struct AsyncTask
 
     struct promise_type
     {
+        StepCo20* stepAutoNotify_{nullptr};
+
+        template<typename... ExtraArgs>
+        promise_type(StepCo20& step, ExtraArgs&&...) noexcept : stepAutoNotify_(&step) {}
+
         AsyncTask get_return_object() { return AsyncTask{handle_type::from_promise(*this)}; }
         std::suspend_never initial_suspend() noexcept { return {}; }
-        void return_void() {}
+        void return_void() noexcept { async_task_promise_notify_if(stepAutoNotify_); }
         void unhandled_exception() noexcept
         {
             std::fprintf(stderr, "Exception escaping net::AsyncTask\n");
             std::terminate();
         }
-        /// 协程体结束后仍挂起在 final，帧由 AsyncTask::coro_ 持有直至析构，避免栈上同步调用期间提前 destroy 帧（见仓库 bugfix 笔记）。
         std::suspend_always final_suspend() noexcept { return {}; }
     };
 

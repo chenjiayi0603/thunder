@@ -9,11 +9,10 @@ namespace net
 
 /**
  * @brief 通用协程步骤：构造时传入返回 AsyncTask 的协程 lambda；Emit emplace 的即是该条 AsyncTask（无壳内 co_await）。
- *        业务体内自行 co_await HttpGetAsync / SendToInternalAsync 等；正常结束用 StepCo20::EmitSuccessGuard 或手写 NotifyEmitCoroutineSuccess()。
+ *        业务体内自行 co_await HttpGetAsync / SendToInternalAsync 等；`m_fn(StepCo20&)` 协程用 `promise_type(StepCo20&)`，return_void 自动 Notify。
  *
- * 用法示例：
- *   net::LaunchCo(shell, httpMsg, [](net::StepCo20& step) -> net::AsyncTask { ... });
- *   net::LaunchCo(shell, msgHead, [](net::StepCo20& step) -> net::AsyncTask { ... });
+ * 用法示例（协程宜为具名函数，lambda 仅转发）：
+ *   net::LaunchCo(shell, httpMsg, [](net::StepCo20& s) -> net::AsyncTask { return MyCo(s); });
  */
 class StepCo20Func : public StepCo20
 {

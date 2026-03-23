@@ -120,33 +120,7 @@ TEST(Coroutine20, Task_chained_two_levels)
     EXPECT_EQ(h.promise().result(), 42);
 }
 
-// ---- AsyncTask ----
-
-TEST(Coroutine20, AsyncTask_starts_immediately)
-{
-    bool ran = false;
-    {
-        net::AsyncTask at = [&]() -> net::AsyncTask {
-            ran = true;
-            co_return;
-        }();
-        EXPECT_TRUE(ran);
-    }
-}
-
-TEST(Coroutine20, AsyncTask_frame_stays_alive)
-{
-    bool ran = false;
-    net::AsyncTask at = [&]() -> net::AsyncTask {
-        ran = true;
-        co_return;
-    }();
-    EXPECT_TRUE(ran);
-    auto h = at.native_handle();
-    ASSERT_NE(h.address(), nullptr);
-    // 用户体已结束；final_suspend=suspend_always 下帧仍由 AsyncTask 持有直至析构（done() 可能已为 true）
-    EXPECT_TRUE(h.done());
-}
+// AsyncTask 仅 `AsyncTask(StepCo20&)`，见 thunder_test_step_co20。
 
 TEST(Coroutine20, Task_move_semantics)
 {
