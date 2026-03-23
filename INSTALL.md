@@ -160,3 +160,12 @@ cd deploy
 ```
 
 启停见 **`deploy/deploy.md`**。端口检查：`lsof -Pni4 | grep LISTEN`。示例：`curl "http://127.0.0.1:27008/Interface/gentoken"`（按本机配置改 IP/端口）。
+
+
+## Center 管理页（统一 /admin）
+
+浏览器打开（按本机 `access_host` / `access_port` 修改）：
+
+http://172.24.177.85:26000/admin
+
+页面模板：`deploy/Center/conf/admin/AdminPage.html`（与运行目录下 `conf/admin/AdminPage.html` 一致）。

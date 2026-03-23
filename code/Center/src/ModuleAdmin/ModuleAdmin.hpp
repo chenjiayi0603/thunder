@@ -20,8 +20,10 @@ namespace coor
 {
 
 /**
- * @brief 集群管理
- * @note 集群管理通过将命令和参数封在JSON体并填充http body，再post到Center节点。
+ * @brief 集群管理（统一入口 /admin）
+ * @note GET /admin 返回管理页（含服务列表 + JSON 命令）；GET /admin/api/services、/admin/api/service/detail 为列表与详情 API；
+ *       POST /admin 将命令与参数放在 JSON body（show/get/set），与原先一致。
+ * @note 页面模板路径：{工作目录}/conf/admin/AdminPage.html
  * 命令管理的JSON体格式如下：
  * {
  *     "cmd":"show",
@@ -81,6 +83,12 @@ protected:
             util::CJsonObject& oCmdJson, util::CJsonObject& oResult);
 
 private:
+    void SendJsonResponse(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
+            int status, const std::string& jsonBody);
+    void SendUnifiedAdminPage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    void HandleGetServices(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    void HandleGetServiceDetail(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+
     SessionOnlineNodes* m_pSessionOnlineNodes = nullptr;
 };
 

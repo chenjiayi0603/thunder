@@ -243,14 +243,15 @@ E_CODEC_STATUS HttpCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
             m_mapAddingHttpHeader.insert(std::pair<std::string, std::string>("Connection", "keep-alive"));
         }
 //        m_mapAddingHttpHeader.insert(std::make_pair("Server", "StarHttp"));
-        m_mapAddingHttpHeader.insert(std::make_pair("Content-Type", "application/json;charset=UTF-8"));
-//        m_mapAddingHttpHeader.insert(std::make_pair("Allow", "POST,GET"));
-        {//添加头部
-			for (auto c_iter = oHttpMsg.headers().begin();c_iter != oHttpMsg.headers().end(); ++c_iter)
-			{
-				m_mapAddingHttpHeader.insert(std::make_pair(c_iter->first, c_iter->second));
-			}
-		}
+        // 先合并业务层响应头；默认 JSON 的 Content-Type 仅在没有显式设置时加入（否则 insert 不覆盖，会盖住 text/html 等）
+        for (auto c_iter = oHttpMsg.headers().begin(); c_iter != oHttpMsg.headers().end(); ++c_iter)
+        {
+            m_mapAddingHttpHeader.insert(std::make_pair(c_iter->first, c_iter->second));
+        }
+        if (m_mapAddingHttpHeader.find("Content-Type") == m_mapAddingHttpHeader.end())
+        {
+            m_mapAddingHttpHeader.insert(std::make_pair("Content-Type", "application/json;charset=UTF-8"));
+        }
     }
     bool bIsChunked = false;
     bool bIsGzip = false;   // 是否用gizp压缩传输包
