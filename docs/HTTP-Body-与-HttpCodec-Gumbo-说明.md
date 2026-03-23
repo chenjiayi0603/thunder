@@ -38,7 +38,7 @@ body 是 HTTP 消息中的 **不透明载荷**，由收发双方各自定义格�
 
 ### 代码示例（ModuleAdmin）
 
-GET `/admin` 时由 `SendUnifiedAdminPage` 从 **`{工作目录}/conf/admin/AdminPage.html`** 读入整页 HTML，再 `set_body` 发出（构建时拷贝到 `deploy/Center/conf/admin/AdminPage.html`）。
+GET `/admin` 时由 `SendUnifiedAdminPage` 从 **`{工作目录}/conf/admin/AdminPage.html`** 读入整页 HTML，再 `set_body` 发出（仓库中维护于 `deploy/Center/conf/admin/AdminPage.html`，与运行目录 `conf/admin/` 一致即可）。
 
 ```cpp
 void ModuleAdmin::SendUnifiedAdminPage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)

@@ -5,114 +5,204 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Center 管理</title>
 <style>
-:root{--bg:#f0f2f5;--card:#fff;--line:#e8e8e8;--primary:#1677ff;--text:#333;--muted:#666;}
+:root{
+  --bg:#f0f2f5;--card:#fff;--line:#e8e8e8;--primary:#1677ff;--text:#1f1f1f;--muted:#666;--subnav-bg:#f5f5f5;
+}
 *{box-sizing:border-box;}
-body{font-family:system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;}
-header{background:var(--card);border-bottom:1px solid var(--line);padding:.75rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;}
-header h1{font-size:1.15rem;margin:0;font-weight:600;}
-nav{display:flex;gap:.35rem;flex-wrap:wrap;}
-nav button{border:1px solid var(--line);background:var(--card);padding:.45rem .85rem;border-radius:6px;cursor:pointer;font-size:.9rem;}
-nav button.on{background:var(--primary);color:#fff;border-color:var(--primary);}
-main{max-width:1100px;margin:0 auto;padding:1rem 1.25rem 2rem;}
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.45;}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:.65rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;}
+header h1{font-size:1.1rem;margin:0;font-weight:600;letter-spacing:.02em;}
+#mainTabs{display:flex;gap:.25rem;flex-wrap:wrap;}
+#mainTabs button{border:1px solid var(--line);background:var(--card);padding:.4rem .9rem;border-radius:8px;cursor:pointer;font-size:.875rem;}
+#mainTabs button.on{background:var(--primary);color:#fff;border-color:var(--primary);}
+main{max-width:1040px;margin:0 auto;padding:1rem 1.25rem 2.5rem;}
 .panel{display:none;}
 .panel.on{display:block;}
-.card{background:var(--card);border-radius:8px;border:1px solid var(--line);padding:1rem;margin-bottom:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04);}
-.card h2{font-size:1rem;margin:0 0 .75rem;}
-.toolbar{display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem;flex-wrap:wrap;}
-input[type=text]{padding:.4rem .55rem;min-width:200px;border:1px solid #ccc;border-radius:4px;}
-button.action{padding:.4rem .75rem;cursor:pointer;border-radius:4px;border:1px solid var(--primary);background:var(--primary);color:#fff;}
-button.secondary{background:var(--card);color:var(--text);border-color:#d9d9d9;}
-table{width:100%;border-collapse:collapse;}
-th,td{padding:.55rem .65rem;text-align:left;border-bottom:1px solid var(--line);}
-th{background:#fafafa;font-weight:600;font-size:.85rem;}
-.err{color:#c00;margin:.4rem 0;font-size:.9rem;}
-#detail{margin-top:.75rem;padding:.75rem;background:#fafafa;border-radius:6px;border:1px solid var(--line);display:none;}
-#detail pre{margin:0;white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;}
-#detail .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem;}
-textarea{width:100%;min-height:9rem;font-family:ui-monospace,monospace;font-size:12px;padding:.5rem;border:1px solid #ccc;border-radius:4px;}
-.preset{margin:.5rem 0;display:flex;flex-wrap:wrap;gap:.35rem;}
-.preset button{font-size:.8rem;padding:.3rem .5rem;}
-.note{color:var(--muted);font-size:.85rem;margin:0 0 .75rem;line-height:1.45;}
-#outJson{background:#fafafa;padding:.75rem;border-radius:4px;overflow:auto;max-height:280px;white-space:pre-wrap;font-size:12px;margin-top:.5rem;}
+.card{background:var(--card);border-radius:10px;border:1px solid var(--line);padding:1rem 1.1rem;margin-bottom:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.card > h2{font-size:.95rem;margin:0 0 .6rem;font-weight:600;color:#262626;}
+.toolbar{display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;flex-wrap:wrap;}
+input[type=text]{padding:.38rem .55rem;min-width:180px;border:1px solid #d9d9d9;border-radius:6px;font-size:.875rem;}
+button.action{padding:.45rem 1rem;cursor:pointer;border-radius:6px;border:none;background:var(--primary);color:#fff;font-size:.875rem;}
+button.action:hover{filter:brightness(1.05);}
+button.ghost{background:var(--card);color:var(--text);border:1px solid #d9d9d9;}
+table{width:100%;border-collapse:collapse;font-size:.875rem;}
+th,td{padding:.5rem .6rem;text-align:left;border-bottom:1px solid var(--line);}
+th{background:#fafafa;font-weight:600;color:#434343;}
+.err{color:#cf1322;margin:.35rem 0;font-size:.85rem;}
+#detail{margin-top:.65rem;padding:.75rem;background:#fafafa;border-radius:8px;border:1px solid var(--line);display:none;}
+#detail pre{margin:0;white-space:pre-wrap;font-size:11px;max-height:300px;overflow:auto;font-family:ui-monospace,monospace;}
+#detail .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem;font-size:.875rem;}
+
+/* —— 集群命令：子标签 —— */
+.hint-bar{font-size:.8125rem;color:var(--muted);margin:0 0 .85rem;padding:.55rem .75rem;background:#e6f4ff;border:1px solid #91caff;border-radius:8px;line-height:1.5;}
+.hint-bar code{font-size:.8em;background:rgba(255,255,255,.7);padding:.1em .35em;border-radius:4px;}
+.subnav{display:inline-flex;gap:0;margin:0 0 1rem;padding:3px;background:var(--subnav-bg);border-radius:8px;border:1px solid var(--line);}
+.subnav button{border:none;background:transparent;padding:.4rem .95rem;border-radius:6px;cursor:pointer;font-size:.8125rem;color:#595959;}
+.subnav button.on{background:var(--card);color:var(--primary);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+.cmd-panel{display:none;}
+.cmd-panel.on{display:block;}
+.cmd-panel > p.lead{margin:0 0 .65rem;font-size:.8125rem;color:var(--muted);}
+.btn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.45rem;}
+.btn-grid button{text-align:left;padding:.5rem .65rem;font-size:.8125rem;border:1px solid var(--line);border-radius:8px;background:#fafafa;cursor:pointer;color:#262626;line-height:1.35;}
+.btn-grid button:hover{border-color:var(--primary);background:#f0f7ff;}
+.doc-pre{margin:0;padding:.75rem;background:#fafafa;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;overflow:auto;max-height:280px;font-family:ui-monospace,monospace;white-space:pre-wrap;color:#434343;}
+
+/* —— 请求 / 响应 —— */
+.req-block{margin-top:1.1rem;padding-top:1rem;border-top:1px solid var(--line);}
+.req-block > label{display:block;font-size:.8125rem;font-weight:600;margin-bottom:.35rem;color:#434343;}
+textarea#req{width:100%;min-height:8.5rem;font-family:ui-monospace,monospace;font-size:12px;padding:.55rem .65rem;border:1px solid #d9d9d9;border-radius:8px;resize:vertical;}
+.send-row{display:flex;align-items:center;gap:.75rem;margin-top:.55rem;flex-wrap:wrap;}
+#st{font-size:.8125rem;color:var(--muted);}
+#outJson{margin-top:.65rem;padding:.65rem .75rem;background:#fafafa;border:1px solid var(--line);border-radius:8px;overflow:auto;max-height:300px;white-space:pre-wrap;font-size:11px;font-family:ui-monospace,monospace;}
+#outJson.err{color:#cf1322;background:#fff2f0;border-color:#ffccc7;}
 </style>
 </head>
 <body>
 <header>
 <h1>Center 管理</h1>
-<nav id="tabs">
+<nav id="mainTabs">
 <button type="button" class="on" data-panel="p1">服务列表</button>
-<button type="button" data-panel="p2">集群命令（JSON）</button>
+<button type="button" data-panel="p2">集群命令</button>
 </nav>
 </header>
 <main>
 <section id="p1" class="panel on">
-<p class="note">按 <code>node_type</code> 聚合在线节点；详情为节点上报 JSON。无鉴权，仅供内网调试。</p>
+<p class="hint-bar" style="background:#f6ffed;border-color:#b7eb8f;color:#389e0d;">在线节点按 <code>node_type</code> 汇总；详情为上报 JSON。无鉴权，仅内网使用。</p>
 <div class="card">
-<h2>筛选</h2>
+<h2>服务筛选</h2>
 <div class="toolbar">
-<label>服务名称 <input type="text" id="q" placeholder="请输入服务名称"/></label>
+<label>名称 <input type="text" id="q" placeholder="模糊匹配 node_type"/></label>
 <button type="button" class="action" id="btnQ">查询</button>
-<button type="button" class="secondary" id="btnAll">显示全部</button>
+<button type="button" class="action ghost" id="btnAll">全部</button>
 </div>
 <div id="err1" class="err"></div>
 <table>
 <thead><tr>
-<th>服务名</th><th>集群数目</th><th>实例数</th><th>健康实例数</th><th>操作</th>
+<th>服务名</th><th>集群数</th><th>实例</th><th>健康</th><th>操作</th>
 </tr></thead>
 <tbody id="rows"></tbody>
 </table>
 <div id="detail">
-<div class="hd"><strong>详情</strong><button type="button" class="secondary" id="btnClose">关闭</button></div>
+<div class="hd"><strong>节点详情</strong><button type="button" class="action ghost" id="btnClose">关闭</button></div>
 <pre id="detailPre"></pre>
 </div>
 </div>
 </section>
 
 <section id="p2" class="panel">
-<p class="note">与原先 POST <code>/admin</code> 相同：<code>cmd</code> 为 show / get / set，参数在 <code>args</code> 数组。get/set 可能由 Step 异步回写 HTTP 响应。</p>
+<p class="hint-bar"><strong>POST</strong> <code>/admin</code>，Body 为 JSON：<code>cmd</code> + <code>args</code>。get/set 配置会走 Step，成功时响应可能异步返回。</p>
+
 <div class="card">
-<h2>快捷模板</h2>
-<div class="preset">
-<button type="button" data-json='{"cmd":"show","args":["center"]}'>show center</button>
-<button type="button" data-json='{"cmd":"show","args":["nodes"]}'>show nodes</button>
+<h2>命令模板</h2>
+<nav class="subnav" id="cmdTabs" aria-label="命令类型">
+<button type="button" class="on" data-cmd="c-show">show 查询</button>
+<button type="button" data-cmd="c-get">get 读配置</button>
+<button type="button" data-cmd="c-set">set 写配置</button>
+<button type="button" data-cmd="c-doc">参数说明</button>
+</nav>
+
+<div id="c-show" class="cmd-panel on">
+<p class="lead">集群元数据与节点列表（与 ModuleAdmin::Show 一致）。点击填入下方 JSON，可再编辑后发送。</p>
+<div class="btn-grid">
+<button type="button" data-json='{"cmd":"show","args":["center"]}'>show center — 中心配置</button>
+<button type="button" data-json='{"cmd":"show","args":["nodes"]}'>show nodes — 全部类型节点</button>
 <button type="button" data-json='{"cmd":"show","args":["ip_white"]}'>show ip_white</button>
-<button type="button" data-json='{"cmd":"show","args":["subscription"]}'>show subscription</button>
+<button type="button" data-json='{"cmd":"show","args":["subscription"]}'>show subscription — 全部订阅</button>
+<button type="button" data-json='{"cmd":"show","args":["subscription","LOGIC"]}'>show subscription — 指定 LOGIC</button>
 </div>
-<label>请求 JSON</label>
-<textarea id="req"></textarea>
-<div class="toolbar" style="margin-top:.5rem;">
+</div>
+
+<div id="c-get" class="cmd-panel">
+<p class="lead">仅三种子命令；请将示例中的 IP:端口、路径、文件名改为实际值。</p>
+<div class="btn-grid">
+<button type="button" data-json='{"cmd":"get","args":["node_config","127.0.0.1:27008"]}'>node_config — 节点主配置</button>
+<button type="button" data-json='{"cmd":"get","args":["node_custom_config","127.0.0.1:27008"]}'>node_custom_config — 自定义块</button>
+<button type="button" data-json='{"cmd":"get","args":["custom_config","127.0.0.1:27008","conf","Server.json"]}'>custom_config — 相对路径 + 文件名</button>
+</div>
+</div>
+
+<div id="c-set" class="cmd-panel">
+<p class="lead">写入前请替换类型、identify、路径及正文占位符；大段配置在文本框中粘贴后再发送。</p>
+<div class="btn-grid">
+<button type="button" data-json='{"cmd":"set","args":["node_config","LOGIC","在此粘贴整段配置文本"]}'>node_config（3 参：类型 + 正文）</button>
+<button type="button" data-json='{"cmd":"set","args":["node_config","LOGIC","127.0.0.1:27008","在此粘贴整段配置文本"]}'>node_config（4 参：+ identify）</button>
+<button type="button" data-json='{"cmd":"set","args":["node_custom_config","LOGIC","自定义配置正文"]}'>node_custom_config（3 参）</button>
+<button type="button" data-json='{"cmd":"set","args":["custom_config","LOGIC","Server.json","文件正文"]}'>custom_config（4 参）</button>
+<button type="button" data-json='{"cmd":"set","args":["custom_config","LOGIC","conf目录","Server.json","文件正文"]}'>custom_config（5 参）</button>
+<button type="button" data-json='{"cmd":"set","args":["custom_config","LOGIC","127.0.0.1:27008","conf目录","Server.json","文件正文"]}'>custom_config（6 参）</button>
+</div>
+</div>
+
+<div id="c-doc" class="cmd-panel">
+<p class="lead">与 <code>ModuleAdmin::Get</code> / <code>Set</code> 参数顺序一致。</p>
+<pre class="doc-pre">【get】
+  node_config          args[1] = 节点 identify（ip:port）
+  node_custom_config   args[1] = identify
+  custom_config        args[1]=identify, args[2]=相对路径, args[3]=文件名
+
+【set】
+  node_config / node_config_from_file
+    3 参：node_type, 正文 | 4 参：node_type, identify, 正文
+  node_custom_config / *_from_file 同上
+
+  custom_config
+    4 参：node_type, file_name, content
+    5 参：node_type, relative_path, file_name, content
+    6 参：node_type, identify, relative_path, file_name, content
+
+另支持 node_config_from_file、node_custom_config_from_file、
+custom_config_from_file（路径为 Center 本机文件），格式见源码注释。</pre>
+</div>
+
+<div class="req-block">
+<label for="req">请求 JSON</label>
+<textarea id="req" spellcheck="false"></textarea>
+<div class="send-row">
 <button type="button" class="action" id="send">发送到 POST /admin</button>
 <span id="st"></span>
 </div>
 <pre id="outJson"></pre>
+</div>
 </div>
 </section>
 </main>
 <script>
 (function(){
 var API='/admin';
-document.getElementById('tabs').addEventListener('click',function(ev){
+document.getElementById('mainTabs').addEventListener('click',function(ev){
   var b=ev.target.closest('button[data-panel]');if(!b)return;
   var id=b.getAttribute('data-panel');
-  document.querySelectorAll('#tabs button').forEach(function(x){x.classList.toggle('on',x===b);});
+  document.querySelectorAll('#mainTabs button').forEach(function(x){x.classList.toggle('on',x===b);});
   document.querySelectorAll('.panel').forEach(function(p){p.classList.toggle('on',p.id===id);});
 });
-/* --- 服务列表 --- */
+
+document.getElementById('cmdTabs').addEventListener('click',function(ev){
+  var b=ev.target.closest('button[data-cmd]');if(!b)return;
+  var id=b.getAttribute('data-cmd');
+  document.querySelectorAll('#cmdTabs button').forEach(function(x){x.classList.toggle('on',x===b);});
+  document.querySelectorAll('.cmd-panel').forEach(function(p){p.classList.toggle('on',p.id===id);});
+});
+
+document.getElementById('p2').addEventListener('click',function(ev){
+  var btn=ev.target.closest('button[data-json]');
+  if(btn&&btn.getAttribute('data-json')) document.getElementById('req').value=btn.getAttribute('data-json');
+});
+
 var rows=document.getElementById('rows'), err1=document.getElementById('err1'),
     q=document.getElementById('q'), detail=document.getElementById('detail'),
     detailPre=document.getElementById('detailPre');
 function setErr1(t){err1.textContent=t||'';}
 function render(data){
   rows.innerHTML='';
-  if(!data||!data.length){return;}
+  if(!data||!data.length)return;
   data.forEach(function(r){
     var tr=document.createElement('tr');
     tr.innerHTML='<td>'+escapeHtml(r.serviceName)+'</td><td>'+r.clusterCount+'</td><td>'+
-      r.instanceCount+'</td><td>'+r.healthyInstanceCount+'</td><td><button type="button" class="detail-btn action" style="padding:.25rem .5rem;font-size:.8rem;" data-t="'+
+      r.instanceCount+'</td><td>'+r.healthyInstanceCount+'</td><td><button type="button" class="action" style="padding:.2rem .45rem;font-size:.75rem;" data-t="'+
       escapeAttr(r.serviceName)+'">详情</button></td>';
     rows.appendChild(tr);
   });
-  rows.querySelectorAll('.detail-btn').forEach(function(b){
+  rows.querySelectorAll('button[data-t]').forEach(function(b){
     b.addEventListener('click',function(){loadDetail(b.getAttribute('data-t'));});
   });
 }
@@ -149,12 +239,9 @@ document.getElementById('btnQ').addEventListener('click',function(){loadList(q.v
 document.getElementById('btnAll').addEventListener('click',function(){q.value='';loadList('');});
 document.getElementById('btnClose').addEventListener('click',function(){detail.style.display='none';});
 loadList('');
-/* --- JSON 命令 --- */
+
 var req=document.getElementById('req'), out=document.getElementById('outJson'), st=document.getElementById('st');
 req.value='{"cmd":"show","args":["center"]}';
-document.querySelectorAll('.preset button[data-json]').forEach(function(b){
-  b.addEventListener('click',function(){req.value=b.getAttribute('data-json');});
-});
 document.getElementById('send').addEventListener('click',function(){
   st.textContent='请求中…'; out.textContent=''; out.className='';
   fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:req.value})

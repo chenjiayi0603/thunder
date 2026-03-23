@@ -67,15 +67,6 @@ thunder_plugin_link_net_proto_util(ModuleAdmin)
 
 if(THUNDER_DEPLOY_AUTO)
   thunder_deploy_copy(ModuleAdmin "Center/plugins/ModuleAdmin.so")
-  add_custom_command(
-    TARGET ModuleAdmin
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/deploy/Center/conf/admin"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${_center_src}/ModuleAdmin/AdminPage.html"
-            "${CMAKE_SOURCE_DIR}/deploy/Center/conf/admin/AdminPage.html"
-    COMMENT "Deploy: deploy/Center/conf/admin/AdminPage.html"
-  )
 endif()
 
 add_custom_target(CenterPlugins DEPENDS
