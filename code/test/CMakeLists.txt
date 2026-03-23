@@ -22,6 +22,14 @@ target_link_libraries(thunder_test_coroutine PRIVATE GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(thunder_test_coroutine)
 
+# ---- Center Raft：多数派等纯逻辑（无 Net 依赖）----
+add_executable(thunder_test_center_raft
+  center/test_center_raft.cpp
+)
+target_compile_features(thunder_test_center_raft PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_center_raft PRIVATE GTest::gtest_main)
+gtest_discover_tests(thunder_test_center_raft)
+
 # ---- 目标 2：StepCo20 / StepCo20Func / HttpRespAwaiter ----
 # 与 Hello 一致：libNet.so 仅为部分子目录，完整符号需编入全部 Net 源码，故此处不链接 Net 共享库。
 file(GLOB_RECURSE THUNDER_NET_ALL_SOURCES_FOR_TEST CONFIGURE_DEPENDS

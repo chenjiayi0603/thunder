@@ -71,8 +71,10 @@ enum E_CMD
     CMD_REQ_RELOAD_LOGIC_CONFIG         = 39,   ///< Center通知配置到节点服务器,重新加载逻辑配置
     CMD_RSP_RELOAD_LOGIC_CONFIG         = 40,   ///< 节点服务器得到通知应答Center
 
-	CMD_REQ_LEADER_ELECTION             = 41,  ///< 分布式leader选举请求
-	CMD_RSP_LEADER_ELECTION             = 42,  ///< 分布式leader选举响应（通过心跳结合优先权选举，无须响应）
+	CMD_REQ_RAFT_REQUEST_VOTE           = 43,
+	CMD_RSP_RAFT_REQUEST_VOTE           = 44,
+	CMD_REQ_RAFT_APPEND_ENTRIES         = 45,
+	CMD_RSP_RAFT_APPEND_ENTRIES         = 46,
 
 	CMD_REQ_SET_NODE_CONFIG             = 201,  ///< 更新框架配置文件请求
 	CMD_RSP_SET_NODE_CONFIG             = 202,  ///< 更新框架配置文件应答

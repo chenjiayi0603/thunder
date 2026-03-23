@@ -11,824 +11,573 @@
 
 namespace coor
 {
+namespace
+{
+/** NODE_REG_NOTICE 发送失败时的重试：原 10s 扫描 + 10s 才重发，易导致 Interface 8～10s 后才收到路由 */
+constexpr uint32_t kNodeNoticeScanIntervalSec = 1u;
+constexpr uint32_t kNodeNoticeRetryAfterSec = 2u;
+constexpr uint32_t kNodeNoticeDropAfterSec = 30u;
+/** Leader 上同节点两次「心跳补发路由」最小间隔（秒），与 Logic 上报周期同量级即可 */
+constexpr uint32_t kMinHeartbeatRouteBroadcastSec = 8u;
+} // namespace
 
-    const uint32 SessionOnlineNodes::mc_uiBeat = 0x00000001;
-    const uint32 SessionOnlineNodes::mc_uiLeader = 0x80000000;
-    const uint32 SessionOnlineNodes::mc_uiAlive = 0x00000007; ///< 最近三次心跳任意一次成功则认为在线
-
-    bool SessionOnlineNodes::Init(const util::CJsonObject &conf) //"CenterCmd.json"
+bool SessionOnlineNodes::Init(const util::CJsonObject &conf)
+{
+    if (!m_bInit)
     {
-        if (!m_bInit)
-        {
-            m_bInit = true;
-            return (InitFromLocal(conf));
-        }
-        return true;
+        m_bInit = true;
+        (void)GetSessionRaftCluster();
+        return (InitFromLocal(conf));
     }
+    return true;
+}
 
-    /*
-    "local_config":{
-    "ipwhite":["192.168.11.66"],
-    "//centers":"注册节点配置，用于center节点间的热备",
-    "centers":["192.168.11.66:27000","192.168.11.66:27022","192.168.11.66:27032"],
-    "center_beat":2.5,
-    "node_types":[
-    {"node_type":"ACCESS", "subscribe":["LOGIC"]},
-    {"node_type":"LOGIC", "subscribe":["LOGIC", "REDISAGENT"]},
-    {"node_type":"REDISAGENT", "subscribe":["DBAGENT"]},
-    {"node_type":"DBAGENT", "subscribe":["LOGGER"]},
-    {"node_type":"INTERFACE", "subscribe":["LOGIC", "REDISAGENT"]},
-    {"node_type":"HELLO", "subscribe":["LOGIC", "REDISAGENT","DBAGENT"]},
-    {"node_type":"ENTRANCE", "subscribe":["LOGIC", "REDISAGENT"]},
-    {"node_type":"LOGGER", "subscribe":[]}
-    ]
-    }
-    * */
-    bool SessionOnlineNodes::InitFromLocal(util::CJsonObject oCustomConf)
+bool SessionOnlineNodes::InitFromLocal(util::CJsonObject oCustomConf)
+{
+    oCustomConf.Get("need_leadership", m_boNeedLeadership);
+    oCustomConf.Get("node_overdue", m_uiNodeOverdue);
+    LOG4_TRACE("%s() boNeedLeadership(%d) uiNodeOverdue(%u)", __FUNCTION__, m_boNeedLeadership, m_uiNodeOverdue);
+    for (int i = 0; i < oCustomConf["ipwhite"].GetArraySize(); ++i)
     {
-        oCustomConf.Get("need_leadership", m_boNeedLeadership);
-        oCustomConf.Get("center_beat", m_uiCenterBeat);
-        oCustomConf.Get("node_overdue", m_uiNodeOverdue);
-        // BeLeader();
-        LOG4_TRACE("%s() boNeedLeadership(%d) bIsLeader(%d) uiCenterBeat(%u)", __FUNCTION__, m_boNeedLeadership, m_bIsLeader, m_uiCenterBeat);
-        InitElection(oCustomConf["centers"]);
-        for (int i = 0; i < oCustomConf["ipwhite"].GetArraySize(); ++i)
-        {
-            AddIpwhite(oCustomConf["ipwhite"](i));
-        }
-        for (int i = 0; i < oCustomConf["node_types"].GetArraySize(); ++i)
-        {
-            for (int j = 0; j < oCustomConf["node_types"][i]["subscribe"].GetArraySize(); ++j)
-            {
-                AddSubscribe(oCustomConf["node_types"][i]("node_type"), oCustomConf["node_types"][i]["subscribe"](j));
-            }
-        }
-        return true;
+        AddIpwhite(oCustomConf["ipwhite"](i));
     }
-
-    net::E_CMD_STATUS SessionOnlineNodes::Timeout()
+    for (int i = 0; i < oCustomConf["node_types"].GetArraySize(); ++i)
     {
-        LOG4_INFO("%s() WorkerIdentify(%s) IsLeader(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), m_bIsLeader);
-        m_uiServerTime = GetLabor()->GetNowTime();
-        // if (m_uiLastSendCenterBeat > 0 && m_uiServerTime >= m_uiLastSendCenterBeat + 1)
-        // {
-        //     CheckLeader();
-        // }
-        if (m_uiServerTime >= m_uiLastSendCenterBeat + m_uiCenterBeat)
+        for (int j = 0; j < oCustomConf["node_types"][i]["subscribe"].GetArraySize(); ++j)
         {
-            if (m_uiLastSendCenterBeat > 0)
-            {
-                CheckLeader();
-            }
-            SendCenterBeat(m_uiServerTime);
-        }
-        CheckNodesBeat();
-
-        CheckSendingNodeNotice();
-        return (net::STATUS_CMD_RUNNING);
-    }
-
-    void SessionOnlineNodes::AddIpwhite(const std::string &strIpwhite)
-    {
-        m_setIpwhite.insert(strIpwhite);
-    }
-
-    void SessionOnlineNodes::AddSubscribe(const std::string &strNodeType, const std::string &strBeSubscribeNodeType)
-    {
-        auto pub_iter = m_mapPublisher.find(strBeSubscribeNodeType);
-        if (pub_iter == m_mapPublisher.end())
-        {
-            std::unordered_set<std::string> setSubscriber;
-            setSubscriber.insert(strNodeType);
-            LOG4_TRACE("%s() AddSubscribe beSubscribeNodeType %s Subscriber(%s)", __FUNCTION__, strBeSubscribeNodeType.c_str(),strNodeType.c_str());
-            m_mapPublisher.insert(std::make_pair(strBeSubscribeNodeType, setSubscriber));
-        }
-        else
-        {
-            pub_iter->second.insert(strNodeType);
+            AddSubscribe(oCustomConf["node_types"][i]("node_type"), oCustomConf["node_types"][i]["subscribe"](j));
         }
     }
+    return true;
+}
 
-    /*
-    节点数据和负载状态都会保存
-    oNodeInfo
+net::E_CMD_STATUS SessionOnlineNodes::Timeout()
+{
+    LOG4_INFO("%s() WorkerIdentify(%s) IsLeader(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), IsLeadership() ? 1 : 0);
+    m_uiServerTime = GetLabor()->GetNowTime();
+    CheckNodesBeat();
+    CheckSendingNodeNotice();
+    return (net::STATUS_CMD_RUNNING);
+}
+
+void SessionOnlineNodes::AddIpwhite(const std::string &strIpwhite)
+{
+    m_setIpwhite.insert(strIpwhite);
+}
+
+void SessionOnlineNodes::AddSubscribe(const std::string &strNodeType, const std::string &strBeSubscribeNodeType)
+{
+    auto pub_iter = m_mapPublisher.find(strBeSubscribeNodeType);
+    if (pub_iter == m_mapPublisher.end())
     {
-        "node_type": "LOGIC",
-        "node_id": 2,
-        "node_ip": "192.168.11.66",
-        "node_port": 16068,
-        "access_ip": "",
-        "access_port": 0,
-        "worker_num": 1,
-        "active_time": 1577514574.585821,
-        "node": {
-            "load": 3,
-            "connect": 3,
-            "recv_num": 0,
-            "recv_byte": 0,
-            "send_num": 0,
-            "send_byte": 0,
-            "client": 0
-        },
-        "worker": [{
-            "load": 3,
-            "connect": 3,
-            "recv_num": 0,
-            "recv_byte": 0,
-            "send_num": 0,
-            "send_byte": 0,
-            "client": 0
-        }]
+        std::unordered_set<std::string> setSubscriber;
+        setSubscriber.insert(strNodeType);
+        LOG4_TRACE("%s() AddSubscribe beSubscribeNodeType %s Subscriber(%s)", __FUNCTION__, strBeSubscribeNodeType.c_str(), strNodeType.c_str());
+        m_mapPublisher.insert(std::make_pair(strBeSubscribeNodeType, setSubscriber));
     }
-     * */
-    uint16 SessionOnlineNodes::AllocNextNodeId()
+    else
     {
-        const uint16 id = m_uiNextNodeIdAlloc;
-        if (++m_uiNextNodeIdAlloc >= static_cast<uint16>(NODE_ID_MAX))
-        {
-            m_uiNextNodeIdAlloc = 1;
-        }
-        return (id == 0 ? static_cast<uint16>(1) : id);
+        pub_iter->second.insert(strNodeType);
     }
+}
 
-    uint16 SessionOnlineNodes::AddNode(const NodeReport &oNodeReport, bool boRegister)
+uint16 SessionOnlineNodes::AddNode(const NodeReport &oNodeReport, bool boRegister)
+{
+    SessionRaftCluster *raft = GetSessionRaftCluster();
+    const bool raft_leader = raft && raft->IsRaftLeader();
+
+    LOG4_TRACE("%s() AddNode oNodeReport WorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(),
+               oNodeReport.DebugString().c_str());
+    std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
+    LOG4_TRACE("%s() AddNode oNodeReport strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(), boRegister);
+    NodeReport oNodeInfoObj = oNodeReport;
+    oNodeInfoObj.clear_node();
+    oNodeInfoObj.clear_workers();
+
+    const bool existing = (m_mapIdentifyNodeId.find(strNodeIdentify) != m_mapIdentifyNodeId.end());
+
+    if (m_boNeedLeadership && !raft_leader)
     {
-        LOG4_TRACE("%s() AddNode oNodeReport WorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), oNodeReport.DebugString().c_str());
-        std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
-        LOG4_TRACE("%s() AddNode oNodeReport strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(),boRegister);
-        NodeReport oNodeInfoObj = oNodeReport;
-        oNodeInfoObj.clear_node();
-        oNodeInfoObj.clear_workers();
-        if (oNodeInfoObj.node_id() == 0)
+        if (!existing)
         {
-            oNodeInfoObj.set_node_id(AllocNextNodeId());
-            LOG4_INFO("%s() first register: assign node_id=%u strNodeIdentify(%s) node_type(%s)", __FUNCTION__,
-                      oNodeInfoObj.node_id(), strNodeIdentify.c_str(), oNodeInfoObj.node_type().c_str());
+            return 0;
         }
-
-        auto identify_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
-        if (identify_node_iter == m_mapIdentifyNodeId.end())
-        {
-            m_mapIdentifyNodeId.insert(std::make_pair(strNodeIdentify,oNodeInfoObj.node_type()));
-        }
-
         auto node_type_iter = m_mapOnlineNodes.find(oNodeInfoObj.node_type());
         if (node_type_iter == m_mapOnlineNodes.end())
         {
-            std::unordered_map<std::string, NodeReport> mapNodeInfo;
-            mapNodeInfo.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
-            m_mapOnlineNodes.insert(std::make_pair(oNodeInfoObj.node_type(), mapNodeInfo));
+            return 0;
+        }
+        auto node_iter = node_type_iter->second.find(strNodeIdentify);
+        if (node_iter == node_type_iter->second.end())
+        {
+            return 0;
+        }
+        uint16 nid = oNodeInfoObj.node_id();
+        if (nid == 0)
+        {
+            nid = node_iter->second.node_id();
+        }
+        oNodeInfoObj.set_node_id(nid);
+        node_iter->second = oNodeInfoObj;
+        LOG4_TRACE("%s() follower heartbeat update strNodeIdentify(%s) node_id(%u)", __FUNCTION__, strNodeIdentify.c_str(), (unsigned)nid);
+        return nid;
+    }
+
+    if (oNodeInfoObj.node_id() == 0)
+    {
+        oNodeInfoObj.set_node_id(raft ? raft->AllocNextNodeId() : static_cast<uint16>(1));
+        LOG4_INFO("%s() first register: assign node_id=%u strNodeIdentify(%s) node_type(%s)", __FUNCTION__, oNodeInfoObj.node_id(), strNodeIdentify.c_str(),
+                  oNodeInfoObj.node_type().c_str());
+    }
+
+    auto identify_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
+    if (identify_node_iter == m_mapIdentifyNodeId.end())
+    {
+        m_mapIdentifyNodeId.insert(std::make_pair(strNodeIdentify, oNodeInfoObj.node_type()));
+    }
+
+    auto node_type_iter = m_mapOnlineNodes.find(oNodeInfoObj.node_type());
+    if (node_type_iter == m_mapOnlineNodes.end())
+    {
+        std::unordered_map<std::string, NodeReport> mapNodeInfo;
+        mapNodeInfo.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
+        m_mapOnlineNodes.insert(std::make_pair(oNodeInfoObj.node_type(), mapNodeInfo));
+        LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
+        AddNodeBroadcast(oNodeInfoObj, boRegister);
+        return (oNodeInfoObj.node_id());
+    }
+    else
+    {
+        auto node_iter = node_type_iter->second.find(strNodeIdentify);
+        if (node_iter == node_type_iter->second.end())
+        {
+            node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
             LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
-            AddNodeBroadcast(oNodeInfoObj,boRegister);
-            SendCenterBeat();
+            AddNodeBroadcast(oNodeInfoObj, boRegister);
             return (oNodeInfoObj.node_id());
         }
         else
         {
+            node_iter->second = oNodeInfoObj;
+            LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(), boRegister);
+            if (boRegister)
+            {
+                AddNodeBroadcast(oNodeInfoObj, boRegister);
+            }
+            else if (IsLeadership())
+            {
+                const uint32_t now = GetLabor()->GetNowTime();
+                uint32_t &last = m_mapLastHeartbeatRouteBroadcast[strNodeIdentify];
+                if (last == 0u || now >= last + kMinHeartbeatRouteBroadcastSec)
+                {
+                    last = now;
+                    LOG4_TRACE("%s() heartbeat re-broadcast route for %s", __FUNCTION__, strNodeIdentify.c_str());
+                    AddNodeBroadcast(oNodeInfoObj, false);
+                }
+            }
+            return (oNodeInfoObj.node_id());
+        }
+    }
+}
+
+void SessionOnlineNodes::RemoveNode(const std::string &strNodeIdentify)
+{
+    LOG4_TRACE("%s() GetWorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), strNodeIdentify.c_str());
+    auto identity_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
+    if (identity_node_iter != m_mapIdentifyNodeId.end())
+    {
+        auto node_type_iter = m_mapOnlineNodes.find(identity_node_iter->second);
+        if (node_type_iter != m_mapOnlineNodes.end())
+        {
             auto node_iter = node_type_iter->second.find(strNodeIdentify);
-            if (node_iter == node_type_iter->second.end())
+            if (node_iter != node_type_iter->second.end())
             {
-                node_type_iter->second.insert(std::make_pair(strNodeIdentify, oNodeInfoObj));
-                LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
-                AddNodeBroadcast(oNodeInfoObj,boRegister);
-                SendCenterBeat();
-                return (oNodeInfoObj.node_id());
-            }
-            else
-            {
-                node_iter->second = oNodeInfoObj;
-                LOG4_TRACE("%s() try to broadcast for strNodeIdentify(%s) boRegister(%d)", __FUNCTION__, strNodeIdentify.c_str(),boRegister);
-                if (boRegister)//新注册节点的需要广播
+                if (IsLeadership())
                 {
-                    AddNodeBroadcast(oNodeInfoObj,boRegister);
-                }
-                SendCenterBeat();
-                return (oNodeInfoObj.node_id());
-            }
-        }
-    }
-
-    void SessionOnlineNodes::RemoveNode(const std::string &strNodeIdentify)
-    {
-        LOG4_TRACE("%s() GetWorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), strNodeIdentify.c_str());
-        auto identity_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
-        if (identity_node_iter != m_mapIdentifyNodeId.end())
-        {
-            auto node_type_iter = m_mapOnlineNodes.find(identity_node_iter->second);//identity_node_iter->second.second
-            if (node_type_iter != m_mapOnlineNodes.end())
-            {
-                auto node_iter = node_type_iter->second.find(strNodeIdentify);
-                if (node_iter != node_type_iter->second.end())
-                {
-                    // uint32 uiNodeId = node_iter->second.node_id();
-                    // RemoveNodeId(uiNodeId);
                     RemoveNodeBroadcast(node_iter->second);
-                    SendCenterBeat();
-                    node_type_iter->second.erase(node_iter);
                 }
+                node_type_iter->second.erase(node_iter);
             }
-            m_mapIdentifyNodeId.erase(strNodeIdentify);
+        }
+        m_mapIdentifyNodeId.erase(strNodeIdentify);
+    }
+    m_mapLastHeartbeatRouteBroadcast.erase(strNodeIdentify);
+}
+
+void SessionOnlineNodes::GetIpWhite(util::CJsonObject &oIpWhite) const
+{
+    for (auto it : m_setIpwhite)
+    {
+        oIpWhite.Add(it);
+    }
+}
+
+void SessionOnlineNodes::GetCenter(util::CJsonObject &oCenter) const
+{
+    SessionRaftCluster *raft = GetSessionRaftCluster();
+    if (raft)
+    {
+        raft->GetRaftCenterJson(oCenter);
+    }
+}
+
+void SessionOnlineNodes::GetSubscription(util::CJsonObject &oSubcription) const
+{
+    for (const auto &pub_iter : m_mapPublisher)
+    {
+        oSubcription.AddAsFirst(util::CJsonObject("{}"));
+        oSubcription[0].Add("node_type", pub_iter.first);
+        oSubcription[0].AddEmptySubArray("subcriber");
+        for (const auto &it : pub_iter.second)
+        {
+            oSubcription[0]["subcriber"].Add(it);
         }
     }
+}
 
-    void SessionOnlineNodes::AddCenterBeat(const std::string &strNodeIdentify, const Election &oElection)
+void SessionOnlineNodes::GetSubscription(const std::string &strNodeType, util::CJsonObject &oSubcription) const
+{
+    auto pub_iter = m_mapPublisher.find(strNodeType);
+    if (pub_iter != m_mapPublisher.end())
     {
-        LOG4_TRACE("%s() WorkerIdentify(%s) strNodeIdentify(%s) beat.oElection(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(),
-                   strNodeIdentify.c_str(), oElection.DebugString().c_str());
-        auto iter = m_mapCenterElection.find(strNodeIdentify);
-        if (iter == m_mapCenterElection.end())
+        for (auto it = pub_iter->second.begin(); it != pub_iter->second.end(); ++it)
         {
-            uint32 uiCenterAttr = mc_uiBeat; // 其他节点的心跳和管理权同步
-            if (oElection.is_leader() > 0)
-            {
-                uiCenterAttr |= mc_uiLeader;
-                LOG4_TRACE("%s() strNodeIdentify(%s) is leader", __FUNCTION__, strNodeIdentify.c_str());
-            }
-            m_mapCenterElection.insert(std::make_pair(strNodeIdentify, CenterElection(uiCenterAttr, oElection.beleadertime())));
-        }
-        else
-        {
-            iter->second.uiElection |= mc_uiBeat;
-            if (oElection.is_leader() > 0)
-            {
-                iter->second.uiElection |= mc_uiLeader;
-                iter->second.uiBeLeaderTime = oElection.beleadertime();
-                LOG4_TRACE("%s() strNodeIdentify(%s) is leader", __FUNCTION__, strNodeIdentify.c_str());
-            }
-            else
-            {
-                iter->second.uiElection &= ~mc_uiLeader;
-                iter->second.uiBeLeaderTime = 0;
-            }
+            oSubcription.Add(*it);
         }
     }
+}
 
-    void SessionOnlineNodes::GetIpWhite(util::CJsonObject &oIpWhite) const
+void SessionOnlineNodes::GetOnlineNode(util::CJsonObject &oOnlineNode) const
+{
+    for (const auto &node_iter : m_mapOnlineNodes)
     {
-        /**
-         * oIpWhite like this:
-         * [
-         *     "192.168.157.138", "192.168.157.139", "192.168.157.175"
-         * ]
-         */
-        for (auto it : m_setIpwhite)
+        oOnlineNode.AddAsFirst(util::CJsonObject("{}"));
+        oOnlineNode[0].Add("node_type", node_iter.first);
+        oOnlineNode[0].AddEmptySubArray("node");
+        for (const auto &it : node_iter.second)
         {
-            oIpWhite.Add(it);
+            oOnlineNode[0]["node"].Add(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
         }
     }
+}
 
-    void SessionOnlineNodes::GetCenter(util::CJsonObject &oCenter) const
+void SessionOnlineNodes::GetOnlineNode(const std::string &strNodeType, util::CJsonObject &oOnlineNode) const
+{
+    auto node_iter = m_mapOnlineNodes.find(strNodeType);
+    if (node_iter != m_mapOnlineNodes.end())
     {
-        /**
-         * oCenter like this:
-         * [
-         *     {"identify":"192.168.157.176:16000.1", "leader":true, "online":true},
-         *     {"identify":"192.168.157.177:16000.1", "leader":false, "online":true}
-         * ]
-         */
-        for (auto it : m_mapCenterElection)
+        for (const auto &it : node_iter->second)
         {
-            util::CJsonObject oNode;
-            oNode.Add("identify", it.first);
-            if (it.second.uiElection & mc_uiLeader)
-            {
-                oNode.Add("leader", "yes");
-            }
-            else
-            {
-                oNode.Add("leader", "no");
-            }
-            if (it.second.uiElection & mc_uiAlive)
-            {
-                oNode.Add("online", "yes");
-            }
-            else
-            {
-                oNode.Add("online", "no");
-            }
-            oCenter.Add(oNode);
+            oOnlineNode.Add(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
         }
     }
+}
 
-    void SessionOnlineNodes::GetSubscription(util::CJsonObject &oSubcription) const
+bool SessionOnlineNodes::GetNodeReport(const std::string &strNodeType, util::CJsonObject &oNodeReport) const
+{
+    LOG4_TRACE("%s() strNodeType:%s", __FUNCTION__, strNodeType.c_str());
+    auto node_iter = m_mapOnlineNodes.find(strNodeType);
+    if (node_iter == m_mapOnlineNodes.end())
     {
-        /**
-         * oSubcription like this:
-         * [
-         *     {"node_type":"INTERFACE", "subcriber":["LOGIC", "LOGGER"]},
-         *     {"node_type":"LOGIC", "subcriber":["LOGIC", "MYDIS", "LOGGER"]}
-         * ]
-         */
-        for (const auto &pub_iter : m_mapPublisher)
+        return (false);
+    }
+    else
+    {
+        util::CJsonObject oJson;
+        for (const auto &it : node_iter->second)
         {
-            oSubcription.AddAsFirst(util::CJsonObject("{}"));
-            oSubcription[0].Add("node_type", pub_iter.first);
-            oSubcription[0].AddEmptySubArray("subcriber");
-            for (const auto &it : pub_iter.second)
+            if (net::Pb2Json(it.second, oJson))
             {
-                oSubcription[0]["subcriber"].Add(it);
+                oJson.Delete("worker");
+                oNodeReport.AddAsFirst(oJson);
             }
         }
+        return (true);
     }
+}
 
-    void SessionOnlineNodes::GetSubscription(const std::string &strNodeType, util::CJsonObject &oSubcription) const
+bool SessionOnlineNodes::GetNodeReport(const std::string &strNodeType, const std::string &strIdentify, util::CJsonObject &oNodeReport) const
+{
+    LOG4_TRACE("%s() strNodeType:%s strIdentify:%s", __FUNCTION__, strNodeType.c_str(), strIdentify.c_str());
+    auto node_iter = m_mapOnlineNodes.find(strNodeType);
+    if (node_iter == m_mapOnlineNodes.end())
     {
-        /**
-         * oSubcription like this:
-         * [
-         *     "INTERFACE", "ACCESS"
-         * ]
-         */
-        auto pub_iter = m_mapPublisher.find(strNodeType);
-        if (pub_iter != m_mapPublisher.end())
-        {
-            for (auto it = pub_iter->second.begin(); it != pub_iter->second.end(); ++it)
-            {
-                oSubcription.Add(*it);
-            }
-        }
+        return (false);
     }
-
-    void SessionOnlineNodes::GetOnlineNode(util::CJsonObject &oOnlineNode) const
+    else
     {
-        /**
-         * oOnlineNode like this:
-         * [
-         *     {"node_type":"INTERFACE", "node":["192.168.157.131:16004", "192.168.157.132:16004"]},
-         *     {"node_type":"LOGIC", "node":["192.168.157.131:16005", "192.168.157.132:16005"]},
-         *     {"node_type":"DBAGENT", "node":["192.168.157.131:16007", "192.168.157.132:16007"]}
-         * ]
-         */
-        for (const auto &node_iter : m_mapOnlineNodes)
-        {
-            oOnlineNode.AddAsFirst(util::CJsonObject("{}"));
-            oOnlineNode[0].Add("node_type", node_iter.first);
-            oOnlineNode[0].AddEmptySubArray("node");
-            for (const auto &it : node_iter.second)
-            {
-                oOnlineNode[0]["node"].Add(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
-            }
-        }
-    }
-
-    void SessionOnlineNodes::GetOnlineNode(const std::string &strNodeType, util::CJsonObject &oOnlineNode) const
-    {
-        /**
-         * oOnlineNode like this:
-         * [
-         *     "192.168.157.131:16005", "192.168.157.132:16005"
-         * ]
-         */
-        auto node_iter = m_mapOnlineNodes.find(strNodeType);
-        if (node_iter != m_mapOnlineNodes.end())
-        {
-            for (const auto &it : node_iter->second)
-            {
-                oOnlineNode.Add(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
-            }
-        }
-    }
-
-    bool SessionOnlineNodes::GetNodeReport(const std::string &strNodeType, util::CJsonObject &oNodeReport) const
-    {
-        LOG4_TRACE("%s() strNodeType:%s", __FUNCTION__, strNodeType.c_str());
-        auto node_iter = m_mapOnlineNodes.find(strNodeType);
-        if (node_iter == m_mapOnlineNodes.end())
+        auto it = node_iter->second.find(strIdentify);
+        if (it == node_iter->second.end())
         {
             return (false);
         }
         else
         {
             util::CJsonObject oJson;
-            for (const auto &it : node_iter->second)
+            if (net::Pb2Json(it->second, oJson))
             {
-                if (net::Pb2Json(it.second, oJson))
-                {
-                    oJson.Delete("worker");
-                    oNodeReport.AddAsFirst(oJson);
-                }
+                oNodeReport.Add(oJson);
             }
+            LOG4_TRACE("%s() oNodeReport:%s", __FUNCTION__, oNodeReport.ToString().c_str());
             return (true);
         }
     }
+}
 
-    bool SessionOnlineNodes::GetNodeReport(const std::string &strNodeType, const std::string &strIdentify, util::CJsonObject &oNodeReport) const
+bool SessionOnlineNodes::GetOnlineNode(const std::string &strNodeType, std::vector<std::string> &vecNodes)
+{
+    auto node_iter = m_mapOnlineNodes.find(strNodeType);
+    if (node_iter != m_mapOnlineNodes.end())
     {
-        LOG4_TRACE("%s() strNodeType:%s strIdentify:%s", __FUNCTION__, strNodeType.c_str(), strIdentify.c_str());
-        auto node_iter = m_mapOnlineNodes.find(strNodeType);
-        if (node_iter == m_mapOnlineNodes.end())
+        for (const auto &it : node_iter->second)
         {
-            return (false);
+            vecNodes.push_back(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
         }
-        else
+        return (true);
+    }
+    return (false);
+}
+
+bool SessionOnlineNodes::IsLeadership() const
+{
+    if (m_boNeedLeadership)
+    {
+        SessionRaftCluster *raft = GetSessionRaftCluster();
+        return raft && raft->IsRaftLeader();
+    }
+    return true;
+}
+
+void SessionOnlineNodes::BeLeader()
+{
+    SessionRaftCluster *raft = GetSessionRaftCluster();
+    if (raft)
+    {
+        raft->BeLeader();
+    }
+}
+
+void SessionOnlineNodes::RelievedLeader()
+{
+    SessionRaftCluster *raft = GetSessionRaftCluster();
+    if (raft)
+    {
+        raft->RelievedLeader();
+    }
+}
+
+void SessionOnlineNodes::ReplaySubscriptionsAfterRaftLeadership()
+{
+    if (!IsLeadership())
+    {
+        return;
+    }
+    LOG4_INFO("%s() rebroadcast all online nodes to subscribers (raft leader)", __FUNCTION__);
+    for (const auto &byType : m_mapOnlineNodes)
+    {
+        for (const auto &byIdent : byType.second)
         {
-            auto it = node_iter->second.find(strIdentify);
-            if (it == node_iter->second.end())
+            AddNodeBroadcast(byIdent.second, true);
+        }
+    }
+}
+
+void SessionOnlineNodes::CheckSendingNodeNotice()
+{
+    m_uiServerTime = GetLabor()->GetNowTime();
+    if (m_uiServerTime >= m_uiLastCheckSendingNodeNotice + kNodeNoticeScanIntervalSec)
+    {
+        m_uiLastCheckSendingNodeNotice = m_uiServerTime;
+        for (auto &iter : m_mapSendingNodeNotice)
+        {
+            auto &sendingList = iter.second;
+            while (sendingList.size() > 0)
             {
-                return (false);
-            }
-            else
-            {
-                util::CJsonObject oJson;
-                if (net::Pb2Json(it->second, oJson))
+                if (sendingList.front().second + kNodeNoticeRetryAfterSec <= m_uiServerTime)
                 {
-                    oNodeReport.Add(oJson);
+                    LOG4_TRACE("%s() sending to %s.timestamp(%u) uiServerTime(%u)  CMD_REQ_NODE_REG_NOTICE:%s!", __FUNCTION__, iter.first.c_str(),
+                               sendingList.front().second, m_uiServerTime, sendingList.front().first.DebugString().c_str());
+                    SendNodeNotice(iter.first, sendingList.front().first, false);
+                    break;
                 }
-                LOG4_TRACE("%s() oNodeReport:%s", __FUNCTION__, oNodeReport.ToString().c_str());
-                return (true);
-            }
-        }
-    }
-
-    bool SessionOnlineNodes::GetOnlineNode(const std::string &strNodeType, std::vector<std::string> &vecNodes)
-    {
-        auto node_iter = m_mapOnlineNodes.find(strNodeType);
-        if (node_iter != m_mapOnlineNodes.end())
-        {
-            for (const auto &it : node_iter->second)
-            {
-                vecNodes.push_back(it.second.node_ip() + ":" + std::to_string(it.second.node_port()));
-            }
-            return (true);
-        }
-        return (false);
-    }
-
-    void SessionOnlineNodes::CheckSendingNodeNotice()
-    {
-        m_uiServerTime = GetLabor()->GetNowTime();
-        if (m_uiServerTime >= m_uiLastCheckSendingNodeNotice + 10)
-        {
-            m_uiLastCheckSendingNodeNotice = m_uiServerTime;
-            for (auto &iter : m_mapSendingNodeNotice) // map<to_node_Identify,list<NodeNotice,timestamp>> 依赖list和tcp来保障对同节点通信顺序性
-            {
-                auto &sendingList = iter.second; // list<NodeNotice,timestamp>
-                while (sendingList.size() > 0)
+                else if (sendingList.front().second + kNodeNoticeDropAfterSec <= m_uiServerTime)
                 {
-                    if (sendingList.front().second + 10 <= m_uiServerTime) // 10s 后尝试重发
-                    {
-                        LOG4_TRACE("%s() sending to %s.timestamp(%u) uiServerTime(%u)  CMD_REQ_NODE_REG_NOTICE:%s!",
-                                   __FUNCTION__, iter.first.c_str(), sendingList.front().second, m_uiServerTime, sendingList.front().first.DebugString().c_str());
-                        SendNodeNotice(iter.first, sendingList.front().first, false);
-                        break;
-                    }
-                    else if (sendingList.front().second + 30 <= m_uiServerTime) // 30s 后没响应的放弃重发//重发最多3次
-                    {
-                        LOG4_ERROR("%s() sending to %s failed.timestamp(%u) uiServerTime(%u)  CMD_REQ_NODE_REG_NOTICE:%s!",
-                                   __FUNCTION__, iter.first.c_str(), sendingList.front().second, m_uiServerTime, sendingList.front().first.DebugString().c_str());
-                        sendingList.pop_front();
-                    }
-                    else // 不到时间
-                    {
-                        break;
-                    }
+                    LOG4_ERROR("%s() sending to %s failed.timestamp(%u) uiServerTime(%u)  CMD_REQ_NODE_REG_NOTICE:%s!", __FUNCTION__, iter.first.c_str(),
+                               sendingList.front().second, m_uiServerTime, sendingList.front().first.DebugString().c_str());
+                    sendingList.pop_front();
                 }
-            }
-        }
-    }
-
-    void SessionOnlineNodes::SendNodeNotice(const std::string &strToNodeIdentify, const NodeNotice &oNodeNotice, bool boPushSendingList)
-    {
-        auto callback = [](const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
-        {
-            SessionOnlineNodes *pSessionOnlineNodes = (SessionOnlineNodes *)pSession;
-            DataStepCustom *pdata = (DataStepCustom *)data;
-            if (pSessionOnlineNodes && pdata && pdata->strToNodeIdentify.size() > 0)
-            {
-                pSessionOnlineNodes->RemoveSendingNodeNotice(pdata->strToNodeIdentify);
-                LOG4_TRACE("NODE_REG_NOTICE response:send to %s succ for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
-            }
-            else
-            {
-                LOG4_WARN("NODE_REG_NOTICE response:failed to send to %s for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
-            }
-        };
-        LOG4_TRACE("%s() NODE_REG_NOTICE request:sending to %s oNodeNotice:%s!", __FUNCTION__, strToNodeIdentify.c_str(), oNodeNotice.DebugString().c_str());
-        GetLabor()->SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, oNodeNotice.SerializeAsString(), callback, strToNodeIdentify, "", new DataStepCustom(strToNodeIdentify)); 
-        if (boPushSendingList)
-        {
-            AddSendingNodeNotice(strToNodeIdentify, oNodeNotice);
-        }
-    }
-
-    void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport,bool boRegister)
-    {
-        bool boLeadership = IsLeadership();
-        LOG4_TRACE("%s() WorkerIdentify(%s) IsLeadership(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), boLeadership);
-        //新注册的消息，或者刚选举为leader的60s内需要广播，兼容故障切换时间内的放弃的广播消息，最终一致
-        bool needBroadcast = (m_uiBeLeaderTime > 0 || (m_uiBeLeaderTime + 60 >= util::GetMicrosecond())) || !boRegister;
-        if (!boLeadership || !needBroadcast)
-        {
-            return;
-        }
-        LOG4_TRACE("%s() %s", __FUNCTION__, oNodeReport.DebugString().c_str());
-        NodeNotice oSubcribeNodeInfo;
-        NodeNotice oAddNodes;
-        NodeReport oAddedNodeInfo = oNodeReport;
-        oAddedNodeInfo.clear_node();
-        oAddedNodeInfo.clear_workers();
-        const std::string& reportNodeType = oNodeReport.node_type();
-        (*oAddNodes.add_node_arry_reg()) = std::move(oAddedNodeInfo);
-        LOG4_TRACE("%s() mapPublisher.size %zu ", __FUNCTION__, m_mapPublisher.size());
-        for (const auto &publisher_iter : m_mapPublisher)
-        {
-            const std::string& subscribedNodeType = publisher_iter.first;
-            for (const auto &subscriberNodeType : publisher_iter.second)//订阅的节点类型
-            {
-                /* send this node info to subscriber */
-                if (subscribedNodeType == oNodeReport.node_type())
+                else
                 {
-                    auto onlineNodesIter = m_mapOnlineNodes.find(subscriberNodeType);
-                    if (onlineNodesIter != m_mapOnlineNodes.end())
-                    {
-                        LOG4_TRACE("mapOnlineNodes[%s].size() = %u", subscriberNodeType.c_str(), onlineNodesIter->second.size());
-                        for (const auto &node_iter : onlineNodesIter->second)
-                        {
-                            //if (node_iter.second.node_id() == oNodeReport.node_id())//即使订阅者是自己节点也发送
-                            //{
-                            //  continue;
-                            //}
-                            LOG4_INFO("send this report node info to subscriber node identity(%s).report node info:%s", node_iter.first.c_str(),oAddNodes.DebugString().c_str());
-                            SendNodeNotice(node_iter.first, oAddNodes); // strToNodeIdentify
-                        }
-                    }
-                }
-                LOG4_TRACE("%s() mapOnlineNodes's size %zu reportNodeType(%s) subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, 
-                    m_mapOnlineNodes.size(),reportNodeType.c_str(),subscribedNodeType.c_str(),subscriberNodeType.c_str());
-                /* make subscribe node info for the report node*/
-                if ((subscriberNodeType) == oNodeReport.node_type())//订阅的节点类型是上报的节点类型
-                {
-                    LOG4_TRACE("%s() subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__,subscribedNodeType.c_str(),subscriberNodeType.c_str());
-                    auto onlineNodesIter = m_mapOnlineNodes.find(subscribedNodeType);//map<node_type, map<node_identify, NodeReport>>
-                    if (onlineNodesIter != m_mapOnlineNodes.end())
-                    {
-                        LOG4_TRACE("%s() onlineNodes subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__,
-                                subscribedNodeType.c_str(),subscriberNodeType.c_str());
-                        for (const auto &node_iter : onlineNodesIter->second)
-                        {
-                            NodeReport oExistNodeInfo = node_iter.second;
-                            LOG4_TRACE("oExistNodeInfo(%s)", oExistNodeInfo.DebugString().c_str());
-                            oExistNodeInfo.clear_node();
-                            oExistNodeInfo.clear_workers();
-                            (*oSubcribeNodeInfo.add_node_arry_reg()) = std::move(oExistNodeInfo);
-                        }
-                    }
-                }
-            }
-        }
-
-        /* send subscribe node info to this node */
-        if (oSubcribeNodeInfo.node_arry_reg_size() > 0)
-        {
-            char szThisNodeIdentity[32];
-            snprintf(szThisNodeIdentity, sizeof(szThisNodeIdentity), "%s:%u", oNodeReport.node_ip().c_str(), oNodeReport.node_port());
-            LOG4_INFO("send subscribe node info to the report node identity(%s)", szThisNodeIdentity);
-            SendNodeNotice(szThisNodeIdentity, oSubcribeNodeInfo);
-        }
-        util::CJsonObject oOnlineNode;
-        GetOnlineNode(oOnlineNode);
-        LOG4_TRACE("%s() AddNodeBroadcast oOnlineNode(%s)", __FUNCTION__, oOnlineNode.ToString().c_str());
-    }
-
-    void SessionOnlineNodes::RemoveNodeBroadcast(const NodeReport &oNodeReport)
-    {
-        bool boLeadership = IsLeadership();
-        LOG4_TRACE("%s() IsLeadership(%d)", __FUNCTION__, boLeadership);
-        if (!boLeadership)
-        {
-            return;
-        }
-        LOG4_TRACE("%s() %s", __FUNCTION__, oNodeReport.DebugString().c_str());
-        NodeNotice oDelNodes;
-        NodeReport oDeletedNodeInfo = oNodeReport;
-        //    oDeletedNodeInfo.clear_node();
-        //    oDeletedNodeInfo.clear_workers();
-
-        LOG4_TRACE("(%s)", oDeletedNodeInfo.DebugString().c_str());
-        (*oDelNodes.add_node_arry_exit()) = std::move(oDeletedNodeInfo);
-        LOG4_TRACE("(%s)", oDelNodes.DebugString().c_str());
-        for (auto &sub_iter : m_mapPublisher)
-        {
-            for (auto &node_type_iter : sub_iter.second)
-            {
-                /* send this node info to subscriber */
-                if (sub_iter.first == oNodeReport.node_type())
-                {
-                    auto node_list_iter = m_mapOnlineNodes.find(node_type_iter);
-                    if (node_list_iter != m_mapOnlineNodes.end())
-                    {
-                        for (auto node_iter = node_list_iter->second.begin(); node_iter != node_list_iter->second.end(); ++node_iter)
-                        {
-                            SendNodeNotice(node_iter->first, oDelNodes);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    void SessionOnlineNodes::InitElection(const util::CJsonObject &oCenter)
-    {
-        //	LOG4_TRACE("%s() GetWorkerIdentify(%s) oCenter(%s)", __FUNCTION__,GetLabor()->GetWorkerIdentify().c_str(),oCenter.ToString().c_str());
-        util::CJsonObject oCenterList = oCenter;
-        for (int i = 0; i < oCenterList.GetArraySize(); ++i)
-        {
-            m_mapCenterElection.insert(std::make_pair(oCenterList(i) + ".0", CenterElection()));
-        }
-        if (m_mapCenterElection.size() == 0)
-        {
-            LOG4_TRACE("%s() GetWorkerIdentify(%s) m_mapCenterElection.size() == 0 IsLeader", __FUNCTION__,GetLabor()->GetWorkerIdentify().c_str());
-            BeLeader();
-        }
-        else if (m_mapCenterElection.size() == 1 && GetLabor()->GetWorkerIdentify() == m_mapCenterElection.begin()->first)
-        {
-            LOG4_TRACE("%s() GetWorkerIdentify(%s) m_mapCenterElection.size() == 1 IsLeader", __FUNCTION__,GetLabor()->GetWorkerIdentify().c_str());
-            BeLeader();
-        }
-        else
-        {
-            SendCenterBeat();
-        }
-    }
-
-    bool SessionOnlineNodes::IsLeadership() const
-    {
-        if (m_boNeedLeadership)
-        {
-            if (m_bIsLeader)
-            {
-                return true;
-            }
-            bool isOtherLeader = false;
-            for (auto &&iter : m_mapCenterElection)
-            {
-                if (mc_uiLeader & iter.second.uiElection)
-                {
-                    isOtherLeader = true;
                     break;
                 }
             }
-            return (false == isOtherLeader); // 在所有都不是leader时，需要暂时执行leader代理权，因为服务发现的路由可用性优先于路由数据一致性
+        }
+    }
+}
+
+void SessionOnlineNodes::SendNodeNotice(const std::string &strToNodeIdentify, const NodeNotice &oNodeNotice, bool boPushSendingList)
+{
+    auto callback = [](const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
+    {
+        (void)oInMsgHead;
+        (void)oInMsgBody;
+        SessionOnlineNodes *pSessionOnlineNodes = (SessionOnlineNodes *)pSession;
+        DataStepCustom *pdata = (DataStepCustom *)data;
+        if (pSessionOnlineNodes && pdata && pdata->strToNodeIdentify.size() > 0)
+        {
+            pSessionOnlineNodes->RemoveSendingNodeNotice(pdata->strToNodeIdentify);
+            LOG4_TRACE("NODE_REG_NOTICE response:send to %s succ for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
         }
         else
         {
-            return true;
+            LOG4_WARN("NODE_REG_NOTICE response:failed to send to %s for msg body:%s!", pdata->strToNodeIdentify.c_str(), oInMsgBody.body().c_str());
         }
-    }
-
-    void SessionOnlineNodes::BeLeader()
+    };
+    LOG4_TRACE("%s() NODE_REG_NOTICE request:sending to %s oNodeNotice:%s!", __FUNCTION__, strToNodeIdentify.c_str(), oNodeNotice.DebugString().c_str());
+    GetLabor()->SendToCallback(this, net::CMD_REQ_NODE_REG_NOTICE, oNodeNotice.SerializeAsString(), callback, strToNodeIdentify, "", new DataStepCustom(strToNodeIdentify));
+    if (boPushSendingList)
     {
-        if (!m_bIsLeader)
-        {
-            LOG4_TRACE("%s() WorkerIdentify(%s) BeLeader", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-            m_bIsLeader = true;
-            m_uiBeLeaderTime = util::GetMicrosecond();
-            m_mapCenterElection[GetLabor()->GetWorkerIdentify()].uiElection |= mc_uiLeader;
-        }
+        AddSendingNodeNotice(strToNodeIdentify, oNodeNotice);
     }
+}
 
-    void SessionOnlineNodes::RelievedLeader()
+void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport, bool boRegister)
+{
+    (void)boRegister;
+    const bool boLeadership = IsLeadership();
+    LOG4_TRACE("%s() WorkerIdentify(%s) IsLeadership(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), boLeadership);
+    if (!boLeadership)
     {
-        if (m_bIsLeader)
-        {
-            LOG4_TRACE("%s() WorkerIdentify(%s) RelievedLeader", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-            m_bIsLeader = false;
-            m_uiBeLeaderTime = 0;
-            m_mapCenterElection[GetLabor()->GetWorkerIdentify()].uiElection &= (~mc_uiLeader);
-        }
+        return;
     }
-
-    /**
-    检查并维护中心节点的 Leader 选举状态。
-   */
-    void SessionOnlineNodes::CheckLeader()
+    LOG4_TRACE("%s() %s", __FUNCTION__, oNodeReport.DebugString().c_str());
+    NodeNotice oSubcribeNodeInfo;
+    NodeNotice oAddNodes;
+    NodeReport oAddedNodeInfo = oNodeReport;
+    oAddedNodeInfo.clear_node();
+    oAddedNodeInfo.clear_workers();
+    const std::string &reportNodeType = oNodeReport.node_type();
+    (*oAddNodes.add_node_arry_reg()) = std::move(oAddedNodeInfo);
+    LOG4_TRACE("%s() mapPublisher.size %zu ", __FUNCTION__, m_mapPublisher.size());
+    for (const auto &publisher_iter : m_mapPublisher)
     {
-        LOG4_TRACE("%s() WorkerIdentify(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-        // 已经选举leader的,优先最早成为leader的节点;
-        // 未选举的，选举存活节点中连接符值较小的节点;
-        std::multimap<uint64, std::string> mapLeaderElection; 
-        std::string strFirstLeader;                           
-        for (auto &iter : m_mapCenterElection)
+        const std::string &subscribedNodeType = publisher_iter.first;
+        for (const auto &subscriberNodeType : publisher_iter.second)
         {
-            if (mc_uiAlive & iter.second.uiElection)// 最近三次心跳任意一次成功则认为在线
+            if (subscribedNodeType == oNodeReport.node_type())
             {
-                if (mc_uiLeader & iter.second.uiElection) //该节点为主节点
+                auto onlineNodesIter = m_mapOnlineNodes.find(subscriberNodeType);
+                if (onlineNodesIter != m_mapOnlineNodes.end())
                 {
-                    mapLeaderElection.insert(std::make_pair(iter.second.uiBeLeaderTime, iter.first));
-                }
-                else if (strFirstLeader.size() == 0)
-                {
-                    strFirstLeader = iter.first;
-                }
-            }
-            else
-            {
-                iter.second.uiElection &= (~mc_uiLeader);
-                LOG4_TRACE("%s() WorkerIdentify(%s) is offline", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-            }
-            { // 处理该节点心跳
-                uint32 uiLeaderBit = mc_uiLeader & iter.second.uiElection;
-                iter.second.uiElection = ((iter.second.uiElection << 1) & mc_uiAlive) | uiLeaderBit; // 最近三次心跳任意一次成功则认为在线
-                if (iter.first == GetLabor()->GetWorkerIdentify())
-                {
-                    iter.second.uiElection |= mc_uiBeat;
-                }
-            }
-            }
-        LOG4_TRACE("%s() mapLeaderElection.size()(%zu) strFirstLeader(%s)", __FUNCTION__, mapLeaderElection.size(),strFirstLeader.c_str());
-        if (mapLeaderElection.size() > 0)// 已经选举leader的，根据最早成为leader的，判断是否选的本节点来处理
-        {
-            auto iter = mapLeaderElection.begin();
-            if (iter->second == GetLabor()->GetWorkerIdentify())
-            {
-                LOG4_TRACE("%s() WorkerIdentify(%s) BeLeader", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-                BeLeader();
-            }
-            else
-            {
-                LOG4_TRACE("%s() thisNode(Identify %s,IsLeader %d,uiBeLeaderTime %llu) TargetCenter(Identify %s,uiBeLeaderTime %llu)", __FUNCTION__, 
-                    GetLabor()->GetWorkerIdentify().c_str(),m_bIsLeader,m_uiBeLeaderTime,iter->second.c_str(),iter->first);
-                if (m_bIsLeader && iter->first > 0 && m_uiBeLeaderTime > iter->first) {
-                    RelievedLeader(); //要是选的不是本节点，但是该节点成为leader时间比本节点早，则取消本节点leader
-                }
-            }
-        }
-        else if (strFirstLeader == GetLabor()->GetWorkerIdentify())// 未选举的，选举存活节点中连接符值较小的，判断是否选的本节点来处理
-        {
-            LOG4_TRACE("%s() WorkerIdentify(%s) BeLeader", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
-            BeLeader();
-        }
-    }
-
-    void SessionOnlineNodes::SendCenterBeat(uint32 uiServerTime)
-    {
-        LOG4_TRACE("%s() GetWorkerIdentify(%s)", __FUNCTION__,GetLabor()->GetWorkerIdentify().c_str());
-        m_uiLastSendCenterBeat = uiServerTime;
-        Election oElection;
-        if (m_bIsLeader)
-        {
-            oElection.set_is_leader(1);
-            // oElection.set_last_node_id(m_unLastNodeId);
-            // for (const auto &it : m_setAddedNodeId)
-            // {
-            //     oElection.add_added_node_id(it);
-            // }
-            // for (const auto &it : m_setRemovedNodeId)
-            // {
-            //     oElection.add_removed_node_id(it);
-            // }
-            oElection.set_beleadertime(m_uiBeLeaderTime);
-        }
-        else
-        {
-            oElection.set_is_leader(0);
-        }
-        // m_setAddedNodeId.clear();
-        // m_setRemovedNodeId.clear();
-        std::string strBody = oElection.SerializeAsString();
-        LOG4_TRACE("%s() oElection(%s) %u", __FUNCTION__,oElection.DebugString().c_str(),strBody.size());
-        for (auto &iter : m_mapCenterElection)
-        {
-            if (GetLabor()->GetWorkerIdentify() != iter.first)
-            {
-                auto callback = [](const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
-                {
-                    LOG4_TRACE("send succ CMD_REQ_LEADER_ELECTION:%s!", oInMsgBody.DebugString().c_str());
-                };
-                LOG4_TRACE("%s() REQ_LEADER_ELECTION thisNode(Identify %s,IsLeader %d,uiBeLeaderTime %llu) oElection(%s)", __FUNCTION__, 
-                    GetLabor()->GetWorkerIdentify().c_str(),m_bIsLeader,m_uiBeLeaderTime,oElection.DebugString().c_str());
-                GetLabor()->SendToCallback(this, net::CMD_REQ_LEADER_ELECTION, strBody, callback, iter.first);
-            }
-        }
-    }
-
-    void SessionOnlineNodes::CheckNodesBeat()
-    {
-        if (m_uiNodeOverdue > 0)
-        {
-            m_uiServerTime = GetLabor()->GetNowTime();
-            if (m_uiServerTime >= m_uiLastCheckNodesBeat + 10)
-            {
-                m_uiLastCheckNodesBeat = m_uiServerTime;
-                std::vector<std::string> removeNodeIdentifys;
-                for (const auto &iterMapNode : m_mapOnlineNodes) ///< map<node_type, map<node_identify, NodeReport> >
-                {
-                    for (const auto &iterNodeIdentify : iterMapNode.second)
+                    LOG4_TRACE("mapOnlineNodes[%s].size() = %zu", subscriberNodeType.c_str(), onlineNodesIter->second.size());
+                    for (const auto &node_iter : onlineNodesIter->second)
                     {
-                        if (m_uiServerTime > (iterNodeIdentify.second.active_time() + m_uiNodeOverdue))
-                        { // iterNodeIdentify(172.17.218.148:27021,1611802311.817800) uiServerTime(1611802317) uiNodeOverdue(35)
-                            LOG4_TRACE("%s() removeNodeIdentify iterNodeIdentify(%s,%lf) uiServerTime(%u) uiNodeOverdue(%u)", __FUNCTION__,
-                                       iterNodeIdentify.first.c_str(), iterNodeIdentify.second.active_time(), m_uiServerTime, m_uiNodeOverdue);
-                            removeNodeIdentifys.push_back(iterNodeIdentify.first);
-                        }
+                        LOG4_INFO("send this report node info to subscriber node identity(%s).report node info:%s", node_iter.first.c_str(),
+                                  oAddNodes.DebugString().c_str());
+                        SendNodeNotice(node_iter.first, oAddNodes);
                     }
                 }
-                for (const auto &iterRemoveNodeIdentify : removeNodeIdentifys)
+            }
+            LOG4_TRACE("%s() mapOnlineNodes's size %zu reportNodeType(%s) subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, m_mapOnlineNodes.size(),
+                       reportNodeType.c_str(), subscribedNodeType.c_str(), subscriberNodeType.c_str());
+            if ((subscriberNodeType) == oNodeReport.node_type())
+            {
+                LOG4_TRACE("%s() subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, subscribedNodeType.c_str(), subscriberNodeType.c_str());
+                auto onlineNodesIter = m_mapOnlineNodes.find(subscribedNodeType);
+                if (onlineNodesIter != m_mapOnlineNodes.end())
                 {
-                    RemoveNode(iterRemoveNodeIdentify);
+                    LOG4_TRACE("%s() onlineNodes subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, subscribedNodeType.c_str(),
+                               subscriberNodeType.c_str());
+                    for (const auto &node_iter : onlineNodesIter->second)
+                    {
+                        NodeReport oExistNodeInfo = node_iter.second;
+                        LOG4_TRACE("oExistNodeInfo(%s)", oExistNodeInfo.DebugString().c_str());
+                        oExistNodeInfo.clear_node();
+                        oExistNodeInfo.clear_workers();
+                        (*oSubcribeNodeInfo.add_node_arry_reg()) = std::move(oExistNodeInfo);
+                    }
                 }
             }
         }
     }
 
+    if (oSubcribeNodeInfo.node_arry_reg_size() > 0)
+    {
+        char szThisNodeIdentity[32];
+        snprintf(szThisNodeIdentity, sizeof(szThisNodeIdentity), "%s:%u", oNodeReport.node_ip().c_str(), oNodeReport.node_port());
+        LOG4_INFO("send subscribe node info to the report node identity(%s)", szThisNodeIdentity);
+        SendNodeNotice(szThisNodeIdentity, oSubcribeNodeInfo);
+    }
+    util::CJsonObject oOnlineNode;
+    GetOnlineNode(oOnlineNode);
+    LOG4_TRACE("%s() AddNodeBroadcast oOnlineNode(%s)", __FUNCTION__, oOnlineNode.ToString().c_str());
 }
+
+void SessionOnlineNodes::RemoveNodeBroadcast(const NodeReport &oNodeReport)
+{
+    bool boLeadership = IsLeadership();
+    LOG4_TRACE("%s() IsLeadership(%d)", __FUNCTION__, boLeadership);
+    if (!boLeadership)
+    {
+        return;
+    }
+    LOG4_TRACE("%s() %s", __FUNCTION__, oNodeReport.DebugString().c_str());
+    NodeNotice oDelNodes;
+    NodeReport oDeletedNodeInfo = oNodeReport;
+
+    LOG4_TRACE("(%s)", oDeletedNodeInfo.DebugString().c_str());
+    (*oDelNodes.add_node_arry_exit()) = std::move(oDeletedNodeInfo);
+    LOG4_TRACE("(%s)", oDelNodes.DebugString().c_str());
+    for (auto &sub_iter : m_mapPublisher)
+    {
+        for (auto &node_type_iter : sub_iter.second)
+        {
+            if (sub_iter.first == oNodeReport.node_type())
+            {
+                auto node_list_iter = m_mapOnlineNodes.find(node_type_iter);
+                if (node_list_iter != m_mapOnlineNodes.end())
+                {
+                    for (auto node_iter = node_list_iter->second.begin(); node_iter != node_list_iter->second.end(); ++node_iter)
+                    {
+                        SendNodeNotice(node_iter->first, oDelNodes);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void SessionOnlineNodes::CheckNodesBeat()
+{
+    if (!IsLeadership())
+    {
+        return;
+    }
+    if (m_uiNodeOverdue > 0)
+    {
+        m_uiServerTime = GetLabor()->GetNowTime();
+        if (m_uiServerTime >= m_uiLastCheckNodesBeat + 10)
+        {
+            m_uiLastCheckNodesBeat = m_uiServerTime;
+            std::vector<std::string> removeNodeIdentifys;
+            for (const auto &iterMapNode : m_mapOnlineNodes)
+            {
+                for (const auto &iterNodeIdentify : iterMapNode.second)
+                {
+                    if (m_uiServerTime > (iterNodeIdentify.second.active_time() + m_uiNodeOverdue))
+                    {
+                        LOG4_TRACE("%s() removeNodeIdentify iterNodeIdentify(%s,%lf) uiServerTime(%u) uiNodeOverdue(%u)", __FUNCTION__,
+                                   iterNodeIdentify.first.c_str(), iterNodeIdentify.second.active_time(), m_uiServerTime, m_uiNodeOverdue);
+                        removeNodeIdentifys.push_back(iterNodeIdentify.first);
+                    }
+                }
+            }
+            for (const auto &iterRemoveNodeIdentify : removeNodeIdentifys)
+            {
+                RemoveNode(iterRemoveNodeIdentify);
+            }
+        }
+    }
+}
+
+} // namespace coor

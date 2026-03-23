@@ -27,53 +27,125 @@ namespace _pbi = ::google::protobuf::internal;
 namespace _fl = ::google::protobuf::internal::field_layout;
 namespace coor {
 
-inline constexpr Election::Impl_::Impl_(
+inline constexpr RaftRequestVoteRsp::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        added_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.added_node_id_)>()
-        }
-        #else
-        added_node_id_ {}
-        #endif
-        ,
-        _added_node_id_cached_byte_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        removed_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.removed_node_id_)>()
-        }
-        #else
-        removed_node_id_ {}
-        #endif
-        ,
-        _removed_node_id_cached_byte_size_{0},
-        is_leader_{0},
-        last_node_id_{0u},
-        beleadertime_{::uint64_t{0u}} {}
+        term_{::uint64_t{0u}},
+        vote_granted_{false},
+        voter_next_node_id_alloc_hint_{0u} {}
 
 template <typename>
-constexpr Election::Election(::_pbi::ConstantInitialized)
+constexpr RaftRequestVoteRsp::RaftRequestVoteRsp(::_pbi::ConstantInitialized)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::Message(Election_class_data_.base()),
+    : ::google::protobuf::Message(RaftRequestVoteRsp_class_data_.base()),
 #else   // PROTOBUF_CUSTOM_VTABLE
     : ::google::protobuf::Message(),
 #endif  // PROTOBUF_CUSTOM_VTABLE
       _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
 }
-struct ElectionDefaultTypeInternal {
-  constexpr ElectionDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
-  ~ElectionDefaultTypeInternal() {}
+struct RaftRequestVoteRspDefaultTypeInternal {
+  constexpr RaftRequestVoteRspDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~RaftRequestVoteRspDefaultTypeInternal() {}
   union {
-    Election _instance;
+    RaftRequestVoteRsp _instance;
   };
 };
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
-    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 ElectionDefaultTypeInternal _Election_default_instance_;
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftRequestVoteRspDefaultTypeInternal _RaftRequestVoteRsp_default_instance_;
+
+inline constexpr RaftRequestVote::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        candidate_id_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        term_{::uint64_t{0u}},
+        last_log_index_{::uint64_t{0u}},
+        last_log_term_{::uint64_t{0u}},
+        next_node_id_alloc_hint_{0u} {}
+
+template <typename>
+constexpr RaftRequestVote::RaftRequestVote(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(RaftRequestVote_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
+}
+struct RaftRequestVoteDefaultTypeInternal {
+  constexpr RaftRequestVoteDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~RaftRequestVoteDefaultTypeInternal() {}
+  union {
+    RaftRequestVote _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftRequestVoteDefaultTypeInternal _RaftRequestVote_default_instance_;
+
+inline constexpr RaftAppendEntriesRsp::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        term_{::uint64_t{0u}},
+        success_{false} {}
+
+template <typename>
+constexpr RaftAppendEntriesRsp::RaftAppendEntriesRsp(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(RaftAppendEntriesRsp_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
+}
+struct RaftAppendEntriesRspDefaultTypeInternal {
+  constexpr RaftAppendEntriesRspDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~RaftAppendEntriesRspDefaultTypeInternal() {}
+  union {
+    RaftAppendEntriesRsp _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftAppendEntriesRspDefaultTypeInternal _RaftAppendEntriesRsp_default_instance_;
+
+inline constexpr RaftAppendEntries::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        leader_id_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        term_{::uint64_t{0u}},
+        prev_log_index_{::uint64_t{0u}},
+        prev_log_term_{::uint64_t{0u}},
+        leader_commit_{::uint64_t{0u}},
+        leader_next_node_id_alloc_{0u} {}
+
+template <typename>
+constexpr RaftAppendEntries::RaftAppendEntries(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(RaftAppendEntries_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
+}
+struct RaftAppendEntriesDefaultTypeInternal {
+  constexpr RaftAppendEntriesDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~RaftAppendEntriesDefaultTypeInternal() {}
+  union {
+    RaftAppendEntries _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftAppendEntriesDefaultTypeInternal _RaftAppendEntries_default_instance_;
 }  // namespace coor
 static constexpr const ::_pb::EnumDescriptor* PROTOBUF_NONNULL* PROTOBUF_NULLABLE
     file_level_enum_descriptors_coor_2eproto = nullptr;
@@ -83,45 +155,90 @@ const ::uint32_t
     TableStruct_coor_2eproto::offsets[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
         protodesc_cold) = {
         0x081, // bitmap
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_._has_bits_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_._has_bits_),
         8, // hasbit index offset
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.is_leader_),
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.last_node_id_),
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.added_node_id_),
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.removed_node_id_),
-        PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.beleadertime_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_.term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_.candidate_id_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_.last_log_index_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_.last_log_term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVote, _impl_.next_node_id_alloc_hint_),
+        1,
+        0,
         2,
         3,
+        4,
+        0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVoteRsp, _impl_._has_bits_),
+        6, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVoteRsp, _impl_.term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVoteRsp, _impl_.vote_granted_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftRequestVoteRsp, _impl_.voter_next_node_id_alloc_hint_),
         0,
         1,
+        2,
+        0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_._has_bits_),
+        9, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_id_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.prev_log_index_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.prev_log_term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_commit_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_next_node_id_alloc_),
+        1,
+        0,
+        2,
+        3,
         4,
+        5,
+        0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntriesRsp, _impl_._has_bits_),
+        5, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntriesRsp, _impl_.term_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntriesRsp, _impl_.success_),
+        0,
+        1,
 };
 
 static const ::_pbi::MigrationSchema
     schemas[] ABSL_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
-        {0, sizeof(::coor::Election)},
+        {0, sizeof(::coor::RaftRequestVote)},
+        {13, sizeof(::coor::RaftRequestVoteRsp)},
+        {22, sizeof(::coor::RaftAppendEntries)},
+        {37, sizeof(::coor::RaftAppendEntriesRsp)},
 };
 static const ::_pb::Message* PROTOBUF_NONNULL const file_default_instances[] = {
-    &::coor::_Election_default_instance_._instance,
+    &::coor::_RaftRequestVote_default_instance_._instance,
+    &::coor::_RaftRequestVoteRsp_default_instance_._instance,
+    &::coor::_RaftAppendEntries_default_instance_._instance,
+    &::coor::_RaftAppendEntriesRsp_default_instance_._instance,
 };
 const char descriptor_table_protodef_coor_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
     protodesc_cold) = {
-    "\n\ncoor.proto\022\004coor\"y\n\010Election\022\021\n\tis_lea"
-    "der\030\001 \001(\005\022\024\n\014last_node_id\030\002 \001(\r\022\025\n\radded"
-    "_node_id\030\003 \003(\r\022\027\n\017removed_node_id\030\004 \003(\r\022"
-    "\024\n\014beleadertime\030\005 \001(\004b\006proto3"
+    "\n\ncoor.proto\022\004coor\"\205\001\n\017RaftRequestVote\022\014"
+    "\n\004term\030\001 \001(\004\022\024\n\014candidate_id\030\002 \001(\t\022\026\n\016la"
+    "st_log_index\030\003 \001(\004\022\025\n\rlast_log_term\030\004 \001("
+    "\004\022\037\n\027next_node_id_alloc_hint\030\005 \001(\r\"_\n\022Ra"
+    "ftRequestVoteRsp\022\014\n\004term\030\001 \001(\004\022\024\n\014vote_g"
+    "ranted\030\002 \001(\010\022%\n\035voter_next_node_id_alloc"
+    "_hint\030\003 \001(\r\"\235\001\n\021RaftAppendEntries\022\014\n\004ter"
+    "m\030\001 \001(\004\022\021\n\tleader_id\030\002 \001(\t\022\026\n\016prev_log_i"
+    "ndex\030\003 \001(\004\022\025\n\rprev_log_term\030\004 \001(\004\022\025\n\rlea"
+    "der_commit\030\005 \001(\004\022!\n\031leader_next_node_id_"
+    "alloc\030\006 \001(\r\"5\n\024RaftAppendEntriesRsp\022\014\n\004t"
+    "erm\030\001 \001(\004\022\017\n\007success\030\002 \001(\010b\006proto3"
 };
 static ::absl::once_flag descriptor_table_coor_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_coor_2eproto = {
     false,
     false,
-    149,
+    474,
     descriptor_table_protodef_coor_2eproto,
     "coor.proto",
     &descriptor_table_coor_2eproto_once,
     nullptr,
     0,
-    1,
+    4,
     schemas,
     file_default_instances,
     TableStruct_coor_2eproto::offsets,
@@ -131,190 +248,130 @@ PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_coor_2eproto =
 namespace coor {
 // ===================================================================
 
-class Election::_Internal {
+class RaftRequestVote::_Internal {
  public:
   using HasBits =
-      decltype(::std::declval<Election>()._impl_._has_bits_);
+      decltype(::std::declval<RaftRequestVote>()._impl_._has_bits_);
   static constexpr ::int32_t kHasBitsOffset =
-      8 * PROTOBUF_FIELD_OFFSET(Election, _impl_._has_bits_);
+      8 * PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_._has_bits_);
 };
 
-Election::Election(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+RaftRequestVote::RaftRequestVote(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::Message(arena, Election_class_data_.base()) {
+    : ::google::protobuf::Message(arena, RaftRequestVote_class_data_.base()) {
 #else   // PROTOBUF_CUSTOM_VTABLE
     : ::google::protobuf::Message(arena) {
 #endif  // PROTOBUF_CUSTOM_VTABLE
   SharedCtor(arena);
-  // @@protoc_insertion_point(arena_constructor:coor.Election)
+  // @@protoc_insertion_point(arena_constructor:coor.RaftRequestVote)
 }
-PROTOBUF_NDEBUG_INLINE Election::Impl_::Impl_(
+PROTOBUF_NDEBUG_INLINE RaftRequestVote::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
-    [[maybe_unused]] const ::coor::Election& from_msg)
+    [[maybe_unused]] const ::coor::RaftRequestVote& from_msg)
       : _has_bits_{from._has_bits_},
         _cached_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        added_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.added_node_id_)>()
-        , from.added_node_id_}
-        #else
-        added_node_id_ { visibility, arena, from.added_node_id_ }
-        #endif
-        ,
-        _added_node_id_cached_byte_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        removed_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.removed_node_id_)>()
-        , from.removed_node_id_}
-        #else
-        removed_node_id_ { visibility, arena, from.removed_node_id_ }
-        #endif
-        ,
-        _removed_node_id_cached_byte_size_{0} {}
+        candidate_id_(arena, from.candidate_id_) {}
 
-Election::Election(
+RaftRequestVote::RaftRequestVote(
     ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
-    const Election& from)
+    const RaftRequestVote& from)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::Message(arena, Election_class_data_.base()) {
+    : ::google::protobuf::Message(arena, RaftRequestVote_class_data_.base()) {
 #else   // PROTOBUF_CUSTOM_VTABLE
     : ::google::protobuf::Message(arena) {
 #endif  // PROTOBUF_CUSTOM_VTABLE
-  Election* const _this = this;
+  RaftRequestVote* const _this = this;
   (void)_this;
   _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
       from._internal_metadata_);
   new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
   ::memcpy(reinterpret_cast<char*>(&_impl_) +
-               offsetof(Impl_, is_leader_),
+               offsetof(Impl_, term_),
            reinterpret_cast<const char*>(&from._impl_) +
-               offsetof(Impl_, is_leader_),
-           offsetof(Impl_, beleadertime_) -
-               offsetof(Impl_, is_leader_) +
-               sizeof(Impl_::beleadertime_));
+               offsetof(Impl_, term_),
+           offsetof(Impl_, next_node_id_alloc_hint_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::next_node_id_alloc_hint_));
 
-  // @@protoc_insertion_point(copy_constructor:coor.Election)
+  // @@protoc_insertion_point(copy_constructor:coor.RaftRequestVote)
 }
-PROTOBUF_NDEBUG_INLINE Election::Impl_::Impl_(
+PROTOBUF_NDEBUG_INLINE RaftRequestVote::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
       : _cached_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        added_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.added_node_id_)>()
-        }
-        #else
-        added_node_id_ { visibility, arena }
-        #endif
-        ,
-        _added_node_id_cached_byte_size_{0},
-        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_FIELD
-        removed_node_id_{visibility, ::_pbi::InternalMetadataOffset::Build<
-            ::coor::Election,
-            PROTOBUF_FIELD_OFFSET(::coor::Election, _impl_.removed_node_id_)>()
-        }
-        #else
-        removed_node_id_ { visibility, arena }
-        #endif
-        ,
-        _removed_node_id_cached_byte_size_{0} {}
+        candidate_id_(arena) {}
 
-inline void Election::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+inline void RaftRequestVote::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
   ::memset(reinterpret_cast<char*>(&_impl_) +
-               offsetof(Impl_, is_leader_),
+               offsetof(Impl_, term_),
            0,
-           offsetof(Impl_, beleadertime_) -
-               offsetof(Impl_, is_leader_) +
-               sizeof(Impl_::beleadertime_));
+           offsetof(Impl_, next_node_id_alloc_hint_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::next_node_id_alloc_hint_));
 }
-Election::~Election() {
-  // @@protoc_insertion_point(destructor:coor.Election)
+RaftRequestVote::~RaftRequestVote() {
+  // @@protoc_insertion_point(destructor:coor.RaftRequestVote)
   SharedDtor(*this);
 }
-inline void Election::SharedDtor(MessageLite& self) {
-  Election& this_ = static_cast<Election&>(self);
+inline void RaftRequestVote::SharedDtor(MessageLite& self) {
+  RaftRequestVote& this_ = static_cast<RaftRequestVote&>(self);
   if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
     this_.CheckHasBitConsistency();
   }
   this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
   ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.candidate_id_.Destroy();
   this_._impl_.~Impl_();
 }
 
-inline void* PROTOBUF_NONNULL Election::PlacementNew_(
+inline void* PROTOBUF_NONNULL RaftRequestVote::PlacementNew_(
     const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
     ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
-  return ::new (mem) Election(arena);
+  return ::new (mem) RaftRequestVote(arena);
 }
-#ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
-constexpr auto Election::InternalNewImpl_() {
-  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(Election),
-                                            alignof(Election));
+constexpr auto RaftRequestVote::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(RaftRequestVote),
+                                            alignof(RaftRequestVote));
 }
-#else  // !PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
-constexpr auto Election::InternalNewImpl_() {
-  constexpr auto arena_bits = ::google::protobuf::internal::EncodePlacementArenaOffsets({
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.added_node_id_) +
-          decltype(Election::_impl_.added_node_id_)::
-              InternalGetArenaOffset(
-                  ::google::protobuf::Message::internal_visibility()),
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.removed_node_id_) +
-          decltype(Election::_impl_.removed_node_id_)::
-              InternalGetArenaOffset(
-                  ::google::protobuf::Message::internal_visibility()),
-  });
-  if (arena_bits.has_value()) {
-    return ::google::protobuf::internal::MessageCreator::ZeroInit(
-        sizeof(Election), alignof(Election), *arena_bits);
-  } else {
-    return ::google::protobuf::internal::MessageCreator(&Election::PlacementNew_,
-                                 sizeof(Election),
-                                 alignof(Election));
-  }
-}
-#endif
-constexpr auto Election::InternalGenerateClassData_() {
+constexpr auto RaftRequestVote::InternalGenerateClassData_() {
   return ::google::protobuf::internal::ClassDataFull{
       ::google::protobuf::internal::ClassData{
-          &_Election_default_instance_._instance,
+          &_RaftRequestVote_default_instance_._instance,
           &_table_.header,
           nullptr,  // IsInitialized
-          &Election::MergeImpl,
-          ::google::protobuf::Message::GetNewImpl<Election>(),
+          &RaftRequestVote::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<RaftRequestVote>(),
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-          &Election::SharedDtor,
-          ::google::protobuf::Message::GetClearImpl<Election>(), &Election::ByteSizeLong,
-              &Election::_InternalSerialize,
+          &RaftRequestVote::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<RaftRequestVote>(), &RaftRequestVote::ByteSizeLong,
+              &RaftRequestVote::_InternalSerialize,
 #endif  // PROTOBUF_CUSTOM_VTABLE
-          PROTOBUF_FIELD_OFFSET(Election, _impl_._cached_size_),
+          PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_._cached_size_),
           false,
       },
-      &Election::kDescriptorMethods,
+      &RaftRequestVote::kDescriptorMethods,
       &descriptor_table_coor_2eproto,
       nullptr,  // tracker
   };
 }
 
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
-    ::google::protobuf::internal::ClassDataFull Election_class_data_ =
-        Election::InternalGenerateClassData_();
+    ::google::protobuf::internal::ClassDataFull RaftRequestVote_class_data_ =
+        RaftRequestVote::InternalGenerateClassData_();
 
 PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
-Election::GetClassData() const {
-  ::google::protobuf::internal::PrefetchToLocalCache(&Election_class_data_);
-  ::google::protobuf::internal::PrefetchToLocalCache(Election_class_data_.tc_table);
-  return Election_class_data_.base();
+RaftRequestVote::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&RaftRequestVote_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(RaftRequestVote_class_data_.tc_table);
+  return RaftRequestVote_class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 5, 0, 0, 2>
-Election::_table_ = {
+const ::_pbi::TcParseTable<3, 5, 0, 41, 2>
+RaftRequestVote::_table_ = {
   {
-    PROTOBUF_FIELD_OFFSET(Election, _impl_._has_bits_),
+    PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_._has_bits_),
     0, // no _extensions_
     5, 56,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
@@ -323,144 +380,139 @@ Election::_table_ = {
     5,  // num_field_entries
     0,  // num_aux_entries
     offsetof(decltype(_table_), field_names),  // no aux_entries
-    Election_class_data_.base(),
+    RaftRequestVote_class_data_.base(),
     nullptr,  // post_loop_handler
     ::_pbi::TcParser::GenericFallback,  // fallback
     #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
-    ::_pbi::TcParser::GetTable<::coor::Election>(),  // to_prefetch
+    ::_pbi::TcParser::GetTable<::coor::RaftRequestVote>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
     {::_pbi::TcParser::MiniParse, {}},
-    // int32 is_leader = 1;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(Election, _impl_.is_leader_), 2>(),
-     {8, 2, 0,
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.is_leader_)}},
-    // uint32 last_node_id = 2;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(Election, _impl_.last_node_id_), 3>(),
-     {16, 3, 0,
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.last_node_id_)}},
-    // repeated uint32 added_node_id = 3;
-    {::_pbi::TcParser::FastV32P1,
-     {26, 0, 0,
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.added_node_id_)}},
-    // repeated uint32 removed_node_id = 4;
-    {::_pbi::TcParser::FastV32P1,
-     {34, 1, 0,
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.removed_node_id_)}},
-    // uint64 beleadertime = 5;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(Election, _impl_.beleadertime_), 4>(),
+    // uint64 term = 1;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftRequestVote, _impl_.term_), 1>(),
+     {8, 1, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.term_)}},
+    // string candidate_id = 2;
+    {::_pbi::TcParser::FastUS1,
+     {18, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.candidate_id_)}},
+    // uint64 last_log_index = 3;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftRequestVote, _impl_.last_log_index_), 2>(),
+     {24, 2, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.last_log_index_)}},
+    // uint64 last_log_term = 4;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftRequestVote, _impl_.last_log_term_), 3>(),
+     {32, 3, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.last_log_term_)}},
+    // uint32 next_node_id_alloc_hint = 5;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftRequestVote, _impl_.next_node_id_alloc_hint_), 4>(),
      {40, 4, 0,
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.beleadertime_)}},
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.next_node_id_alloc_hint_)}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
   }}, {{
     65535, 65535
   }}, {{
-    // int32 is_leader = 1;
-    {PROTOBUF_FIELD_OFFSET(Election, _impl_.is_leader_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kInt32)},
-    // uint32 last_node_id = 2;
-    {PROTOBUF_FIELD_OFFSET(Election, _impl_.last_node_id_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
-    // repeated uint32 added_node_id = 3;
-    {PROTOBUF_FIELD_OFFSET(Election, _impl_.added_node_id_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcRepeated | ::_fl::kPackedUInt32)},
-    // repeated uint32 removed_node_id = 4;
-    {PROTOBUF_FIELD_OFFSET(Election, _impl_.removed_node_id_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcRepeated | ::_fl::kPackedUInt32)},
-    // uint64 beleadertime = 5;
-    {PROTOBUF_FIELD_OFFSET(Election, _impl_.beleadertime_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint64 term = 1;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.term_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // string candidate_id = 2;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.candidate_id_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint64 last_log_index = 3;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.last_log_index_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint64 last_log_term = 4;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.last_log_term_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint32 next_node_id_alloc_hint = 5;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.next_node_id_alloc_hint_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
   }},
   // no aux_entries
   {{
+    "\24\0\14\0\0\0\0\0"
+    "coor.RaftRequestVote"
+    "candidate_id"
   }},
 };
-PROTOBUF_NOINLINE void Election::Clear() {
-// @@protoc_insertion_point(message_clear_start:coor.Election)
+PROTOBUF_NOINLINE void RaftRequestVote::Clear() {
+// @@protoc_insertion_point(message_clear_start:coor.RaftRequestVote)
   ::google::protobuf::internal::TSanWrite(&_impl_);
   ::uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
-      _impl_.added_node_id_.Clear();
-    }
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000002U)) {
-      _impl_.removed_node_id_.Clear();
-    }
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    _impl_.candidate_id_.ClearNonDefaultToEmpty();
   }
-  if (BatchCheckHasBit(cached_has_bits, 0x0000001cU)) {
-    ::memset(&_impl_.is_leader_, 0, static_cast<::size_t>(
-        reinterpret_cast<char*>(&_impl_.beleadertime_) -
-        reinterpret_cast<char*>(&_impl_.is_leader_)) + sizeof(_impl_.beleadertime_));
+  if (BatchCheckHasBit(cached_has_bits, 0x0000001eU)) {
+    ::memset(&_impl_.term_, 0, static_cast<::size_t>(
+        reinterpret_cast<char*>(&_impl_.next_node_id_alloc_hint_) -
+        reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.next_node_id_alloc_hint_));
   }
   _impl_._has_bits_.Clear();
   _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
 }
 
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-::uint8_t* PROTOBUF_NONNULL Election::_InternalSerialize(
+::uint8_t* PROTOBUF_NONNULL RaftRequestVote::_InternalSerialize(
     const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
     ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
-  const Election& this_ = static_cast<const Election&>(base);
+  const RaftRequestVote& this_ = static_cast<const RaftRequestVote&>(base);
 #else   // PROTOBUF_CUSTOM_VTABLE
-::uint8_t* PROTOBUF_NONNULL Election::_InternalSerialize(
+::uint8_t* PROTOBUF_NONNULL RaftRequestVote::_InternalSerialize(
     ::uint8_t* PROTOBUF_NONNULL target,
     ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
-  const Election& this_ = *this;
+  const RaftRequestVote& this_ = *this;
 #endif  // PROTOBUF_CUSTOM_VTABLE
   if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
     this_.CheckHasBitConsistency();
   }
-  // @@protoc_insertion_point(serialize_to_array_start:coor.Election)
+  // @@protoc_insertion_point(serialize_to_array_start:coor.RaftRequestVote)
   ::uint32_t cached_has_bits = 0;
   (void)cached_has_bits;
 
   cached_has_bits = this_._impl_._has_bits_[0];
-  // int32 is_leader = 1;
-  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
-    if (this_._internal_is_leader() != 0) {
-      target =
-          ::google::protobuf::internal::WireFormatLite::WriteInt32ToArrayWithField<1>(
-              stream, this_._internal_is_leader(), target);
-    }
-  }
-
-  // uint32 last_node_id = 2;
-  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
-    if (this_._internal_last_node_id() != 0) {
-      target = stream->EnsureSpace(target);
-      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
-          2, this_._internal_last_node_id(), target);
-    }
-  }
-
-  // repeated uint32 added_node_id = 3;
-  if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
-    {
-      int byte_size = this_._impl_._added_node_id_cached_byte_size_.Get();
-      if (byte_size > 0) {
-        target = stream->WriteUInt32Packed(
-            3, this_._internal_added_node_id(), byte_size, target);
-      }
-    }
-  }
-
-  // repeated uint32 removed_node_id = 4;
-  if (CheckHasBitForRepeated(cached_has_bits, 0x00000002U)) {
-    {
-      int byte_size = this_._impl_._removed_node_id_cached_byte_size_.Get();
-      if (byte_size > 0) {
-        target = stream->WriteUInt32Packed(
-            4, this_._internal_removed_node_id(), byte_size, target);
-      }
-    }
-  }
-
-  // uint64 beleadertime = 5;
-  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
-    if (this_._internal_beleadertime() != 0) {
+  // uint64 term = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (this_._internal_term() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
-          5, this_._internal_beleadertime(), target);
+          1, this_._internal_term(), target);
+    }
+  }
+
+  // string candidate_id = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (!this_._internal_candidate_id().empty()) {
+      const ::std::string& _s = this_._internal_candidate_id();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "coor.RaftRequestVote.candidate_id");
+      target = stream->WriteStringMaybeAliased(2, _s, target);
+    }
+  }
+
+  // uint64 last_log_index = 3;
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (this_._internal_last_log_index() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          3, this_._internal_last_log_index(), target);
+    }
+  }
+
+  // uint64 last_log_term = 4;
+  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (this_._internal_last_log_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          4, this_._internal_last_log_term(), target);
+    }
+  }
+
+  // uint32 next_node_id_alloc_hint = 5;
+  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (this_._internal_next_node_id_alloc_hint() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          5, this_._internal_next_node_id_alloc_hint(), target);
     }
   }
 
@@ -469,18 +521,18 @@ PROTOBUF_NOINLINE void Election::Clear() {
         ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
             this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
   }
-  // @@protoc_insertion_point(serialize_to_array_end:coor.Election)
+  // @@protoc_insertion_point(serialize_to_array_end:coor.RaftRequestVote)
   return target;
 }
 
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-::size_t Election::ByteSizeLong(const MessageLite& base) {
-  const Election& this_ = static_cast<const Election&>(base);
+::size_t RaftRequestVote::ByteSizeLong(const MessageLite& base) {
+  const RaftRequestVote& this_ = static_cast<const RaftRequestVote&>(base);
 #else   // PROTOBUF_CUSTOM_VTABLE
-::size_t Election::ByteSizeLong() const {
-  const Election& this_ = *this;
+::size_t RaftRequestVote::ByteSizeLong() const {
+  const RaftRequestVote& this_ = *this;
 #endif  // PROTOBUF_CUSTOM_VTABLE
-  // @@protoc_insertion_point(message_byte_size_start:coor.Election)
+  // @@protoc_insertion_point(message_byte_size_start:coor.RaftRequestVote)
   ::size_t total_size = 0;
 
   ::uint32_t cached_has_bits = 0;
@@ -490,39 +542,39 @@ PROTOBUF_NOINLINE void Election::Clear() {
   ::_pbi::Prefetch5LinesFrom7Lines(&this_);
   cached_has_bits = this_._impl_._has_bits_[0];
   if (BatchCheckHasBit(cached_has_bits, 0x0000001fU)) {
-    // repeated uint32 added_node_id = 3;
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
-      total_size +=
-          ::_pbi::WireFormatLite::UInt32SizeWithPackedTagSize(
-              this_._internal_added_node_id(), 1,
-              this_._impl_._added_node_id_cached_byte_size_);
-    }
-    // repeated uint32 removed_node_id = 4;
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000002U)) {
-      total_size +=
-          ::_pbi::WireFormatLite::UInt32SizeWithPackedTagSize(
-              this_._internal_removed_node_id(), 1,
-              this_._impl_._removed_node_id_cached_byte_size_);
-    }
-    // int32 is_leader = 1;
-    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
-      if (this_._internal_is_leader() != 0) {
-        total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(
-            this_._internal_is_leader());
+    // string candidate_id = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!this_._internal_candidate_id().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_candidate_id());
       }
     }
-    // uint32 last_node_id = 2;
-    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
-      if (this_._internal_last_node_id() != 0) {
-        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
-            this_._internal_last_node_id());
-      }
-    }
-    // uint64 beleadertime = 5;
-    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
-      if (this_._internal_beleadertime() != 0) {
+    // uint64 term = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (this_._internal_term() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
-            this_._internal_beleadertime());
+            this_._internal_term());
+      }
+    }
+    // uint64 last_log_index = 3;
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (this_._internal_last_log_index() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_last_log_index());
+      }
+    }
+    // uint64 last_log_term = 4;
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (this_._internal_last_log_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_last_log_term());
+      }
+    }
+    // uint32 next_node_id_alloc_hint = 5;
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (this_._internal_next_node_id_alloc_hint() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_next_node_id_alloc_hint());
       }
     }
   }
@@ -530,40 +582,48 @@ PROTOBUF_NOINLINE void Election::Clear() {
                                              &this_._impl_._cached_size_);
 }
 
-void Election::MergeImpl(::google::protobuf::MessageLite& to_msg,
+void RaftRequestVote::MergeImpl(::google::protobuf::MessageLite& to_msg,
                             const ::google::protobuf::MessageLite& from_msg) {
    auto* const _this =
-      static_cast<Election*>(&to_msg);
-  auto& from = static_cast<const Election&>(from_msg);
+      static_cast<RaftRequestVote*>(&to_msg);
+  auto& from = static_cast<const RaftRequestVote&>(from_msg);
   if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
     from.CheckHasBitConsistency();
   }
-  // @@protoc_insertion_point(class_specific_merge_from_start:coor.Election)
+  // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftRequestVote)
   ABSL_DCHECK_NE(&from, _this);
   ::uint32_t cached_has_bits = 0;
   (void)cached_has_bits;
 
   cached_has_bits = from._impl_._has_bits_[0];
   if (BatchCheckHasBit(cached_has_bits, 0x0000001fU)) {
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
-      _this->_internal_mutable_added_node_id()->MergeFrom(from._internal_added_node_id());
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!from._internal_candidate_id().empty()) {
+        _this->_internal_set_candidate_id(from._internal_candidate_id());
+      } else {
+        if (_this->_impl_.candidate_id_.IsDefault()) {
+          _this->_internal_set_candidate_id("");
+        }
+      }
     }
-    if (CheckHasBitForRepeated(cached_has_bits, 0x00000002U)) {
-      _this->_internal_mutable_removed_node_id()->MergeFrom(from._internal_removed_node_id());
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (from._internal_term() != 0) {
+        _this->_impl_.term_ = from._impl_.term_;
+      }
     }
     if (CheckHasBit(cached_has_bits, 0x00000004U)) {
-      if (from._internal_is_leader() != 0) {
-        _this->_impl_.is_leader_ = from._impl_.is_leader_;
+      if (from._internal_last_log_index() != 0) {
+        _this->_impl_.last_log_index_ = from._impl_.last_log_index_;
       }
     }
     if (CheckHasBit(cached_has_bits, 0x00000008U)) {
-      if (from._internal_last_node_id() != 0) {
-        _this->_impl_.last_node_id_ = from._impl_.last_node_id_;
+      if (from._internal_last_log_term() != 0) {
+        _this->_impl_.last_log_term_ = from._impl_.last_log_term_;
       }
     }
     if (CheckHasBit(cached_has_bits, 0x00000010U)) {
-      if (from._internal_beleadertime() != 0) {
-        _this->_impl_.beleadertime_ = from._impl_.beleadertime_;
+      if (from._internal_next_node_id_alloc_hint() != 0) {
+        _this->_impl_.next_node_id_alloc_hint_ = from._impl_.next_node_id_alloc_hint_;
       }
     }
   }
@@ -572,29 +632,1078 @@ void Election::MergeImpl(::google::protobuf::MessageLite& to_msg,
       from._internal_metadata_);
 }
 
-void Election::CopyFrom(const Election& from) {
-  // @@protoc_insertion_point(class_specific_copy_from_start:coor.Election)
+void RaftRequestVote::CopyFrom(const RaftRequestVote& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:coor.RaftRequestVote)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
 
-void Election::InternalSwap(Election* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+void RaftRequestVote::InternalSwap(RaftRequestVote* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+  using ::std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.candidate_id_, &other->_impl_.candidate_id_, arena);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.next_node_id_alloc_hint_)
+      + sizeof(RaftRequestVote::_impl_.next_node_id_alloc_hint_)
+      - PROTOBUF_FIELD_OFFSET(RaftRequestVote, _impl_.term_)>(
+          reinterpret_cast<char*>(&_impl_.term_),
+          reinterpret_cast<char*>(&other->_impl_.term_));
+}
+
+::google::protobuf::Metadata RaftRequestVote::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
+class RaftRequestVoteRsp::_Internal {
+ public:
+  using HasBits =
+      decltype(::std::declval<RaftRequestVoteRsp>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+      8 * PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_._has_bits_);
+};
+
+RaftRequestVoteRsp::RaftRequestVoteRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftRequestVoteRsp_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:coor.RaftRequestVoteRsp)
+}
+RaftRequestVoteRsp::RaftRequestVoteRsp(
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftRequestVoteRsp& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftRequestVoteRsp_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(from._impl_) {
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+PROTOBUF_NDEBUG_INLINE RaftRequestVoteRsp::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+      : _cached_size_{0} {}
+
+inline void RaftRequestVoteRsp::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, term_),
+           0,
+           offsetof(Impl_, voter_next_node_id_alloc_hint_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::voter_next_node_id_alloc_hint_));
+}
+RaftRequestVoteRsp::~RaftRequestVoteRsp() {
+  // @@protoc_insertion_point(destructor:coor.RaftRequestVoteRsp)
+  SharedDtor(*this);
+}
+inline void RaftRequestVoteRsp::SharedDtor(MessageLite& self) {
+  RaftRequestVoteRsp& this_ = static_cast<RaftRequestVoteRsp&>(self);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.~Impl_();
+}
+
+inline void* PROTOBUF_NONNULL RaftRequestVoteRsp::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) RaftRequestVoteRsp(arena);
+}
+constexpr auto RaftRequestVoteRsp::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::ZeroInit(sizeof(RaftRequestVoteRsp),
+                                            alignof(RaftRequestVoteRsp));
+}
+constexpr auto RaftRequestVoteRsp::InternalGenerateClassData_() {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &_RaftRequestVoteRsp_default_instance_._instance,
+          &_table_.header,
+          nullptr,  // IsInitialized
+          &RaftRequestVoteRsp::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<RaftRequestVoteRsp>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &RaftRequestVoteRsp::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<RaftRequestVoteRsp>(), &RaftRequestVoteRsp::ByteSizeLong,
+              &RaftRequestVoteRsp::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_._cached_size_),
+          false,
+      },
+      &RaftRequestVoteRsp::kDescriptorMethods,
+      &descriptor_table_coor_2eproto,
+      nullptr,  // tracker
+  };
+}
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull RaftRequestVoteRsp_class_data_ =
+        RaftRequestVoteRsp::InternalGenerateClassData_();
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+RaftRequestVoteRsp::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&RaftRequestVoteRsp_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(RaftRequestVoteRsp_class_data_.tc_table);
+  return RaftRequestVoteRsp_class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<2, 3, 0, 0, 2>
+RaftRequestVoteRsp::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_._has_bits_),
+    0, // no _extensions_
+    3, 24,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967288,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    3,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    RaftRequestVoteRsp_class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::coor::RaftRequestVoteRsp>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    {::_pbi::TcParser::MiniParse, {}},
+    // uint64 term = 1;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftRequestVoteRsp, _impl_.term_), 0>(),
+     {8, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.term_)}},
+    // bool vote_granted = 2;
+    {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(RaftRequestVoteRsp, _impl_.vote_granted_), 1>(),
+     {16, 1, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.vote_granted_)}},
+    // uint32 voter_next_node_id_alloc_hint = 3;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftRequestVoteRsp, _impl_.voter_next_node_id_alloc_hint_), 2>(),
+     {24, 2, 0,
+      PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.voter_next_node_id_alloc_hint_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // uint64 term = 1;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.term_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // bool vote_granted = 2;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.vote_granted_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kBool)},
+    // uint32 voter_next_node_id_alloc_hint = 3;
+    {PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.voter_next_node_id_alloc_hint_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+  }},
+  // no aux_entries
+  {{
+  }},
+};
+PROTOBUF_NOINLINE void RaftRequestVoteRsp::Clear() {
+// @@protoc_insertion_point(message_clear_start:coor.RaftRequestVoteRsp)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
+    ::memset(&_impl_.term_, 0, static_cast<::size_t>(
+        reinterpret_cast<char*>(&_impl_.voter_next_node_id_alloc_hint_) -
+        reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.voter_next_node_id_alloc_hint_));
+  }
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::uint8_t* PROTOBUF_NONNULL RaftRequestVoteRsp::_InternalSerialize(
+    const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
+  const RaftRequestVoteRsp& this_ = static_cast<const RaftRequestVoteRsp&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::uint8_t* PROTOBUF_NONNULL RaftRequestVoteRsp::_InternalSerialize(
+    ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+  const RaftRequestVoteRsp& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(serialize_to_array_start:coor.RaftRequestVoteRsp)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = this_._impl_._has_bits_[0];
+  // uint64 term = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (this_._internal_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          1, this_._internal_term(), target);
+    }
+  }
+
+  // bool vote_granted = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (this_._internal_vote_granted() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteBoolToArray(
+          2, this_._internal_vote_granted(), target);
+    }
+  }
+
+  // uint32 voter_next_node_id_alloc_hint = 3;
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (this_._internal_voter_next_node_id_alloc_hint() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          3, this_._internal_voter_next_node_id_alloc_hint(), target);
+    }
+  }
+
+  if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:coor.RaftRequestVoteRsp)
+  return target;
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::size_t RaftRequestVoteRsp::ByteSizeLong(const MessageLite& base) {
+  const RaftRequestVoteRsp& this_ = static_cast<const RaftRequestVoteRsp&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::size_t RaftRequestVoteRsp::ByteSizeLong() const {
+  const RaftRequestVoteRsp& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(message_byte_size_start:coor.RaftRequestVoteRsp)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void)cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+  cached_has_bits = this_._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
+    // uint64 term = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (this_._internal_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_term());
+      }
+    }
+    // bool vote_granted = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (this_._internal_vote_granted() != 0) {
+        total_size += 2;
+      }
+    }
+    // uint32 voter_next_node_id_alloc_hint = 3;
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (this_._internal_voter_next_node_id_alloc_hint() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_voter_next_node_id_alloc_hint());
+      }
+    }
+  }
+  return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                             &this_._impl_._cached_size_);
+}
+
+void RaftRequestVoteRsp::MergeImpl(::google::protobuf::MessageLite& to_msg,
+                            const ::google::protobuf::MessageLite& from_msg) {
+   auto* const _this =
+      static_cast<RaftRequestVoteRsp*>(&to_msg);
+  auto& from = static_cast<const RaftRequestVoteRsp&>(from_msg);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    from.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftRequestVoteRsp)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = from._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (from._internal_term() != 0) {
+        _this->_impl_.term_ = from._impl_.term_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (from._internal_vote_granted() != 0) {
+        _this->_impl_.vote_granted_ = from._impl_.vote_granted_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (from._internal_voter_next_node_id_alloc_hint() != 0) {
+        _this->_impl_.voter_next_node_id_alloc_hint_ = from._impl_.voter_next_node_id_alloc_hint_;
+      }
+    }
+  }
+  _this->_impl_._has_bits_[0] |= cached_has_bits;
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+
+void RaftRequestVoteRsp::CopyFrom(const RaftRequestVoteRsp& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:coor.RaftRequestVoteRsp)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void RaftRequestVoteRsp::InternalSwap(RaftRequestVoteRsp* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
   using ::std::swap;
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
-  _impl_.added_node_id_.InternalSwap(&other->_impl_.added_node_id_);
-  _impl_.removed_node_id_.InternalSwap(&other->_impl_.removed_node_id_);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(Election, _impl_.beleadertime_)
-      + sizeof(Election::_impl_.beleadertime_)
-      - PROTOBUF_FIELD_OFFSET(Election, _impl_.is_leader_)>(
-          reinterpret_cast<char*>(&_impl_.is_leader_),
-          reinterpret_cast<char*>(&other->_impl_.is_leader_));
+      PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.voter_next_node_id_alloc_hint_)
+      + sizeof(RaftRequestVoteRsp::_impl_.voter_next_node_id_alloc_hint_)
+      - PROTOBUF_FIELD_OFFSET(RaftRequestVoteRsp, _impl_.term_)>(
+          reinterpret_cast<char*>(&_impl_.term_),
+          reinterpret_cast<char*>(&other->_impl_.term_));
 }
 
-::google::protobuf::Metadata Election::GetMetadata() const {
+::google::protobuf::Metadata RaftRequestVoteRsp::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
+class RaftAppendEntries::_Internal {
+ public:
+  using HasBits =
+      decltype(::std::declval<RaftAppendEntries>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+      8 * PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_._has_bits_);
+};
+
+RaftAppendEntries::RaftAppendEntries(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftAppendEntries_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:coor.RaftAppendEntries)
+}
+PROTOBUF_NDEBUG_INLINE RaftAppendEntries::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+    [[maybe_unused]] const ::coor::RaftAppendEntries& from_msg)
+      : _has_bits_{from._has_bits_},
+        _cached_size_{0},
+        leader_id_(arena, from.leader_id_) {}
+
+RaftAppendEntries::RaftAppendEntries(
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
+    const RaftAppendEntries& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftAppendEntries_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  RaftAppendEntries* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+  ::memcpy(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, term_),
+           reinterpret_cast<const char*>(&from._impl_) +
+               offsetof(Impl_, term_),
+           offsetof(Impl_, leader_next_node_id_alloc_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::leader_next_node_id_alloc_));
+
+  // @@protoc_insertion_point(copy_constructor:coor.RaftAppendEntries)
+}
+PROTOBUF_NDEBUG_INLINE RaftAppendEntries::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+      : _cached_size_{0},
+        leader_id_(arena) {}
+
+inline void RaftAppendEntries::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, term_),
+           0,
+           offsetof(Impl_, leader_next_node_id_alloc_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::leader_next_node_id_alloc_));
+}
+RaftAppendEntries::~RaftAppendEntries() {
+  // @@protoc_insertion_point(destructor:coor.RaftAppendEntries)
+  SharedDtor(*this);
+}
+inline void RaftAppendEntries::SharedDtor(MessageLite& self) {
+  RaftAppendEntries& this_ = static_cast<RaftAppendEntries&>(self);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.leader_id_.Destroy();
+  this_._impl_.~Impl_();
+}
+
+inline void* PROTOBUF_NONNULL RaftAppendEntries::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) RaftAppendEntries(arena);
+}
+constexpr auto RaftAppendEntries::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(RaftAppendEntries),
+                                            alignof(RaftAppendEntries));
+}
+constexpr auto RaftAppendEntries::InternalGenerateClassData_() {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &_RaftAppendEntries_default_instance_._instance,
+          &_table_.header,
+          nullptr,  // IsInitialized
+          &RaftAppendEntries::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<RaftAppendEntries>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &RaftAppendEntries::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<RaftAppendEntries>(), &RaftAppendEntries::ByteSizeLong,
+              &RaftAppendEntries::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_._cached_size_),
+          false,
+      },
+      &RaftAppendEntries::kDescriptorMethods,
+      &descriptor_table_coor_2eproto,
+      nullptr,  // tracker
+  };
+}
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull RaftAppendEntries_class_data_ =
+        RaftAppendEntries::InternalGenerateClassData_();
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+RaftAppendEntries::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&RaftAppendEntries_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(RaftAppendEntries_class_data_.tc_table);
+  return RaftAppendEntries_class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<3, 6, 0, 40, 2>
+RaftAppendEntries::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_._has_bits_),
+    0, // no _extensions_
+    6, 56,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967232,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    6,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    RaftAppendEntries_class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::coor::RaftAppendEntries>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    {::_pbi::TcParser::MiniParse, {}},
+    // uint64 term = 1;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.term_), 1>(),
+     {8, 1, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_)}},
+    // string leader_id = 2;
+    {::_pbi::TcParser::FastUS1,
+     {18, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_id_)}},
+    // uint64 prev_log_index = 3;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_index_), 2>(),
+     {24, 2, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_index_)}},
+    // uint64 prev_log_term = 4;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_term_), 3>(),
+     {32, 3, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_term_)}},
+    // uint64 leader_commit = 5;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.leader_commit_), 4>(),
+     {40, 4, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_commit_)}},
+    // uint32 leader_next_node_id_alloc = 6;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), 5>(),
+     {48, 5, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_)}},
+    {::_pbi::TcParser::MiniParse, {}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // uint64 term = 1;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // string leader_id = 2;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_id_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint64 prev_log_index = 3;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_index_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint64 prev_log_term = 4;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_term_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint64 leader_commit = 5;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_commit_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // uint32 leader_next_node_id_alloc = 6;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+  }},
+  // no aux_entries
+  {{
+    "\26\0\11\0\0\0\0\0"
+    "coor.RaftAppendEntries"
+    "leader_id"
+  }},
+};
+PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
+// @@protoc_insertion_point(message_clear_start:coor.RaftAppendEntries)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    _impl_.leader_id_.ClearNonDefaultToEmpty();
+  }
+  if (BatchCheckHasBit(cached_has_bits, 0x0000003eU)) {
+    ::memset(&_impl_.term_, 0, static_cast<::size_t>(
+        reinterpret_cast<char*>(&_impl_.leader_next_node_id_alloc_) -
+        reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_next_node_id_alloc_));
+  }
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::uint8_t* PROTOBUF_NONNULL RaftAppendEntries::_InternalSerialize(
+    const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
+  const RaftAppendEntries& this_ = static_cast<const RaftAppendEntries&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::uint8_t* PROTOBUF_NONNULL RaftAppendEntries::_InternalSerialize(
+    ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+  const RaftAppendEntries& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(serialize_to_array_start:coor.RaftAppendEntries)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = this_._impl_._has_bits_[0];
+  // uint64 term = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (this_._internal_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          1, this_._internal_term(), target);
+    }
+  }
+
+  // string leader_id = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (!this_._internal_leader_id().empty()) {
+      const ::std::string& _s = this_._internal_leader_id();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "coor.RaftAppendEntries.leader_id");
+      target = stream->WriteStringMaybeAliased(2, _s, target);
+    }
+  }
+
+  // uint64 prev_log_index = 3;
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (this_._internal_prev_log_index() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          3, this_._internal_prev_log_index(), target);
+    }
+  }
+
+  // uint64 prev_log_term = 4;
+  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (this_._internal_prev_log_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          4, this_._internal_prev_log_term(), target);
+    }
+  }
+
+  // uint64 leader_commit = 5;
+  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (this_._internal_leader_commit() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          5, this_._internal_leader_commit(), target);
+    }
+  }
+
+  // uint32 leader_next_node_id_alloc = 6;
+  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (this_._internal_leader_next_node_id_alloc() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          6, this_._internal_leader_next_node_id_alloc(), target);
+    }
+  }
+
+  if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:coor.RaftAppendEntries)
+  return target;
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::size_t RaftAppendEntries::ByteSizeLong(const MessageLite& base) {
+  const RaftAppendEntries& this_ = static_cast<const RaftAppendEntries&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::size_t RaftAppendEntries::ByteSizeLong() const {
+  const RaftAppendEntries& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(message_byte_size_start:coor.RaftAppendEntries)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void)cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+  cached_has_bits = this_._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
+    // string leader_id = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!this_._internal_leader_id().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_leader_id());
+      }
+    }
+    // uint64 term = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (this_._internal_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_term());
+      }
+    }
+    // uint64 prev_log_index = 3;
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (this_._internal_prev_log_index() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_prev_log_index());
+      }
+    }
+    // uint64 prev_log_term = 4;
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (this_._internal_prev_log_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_prev_log_term());
+      }
+    }
+    // uint64 leader_commit = 5;
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (this_._internal_leader_commit() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_leader_commit());
+      }
+    }
+    // uint32 leader_next_node_id_alloc = 6;
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+      if (this_._internal_leader_next_node_id_alloc() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_leader_next_node_id_alloc());
+      }
+    }
+  }
+  return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                             &this_._impl_._cached_size_);
+}
+
+void RaftAppendEntries::MergeImpl(::google::protobuf::MessageLite& to_msg,
+                            const ::google::protobuf::MessageLite& from_msg) {
+   auto* const _this =
+      static_cast<RaftAppendEntries*>(&to_msg);
+  auto& from = static_cast<const RaftAppendEntries&>(from_msg);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    from.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftAppendEntries)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = from._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!from._internal_leader_id().empty()) {
+        _this->_internal_set_leader_id(from._internal_leader_id());
+      } else {
+        if (_this->_impl_.leader_id_.IsDefault()) {
+          _this->_internal_set_leader_id("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (from._internal_term() != 0) {
+        _this->_impl_.term_ = from._impl_.term_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (from._internal_prev_log_index() != 0) {
+        _this->_impl_.prev_log_index_ = from._impl_.prev_log_index_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (from._internal_prev_log_term() != 0) {
+        _this->_impl_.prev_log_term_ = from._impl_.prev_log_term_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (from._internal_leader_commit() != 0) {
+        _this->_impl_.leader_commit_ = from._impl_.leader_commit_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+      if (from._internal_leader_next_node_id_alloc() != 0) {
+        _this->_impl_.leader_next_node_id_alloc_ = from._impl_.leader_next_node_id_alloc_;
+      }
+    }
+  }
+  _this->_impl_._has_bits_[0] |= cached_has_bits;
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+
+void RaftAppendEntries::CopyFrom(const RaftAppendEntries& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:coor.RaftAppendEntries)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void RaftAppendEntries::InternalSwap(RaftAppendEntries* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+  using ::std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.leader_id_, &other->_impl_.leader_id_, arena);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_)
+      + sizeof(RaftAppendEntries::_impl_.leader_next_node_id_alloc_)
+      - PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_)>(
+          reinterpret_cast<char*>(&_impl_.term_),
+          reinterpret_cast<char*>(&other->_impl_.term_));
+}
+
+::google::protobuf::Metadata RaftAppendEntries::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
+class RaftAppendEntriesRsp::_Internal {
+ public:
+  using HasBits =
+      decltype(::std::declval<RaftAppendEntriesRsp>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+      8 * PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_._has_bits_);
+};
+
+RaftAppendEntriesRsp::RaftAppendEntriesRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftAppendEntriesRsp_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:coor.RaftAppendEntriesRsp)
+}
+RaftAppendEntriesRsp::RaftAppendEntriesRsp(
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftAppendEntriesRsp& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftAppendEntriesRsp_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(from._impl_) {
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+PROTOBUF_NDEBUG_INLINE RaftAppendEntriesRsp::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+      : _cached_size_{0} {}
+
+inline void RaftAppendEntriesRsp::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, term_),
+           0,
+           offsetof(Impl_, success_) -
+               offsetof(Impl_, term_) +
+               sizeof(Impl_::success_));
+}
+RaftAppendEntriesRsp::~RaftAppendEntriesRsp() {
+  // @@protoc_insertion_point(destructor:coor.RaftAppendEntriesRsp)
+  SharedDtor(*this);
+}
+inline void RaftAppendEntriesRsp::SharedDtor(MessageLite& self) {
+  RaftAppendEntriesRsp& this_ = static_cast<RaftAppendEntriesRsp&>(self);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.~Impl_();
+}
+
+inline void* PROTOBUF_NONNULL RaftAppendEntriesRsp::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) RaftAppendEntriesRsp(arena);
+}
+constexpr auto RaftAppendEntriesRsp::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::ZeroInit(sizeof(RaftAppendEntriesRsp),
+                                            alignof(RaftAppendEntriesRsp));
+}
+constexpr auto RaftAppendEntriesRsp::InternalGenerateClassData_() {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &_RaftAppendEntriesRsp_default_instance_._instance,
+          &_table_.header,
+          nullptr,  // IsInitialized
+          &RaftAppendEntriesRsp::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<RaftAppendEntriesRsp>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &RaftAppendEntriesRsp::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<RaftAppendEntriesRsp>(), &RaftAppendEntriesRsp::ByteSizeLong,
+              &RaftAppendEntriesRsp::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_._cached_size_),
+          false,
+      },
+      &RaftAppendEntriesRsp::kDescriptorMethods,
+      &descriptor_table_coor_2eproto,
+      nullptr,  // tracker
+  };
+}
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull RaftAppendEntriesRsp_class_data_ =
+        RaftAppendEntriesRsp::InternalGenerateClassData_();
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+RaftAppendEntriesRsp::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&RaftAppendEntriesRsp_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(RaftAppendEntriesRsp_class_data_.tc_table);
+  return RaftAppendEntriesRsp_class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<1, 2, 0, 0, 2>
+RaftAppendEntriesRsp::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_._has_bits_),
+    0, // no _extensions_
+    2, 8,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967292,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    2,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    RaftAppendEntriesRsp_class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::coor::RaftAppendEntriesRsp>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    // bool success = 2;
+    {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(RaftAppendEntriesRsp, _impl_.success_), 1>(),
+     {16, 1, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.success_)}},
+    // uint64 term = 1;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntriesRsp, _impl_.term_), 0>(),
+     {8, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.term_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // uint64 term = 1;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.term_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // bool success = 2;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.success_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kBool)},
+  }},
+  // no aux_entries
+  {{
+  }},
+};
+PROTOBUF_NOINLINE void RaftAppendEntriesRsp::Clear() {
+// @@protoc_insertion_point(message_clear_start:coor.RaftAppendEntriesRsp)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    ::memset(&_impl_.term_, 0, static_cast<::size_t>(
+        reinterpret_cast<char*>(&_impl_.success_) -
+        reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.success_));
+  }
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::uint8_t* PROTOBUF_NONNULL RaftAppendEntriesRsp::_InternalSerialize(
+    const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
+  const RaftAppendEntriesRsp& this_ = static_cast<const RaftAppendEntriesRsp&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::uint8_t* PROTOBUF_NONNULL RaftAppendEntriesRsp::_InternalSerialize(
+    ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+  const RaftAppendEntriesRsp& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(serialize_to_array_start:coor.RaftAppendEntriesRsp)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = this_._impl_._has_bits_[0];
+  // uint64 term = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (this_._internal_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          1, this_._internal_term(), target);
+    }
+  }
+
+  // bool success = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (this_._internal_success() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteBoolToArray(
+          2, this_._internal_success(), target);
+    }
+  }
+
+  if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:coor.RaftAppendEntriesRsp)
+  return target;
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::size_t RaftAppendEntriesRsp::ByteSizeLong(const MessageLite& base) {
+  const RaftAppendEntriesRsp& this_ = static_cast<const RaftAppendEntriesRsp&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::size_t RaftAppendEntriesRsp::ByteSizeLong() const {
+  const RaftAppendEntriesRsp& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(message_byte_size_start:coor.RaftAppendEntriesRsp)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void)cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+  cached_has_bits = this_._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    // uint64 term = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (this_._internal_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_term());
+      }
+    }
+    // bool success = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (this_._internal_success() != 0) {
+        total_size += 2;
+      }
+    }
+  }
+  return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                             &this_._impl_._cached_size_);
+}
+
+void RaftAppendEntriesRsp::MergeImpl(::google::protobuf::MessageLite& to_msg,
+                            const ::google::protobuf::MessageLite& from_msg) {
+   auto* const _this =
+      static_cast<RaftAppendEntriesRsp*>(&to_msg);
+  auto& from = static_cast<const RaftAppendEntriesRsp&>(from_msg);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    from.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftAppendEntriesRsp)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = from._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (from._internal_term() != 0) {
+        _this->_impl_.term_ = from._impl_.term_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (from._internal_success() != 0) {
+        _this->_impl_.success_ = from._impl_.success_;
+      }
+    }
+  }
+  _this->_impl_._has_bits_[0] |= cached_has_bits;
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+
+void RaftAppendEntriesRsp::CopyFrom(const RaftAppendEntriesRsp& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:coor.RaftAppendEntriesRsp)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void RaftAppendEntriesRsp::InternalSwap(RaftAppendEntriesRsp* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+  using ::std::swap;
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.success_)
+      + sizeof(RaftAppendEntriesRsp::_impl_.success_)
+      - PROTOBUF_FIELD_OFFSET(RaftAppendEntriesRsp, _impl_.term_)>(
+          reinterpret_cast<char*>(&_impl_.term_),
+          reinterpret_cast<char*>(&other->_impl_.term_));
+}
+
+::google::protobuf::Metadata RaftAppendEntriesRsp::GetMetadata() const {
   return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
 }
 // @@protoc_insertion_point(namespace_scope)

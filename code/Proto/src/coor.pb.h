@@ -54,10 +54,22 @@ extern "C" {
 extern const ::google::protobuf::internal::DescriptorTable descriptor_table_coor_2eproto;
 }  // extern "C"
 namespace coor {
-class Election;
-struct ElectionDefaultTypeInternal;
-extern ElectionDefaultTypeInternal _Election_default_instance_;
-extern const ::google::protobuf::internal::ClassDataFull Election_class_data_;
+class RaftAppendEntries;
+struct RaftAppendEntriesDefaultTypeInternal;
+extern RaftAppendEntriesDefaultTypeInternal _RaftAppendEntries_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull RaftAppendEntries_class_data_;
+class RaftAppendEntriesRsp;
+struct RaftAppendEntriesRspDefaultTypeInternal;
+extern RaftAppendEntriesRspDefaultTypeInternal _RaftAppendEntriesRsp_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull RaftAppendEntriesRsp_class_data_;
+class RaftRequestVote;
+struct RaftRequestVoteDefaultTypeInternal;
+extern RaftRequestVoteDefaultTypeInternal _RaftRequestVote_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull RaftRequestVote_class_data_;
+class RaftRequestVoteRsp;
+struct RaftRequestVoteRspDefaultTypeInternal;
+extern RaftRequestVoteRspDefaultTypeInternal _RaftRequestVoteRsp_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull RaftRequestVoteRsp_class_data_;
 }  // namespace coor
 namespace google {
 namespace protobuf {
@@ -71,30 +83,30 @@ namespace coor {
 
 // -------------------------------------------------------------------
 
-class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::protobuf::Message
-/* @@protoc_insertion_point(class_definition:coor.Election) */ {
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftRequestVoteRsp final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:coor.RaftRequestVoteRsp) */ {
  public:
-  inline Election() : Election(nullptr) {}
-  ~Election() PROTOBUF_FINAL;
+  inline RaftRequestVoteRsp() : RaftRequestVoteRsp(nullptr) {}
+  ~RaftRequestVoteRsp() PROTOBUF_FINAL;
 
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-  void operator delete(Election* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+  void operator delete(RaftRequestVoteRsp* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
     SharedDtor(*msg);
-    ::google::protobuf::internal::SizedDelete(msg, sizeof(Election));
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(RaftRequestVoteRsp));
   }
 #endif
 
   template <typename = void>
-  explicit constexpr Election(::google::protobuf::internal::ConstantInitialized);
+  explicit constexpr RaftRequestVoteRsp(::google::protobuf::internal::ConstantInitialized);
 
-  inline Election(const Election& from) : Election(nullptr, from) {}
-  inline Election(Election&& from) noexcept
-      : Election(nullptr, ::std::move(from)) {}
-  inline Election& operator=(const Election& from) {
+  inline RaftRequestVoteRsp(const RaftRequestVoteRsp& from) : RaftRequestVoteRsp(nullptr, from) {}
+  inline RaftRequestVoteRsp(RaftRequestVoteRsp&& from) noexcept
+      : RaftRequestVoteRsp(nullptr, ::std::move(from)) {}
+  inline RaftRequestVoteRsp& operator=(const RaftRequestVoteRsp& from) {
     CopyFrom(from);
     return *this;
   }
-  inline Election& operator=(Election&& from) noexcept {
+  inline RaftRequestVoteRsp& operator=(RaftRequestVoteRsp&& from) noexcept {
     if (this == &from) return *this;
     if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
       InternalSwap(&from);
@@ -123,13 +135,13 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
   [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
     return default_instance().GetMetadata().reflection;
   }
-  [[nodiscard]] static const Election& default_instance() {
-    return *reinterpret_cast<const Election*>(
-        &_Election_default_instance_);
+  [[nodiscard]] static const RaftRequestVoteRsp& default_instance() {
+    return *reinterpret_cast<const RaftRequestVoteRsp*>(
+        &_RaftRequestVoteRsp_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 0;
-  friend void swap(Election& a, Election& b) { a.Swap(&b); }
-  inline void Swap(Election* PROTOBUF_NONNULL other) {
+  static constexpr int kIndexInFileMessages = 1;
+  friend void swap(RaftRequestVoteRsp& a, RaftRequestVoteRsp& b) { a.Swap(&b); }
+  inline void Swap(RaftRequestVoteRsp* PROTOBUF_NONNULL other) {
     if (other == this) return;
     if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
       InternalSwap(other);
@@ -137,7 +149,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
       ::google::protobuf::internal::GenericSwap(this, other);
     }
   }
-  void UnsafeArenaSwap(Election* PROTOBUF_NONNULL other) {
+  void UnsafeArenaSwap(RaftRequestVoteRsp* PROTOBUF_NONNULL other) {
     if (other == this) return;
     ABSL_DCHECK(GetArena() == other->GetArena());
     InternalSwap(other);
@@ -145,14 +157,14 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
 
   // implements Message ----------------------------------------------
 
-  [[nodiscard]] Election* PROTOBUF_NONNULL
+  [[nodiscard]] RaftRequestVoteRsp* PROTOBUF_NONNULL
   New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
-    return ::google::protobuf::Message::DefaultConstruct<Election>(arena);
+    return ::google::protobuf::Message::DefaultConstruct<RaftRequestVoteRsp>(arena);
   }
   using ::google::protobuf::Message::CopyFrom;
-  void CopyFrom(const Election& from);
+  void CopyFrom(const RaftRequestVoteRsp& from);
   using ::google::protobuf::Message::MergeFrom;
-  void MergeFrom(const Election& from) { Election::MergeImpl(*this, from); }
+  void MergeFrom(const RaftRequestVoteRsp& from) { RaftRequestVoteRsp::MergeImpl(*this, from); }
 
   private:
   static void MergeImpl(::google::protobuf::MessageLite& to_msg,
@@ -190,17 +202,17 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
   private:
   void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
   static void SharedDtor(MessageLite& self);
-  void InternalSwap(Election* PROTOBUF_NONNULL other);
+  void InternalSwap(RaftRequestVoteRsp* PROTOBUF_NONNULL other);
  private:
   template <typename T>
   friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
-  static ::absl::string_view FullMessageName() { return "coor.Election"; }
+  static ::absl::string_view FullMessageName() { return "coor.RaftRequestVoteRsp"; }
 
-  explicit Election(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
-  Election(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Election& from);
-  Election(
-      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, Election&& from) noexcept
-      : Election(arena) {
+  explicit RaftRequestVoteRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  RaftRequestVoteRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftRequestVoteRsp& from);
+  RaftRequestVoteRsp(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, RaftRequestVoteRsp&& from) noexcept
+      : RaftRequestVoteRsp(arena) {
     *this = ::std::move(from);
   }
   const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
@@ -217,85 +229,45 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
 
   // accessors -------------------------------------------------------
   enum : int {
-    kAddedNodeIdFieldNumber = 3,
-    kRemovedNodeIdFieldNumber = 4,
-    kIsLeaderFieldNumber = 1,
-    kLastNodeIdFieldNumber = 2,
-    kBeleadertimeFieldNumber = 5,
+    kTermFieldNumber = 1,
+    kVoteGrantedFieldNumber = 2,
+    kVoterNextNodeIdAllocHintFieldNumber = 3,
   };
-  // repeated uint32 added_node_id = 3;
-  [[nodiscard]] int added_node_id_size()
-      const;
-  private:
-  int _internal_added_node_id_size() const;
-
-  public:
-  void clear_added_node_id() ;
-  [[nodiscard]] ::uint32_t added_node_id(int index) const;
-  void set_added_node_id(int index, ::uint32_t value);
-  void add_added_node_id(::uint32_t value);
-  [[nodiscard]] const ::google::protobuf::RepeatedField<::uint32_t>& added_node_id() const;
-  ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL mutable_added_node_id();
+  // uint64 term = 1;
+  void clear_term() ;
+  [[nodiscard]] ::uint64_t term() const;
+  void set_term(::uint64_t value);
 
   private:
-  const ::google::protobuf::RepeatedField<::uint32_t>& _internal_added_node_id() const;
-  ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL _internal_mutable_added_node_id();
+  ::uint64_t _internal_term() const;
+  void _internal_set_term(::uint64_t value);
 
   public:
-  // repeated uint32 removed_node_id = 4;
-  [[nodiscard]] int removed_node_id_size()
-      const;
-  private:
-  int _internal_removed_node_id_size() const;
-
-  public:
-  void clear_removed_node_id() ;
-  [[nodiscard]] ::uint32_t removed_node_id(int index) const;
-  void set_removed_node_id(int index, ::uint32_t value);
-  void add_removed_node_id(::uint32_t value);
-  [[nodiscard]] const ::google::protobuf::RepeatedField<::uint32_t>& removed_node_id() const;
-  ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL mutable_removed_node_id();
+  // bool vote_granted = 2;
+  void clear_vote_granted() ;
+  [[nodiscard]] bool vote_granted() const;
+  void set_vote_granted(bool value);
 
   private:
-  const ::google::protobuf::RepeatedField<::uint32_t>& _internal_removed_node_id() const;
-  ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL _internal_mutable_removed_node_id();
+  bool _internal_vote_granted() const;
+  void _internal_set_vote_granted(bool value);
 
   public:
-  // int32 is_leader = 1;
-  void clear_is_leader() ;
-  [[nodiscard]] ::int32_t is_leader() const;
-  void set_is_leader(::int32_t value);
+  // uint32 voter_next_node_id_alloc_hint = 3;
+  void clear_voter_next_node_id_alloc_hint() ;
+  [[nodiscard]] ::uint32_t voter_next_node_id_alloc_hint() const;
+  void set_voter_next_node_id_alloc_hint(::uint32_t value);
 
   private:
-  ::int32_t _internal_is_leader() const;
-  void _internal_set_is_leader(::int32_t value);
+  ::uint32_t _internal_voter_next_node_id_alloc_hint() const;
+  void _internal_set_voter_next_node_id_alloc_hint(::uint32_t value);
 
   public:
-  // uint32 last_node_id = 2;
-  void clear_last_node_id() ;
-  [[nodiscard]] ::uint32_t last_node_id() const;
-  void set_last_node_id(::uint32_t value);
-
-  private:
-  ::uint32_t _internal_last_node_id() const;
-  void _internal_set_last_node_id(::uint32_t value);
-
-  public:
-  // uint64 beleadertime = 5;
-  void clear_beleadertime() ;
-  [[nodiscard]] ::uint64_t beleadertime() const;
-  void set_beleadertime(::uint64_t value);
-
-  private:
-  ::uint64_t _internal_beleadertime() const;
-  void _internal_set_beleadertime(::uint64_t value);
-
-  public:
-  // @@protoc_insertion_point(class_scope:coor.Election)
+  // @@protoc_insertion_point(class_scope:coor.RaftRequestVoteRsp)
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<3, 5,
+  static const ::google::protobuf::internal::TcParseTable<2, 3,
                                    0, 0,
                                    2>
       _table_;
@@ -316,23 +288,737 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED Election final : public ::google::p
     inline explicit Impl_(
         ::google::protobuf::internal::InternalVisibility visibility,
         ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
-        const Election& from_msg);
+        const RaftRequestVoteRsp& from_msg);
     ::google::protobuf::internal::HasBits<1> _has_bits_;
     ::google::protobuf::internal::CachedSize _cached_size_;
-    ::google::protobuf::RepeatedField<::uint32_t> added_node_id_;
-    ::google::protobuf::internal::CachedSize _added_node_id_cached_byte_size_;
-    ::google::protobuf::RepeatedField<::uint32_t> removed_node_id_;
-    ::google::protobuf::internal::CachedSize _removed_node_id_cached_byte_size_;
-    ::int32_t is_leader_;
-    ::uint32_t last_node_id_;
-    ::uint64_t beleadertime_;
+    ::uint64_t term_;
+    bool vote_granted_;
+    ::uint32_t voter_next_node_id_alloc_hint_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_coor_2eproto;
 };
 
-extern const ::google::protobuf::internal::ClassDataFull Election_class_data_;
+extern const ::google::protobuf::internal::ClassDataFull RaftRequestVoteRsp_class_data_;
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftRequestVote final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:coor.RaftRequestVote) */ {
+ public:
+  inline RaftRequestVote() : RaftRequestVote(nullptr) {}
+  ~RaftRequestVote() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(RaftRequestVote* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(RaftRequestVote));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr RaftRequestVote(::google::protobuf::internal::ConstantInitialized);
+
+  inline RaftRequestVote(const RaftRequestVote& from) : RaftRequestVote(nullptr, from) {}
+  inline RaftRequestVote(RaftRequestVote&& from) noexcept
+      : RaftRequestVote(nullptr, ::std::move(from)) {}
+  inline RaftRequestVote& operator=(const RaftRequestVote& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline RaftRequestVote& operator=(RaftRequestVote&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const RaftRequestVote& default_instance() {
+    return *reinterpret_cast<const RaftRequestVote*>(
+        &_RaftRequestVote_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 0;
+  friend void swap(RaftRequestVote& a, RaftRequestVote& b) { a.Swap(&b); }
+  inline void Swap(RaftRequestVote* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(RaftRequestVote* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] RaftRequestVote* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<RaftRequestVote>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const RaftRequestVote& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const RaftRequestVote& from) { RaftRequestVote::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(RaftRequestVote* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "coor.RaftRequestVote"; }
+
+  explicit RaftRequestVote(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  RaftRequestVote(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftRequestVote& from);
+  RaftRequestVote(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, RaftRequestVote&& from) noexcept
+      : RaftRequestVote(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_();
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kCandidateIdFieldNumber = 2,
+    kTermFieldNumber = 1,
+    kLastLogIndexFieldNumber = 3,
+    kLastLogTermFieldNumber = 4,
+    kNextNodeIdAllocHintFieldNumber = 5,
+  };
+  // string candidate_id = 2;
+  void clear_candidate_id() ;
+  [[nodiscard]] const ::std::string& candidate_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_candidate_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_candidate_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_candidate_id();
+  void set_allocated_candidate_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_candidate_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_candidate_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_candidate_id();
+
+  public:
+  // uint64 term = 1;
+  void clear_term() ;
+  [[nodiscard]] ::uint64_t term() const;
+  void set_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_term() const;
+  void _internal_set_term(::uint64_t value);
+
+  public:
+  // uint64 last_log_index = 3;
+  void clear_last_log_index() ;
+  [[nodiscard]] ::uint64_t last_log_index() const;
+  void set_last_log_index(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_last_log_index() const;
+  void _internal_set_last_log_index(::uint64_t value);
+
+  public:
+  // uint64 last_log_term = 4;
+  void clear_last_log_term() ;
+  [[nodiscard]] ::uint64_t last_log_term() const;
+  void set_last_log_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_last_log_term() const;
+  void _internal_set_last_log_term(::uint64_t value);
+
+  public:
+  // uint32 next_node_id_alloc_hint = 5;
+  void clear_next_node_id_alloc_hint() ;
+  [[nodiscard]] ::uint32_t next_node_id_alloc_hint() const;
+  void set_next_node_id_alloc_hint(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_next_node_id_alloc_hint() const;
+  void _internal_set_next_node_id_alloc_hint(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:coor.RaftRequestVote)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<3, 5,
+                                   0, 41,
+                                   2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const RaftRequestVote& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr candidate_id_;
+    ::uint64_t term_;
+    ::uint64_t last_log_index_;
+    ::uint64_t last_log_term_;
+    ::uint32_t next_node_id_alloc_hint_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_coor_2eproto;
+};
+
+extern const ::google::protobuf::internal::ClassDataFull RaftRequestVote_class_data_;
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntriesRsp final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:coor.RaftAppendEntriesRsp) */ {
+ public:
+  inline RaftAppendEntriesRsp() : RaftAppendEntriesRsp(nullptr) {}
+  ~RaftAppendEntriesRsp() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(RaftAppendEntriesRsp* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(RaftAppendEntriesRsp));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr RaftAppendEntriesRsp(::google::protobuf::internal::ConstantInitialized);
+
+  inline RaftAppendEntriesRsp(const RaftAppendEntriesRsp& from) : RaftAppendEntriesRsp(nullptr, from) {}
+  inline RaftAppendEntriesRsp(RaftAppendEntriesRsp&& from) noexcept
+      : RaftAppendEntriesRsp(nullptr, ::std::move(from)) {}
+  inline RaftAppendEntriesRsp& operator=(const RaftAppendEntriesRsp& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline RaftAppendEntriesRsp& operator=(RaftAppendEntriesRsp&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const RaftAppendEntriesRsp& default_instance() {
+    return *reinterpret_cast<const RaftAppendEntriesRsp*>(
+        &_RaftAppendEntriesRsp_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 3;
+  friend void swap(RaftAppendEntriesRsp& a, RaftAppendEntriesRsp& b) { a.Swap(&b); }
+  inline void Swap(RaftAppendEntriesRsp* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(RaftAppendEntriesRsp* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] RaftAppendEntriesRsp* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<RaftAppendEntriesRsp>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const RaftAppendEntriesRsp& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const RaftAppendEntriesRsp& from) { RaftAppendEntriesRsp::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(RaftAppendEntriesRsp* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "coor.RaftAppendEntriesRsp"; }
+
+  explicit RaftAppendEntriesRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  RaftAppendEntriesRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftAppendEntriesRsp& from);
+  RaftAppendEntriesRsp(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, RaftAppendEntriesRsp&& from) noexcept
+      : RaftAppendEntriesRsp(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_();
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kTermFieldNumber = 1,
+    kSuccessFieldNumber = 2,
+  };
+  // uint64 term = 1;
+  void clear_term() ;
+  [[nodiscard]] ::uint64_t term() const;
+  void set_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_term() const;
+  void _internal_set_term(::uint64_t value);
+
+  public:
+  // bool success = 2;
+  void clear_success() ;
+  [[nodiscard]] bool success() const;
+  void set_success(bool value);
+
+  private:
+  bool _internal_success() const;
+  void _internal_set_success(bool value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:coor.RaftAppendEntriesRsp)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<1, 2,
+                                   0, 0,
+                                   2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const RaftAppendEntriesRsp& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::uint64_t term_;
+    bool success_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_coor_2eproto;
+};
+
+extern const ::google::protobuf::internal::ClassDataFull RaftAppendEntriesRsp_class_data_;
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:coor.RaftAppendEntries) */ {
+ public:
+  inline RaftAppendEntries() : RaftAppendEntries(nullptr) {}
+  ~RaftAppendEntries() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(RaftAppendEntries* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(RaftAppendEntries));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr RaftAppendEntries(::google::protobuf::internal::ConstantInitialized);
+
+  inline RaftAppendEntries(const RaftAppendEntries& from) : RaftAppendEntries(nullptr, from) {}
+  inline RaftAppendEntries(RaftAppendEntries&& from) noexcept
+      : RaftAppendEntries(nullptr, ::std::move(from)) {}
+  inline RaftAppendEntries& operator=(const RaftAppendEntries& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline RaftAppendEntries& operator=(RaftAppendEntries&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const RaftAppendEntries& default_instance() {
+    return *reinterpret_cast<const RaftAppendEntries*>(
+        &_RaftAppendEntries_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 2;
+  friend void swap(RaftAppendEntries& a, RaftAppendEntries& b) { a.Swap(&b); }
+  inline void Swap(RaftAppendEntries* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(RaftAppendEntries* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] RaftAppendEntries* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<RaftAppendEntries>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const RaftAppendEntries& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const RaftAppendEntries& from) { RaftAppendEntries::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(RaftAppendEntries* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "coor.RaftAppendEntries"; }
+
+  explicit RaftAppendEntries(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  RaftAppendEntries(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftAppendEntries& from);
+  RaftAppendEntries(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, RaftAppendEntries&& from) noexcept
+      : RaftAppendEntries(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_();
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kLeaderIdFieldNumber = 2,
+    kTermFieldNumber = 1,
+    kPrevLogIndexFieldNumber = 3,
+    kPrevLogTermFieldNumber = 4,
+    kLeaderCommitFieldNumber = 5,
+    kLeaderNextNodeIdAllocFieldNumber = 6,
+  };
+  // string leader_id = 2;
+  void clear_leader_id() ;
+  [[nodiscard]] const ::std::string& leader_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_leader_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_leader_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_leader_id();
+  void set_allocated_leader_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_leader_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_leader_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_leader_id();
+
+  public:
+  // uint64 term = 1;
+  void clear_term() ;
+  [[nodiscard]] ::uint64_t term() const;
+  void set_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_term() const;
+  void _internal_set_term(::uint64_t value);
+
+  public:
+  // uint64 prev_log_index = 3;
+  void clear_prev_log_index() ;
+  [[nodiscard]] ::uint64_t prev_log_index() const;
+  void set_prev_log_index(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_prev_log_index() const;
+  void _internal_set_prev_log_index(::uint64_t value);
+
+  public:
+  // uint64 prev_log_term = 4;
+  void clear_prev_log_term() ;
+  [[nodiscard]] ::uint64_t prev_log_term() const;
+  void set_prev_log_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_prev_log_term() const;
+  void _internal_set_prev_log_term(::uint64_t value);
+
+  public:
+  // uint64 leader_commit = 5;
+  void clear_leader_commit() ;
+  [[nodiscard]] ::uint64_t leader_commit() const;
+  void set_leader_commit(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_leader_commit() const;
+  void _internal_set_leader_commit(::uint64_t value);
+
+  public:
+  // uint32 leader_next_node_id_alloc = 6;
+  void clear_leader_next_node_id_alloc() ;
+  [[nodiscard]] ::uint32_t leader_next_node_id_alloc() const;
+  void set_leader_next_node_id_alloc(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_leader_next_node_id_alloc() const;
+  void _internal_set_leader_next_node_id_alloc(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:coor.RaftAppendEntries)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<3, 6,
+                                   0, 40,
+                                   2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const RaftAppendEntries& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr leader_id_;
+    ::uint64_t term_;
+    ::uint64_t prev_log_index_;
+    ::uint64_t prev_log_term_;
+    ::uint64_t leader_commit_;
+    ::uint32_t leader_next_node_id_alloc_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_coor_2eproto;
+};
+
+extern const ::google::protobuf::internal::ClassDataFull RaftAppendEntries_class_data_;
 
 // ===================================================================
 
@@ -348,183 +1034,498 @@ extern const ::google::protobuf::internal::ClassDataFull Election_class_data_;
 #endif  // __GNUC__
 // -------------------------------------------------------------------
 
-// Election
+// RaftRequestVote
 
-// int32 is_leader = 1;
-inline void Election::clear_is_leader() {
+// uint64 term = 1;
+inline void RaftRequestVote::clear_term() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.is_leader_ = 0;
+  _impl_.term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000002U);
+}
+inline ::uint64_t RaftRequestVote::term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVote.term)
+  return _internal_term();
+}
+inline void RaftRequestVote::set_term(::uint64_t value) {
+  _internal_set_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVote.term)
+}
+inline ::uint64_t RaftRequestVote::_internal_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.term_;
+}
+inline void RaftRequestVote::_internal_set_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = value;
+}
+
+// string candidate_id = 2;
+inline void RaftRequestVote::clear_candidate_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.candidate_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline const ::std::string& RaftRequestVote::candidate_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVote.candidate_id)
+  return _internal_candidate_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void RaftRequestVote::set_candidate_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.candidate_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVote.candidate_id)
+}
+inline ::std::string* PROTOBUF_NONNULL RaftRequestVote::mutable_candidate_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_candidate_id();
+  // @@protoc_insertion_point(field_mutable:coor.RaftRequestVote.candidate_id)
+  return _s;
+}
+inline const ::std::string& RaftRequestVote::_internal_candidate_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.candidate_id_.Get();
+}
+inline void RaftRequestVote::_internal_set_candidate_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.candidate_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL RaftRequestVote::_internal_mutable_candidate_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.candidate_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE RaftRequestVote::release_candidate_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:coor.RaftRequestVote.candidate_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.candidate_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.candidate_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void RaftRequestVote::set_allocated_candidate_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.candidate_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.candidate_id_.IsDefault()) {
+    _impl_.candidate_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:coor.RaftRequestVote.candidate_id)
+}
+
+// uint64 last_log_index = 3;
+inline void RaftRequestVote::clear_last_log_index() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.last_log_index_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
                   0x00000004U);
 }
-inline ::int32_t Election::is_leader() const {
-  // @@protoc_insertion_point(field_get:coor.Election.is_leader)
-  return _internal_is_leader();
+inline ::uint64_t RaftRequestVote::last_log_index() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVote.last_log_index)
+  return _internal_last_log_index();
 }
-inline void Election::set_is_leader(::int32_t value) {
-  _internal_set_is_leader(value);
+inline void RaftRequestVote::set_last_log_index(::uint64_t value) {
+  _internal_set_last_log_index(value);
   SetHasBit(_impl_._has_bits_[0], 0x00000004U);
-  // @@protoc_insertion_point(field_set:coor.Election.is_leader)
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVote.last_log_index)
 }
-inline ::int32_t Election::_internal_is_leader() const {
+inline ::uint64_t RaftRequestVote::_internal_last_log_index() const {
   ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.is_leader_;
+  return _impl_.last_log_index_;
 }
-inline void Election::_internal_set_is_leader(::int32_t value) {
+inline void RaftRequestVote::_internal_set_last_log_index(::uint64_t value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.is_leader_ = value;
+  _impl_.last_log_index_ = value;
 }
 
-// uint32 last_node_id = 2;
-inline void Election::clear_last_node_id() {
+// uint64 last_log_term = 4;
+inline void RaftRequestVote::clear_last_log_term() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.last_node_id_ = 0u;
+  _impl_.last_log_term_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
                   0x00000008U);
 }
-inline ::uint32_t Election::last_node_id() const {
-  // @@protoc_insertion_point(field_get:coor.Election.last_node_id)
-  return _internal_last_node_id();
+inline ::uint64_t RaftRequestVote::last_log_term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVote.last_log_term)
+  return _internal_last_log_term();
 }
-inline void Election::set_last_node_id(::uint32_t value) {
-  _internal_set_last_node_id(value);
+inline void RaftRequestVote::set_last_log_term(::uint64_t value) {
+  _internal_set_last_log_term(value);
   SetHasBit(_impl_._has_bits_[0], 0x00000008U);
-  // @@protoc_insertion_point(field_set:coor.Election.last_node_id)
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVote.last_log_term)
 }
-inline ::uint32_t Election::_internal_last_node_id() const {
+inline ::uint64_t RaftRequestVote::_internal_last_log_term() const {
   ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.last_node_id_;
+  return _impl_.last_log_term_;
 }
-inline void Election::_internal_set_last_node_id(::uint32_t value) {
+inline void RaftRequestVote::_internal_set_last_log_term(::uint64_t value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.last_node_id_ = value;
+  _impl_.last_log_term_ = value;
 }
 
-// repeated uint32 added_node_id = 3;
-inline int Election::_internal_added_node_id_size() const {
-  return _internal_added_node_id().size();
-}
-inline int Election::added_node_id_size() const {
-  return _internal_added_node_id_size();
-}
-inline void Election::clear_added_node_id() {
+// uint32 next_node_id_alloc_hint = 5;
+inline void RaftRequestVote::clear_next_node_id_alloc_hint() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.added_node_id_.Clear();
-  ClearHasBitForRepeated(_impl_._has_bits_[0],
-                  0x00000001U);
-}
-inline ::uint32_t Election::added_node_id(int index) const {
-  // @@protoc_insertion_point(field_get:coor.Election.added_node_id)
-  return _internal_added_node_id().Get(index);
-}
-inline void Election::set_added_node_id(int index, ::uint32_t value) {
-  _internal_mutable_added_node_id()->Set(index, value);
-  // @@protoc_insertion_point(field_set:coor.Election.added_node_id)
-}
-inline void Election::add_added_node_id(::uint32_t value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _internal_mutable_added_node_id()->InternalAddWithArena(
-      internal_visibility(), GetArena(), value);
-  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000001U);
-  // @@protoc_insertion_point(field_add:coor.Election.added_node_id)
-}
-inline const ::google::protobuf::RepeatedField<::uint32_t>& Election::added_node_id() const
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  // @@protoc_insertion_point(field_list:coor.Election.added_node_id)
-  return _internal_added_node_id();
-}
-inline ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL Election::mutable_added_node_id()
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000001U);
-  // @@protoc_insertion_point(field_mutable_list:coor.Election.added_node_id)
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  return _internal_mutable_added_node_id();
-}
-inline const ::google::protobuf::RepeatedField<::uint32_t>&
-Election::_internal_added_node_id() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.added_node_id_;
-}
-inline ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL
-Election::_internal_mutable_added_node_id() {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return &_impl_.added_node_id_;
-}
-
-// repeated uint32 removed_node_id = 4;
-inline int Election::_internal_removed_node_id_size() const {
-  return _internal_removed_node_id().size();
-}
-inline int Election::removed_node_id_size() const {
-  return _internal_removed_node_id_size();
-}
-inline void Election::clear_removed_node_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.removed_node_id_.Clear();
-  ClearHasBitForRepeated(_impl_._has_bits_[0],
-                  0x00000002U);
-}
-inline ::uint32_t Election::removed_node_id(int index) const {
-  // @@protoc_insertion_point(field_get:coor.Election.removed_node_id)
-  return _internal_removed_node_id().Get(index);
-}
-inline void Election::set_removed_node_id(int index, ::uint32_t value) {
-  _internal_mutable_removed_node_id()->Set(index, value);
-  // @@protoc_insertion_point(field_set:coor.Election.removed_node_id)
-}
-inline void Election::add_removed_node_id(::uint32_t value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _internal_mutable_removed_node_id()->InternalAddWithArena(
-      internal_visibility(), GetArena(), value);
-  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000002U);
-  // @@protoc_insertion_point(field_add:coor.Election.removed_node_id)
-}
-inline const ::google::protobuf::RepeatedField<::uint32_t>& Election::removed_node_id() const
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  // @@protoc_insertion_point(field_list:coor.Election.removed_node_id)
-  return _internal_removed_node_id();
-}
-inline ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL Election::mutable_removed_node_id()
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000002U);
-  // @@protoc_insertion_point(field_mutable_list:coor.Election.removed_node_id)
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  return _internal_mutable_removed_node_id();
-}
-inline const ::google::protobuf::RepeatedField<::uint32_t>&
-Election::_internal_removed_node_id() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.removed_node_id_;
-}
-inline ::google::protobuf::RepeatedField<::uint32_t>* PROTOBUF_NONNULL
-Election::_internal_mutable_removed_node_id() {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return &_impl_.removed_node_id_;
-}
-
-// uint64 beleadertime = 5;
-inline void Election::clear_beleadertime() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.beleadertime_ = ::uint64_t{0u};
+  _impl_.next_node_id_alloc_hint_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
                   0x00000010U);
 }
-inline ::uint64_t Election::beleadertime() const {
-  // @@protoc_insertion_point(field_get:coor.Election.beleadertime)
-  return _internal_beleadertime();
+inline ::uint32_t RaftRequestVote::next_node_id_alloc_hint() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVote.next_node_id_alloc_hint)
+  return _internal_next_node_id_alloc_hint();
 }
-inline void Election::set_beleadertime(::uint64_t value) {
-  _internal_set_beleadertime(value);
+inline void RaftRequestVote::set_next_node_id_alloc_hint(::uint32_t value) {
+  _internal_set_next_node_id_alloc_hint(value);
   SetHasBit(_impl_._has_bits_[0], 0x00000010U);
-  // @@protoc_insertion_point(field_set:coor.Election.beleadertime)
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVote.next_node_id_alloc_hint)
 }
-inline ::uint64_t Election::_internal_beleadertime() const {
+inline ::uint32_t RaftRequestVote::_internal_next_node_id_alloc_hint() const {
   ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.beleadertime_;
+  return _impl_.next_node_id_alloc_hint_;
 }
-inline void Election::_internal_set_beleadertime(::uint64_t value) {
+inline void RaftRequestVote::_internal_set_next_node_id_alloc_hint(::uint32_t value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.beleadertime_ = value;
+  _impl_.next_node_id_alloc_hint_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// RaftRequestVoteRsp
+
+// uint64 term = 1;
+inline void RaftRequestVoteRsp::clear_term() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline ::uint64_t RaftRequestVoteRsp::term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVoteRsp.term)
+  return _internal_term();
+}
+inline void RaftRequestVoteRsp::set_term(::uint64_t value) {
+  _internal_set_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVoteRsp.term)
+}
+inline ::uint64_t RaftRequestVoteRsp::_internal_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.term_;
+}
+inline void RaftRequestVoteRsp::_internal_set_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = value;
+}
+
+// bool vote_granted = 2;
+inline void RaftRequestVoteRsp::clear_vote_granted() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.vote_granted_ = false;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000002U);
+}
+inline bool RaftRequestVoteRsp::vote_granted() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVoteRsp.vote_granted)
+  return _internal_vote_granted();
+}
+inline void RaftRequestVoteRsp::set_vote_granted(bool value) {
+  _internal_set_vote_granted(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVoteRsp.vote_granted)
+}
+inline bool RaftRequestVoteRsp::_internal_vote_granted() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.vote_granted_;
+}
+inline void RaftRequestVoteRsp::_internal_set_vote_granted(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.vote_granted_ = value;
+}
+
+// uint32 voter_next_node_id_alloc_hint = 3;
+inline void RaftRequestVoteRsp::clear_voter_next_node_id_alloc_hint() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.voter_next_node_id_alloc_hint_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000004U);
+}
+inline ::uint32_t RaftRequestVoteRsp::voter_next_node_id_alloc_hint() const {
+  // @@protoc_insertion_point(field_get:coor.RaftRequestVoteRsp.voter_next_node_id_alloc_hint)
+  return _internal_voter_next_node_id_alloc_hint();
+}
+inline void RaftRequestVoteRsp::set_voter_next_node_id_alloc_hint(::uint32_t value) {
+  _internal_set_voter_next_node_id_alloc_hint(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  // @@protoc_insertion_point(field_set:coor.RaftRequestVoteRsp.voter_next_node_id_alloc_hint)
+}
+inline ::uint32_t RaftRequestVoteRsp::_internal_voter_next_node_id_alloc_hint() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.voter_next_node_id_alloc_hint_;
+}
+inline void RaftRequestVoteRsp::_internal_set_voter_next_node_id_alloc_hint(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.voter_next_node_id_alloc_hint_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// RaftAppendEntries
+
+// uint64 term = 1;
+inline void RaftAppendEntries::clear_term() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000002U);
+}
+inline ::uint64_t RaftAppendEntries::term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.term)
+  return _internal_term();
+}
+inline void RaftAppendEntries::set_term(::uint64_t value) {
+  _internal_set_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.term)
+}
+inline ::uint64_t RaftAppendEntries::_internal_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.term_;
+}
+inline void RaftAppendEntries::_internal_set_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = value;
+}
+
+// string leader_id = 2;
+inline void RaftAppendEntries::clear_leader_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline const ::std::string& RaftAppendEntries::leader_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.leader_id)
+  return _internal_leader_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void RaftAppendEntries::set_leader_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.leader_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_id)
+}
+inline ::std::string* PROTOBUF_NONNULL RaftAppendEntries::mutable_leader_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_leader_id();
+  // @@protoc_insertion_point(field_mutable:coor.RaftAppendEntries.leader_id)
+  return _s;
+}
+inline const ::std::string& RaftAppendEntries::_internal_leader_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.leader_id_.Get();
+}
+inline void RaftAppendEntries::_internal_set_leader_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL RaftAppendEntries::_internal_mutable_leader_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.leader_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE RaftAppendEntries::release_leader_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:coor.RaftAppendEntries.leader_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.leader_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.leader_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void RaftAppendEntries::set_allocated_leader_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.leader_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.leader_id_.IsDefault()) {
+    _impl_.leader_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:coor.RaftAppendEntries.leader_id)
+}
+
+// uint64 prev_log_index = 3;
+inline void RaftAppendEntries::clear_prev_log_index() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.prev_log_index_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000004U);
+}
+inline ::uint64_t RaftAppendEntries::prev_log_index() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.prev_log_index)
+  return _internal_prev_log_index();
+}
+inline void RaftAppendEntries::set_prev_log_index(::uint64_t value) {
+  _internal_set_prev_log_index(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.prev_log_index)
+}
+inline ::uint64_t RaftAppendEntries::_internal_prev_log_index() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.prev_log_index_;
+}
+inline void RaftAppendEntries::_internal_set_prev_log_index(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.prev_log_index_ = value;
+}
+
+// uint64 prev_log_term = 4;
+inline void RaftAppendEntries::clear_prev_log_term() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.prev_log_term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000008U);
+}
+inline ::uint64_t RaftAppendEntries::prev_log_term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.prev_log_term)
+  return _internal_prev_log_term();
+}
+inline void RaftAppendEntries::set_prev_log_term(::uint64_t value) {
+  _internal_set_prev_log_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.prev_log_term)
+}
+inline ::uint64_t RaftAppendEntries::_internal_prev_log_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.prev_log_term_;
+}
+inline void RaftAppendEntries::_internal_set_prev_log_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.prev_log_term_ = value;
+}
+
+// uint64 leader_commit = 5;
+inline void RaftAppendEntries::clear_leader_commit() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_commit_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000010U);
+}
+inline ::uint64_t RaftAppendEntries::leader_commit() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.leader_commit)
+  return _internal_leader_commit();
+}
+inline void RaftAppendEntries::set_leader_commit(::uint64_t value) {
+  _internal_set_leader_commit(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_commit)
+}
+inline ::uint64_t RaftAppendEntries::_internal_leader_commit() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.leader_commit_;
+}
+inline void RaftAppendEntries::_internal_set_leader_commit(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_commit_ = value;
+}
+
+// uint32 leader_next_node_id_alloc = 6;
+inline void RaftAppendEntries::clear_leader_next_node_id_alloc() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_next_node_id_alloc_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000020U);
+}
+inline ::uint32_t RaftAppendEntries::leader_next_node_id_alloc() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.leader_next_node_id_alloc)
+  return _internal_leader_next_node_id_alloc();
+}
+inline void RaftAppendEntries::set_leader_next_node_id_alloc(::uint32_t value) {
+  _internal_set_leader_next_node_id_alloc(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_next_node_id_alloc)
+}
+inline ::uint32_t RaftAppendEntries::_internal_leader_next_node_id_alloc() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.leader_next_node_id_alloc_;
+}
+inline void RaftAppendEntries::_internal_set_leader_next_node_id_alloc(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.leader_next_node_id_alloc_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// RaftAppendEntriesRsp
+
+// uint64 term = 1;
+inline void RaftAppendEntriesRsp::clear_term() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline ::uint64_t RaftAppendEntriesRsp::term() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntriesRsp.term)
+  return _internal_term();
+}
+inline void RaftAppendEntriesRsp::set_term(::uint64_t value) {
+  _internal_set_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntriesRsp.term)
+}
+inline ::uint64_t RaftAppendEntriesRsp::_internal_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.term_;
+}
+inline void RaftAppendEntriesRsp::_internal_set_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.term_ = value;
+}
+
+// bool success = 2;
+inline void RaftAppendEntriesRsp::clear_success() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.success_ = false;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000002U);
+}
+inline bool RaftAppendEntriesRsp::success() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntriesRsp.success)
+  return _internal_success();
+}
+inline void RaftAppendEntriesRsp::set_success(bool value) {
+  _internal_set_success(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntriesRsp.success)
+}
+inline bool RaftAppendEntriesRsp::_internal_success() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.success_;
+}
+inline void RaftAppendEntriesRsp::_internal_set_success(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.success_ = value;
 }
 
 #ifdef __GNUC__

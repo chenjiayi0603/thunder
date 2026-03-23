@@ -1,4 +1,4 @@
-# libProto.so：.proto 由 CMake 在构建前生成（当前仅 coor.proto，供 Center 等使用 Election）
+# libProto.so：.proto 由 CMake 在构建前生成（当前仅 coor.proto：Raft 等）
 set(_proto_root "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_proto_src "${_proto_root}/src")
 set(_protoc "${THUNDER_3PARTY}/protobuf/build/protoc")

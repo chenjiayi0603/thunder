@@ -13,12 +13,15 @@ if(THUNDER_DEPLOY_AUTO)
 endif()
 
 set(_center_src "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(_session "${_center_src}/SessionOnlineNodes.cpp")
+set(_center_session
+  "${_center_src}/SessionOnlineNodes.cpp"
+  "${_center_src}/SessionRaftCluster.cpp"
+)
 
 function(_center_plugin _name _subdir)
   add_library(${_name} SHARED
     "${_center_src}/${_subdir}/${_name}.cpp"
-    "${_session}"
+    ${_center_session}
   )
   set_target_properties(${_name} PROPERTIES OUTPUT_NAME "${_name}" PREFIX "")
   target_compile_features(${_name} PRIVATE cxx_std_20)
@@ -37,7 +40,8 @@ function(_center_plugin _name _subdir)
   endif()
 endfunction()
 
-_center_plugin(CmdElection CmdElection)
+_center_plugin(CmdRaftRequestVote CmdRaftRequestVote)
+_center_plugin(CmdRaftAppendEntries CmdRaftAppendEntries)
 _center_plugin(CmdNodeDisconnect CmdNodeDisconnect)
 _center_plugin(CmdNodeRegister CmdNodeRegister)
 _center_plugin(CmdNodeReport CmdNodeReport)
@@ -46,7 +50,7 @@ add_library(ModuleAdmin SHARED
   "${_center_src}/ModuleAdmin/ModuleAdmin.cpp"
   "${_center_src}/ModuleAdmin/StepGetConfig.cpp"
   "${_center_src}/ModuleAdmin/StepSetConfig.cpp"
-  "${_session}"
+  ${_center_session}
 )
 set_target_properties(ModuleAdmin PROPERTIES OUTPUT_NAME "ModuleAdmin" PREFIX "")
 target_compile_features(ModuleAdmin PRIVATE cxx_std_20)
@@ -66,4 +70,5 @@ if(THUNDER_DEPLOY_AUTO)
 endif()
 
 add_custom_target(CenterPlugins DEPENDS
-  CmdElection CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin)
+  CmdRaftRequestVote CmdRaftAppendEntries
+  CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin)

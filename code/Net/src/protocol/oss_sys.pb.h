@@ -1471,9 +1471,26 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED NodeReportRsp final : public ::goog
 
   // accessors -------------------------------------------------------
   enum : int {
+    kCurrentLeaderIdentifyFieldNumber = 3,
     kErrcodeFieldNumber = 1,
     kNodeIdFieldNumber = 2,
+    kRaftTermFieldNumber = 4,
   };
+  // string current_leader_identify = 3;
+  void clear_current_leader_identify() ;
+  [[nodiscard]] const ::std::string& current_leader_identify() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_current_leader_identify(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_current_leader_identify();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_current_leader_identify();
+  void set_allocated_current_leader_identify(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_current_leader_identify() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_current_leader_identify(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_current_leader_identify();
+
+  public:
   // uint32 errcode = 1;
   void clear_errcode() ;
   [[nodiscard]] ::uint32_t errcode() const;
@@ -1494,12 +1511,22 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED NodeReportRsp final : public ::goog
   void _internal_set_node_id(::uint32_t value);
 
   public:
+  // uint64 raft_term = 4;
+  void clear_raft_term() ;
+  [[nodiscard]] ::uint64_t raft_term() const;
+  void set_raft_term(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_raft_term() const;
+  void _internal_set_raft_term(::uint64_t value);
+
+  public:
   // @@protoc_insertion_point(class_scope:NodeReportRsp)
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<1, 2,
-                                   0, 0,
+  static const ::google::protobuf::internal::TcParseTable<2, 4,
+                                   0, 45,
                                    2>
       _table_;
 
@@ -1522,8 +1549,10 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED NodeReportRsp final : public ::goog
         const NodeReportRsp& from_msg);
     ::google::protobuf::internal::HasBits<1> _has_bits_;
     ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr current_leader_identify_;
     ::uint32_t errcode_;
     ::uint32_t node_id_;
+    ::uint64_t raft_term_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -5041,7 +5070,7 @@ inline void NodeReportRsp::clear_errcode() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.errcode_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000001U);
+                  0x00000002U);
 }
 inline ::uint32_t NodeReportRsp::errcode() const {
   // @@protoc_insertion_point(field_get:NodeReportRsp.errcode)
@@ -5049,7 +5078,7 @@ inline ::uint32_t NodeReportRsp::errcode() const {
 }
 inline void NodeReportRsp::set_errcode(::uint32_t value) {
   _internal_set_errcode(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
   // @@protoc_insertion_point(field_set:NodeReportRsp.errcode)
 }
 inline ::uint32_t NodeReportRsp::_internal_errcode() const {
@@ -5066,7 +5095,7 @@ inline void NodeReportRsp::clear_node_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.node_id_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000002U);
+                  0x00000004U);
 }
 inline ::uint32_t NodeReportRsp::node_id() const {
   // @@protoc_insertion_point(field_get:NodeReportRsp.node_id)
@@ -5074,7 +5103,7 @@ inline ::uint32_t NodeReportRsp::node_id() const {
 }
 inline void NodeReportRsp::set_node_id(::uint32_t value) {
   _internal_set_node_id(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
   // @@protoc_insertion_point(field_set:NodeReportRsp.node_id)
 }
 inline ::uint32_t NodeReportRsp::_internal_node_id() const {
@@ -5084,6 +5113,96 @@ inline ::uint32_t NodeReportRsp::_internal_node_id() const {
 inline void NodeReportRsp::_internal_set_node_id(::uint32_t value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.node_id_ = value;
+}
+
+// string current_leader_identify = 3;
+inline void NodeReportRsp::clear_current_leader_identify() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.current_leader_identify_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline const ::std::string& NodeReportRsp::current_leader_identify() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:NodeReportRsp.current_leader_identify)
+  return _internal_current_leader_identify();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void NodeReportRsp::set_current_leader_identify(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.current_leader_identify_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:NodeReportRsp.current_leader_identify)
+}
+inline ::std::string* PROTOBUF_NONNULL NodeReportRsp::mutable_current_leader_identify()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_current_leader_identify();
+  // @@protoc_insertion_point(field_mutable:NodeReportRsp.current_leader_identify)
+  return _s;
+}
+inline const ::std::string& NodeReportRsp::_internal_current_leader_identify() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.current_leader_identify_.Get();
+}
+inline void NodeReportRsp::_internal_set_current_leader_identify(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.current_leader_identify_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL NodeReportRsp::_internal_mutable_current_leader_identify() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.current_leader_identify_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE NodeReportRsp::release_current_leader_identify() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:NodeReportRsp.current_leader_identify)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.current_leader_identify_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.current_leader_identify_.Set("", GetArena());
+  }
+  return released;
+}
+inline void NodeReportRsp::set_allocated_current_leader_identify(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.current_leader_identify_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.current_leader_identify_.IsDefault()) {
+    _impl_.current_leader_identify_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:NodeReportRsp.current_leader_identify)
+}
+
+// uint64 raft_term = 4;
+inline void NodeReportRsp::clear_raft_term() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.raft_term_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000008U);
+}
+inline ::uint64_t NodeReportRsp::raft_term() const {
+  // @@protoc_insertion_point(field_get:NodeReportRsp.raft_term)
+  return _internal_raft_term();
+}
+inline void NodeReportRsp::set_raft_term(::uint64_t value) {
+  _internal_set_raft_term(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:NodeReportRsp.raft_term)
+}
+inline ::uint64_t NodeReportRsp::_internal_raft_term() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.raft_term_;
+}
+inline void NodeReportRsp::_internal_set_raft_term(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.raft_term_ = value;
 }
 
 // -------------------------------------------------------------------

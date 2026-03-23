@@ -154,6 +154,8 @@ protected:
     virtual void OnCoroutineError(int iErrno, const std::string& strErrMsg);
 
     friend struct HttpRespAwaiter;
+    friend struct CoSleepAwaiter;
+    friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
     friend class RedisAwaitable;
 
 protected:
@@ -222,6 +224,19 @@ struct HttpRespAwaiter
         }
         return true;
     }
+};
+
+/**
+ * @brief 协程体内短时休眠（一次性 ev_timer），供等待内部路由就绪等场景。
+ */
+struct CoSleepAwaiter
+{
+    StepCo20* pStep{};
+    double delaySec{};
+
+    bool await_ready() const noexcept { return delaySec <= 0.0; }
+    void await_suspend(std::coroutine_handle<> handle) noexcept;
+    void await_resume() noexcept {}
 };
 
 } // namespace net

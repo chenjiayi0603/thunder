@@ -1,0 +1,325 @@
+# Center 多节点：Raft + 业务注册 — 流程与选主规则
+
+算法步骤、状态机与经典 Raft 的差异见同目录 [Center-Raft-Election-Design.md](Center-Raft-Election-Design.md)（§14、§15）。
+
+---
+
+## 选主规则（选举与当选）
+
+与 `SessionRaftCluster` 当前实现一致。
+
+### 集群与多数派
+
+要点：成员里必须有本机，否则各进程会误以为自己是唯一节点；当选靠票数过线，不是谁先喊谁当。
+
+```
+  配置 centers
+       |
+       v
+  InitElection：host:port -> ip:port.0 -> m_raftClusterPeers
+       |
+       +-- 列表缺本机 GetWorkerIdentify() --> 补入本机再排序（防「自票假主」）
+       |
+       v
+  n = |peers|     m_raftMajority = max(1, floor(n/2)+1)
+       |
+       +-- n==1 且唯一成员==本机 --> 单节点：term=1，直接 Leader，不跑选举定时
+       |
+       +-- 否则 --> 多节点：初始 Follower，超时后拉票
+```
+
+多数派含义：候选人集合 `m_raftVotesGranted` 里要有至少 `m_raftMajority` 张赞成票（含自己投自己那一票），才调用 `RaftBecomeLeader`。
+
+### 何时发起选举（RaftTick）
+
+要点：跟过主且在「跟主窗口」内不抢选；Candidate 超时则加 term 再拉一轮。
+
+```
+              RaftTick（非 Leader、非单节点）
+                        |
+        +---------------+----------------+
+        |                                |
+  role==Candidate                  role==Follower
+        |                                |
+  now>=candidate_deadline?             last_leader_contact > 0 ?
+   是: RaftStartElection                   |
+   否: 保持                          是: now < last+跟主超时? 是:保持 否:拉选
+        |                                |
+        |                            否: now < follower_deadline? 是:保持 否:拉选
+        |                                |
+        +---------- RaftStartElection <--+
+                    (term++, 重发 RequestVote)
+```
+
+定时常量：Follower 首次截止与跟主窗口用 `kFollowerElectionBase` + 随机 `kFollowerElectionRand`；Candidate 重试用 `kCandidateRetryBase` + 随机 `kCandidateRetryRand`。
+
+### RaftStartElection（当候选人）
+
+要点：term 加一、先给自己一票、清空 leader_id，再向所有 remote 并发 RequestVote；报文里的 `last_log_*` 恒为 0，不做日志新旧比较。
+
+```
+  RaftStartElection
+        |
+        +--> role=Candidate, m_raftTerm++, votedFor=本机
+        +--> leader_id 清空, election_term=当前 term, votes={本机}
+        |
+        v
+  对每个 remote: Send RequestVote(term, candidate_id, next_node_id_alloc_hint)
+```
+
+### HandleRaftRequestVote（投票方）
+
+要点：过期 term 直接拒；更高 term 先降级跟票；同 term 已是 Leader 不拆台；同一 term 每人最多投一个候选人。`vote_granted=true` 只表示本机同意把票投给该候选人，不在此步修改本地 `m_uiNextNodeIdAlloc`；全集群游标在 Leader 产生后由 `AppendEntries.leader_next_node_id_alloc` 做 max 对齐。
+
+```
+  收到 RequestVote(req)
+        |
+        v
+  req.term < 本地 term? ----是----> 拒绝，rsp 带本地 term
+        |
+        否
+        v
+  req.term > 本地 term? ----是----> RaftBecomeFollower(req.term)
+        |
+        v
+  同 term 且本机仍是 Leader? --是--> 拒绝（不拆现任主）
+        |
+        否
+        v
+  本 term 尚未投票，或已投的就是 req.candidate_id（同一候选人）?
+        |
+   是 --+-- 否：本 term 已把票投给别的候选人 --> 拒绝
+        |
+        v
+  授予：vote_granted=true，写 votedFor；不根据 req.next_node_id_alloc_hint 改本地游标
+        重置 follower 选举随机截止
+```
+
+### OnRaftVoteResponse（候选人收票）
+
+要点：响应里 term 更大则立刻变 Follower；旧轮次的票扔掉；仅当 vote_granted 为真时才合并对端 `voter_next_node_id_alloc_hint`（同意票附带其本地游标，供候选人上任后发号基线）；票数凑够多数派则 `RaftBecomeLeader`。全量 Follower 仍以 Leader 心跳里的 `leader_next_node_id_alloc` 为准拉齐游标。
+
+```
+  收到 VoteRsp(rsp)
+        |
+        v
+  rsp.term > 本地 term? ----是----> RaftBecomeFollower，结束
+        |
+        否
+        v
+  仍 Candidate 且 rsp.term >= m_raftElectionTerm? ----否----> 丢弃（陈旧票）
+        |
+        是
+        v
+  vote_granted? ----否----> 不合并游标、不计票，结束本条
+        |
+        是
+        v
+  voter_next_node_id_alloc_hint>0 则 max 合并 m_uiNextNodeIdAlloc；对端 identify 加入 m_raftVotesGranted
+        |
+        v
+  |m_raftVotesGranted| >= m_raftMajority? ----是----> RaftBecomeLeader（leader_id=本机）
+```
+
+### 选举没凑够票时怎样「重选」
+
+要点：没有单独的「选举失败」日志；凑不够多数派就一直是 Candidate。等到「候选人重试截止」到期，会先经过一段随机延迟再进入下一轮拉票，减轻多节点同时抢选导致的反复拆分票。
+
+- 何时算这一轮没成主：`|m_raftVotesGranted| < m_raftMajority` 且角色仍为 Candidate。
+- 怎样重选：`RaftTick` 里 `now >= m_raftCandidateDeadline` 时调用 `RaftStartElection`。`m_raftCandidateDeadline` 在每次 `RaftStartElection` 末尾被设为 `now + kCandidateRetryBase + 随机 * kCandidateRetryRand`（秒级），因此失败后会先等这段延迟，再 `term++`、票数重置为仅含本机、向所有 remote 重发 `RequestVote`。
+- 其它出口：更大 `term` 或合法 `AppendEntries` 可能先把本机变成 Follower；之后由 Follower 的跟主超时或 `follower_deadline` 再触发 `RaftStartElection`，路径与 Candidate 超时不同。
+
+```
+  Candidate，票数 < majority
+        |
+        v
+  RaftTick：now >= m_raftCandidateDeadline ?
+        |
+       否 --> 保持 Candidate，继续收 VoteRsp 或等截止（带随机退避）
+        |
+       是 --> RaftStartElection（随机延迟已体现在 deadline；term++，重计票，再发 RequestVote）
+```
+
+### 更大 term 与 AppendEntries
+
+要点：任何 RPC 里只要见到更大 term，本机就降为 Follower；合法心跳能让正在竞选的节点承认已有主。
+
+```
+  AppendEntries 合法（term 步进 OK）
+        |
+        v
+  写 m_raftLeaderId，刷新 last_leader_contact，重置选举超时
+        |
+        +-- 若本机是同 term Candidate --> 降为 Follower（认主）
+```
+
+其它路径：`req.term` 或 `rsp.term` 大于 `m_raftTerm` 时，统一 `RaftBecomeFollower(对方 term)`。
+
+### 与经典 Raft 的差别（选主）
+
+要点：本实现不持久化日志，投票也不比日志新旧；AppendEntries 只做心跳和 `node_id` 游标对齐，没有真实日志匹配与 commit 索引。
+
+- 崩溃重启：内存 Raft 状态与游标不保证和集群完全一致。
+- RequestVote：`last_log_index` / `last_log_term` 不参与 grant 判定。
+- AppendEntries：无 entries 一致性、无按论文的「已提交」推导。
+
+---
+
+## Center 间 RPC 与 Session（字符流程）
+
+```
+[ Center 进程 A ]     [ Center 进程 B ]     [ Center 进程 C ]
+       |                     |                     |
+       +---------- CMD 43 RequestVote ------------>|
+       |<--------- CMD 44 VoteRsp ----------------+
+       |                     |                     |
+       +---------- CMD 45 AppendEntries ---------->|
+       |<--------- CMD 46 AppendRsp ----------------+   (Leader 周期心跳)
+       |                     |                     |
+  SessionRaftCluster    SessionRaftCluster    SessionRaftCluster
+  (独立 Session)        (独立 Session)        (独立 Session)
+       |                     |                     |
+       +---------------- term / leader_id / node_id 游标对齐 ---------+
+```
+
+---
+
+## 业务节点 Logic / Interface
+
+```
+       |   CMD 13 NodeRegister / CMD 11 NodeReport
+       v
+  +------------------+
+  | CmdNodeRegister  |---> SessionOnlineNodes::AddNode (表项)
+  |     或           |     +--> ApplyNodeRegisterRaftOutcome(...)
+  | CmdNodeReport    |           (读 SessionRaftCluster 填 errcode)
+  +------------------+
+              |
+              v
+  +----------------------+
+  | SessionRaftCluster   |  RaftHasStableLeader / FillNodeReportRspRaftForResponse
+  +----------------------+
+              |
+              v
+       NodeReportRsp (errcode, current_leader_identify, raft_term, node_id)
+```
+
+### Leader 上注册成功后的路由下发（仅 `IsLeadership==true`）
+
+```
+  SessionOnlineNodes::AddNodeBroadcast
+       |
+       +----> SendNodeNotice (CMD 15) ----> 订阅方（如 INTERFACE）
+```
+
+---
+
+## 插件（.so）划分
+
+| 插件 | 命令字 |
+|------|--------|
+| `CmdRaftRequestVote.so` | CMD 43 |
+| `CmdRaftAppendEntries.so` | CMD 45 |
+| `CmdNodeRegister.so` | CMD 13 |
+| `CmdNodeReport.so` | CMD 11 |
+
+---
+
+## 选举与稳态：变量流动（每个 Center 进程内 `SessionRaftCluster`）
+
+（代码字段名；对业务回包见 `NodeReportRsp.raft_term` / `current_leader_identify` / `node_id`）
+
+### 本地状态变量 — 含义速查
+
+| 变量 | 含义 |
+|------|------|
+| `m_raftTerm` | 当前已知任期；选举开始时 Candidate 自增；更大 term 的 RPC 会拉高并降级 |
+| `m_raftElectionTerm` | 本轮拉票发起时的 term，用于 `OnRaftVoteResponse` 丢弃陈旧票 |
+| `m_raftRole` | `Follower` \| `Candidate` \| `Leader` |
+| `m_raftVotedFor` | 本 term 把票投给了谁（`candidate_id`）；Leader 侧同 term 拒外来票 |
+| `m_raftLeaderId` | 认定的 Leader identify；Leader 上台时=本机；Follower 收 AE 时=`leader_id` |
+| `m_raftVotesGranted` | 本轮选举投赞成票的对端集合（含自己）；集合大小 ≥ majority → 当选 |
+| `m_uiNextNodeIdAlloc` | 下一待分配 `node_id` 游标 `[1, NODE_ID_MAX)`；仅 Leader 调用 `AllocNextNodeId` 递增；其余场景与对端 hint 做 `max` 对齐 |
+
+### 与 proto / 回包的对应
+
+- `NodeReportRsp.raft_term` ← 本地 `m_raftTerm`（`FillNodeReportRspRaftForResponse`）
+- `NodeReportRsp.current_leader_identify` ← 稳定时 `m_raftLeaderId`
+- `NodeReportRsp.node_id` ← 注册/上报业务字段；新号仅 Leader 上 `AddNode` → `AllocNextNodeId`
+
+### CMD 43 RequestVote 报文字段与本地变量
+
+**请求**
+
+- `req.term` = 候选方 `m_raftTerm`（已 `++` 后）
+- `req.next_node_id_alloc_hint` = 候选方携带的游标（投票方授票时不用它改本地游标；候选人仅在收到 `vote_granted` 的应答里用 `voter_next_node_id_alloc_hint` 做 max）
+
+**响应**
+
+- `rsp.term` = 投票方当前 `m_raftTerm`（可能因 `req.term` 更高刚被拉高）
+- `rsp.vote_granted`：仅表示同意选主，不隐含修改投票方 `m_uiNextNodeIdAlloc`
+- `rsp.voter_next_node_id_alloc_hint` = 投票方当前 `m_uiNextNodeIdAlloc`（供候选人侧在同意票上合并）
+
+### CMD 45 AppendEntries 报文字段与本地变量（心跳）
+
+**请求**
+
+- `req.term` / `req.leader_id` → Follower 更新 `m_raftLeaderId`、刷新选举超时
+- `req.leader_next_node_id_alloc` → Follower：`m_uiNextNodeIdAlloc = max(本地, 字段)`
+
+**响应**
+
+- `rsp.term` → Leader 若见更大 term → `RaftBecomeFollower`
+
+---
+
+## 多节点：一次选举中变量怎么动（简化双机 A 选、B 投）
+
+**初始（`InitElection` 后）**
+
+- A、B：`m_raftTerm=0`，`role=Follower`，`m_raftLeaderId` 空，`m_raftVotedFor` 空，`m_uiNextNodeIdAlloc` 各自初值（通常 1）
+
+**A：`RaftStartElection`**
+
+- `m_raftTerm`: 0 → 1
+- `m_raftRole`: `Candidate`
+- `m_raftVotedFor` = A_self
+- `m_raftLeaderId.clear()`
+- `m_raftElectionTerm` = 1
+- `m_raftVotesGranted` = { A_self }
+- 向 B 发 `RequestVote(term=1, next_node_id_alloc_hint=A的游标)`
+
+**B：`HandleRaftRequestVote`**
+
+- `req.term(1) > m_raftTerm(0)` → `RaftBecomeFollower(1)`：`m_raftTerm=1`，`role=Follower`，`m_raftVotedFor` 清空（`BecomeFollower`）
+- 本 term 未投或投给同一 candidate → grant：`m_raftVotedFor` = A；B 的 `m_uiNextNodeIdAlloc` 不因 `req.next_node_id_alloc_hint` 改变
+- `rsp`: `term=1`，`vote_granted=true`，`voter_next_node_id_alloc_hint`=B 的游标
+
+**A：`OnRaftVoteResponse`**
+
+- `rsp.term` 与选举轮次一致；`vote_granted` 为真 → `max` 合并 B 的 `voter_next_node_id_alloc_hint` 到 A 的 `m_uiNextNodeIdAlloc`，并把 B 加入 `m_raftVotesGranted`
+- `|votes| >= majority` → `RaftBecomeLeader`：`m_raftRole=Leader`，`m_raftLeaderId=A_self`，`m_raftTerm` 仍为 1（本轮未再 `++`）
+
+---
+
+## 稳态：Leader 心跳带游标
+
+- 每 `center_beat`，Leader 对所有 Follower：`AppendEntries(term, leader_id, leader_next_node_id_alloc = Leader.m_uiNextNodeIdAlloc)`
+- Follower `HandleRaftAppendEntries`：`m_raftLeaderId = req.leader_id()`，`m_uiNextNodeIdAlloc = max(本地, req.leader_next_node_id_alloc)`（与 Leader 对齐「下一号」）
+- 仅当本机 `IsRaftLeader` 且业务 `AddNode` 需新号：`AllocNextNodeId()` 读当前游标返回 id，再本地 `++m_uiNextNodeIdAlloc`（Follower 从不在此路径发号）
+
+---
+
+## 更大 term 时的 term / 角色（任意 RPC 路径）
+
+若 `req.term` 或 `rsp.term >` 本地 `m_raftTerm`：
+
+- `RaftBecomeFollower(对方 term)`：`m_raftTerm` 更新为较大值；`role=Follower`；`m_raftVotedFor` 清空；`m_bIsLeader=false`
+- 之后由 `AppendEntries` 再写入 `m_raftLeaderId`，或再次超时进入新一轮选举
+
+---
+
+## 单节点退化（无 remote）
+
+- `InitElection` 后：`m_raftTerm=1`，`role=Leader`，`m_raftLeaderId=self`
+- 不跑 `RaftStartElection` / `RequestVote`；心跳仍可按 `center_beat` 发（无对端则空转）

@@ -72,9 +72,9 @@ if(THUNDER_BUILD_NODE_PLUGINS)
   if(TARGET ModuleInterface)
     install(TARGETS ModuleInterface LIBRARY DESTINATION Interface/plugins)
   endif()
-  if(TARGET CmdElection)
+  if(TARGET CmdRaftRequestVote)
     install(TARGETS
-      CmdElection CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin
+      CmdRaftRequestVote CmdRaftAppendEntries CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin
       LIBRARY DESTINATION Center/plugins)
   endif()
 endif()

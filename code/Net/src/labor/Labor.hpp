@@ -34,6 +34,8 @@ typedef void (*signal_callback)(struct ev_loop*,ev_signal*,int);
 typedef void (*timer_callback)(struct ev_loop*,ev_timer*,int);
 typedef void (*io_callback)(struct ev_loop*,ev_io*,int);
 
+struct CoSleepAwaiter;
+void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
 
 /**
  * @brief 框架层工作者抽象类
@@ -42,6 +44,8 @@ typedef void (*io_callback)(struct ev_loop*,ev_io*,int);
  */
 class Labor
 {
+    friend struct CoSleepAwaiter;
+    friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
 public:
     Labor();
     virtual ~Labor();

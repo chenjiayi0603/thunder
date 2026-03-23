@@ -203,8 +203,12 @@ inline constexpr NodeReportRsp::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
+        current_leader_identify_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
         errcode_{0u},
-        node_id_{0u} {}
+        node_id_{0u},
+        raft_term_{::uint64_t{0u}} {}
 
 template <typename>
 constexpr NodeReportRsp::NodeReportRsp(::_pbi::ConstantInitialized)
@@ -577,11 +581,15 @@ const ::uint32_t
         0,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_._has_bits_),
-        5, // hasbit index offset
+        7, // hasbit index offset
         PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_.errcode_),
         PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_.node_id_),
-        0,
+        PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_.current_leader_identify_),
+        PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_.raft_term_),
         1,
+        2,
+        0,
+        3,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_._has_bits_),
         5, // hasbit index offset
@@ -648,12 +656,12 @@ static const ::_pbi::MigrationSchema
         {61, sizeof(::NodeReport_Worker)},
         {78, sizeof(::NodeReport)},
         {101, sizeof(::NodeReportRsp)},
-        {108, sizeof(::NodeNotice)},
-        {115, sizeof(::ConnectWorker)},
-        {120, sizeof(::TargetWorker)},
-        {131, sizeof(::LogLevel)},
-        {136, sizeof(::ConfigInfo)},
-        {145, sizeof(::TraceLog)},
+        {112, sizeof(::NodeNotice)},
+        {119, sizeof(::ConnectWorker)},
+        {124, sizeof(::TargetWorker)},
+        {135, sizeof(::LogLevel)},
+        {140, sizeof(::ConfigInfo)},
+        {149, sizeof(::TraceLog)},
 };
 static const ::_pb::Message* PROTOBUF_NONNULL const file_default_instances[] = {
     &::_user_basic_default_instance_._instance,
@@ -693,28 +701,29 @@ const char descriptor_table_protodef_oss_5fsys_2eproto[] ABSL_ATTRIBUTE_SECTION_
     "e\030\006 \001(\r\022\016\n\006client\030\007 \001(\r\032\201\001\n\006Worker\022\014\n\004lo"
     "ad\030\001 \001(\r\022\017\n\007connect\030\002 \001(\r\022\020\n\010recv_num\030\003 "
     "\001(\r\022\021\n\trecv_byte\030\004 \001(\r\022\020\n\010send_num\030\005 \001(\r"
-    "\022\021\n\tsend_byte\030\006 \001(\r\022\016\n\006client\030\007 \001(\r\"1\n\rN"
+    "\022\021\n\tsend_byte\030\006 \001(\r\022\016\n\006client\030\007 \001(\r\"e\n\rN"
     "odeReportRsp\022\017\n\007errcode\030\001 \001(\r\022\017\n\007node_id"
-    "\030\002 \001(\r\"U\n\nNodeNotice\022\"\n\rnode_arry_reg\030\001 "
-    "\003(\0132\013.NodeReport\022#\n\016node_arry_exit\030\002 \003(\013"
-    "2\013.NodeReport\"%\n\rConnectWorker\022\024\n\014worker"
-    "_index\030\001 \001(\005\"[\n\014TargetWorker\022\016\n\006err_no\030\001"
-    " \001(\005\022\027\n\017worker_identify\030\002 \001(\t\022\021\n\tnode_ty"
-    "pe\030\003 \001(\t\022\017\n\007err_msg\030\004 \001(\t\"\035\n\010LogLevel\022\021\n"
-    "\tlog_level\030\001 \001(\005\"H\n\nConfigInfo\022\021\n\tfile_n"
-    "ame\030\001 \001(\t\022\024\n\014file_content\030\002 \001(\t\022\021\n\tfile_"
-    "path\030\003 \001(\t\"\265\001\n\010TraceLog\022\020\n\010log_time\030\001 \001("
-    "\t\022\021\n\tnode_type\030\002 \001(\t\022\025\n\rnode_identify\030\003 "
-    "\001(\t\022\021\n\tlog_level\030\004 \001(\t\022\026\n\016code_file_name"
-    "\030\005 \001(\t\022\026\n\016code_file_line\030\006 \001(\r\022\025\n\rcode_f"
-    "unction\030\007 \001(\t\022\023\n\013log_content\030\010 \001(\014b\006prot"
-    "o3"
+    "\030\002 \001(\r\022\037\n\027current_leader_identify\030\003 \001(\t\022"
+    "\021\n\traft_term\030\004 \001(\004\"U\n\nNodeNotice\022\"\n\rnode"
+    "_arry_reg\030\001 \003(\0132\013.NodeReport\022#\n\016node_arr"
+    "y_exit\030\002 \003(\0132\013.NodeReport\"%\n\rConnectWork"
+    "er\022\024\n\014worker_index\030\001 \001(\005\"[\n\014TargetWorker"
+    "\022\016\n\006err_no\030\001 \001(\005\022\027\n\017worker_identify\030\002 \001("
+    "\t\022\021\n\tnode_type\030\003 \001(\t\022\017\n\007err_msg\030\004 \001(\t\"\035\n"
+    "\010LogLevel\022\021\n\tlog_level\030\001 \001(\005\"H\n\nConfigIn"
+    "fo\022\021\n\tfile_name\030\001 \001(\t\022\024\n\014file_content\030\002 "
+    "\001(\t\022\021\n\tfile_path\030\003 \001(\t\"\265\001\n\010TraceLog\022\020\n\010l"
+    "og_time\030\001 \001(\t\022\021\n\tnode_type\030\002 \001(\t\022\025\n\rnode"
+    "_identify\030\003 \001(\t\022\021\n\tlog_level\030\004 \001(\t\022\026\n\016co"
+    "de_file_name\030\005 \001(\t\022\026\n\016code_file_line\030\006 \001"
+    "(\r\022\025\n\rcode_function\030\007 \001(\t\022\023\n\013log_content"
+    "\030\010 \001(\014b\006proto3"
 };
 static ::absl::once_flag descriptor_table_oss_5fsys_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_oss_5fsys_2eproto = {
     false,
     false,
-    1482,
+    1534,
     descriptor_table_protodef_oss_5fsys_2eproto,
     "oss_sys.proto",
     &descriptor_table_oss_5fsys_2eproto_once,
@@ -3406,30 +3415,51 @@ NodeReportRsp::NodeReportRsp(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
   SharedCtor(arena);
   // @@protoc_insertion_point(arena_constructor:NodeReportRsp)
 }
+PROTOBUF_NDEBUG_INLINE NodeReportRsp::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+    [[maybe_unused]] const ::NodeReportRsp& from_msg)
+      : _has_bits_{from._has_bits_},
+        _cached_size_{0},
+        current_leader_identify_(arena, from.current_leader_identify_) {}
+
 NodeReportRsp::NodeReportRsp(
-    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const NodeReportRsp& from)
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
+    const NodeReportRsp& from)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::Message(arena, NodeReportRsp_class_data_.base()),
+    : ::google::protobuf::Message(arena, NodeReportRsp_class_data_.base()) {
 #else   // PROTOBUF_CUSTOM_VTABLE
-    : ::google::protobuf::Message(arena),
+    : ::google::protobuf::Message(arena) {
 #endif  // PROTOBUF_CUSTOM_VTABLE
-      _impl_(from._impl_) {
+  NodeReportRsp* const _this = this;
+  (void)_this;
   _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
       from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+  ::memcpy(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, errcode_),
+           reinterpret_cast<const char*>(&from._impl_) +
+               offsetof(Impl_, errcode_),
+           offsetof(Impl_, raft_term_) -
+               offsetof(Impl_, errcode_) +
+               sizeof(Impl_::raft_term_));
+
+  // @@protoc_insertion_point(copy_constructor:NodeReportRsp)
 }
 PROTOBUF_NDEBUG_INLINE NodeReportRsp::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
-      : _cached_size_{0} {}
+      : _cached_size_{0},
+        current_leader_identify_(arena) {}
 
 inline void NodeReportRsp::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
   ::memset(reinterpret_cast<char*>(&_impl_) +
                offsetof(Impl_, errcode_),
            0,
-           offsetof(Impl_, node_id_) -
+           offsetof(Impl_, raft_term_) -
                offsetof(Impl_, errcode_) +
-               sizeof(Impl_::node_id_));
+               sizeof(Impl_::raft_term_));
 }
 NodeReportRsp::~NodeReportRsp() {
   // @@protoc_insertion_point(destructor:NodeReportRsp)
@@ -3442,6 +3472,7 @@ inline void NodeReportRsp::SharedDtor(MessageLite& self) {
   }
   this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
   ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.current_leader_identify_.Destroy();
   this_._impl_.~Impl_();
 }
 
@@ -3451,7 +3482,7 @@ inline void* PROTOBUF_NONNULL NodeReportRsp::PlacementNew_(
   return ::new (mem) NodeReportRsp(arena);
 }
 constexpr auto NodeReportRsp::InternalNewImpl_() {
-  return ::google::protobuf::internal::MessageCreator::ZeroInit(sizeof(NodeReportRsp),
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(NodeReportRsp),
                                             alignof(NodeReportRsp));
 }
 constexpr auto NodeReportRsp::InternalGenerateClassData_() {
@@ -3487,16 +3518,16 @@ NodeReportRsp::GetClassData() const {
   return NodeReportRsp_class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<1, 2, 0, 0, 2>
+const ::_pbi::TcParseTable<2, 4, 0, 45, 2>
 NodeReportRsp::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_._has_bits_),
     0, // no _extensions_
-    2, 8,  // max_field_number, fast_idx_mask
+    4, 24,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967292,  // skipmap
+    4294967280,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    2,  // num_field_entries
+    4,  // num_field_entries
     0,  // num_aux_entries
     offsetof(decltype(_table_), field_names),  // no aux_entries
     NodeReportRsp_class_data_.base(),
@@ -3506,24 +3537,39 @@ NodeReportRsp::_table_ = {
     ::_pbi::TcParser::GetTable<::NodeReportRsp>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
-    // uint32 node_id = 2;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReportRsp, _impl_.node_id_), 1>(),
-     {16, 1, 0,
-      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.node_id_)}},
+    // uint64 raft_term = 4;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(NodeReportRsp, _impl_.raft_term_), 3>(),
+     {32, 3, 0,
+      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.raft_term_)}},
     // uint32 errcode = 1;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReportRsp, _impl_.errcode_), 0>(),
-     {8, 0, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReportRsp, _impl_.errcode_), 1>(),
+     {8, 1, 0,
       PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.errcode_)}},
+    // uint32 node_id = 2;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReportRsp, _impl_.node_id_), 2>(),
+     {16, 2, 0,
+      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.node_id_)}},
+    // string current_leader_identify = 3;
+    {::_pbi::TcParser::FastUS1,
+     {26, 0, 0,
+      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.current_leader_identify_)}},
   }}, {{
     65535, 65535
   }}, {{
     // uint32 errcode = 1;
-    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.errcode_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.errcode_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // uint32 node_id = 2;
-    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.node_id_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.node_id_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // string current_leader_identify = 3;
+    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.current_leader_identify_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint64 raft_term = 4;
+    {PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.raft_term_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
   }},
   // no aux_entries
   {{
+    "\15\0\0\27\0\0\0\0"
+    "NodeReportRsp"
+    "current_leader_identify"
   }},
 };
 PROTOBUF_NOINLINE void NodeReportRsp::Clear() {
@@ -3534,10 +3580,13 @@ PROTOBUF_NOINLINE void NodeReportRsp::Clear() {
   (void) cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    _impl_.current_leader_identify_.ClearNonDefaultToEmpty();
+  }
+  if (BatchCheckHasBit(cached_has_bits, 0x0000000eU)) {
     ::memset(&_impl_.errcode_, 0, static_cast<::size_t>(
-        reinterpret_cast<char*>(&_impl_.node_id_) -
-        reinterpret_cast<char*>(&_impl_.errcode_)) + sizeof(_impl_.node_id_));
+        reinterpret_cast<char*>(&_impl_.raft_term_) -
+        reinterpret_cast<char*>(&_impl_.errcode_)) + sizeof(_impl_.raft_term_));
   }
   _impl_._has_bits_.Clear();
   _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
@@ -3563,7 +3612,7 @@ PROTOBUF_NOINLINE void NodeReportRsp::Clear() {
 
   cached_has_bits = this_._impl_._has_bits_[0];
   // uint32 errcode = 1;
-  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
     if (this_._internal_errcode() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
@@ -3572,11 +3621,30 @@ PROTOBUF_NOINLINE void NodeReportRsp::Clear() {
   }
 
   // uint32 node_id = 2;
-  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
     if (this_._internal_node_id() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
           2, this_._internal_node_id(), target);
+    }
+  }
+
+  // string current_leader_identify = 3;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (!this_._internal_current_leader_identify().empty()) {
+      const ::std::string& _s = this_._internal_current_leader_identify();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "NodeReportRsp.current_leader_identify");
+      target = stream->WriteStringMaybeAliased(3, _s, target);
+    }
+  }
+
+  // uint64 raft_term = 4;
+  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (this_._internal_raft_term() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          4, this_._internal_raft_term(), target);
     }
   }
 
@@ -3605,19 +3673,33 @@ PROTOBUF_NOINLINE void NodeReportRsp::Clear() {
 
   ::_pbi::Prefetch5LinesFrom7Lines(&this_);
   cached_has_bits = this_._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
-    // uint32 errcode = 1;
+  if (BatchCheckHasBit(cached_has_bits, 0x0000000fU)) {
+    // string current_leader_identify = 3;
     if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!this_._internal_current_leader_identify().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_current_leader_identify());
+      }
+    }
+    // uint32 errcode = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
       if (this_._internal_errcode() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_errcode());
       }
     }
     // uint32 node_id = 2;
-    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
       if (this_._internal_node_id() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_node_id());
+      }
+    }
+    // uint64 raft_term = 4;
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (this_._internal_raft_term() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_raft_term());
       }
     }
   }
@@ -3639,15 +3721,29 @@ void NodeReportRsp::MergeImpl(::google::protobuf::MessageLite& to_msg,
   (void)cached_has_bits;
 
   cached_has_bits = from._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x0000000fU)) {
     if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!from._internal_current_leader_identify().empty()) {
+        _this->_internal_set_current_leader_identify(from._internal_current_leader_identify());
+      } else {
+        if (_this->_impl_.current_leader_identify_.IsDefault()) {
+          _this->_internal_set_current_leader_identify("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
       if (from._internal_errcode() != 0) {
         _this->_impl_.errcode_ = from._impl_.errcode_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
       if (from._internal_node_id() != 0) {
         _this->_impl_.node_id_ = from._impl_.node_id_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (from._internal_raft_term() != 0) {
+        _this->_impl_.raft_term_ = from._impl_.raft_term_;
       }
     }
   }
@@ -3666,11 +3762,14 @@ void NodeReportRsp::CopyFrom(const NodeReportRsp& from) {
 
 void NodeReportRsp::InternalSwap(NodeReportRsp* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
   using ::std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.current_leader_identify_, &other->_impl_.current_leader_identify_, arena);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.node_id_)
-      + sizeof(NodeReportRsp::_impl_.node_id_)
+      PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.raft_term_)
+      + sizeof(NodeReportRsp::_impl_.raft_term_)
       - PROTOBUF_FIELD_OFFSET(NodeReportRsp, _impl_.errcode_)>(
           reinterpret_cast<char*>(&_impl_.errcode_),
           reinterpret_cast<char*>(&other->_impl_.errcode_));

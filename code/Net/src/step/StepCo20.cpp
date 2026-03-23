@@ -1,10 +1,43 @@
 #include "coro/StepCo20.hpp"
 #include "NetError.hpp"
 #include "NetDefine.hpp"
+#include "labor/Labor.hpp"
+#include "labor/Worker.hpp"
+#include <ev.h>
 #include <memory>
 
 namespace net
 {
+
+namespace
+{
+struct CoSleepPayload
+{
+    StepCo20* step{};
+};
+} // namespace
+
+void CoSleepTimerTrampoline(struct ev_loop* /*loop*/, ev_timer* w, int /*revents*/)
+{
+    auto* p = static_cast<CoSleepPayload*>(w->data);
+    StepCo20* step = p->step;
+    GetLabor()->DelEvent(w);
+    delete w;
+    delete p;
+    if (step->m_coroHandle && !step->m_coroHandle.done())
+    {
+        step->m_coroHandle.resume();
+    }
+}
+
+void CoSleepAwaiter::await_suspend(std::coroutine_handle<> handle) noexcept
+{
+    pStep->m_coroHandle = handle;
+    auto* w = new ev_timer();
+    auto* p = new CoSleepPayload{pStep};
+    w->data = static_cast<void*>(p);
+    GetLabor()->AddEvent(delaySec, w, CoSleepTimerTrampoline);
+}
 
 E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
@@ -37,6 +70,14 @@ E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std:
 
     // 单条 AsyncTask：由 StepAsync() 提供；必须延长生命周期，不可 StepAsync() 临时析构
     m_oAsyncBootstrap.emplace(StepAsync());
+
+    // 若在 emplace 内全程未挂起（例如 co_await SendToInternalByNodeTypeAsync 因无路由同步 co_return false），
+    // EmitSuccessGuard 已触发 NotifyEmitCoroutineSuccess()；必须返回 COMPLETED，否则 Step 仍挂超时并最终对已关闭的 HTTP fd SendTo。
+    if (m_bCoroutineCompleted)
+    {
+        LOG4_TRACE("%s() coroutine finished synchronously (no suspend)", __FUNCTION__);
+        return STATUS_CMD_COMPLETED;
+    }
 
     return STATUS_CMD_RUNNING;
 }
@@ -265,14 +306,32 @@ Task<bool> StepCo20::SendToInternalByNodeTypeAsync(const std::string& strNodeTyp
 {
     oMsgHead.set_seq(GetSequence());
     oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
-    bool bSuccess = GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody);
-    if (!bSuccess)
+    if (GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody))
     {
-        co_return false;
+        HttpRespAwaiter awaiter(this);
+        co_return co_await awaiter;
     }
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    constexpr double kRetrySec = 0.05;
+    if (auto* w = dynamic_cast<Worker*>(GetLabor()))
+    {
+        int waited = 0;
+        while (!w->HasNodeIdentifys(strNodeType) && waited < 60)
+        {
+            co_await CoSleepAwaiter{this, kRetrySec};
+            ++waited;
+        }
+        if (w->HasNodeIdentifys(strNodeType))
+        {
+            oMsgHead.set_seq(GetSequence());
+            oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+            if (GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody))
+            {
+                HttpRespAwaiter awaiter(this);
+                co_return co_await awaiter;
+            }
+        }
+    }
+    co_return false;
 }
 
 void StepCo20::OnCoroutineComplete(bool bSuccess)

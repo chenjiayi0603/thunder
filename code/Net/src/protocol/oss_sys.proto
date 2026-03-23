@@ -108,8 +108,11 @@ message server_data
 
 message NodeReportRsp
 {
+	// errcode: 0 成功；1 解析/AddNode 失败；2 ERR_NO_RAFT_LEADER 选举中或无稳定 Leader
 	uint32 errcode = 1;
 	uint32 node_id = 2;
+	string current_leader_identify = 3;
+	uint64 raft_term = 4;
 }
 
 

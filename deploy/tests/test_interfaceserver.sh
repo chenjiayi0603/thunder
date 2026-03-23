@@ -3,7 +3,7 @@
 #
 # Center：简易注册中心（节点注册与路由）。Logic / Interface 向 Center 登记后，Interface 经 Center 将请求转发到 LOGIC。
 # 默认启动顺序：
-#   [1/4] Center
+#   [1/4] Center ×3（conf/Center.json、conf2、conf3，内网 27000/27022/27032，与 CenterCmd.json 中 Raft centers 一致）
 #   [2/4] Logic（向 Center 注册，脚本会短暂等待）
 #   [3/4] Interface（若已有 Interface_robot 会先停止再拉起；HTTP 入口）
 #   [4/4] HTTP 冒烟：GenKey → VerifyKey（路径 Interface→Center→LOGIC）
@@ -15,10 +15,16 @@
 #
 # 可选环境变量：
 #   SKIP_CENTER_LOGIC=1                           — 不启动/不检查 Center 与 Logic（仅 Interface；无法验证发往 LOGIC）
-#   CENTER_CONF LOGIC_CONF                        — Center/Logic 配置相对各自目录，默认 conf/Center.json、conf/Logic.json
+#   SKIP_CENTER_START=1                           — 不启动 Center（假定已有多实例或其它脚本已拉起）；与 REQUIRED_CENTER_INNER_PORTS 联用
+#   REQUIRED_CENTER_INNER_PORTS="27000 27022 ..." — SKIP_CENTER_START=1 时校验这些内网端口均已 LISTEN（默认与 NUM_CENTER_INSTANCES 一致）
+#   NUM_CENTER_INSTANCES=3|1                      — 启动 Center 个数（默认 3，与 CenterCmd.json Raft 成员一致）；设为 1 时需将 CenterCmd.json 的 centers 置为 [] 否则选不出 Leader
+#   CENTER_RAFT_SETTLE_SEC                        — 三 Center 全部监听后等待 Raft 选主（秒，默认 5，可按机器调大）
+#   CENTER_CONF CENTER_CONF_2 CENTER_CONF_3       — 相对 deploy/Center，默认 conf/Center.json、conf2/Center.json、conf3/Center.json
+#   CENTER_CONF LOGIC_CONF                        — 单 Center 模式时的主配置；Logic 默认 conf/Logic.json
 #   CENTER_BIN LOGIC_BIN                          — 可执行文件路径（默认 deploy/Center/bin/Center、deploy/Logic/bin/Logic）
-#   CENTER_PORT LOGIC_PORT                        — 用于检测是否已监听（默认 27000、16068，与默认 conf 一致）
-#   LOGIC_REGISTER_WAIT_SEC                       — Logic 启动后等待向 Center 注册的秒数（默认 4）
+#   CENTER_PORT LOGIC_PORT                        — 单 Center 时检测端口（默认 27000）；多 Center 时检测 27000/27022/27032
+#   LOGIC_REGISTER_WAIT_SEC                       — Logic 启动后等待向 Center 注册的秒数（默认：三 Center 时 8，单 Center 时 4）
+#   INTERFACE_ROUTE_READY_SEC                     — Interface 启动后再等待秒数再发 GenKey（默认：三 Center 时 4，否则同 STARTUP_WAIT_SEC）
 #   INTERFACE_HOST INTERFACE_PORT INTERFACE_PATH — HTTP 探测地址（默认与 conf/Interface.json 中 access 一致）
 #   INTERFACE_BIN                                 — 可执行文件路径（默认优先 Interface/bin/Interface，否则回退 Hello/bin/Hello）
 #   GENKEY_VERIFY_MAXTIME                         — GenKey/VerifyKey 单次 curl 超时秒数（默认 120，与 step_timeout 对齐）
@@ -29,11 +35,11 @@
 set -euo pipefail
 
 # 本脚本启动的进程 PID（用于 EXIT 时统一关闭）
-CENTER_TEST_PID=""
+CENTER_TEST_PIDS=()
 LOGIC_TEST_PID=""
 INTERFACE_TEST_PID=""
 
-# 按依赖逆序停止：Interface → Logic → Center
+# 按依赖逆序停止：Interface → Logic → Center（多 Center 逐个 kill）
 _cleanup_test_servers() {
   if [[ -n "${INTERFACE_TEST_PID}" ]] && kill -0 "${INTERFACE_TEST_PID}" 2>/dev/null; then
     kill "${INTERFACE_TEST_PID}" 2>/dev/null || true
@@ -43,10 +49,12 @@ _cleanup_test_servers() {
     kill "${LOGIC_TEST_PID}" 2>/dev/null || true
     wait "${LOGIC_TEST_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${CENTER_TEST_PID}" ]] && kill -0 "${CENTER_TEST_PID}" 2>/dev/null; then
-    kill "${CENTER_TEST_PID}" 2>/dev/null || true
-    wait "${CENTER_TEST_PID}" 2>/dev/null || true
-  fi
+  for _cpid in "${CENTER_TEST_PIDS[@]}"; do
+    if [[ -n "${_cpid}" ]] && kill -0 "${_cpid}" 2>/dev/null; then
+      kill "${_cpid}" 2>/dev/null || true
+      wait "${_cpid}" 2>/dev/null || true
+    fi
+  done
 }
 
 trap _cleanup_test_servers EXIT
@@ -57,14 +65,29 @@ CODE_ROOT="$(cd "${DEPLOY_ROOT}/../code" && pwd)"
 CONF="${CONF:-conf/Interface.json}"
 
 SKIP_CENTER_LOGIC="${SKIP_CENTER_LOGIC:-0}"
+SKIP_CENTER_START="${SKIP_CENTER_START:-0}"
+NUM_CENTER_INSTANCES="${NUM_CENTER_INSTANCES:-3}"
+CENTER_RAFT_SETTLE_SEC="${CENTER_RAFT_SETTLE_SEC:-5}"
+REQUIRED_CENTER_INNER_PORTS="${REQUIRED_CENTER_INNER_PORTS:-}"
 CENTER_CONF="${CENTER_CONF:-conf/Center.json}"
+CENTER_CONF_2="${CENTER_CONF_2:-conf2/Center.json}"
+CENTER_CONF_3="${CENTER_CONF_3:-conf3/Center.json}"
 LOGIC_CONF="${LOGIC_CONF:-conf/Logic.json}"
 CENTER_BIN_DEFAULT="${DEPLOY_ROOT}/Center/bin/Center"
 LOGIC_BIN_DEFAULT="${DEPLOY_ROOT}/Logic/bin/Logic"
 CENTER_BIN="${CENTER_BIN:-${CENTER_BIN_DEFAULT}}"
 LOGIC_BIN="${LOGIC_BIN:-${LOGIC_BIN_DEFAULT}}"
 CENTER_PORT="${CENTER_PORT:-27000}"
+CENTER_PORT_2="${CENTER_PORT_2:-27022}"
+CENTER_PORT_3="${CENTER_PORT_3:-27032}"
 LOGIC_PORT="${LOGIC_PORT:-16068}"
+
+# 三 Center + Raft 时 Logic 连上 Leader 并完成注册往往 >4s；过短会导致 Interface 已起但 Center 尚未下发 LOGIC 路由
+if [[ "${NUM_CENTER_INSTANCES}" == "3" ]]; then
+  LOGIC_REGISTER_WAIT_SEC="${LOGIC_REGISTER_WAIT_SEC:-8}"
+else
+  LOGIC_REGISTER_WAIT_SEC="${LOGIC_REGISTER_WAIT_SEC:-4}"
+fi
 
 INTERFACE_HOST="${INTERFACE_HOST:-127.0.0.1}"
 INTERFACE_PORT="${INTERFACE_PORT:-27008}"
@@ -155,36 +178,120 @@ if [[ "${SKIP_CENTER_LOGIC}" != "1" ]]; then
     exit 1
   fi
 
-  # Center：若端口已被占用则先停止再启动（与 Interface 一致，保证本次联调用新进程）
-  if _tcp_listening "${CENTER_PORT}"; then
-    echo "提示: 端口 ${CENTER_PORT} 已在监听，先停止 Center_robot"
-    pkill Center_robot 2>/dev/null || true
-    sleep 1
-    for _i in $(seq 1 30); do
-      _tcp_listening "${CENTER_PORT}" || break
-      sleep 1
-    done
-    if _tcp_listening "${CENTER_PORT}"; then
-      echo "错误: 停止 Center 后端口 ${CENTER_PORT} 仍被占用，请手动处理" >&2
-      exit 1
+  if [[ "${SKIP_CENTER_START}" == "1" ]]; then
+    echo "=== SKIP_CENTER_START=1：跳过启动 Center，使用已运行的实例 ==="
+    _center_ports_check=()
+    if [[ -n "${REQUIRED_CENTER_INNER_PORTS}" ]]; then
+      read -r -a _center_ports_check <<< "${REQUIRED_CENTER_INNER_PORTS}"
+    elif [[ "${NUM_CENTER_INSTANCES}" == "3" ]]; then
+      _center_ports_check=("${CENTER_PORT}" "${CENTER_PORT_2}" "${CENTER_PORT_3}")
+    else
+      _center_ports_check=("${CENTER_PORT}")
     fi
-  fi
-  echo "=== [1/4] 启动简易注册中心 Center — ${CENTER_CONF}，监听 ${CENTER_PORT} ==="
-  mkdir -p "${DEPLOY_ROOT}/Center/log"
-  (
-    cd "${DEPLOY_ROOT}/Center"
-    nohup "${CENTER_BIN}" "${CENTER_CONF}" >> log/test_interfaceserver.log 2>&1 &
-    echo $! >log/test_interfaceserver_center.pid
-  )
-  CENTER_TEST_PID="$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid")"
-  echo "Center PID=${CENTER_TEST_PID}（见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid）"
-  for _i in $(seq 1 30); do
-    _tcp_listening "${CENTER_PORT}" && break
-    sleep 1
-  done
-  if ! _tcp_listening "${CENTER_PORT}"; then
-    echo "错误: Center 未在 ${CENTER_PORT} 监听，见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver.log" >&2
-    exit 1
+    for _cp in "${_center_ports_check[@]}"; do
+      if ! _tcp_listening "${_cp}"; then
+        echo "错误: Center 内网端口 ${_cp} 未监听（请设 REQUIRED_CENTER_INNER_PORTS 或先启动多 Center）" >&2
+        exit 1
+      fi
+      echo "已检测到 Center inner 端口监听: ${_cp}"
+    done
+    CENTER_TEST_PIDS=()
+  else
+    _stop_center_robots() {
+      pkill Center_robot 2>/dev/null || true
+      pkill Center_robot2 2>/dev/null || true
+      pkill Center_robot3 2>/dev/null || true
+    }
+    if [[ "${NUM_CENTER_INSTANCES}" == "3" ]]; then
+      _center_listen_ports=("${CENTER_PORT}" "${CENTER_PORT_2}" "${CENTER_PORT_3}")
+    else
+      _center_listen_ports=("${CENTER_PORT}")
+    fi
+    # 若目标端口已被占用则先停止 Center_robot*（保证本次联调用新进程）
+    _need_free=0
+    for _p in "${_center_listen_ports[@]}"; do
+      if _tcp_listening "${_p}"; then
+        _need_free=1
+        break
+      fi
+    done
+    if [[ "${_need_free}" == "1" ]]; then
+      echo "提示: Center 目标端口 ${_center_listen_ports[*]} 中有占用，先停止 Center_robot / Center_robot2 / Center_robot3"
+      _stop_center_robots
+      sleep 1
+      for _i in $(seq 1 30); do
+        _still=0
+        for _p in "${_center_listen_ports[@]}"; do
+          if _tcp_listening "${_p}"; then
+            _still=1
+            break
+          fi
+        done
+        [[ "${_still}" == "0" ]] && break
+        sleep 1
+      done
+      for _p in "${_center_listen_ports[@]}"; do
+        if _tcp_listening "${_p}"; then
+          echo "错误: 停止 Center 后端口 ${_p} 仍被占用，请手动处理" >&2
+          exit 1
+        fi
+      done
+    fi
+
+    mkdir -p "${DEPLOY_ROOT}/Center/log"
+    _center_log="${DEPLOY_ROOT}/Center/log/test_interfaceserver.log"
+
+    if [[ "${NUM_CENTER_INSTANCES}" == "3" ]]; then
+      echo "=== [1/4] 启动 3 个 Center（Raft）— ${CENTER_CONF}、${CENTER_CONF_2}、${CENTER_CONF_3} ==="
+      (
+        cd "${DEPLOY_ROOT}/Center"
+        nohup "${CENTER_BIN}" "${CENTER_CONF}" >>"${_center_log}" 2>&1 &
+        echo $! >log/test_interfaceserver_c1.pid
+      )
+      CENTER_TEST_PIDS+=("$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_c1.pid")")
+      (
+        cd "${DEPLOY_ROOT}/Center"
+        nohup "${CENTER_BIN}" "${CENTER_CONF_2}" >>"${_center_log}" 2>&1 &
+        echo $! >log/test_interfaceserver_c2.pid
+      )
+      CENTER_TEST_PIDS+=("$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_c2.pid")")
+      (
+        cd "${DEPLOY_ROOT}/Center"
+        nohup "${CENTER_BIN}" "${CENTER_CONF_3}" >>"${_center_log}" 2>&1 &
+        echo $! >log/test_interfaceserver_c3.pid
+      )
+      CENTER_TEST_PIDS+=("$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_c3.pid")")
+      echo "Center PIDs=${CENTER_TEST_PIDS[*]}（log/test_interfaceserver_c1.pid … c3.pid）"
+      for _p in "${CENTER_PORT}" "${CENTER_PORT_2}" "${CENTER_PORT_3}"; do
+        for _i in $(seq 1 40); do
+          _tcp_listening "${_p}" && break
+          sleep 0.5
+        done
+        if ! _tcp_listening "${_p}"; then
+          echo "错误: Center 未在 ${_p} 监听，见 ${_center_log}" >&2
+          exit 1
+        fi
+      done
+      echo "=== 等待 Raft 选主收敛（CENTER_RAFT_SETTLE_SEC=${CENTER_RAFT_SETTLE_SEC}s）==="
+      sleep "${CENTER_RAFT_SETTLE_SEC}"
+    else
+      echo "=== [1/4] 启动单个 Center — ${CENTER_CONF}，监听 ${CENTER_PORT}（请确认 CenterCmd.json 中 centers 与实例数一致）==="
+      (
+        cd "${DEPLOY_ROOT}/Center"
+        nohup "${CENTER_BIN}" "${CENTER_CONF}" >>"${_center_log}" 2>&1 &
+        echo $! >log/test_interfaceserver_center.pid
+      )
+      CENTER_TEST_PIDS+=("$(cat "${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid")")
+      echo "Center PID=${CENTER_TEST_PIDS[0]}（见 ${DEPLOY_ROOT}/Center/log/test_interfaceserver_center.pid）"
+      for _i in $(seq 1 30); do
+        _tcp_listening "${CENTER_PORT}" && break
+        sleep 1
+      done
+      if ! _tcp_listening "${CENTER_PORT}"; then
+        echo "错误: Center 未在 ${CENTER_PORT} 监听，见 ${_center_log}" >&2
+        exit 1
+      fi
+    fi
   fi
 
   if _tcp_listening "${LOGIC_PORT}"; then
@@ -243,7 +350,13 @@ INTERFACE_TEST_PID=$!
 echo "${INTERFACE_TEST_PID}" >log/test_interfaceserver_interface.pid
 echo "PID=${INTERFACE_TEST_PID} 可执行: ${BIN}  日志: ${DEPLOY_ROOT}/Interface/log/test_interfaceserver.log"
 
-sleep "${STARTUP_WAIT_SEC:-2}"
+# Interface 连 Center 注册与收到 NODE_REG_NOTICE（含 LOGIC）略晚于 Logic 注册完成；多 Center 时多留几秒再 curl
+_iface_smoke_wait="${STARTUP_WAIT_SEC:-2}"
+if [[ "${SKIP_CENTER_LOGIC}" != "1" && "${NUM_CENTER_INSTANCES}" == "3" ]]; then
+  _iface_smoke_wait="${INTERFACE_ROUTE_READY_SEC:-4}"
+fi
+echo "=== Interface 启动后等待 ${_iface_smoke_wait}s 再发 HTTP（避免 Center 尚未下发 LOGIC 路由）==="
+sleep "${_iface_smoke_wait}"
 
 BASE_URL="http://${INTERFACE_HOST}:${INTERFACE_PORT}${INTERFACE_PATH}"
 if [[ "${SKIP_CENTER_LOGIC}" == "1" ]]; then

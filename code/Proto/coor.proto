@@ -2,15 +2,37 @@ syntax = "proto3";
 
 package coor;
 
-/**
- * @brief coor节点间心跳
- */
-message Election
+/** Raft RequestVote */
+message RaftRequestVote
 {
-    int32 is_leader                  = 1;    ///< 是否主节点
-    uint32 last_node_id              = 2;    ///< 上一个生成的节点ID
-    repeated uint32 added_node_id    = 3;    ///< 新增已使用的节点ID
-    repeated uint32 removed_node_id  = 4;    ///< 删除已废弃的节点ID
-    uint64 beleadertime				 = 5;	 ///<
+    uint64 term           = 1;
+    string candidate_id   = 2;
+    uint64 last_log_index = 3;
+    uint64 last_log_term  = 4;
+    uint32 next_node_id_alloc_hint = 5; ///< 投票方用于选主后对齐游标
+}
+
+message RaftRequestVoteRsp
+{
+    uint64 term         = 1;
+    bool vote_granted   = 2;
+    uint32 voter_next_node_id_alloc_hint = 3;
+}
+
+/** Raft AppendEntries（可为空日志的心跳） */
+message RaftAppendEntries
+{
+    uint64 term            = 1;
+    string leader_id       = 2;
+    uint64 prev_log_index  = 3;
+    uint64 prev_log_term   = 4;
+    uint64 leader_commit   = 5;
+    uint32 leader_next_node_id_alloc = 6; ///< Leader 侧下一待分配游标，Follower 取 max 对齐
+}
+
+message RaftAppendEntriesRsp
+{
+    uint64 term   = 1;
+    bool success  = 2;
 }
 

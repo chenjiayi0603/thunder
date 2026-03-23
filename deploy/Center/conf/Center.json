@@ -61,8 +61,15 @@
             "version": 1
         },
         {
-            "cmd": 41,
-            "so_path": "plugins/CmdElection.so",
+            "cmd": 43,
+            "so_path": "plugins/CmdRaftRequestVote.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        },
+        {
+            "cmd": 45,
+            "so_path": "plugins/CmdRaftAppendEntries.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1
