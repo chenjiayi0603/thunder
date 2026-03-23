@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Project:  Hello
  * @file     ModuleHello.cpp
- * @brief    精简：Echo、栈协程 TestCoroutinue、C++20 协程 HTTP 演示
+ * @brief    精简：Echo、C++20 协程 HTTP 演示
  ******************************************************************************/
 #include <map>
 
@@ -42,11 +42,6 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	obj.Get("option",strOption);
 	if ("Echo" == strOption)
 	{
-		Response(stMsgShell,oInHttpMsg,0);
-	}
-	else if ("TestCoroutinue" == strOption || "TestCoroutine" == strOption)
-	{
-		TestCoroutinue();
 		Response(stMsgShell,oInHttpMsg,0);
 	}
 	else if ("TestStepHttpRequestCo" == strOption)
@@ -184,36 +179,6 @@ void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oIn
 	GetLabor()->SendToClient(stMsgShell,oInHttpMsg,oJsonObj.ToString());
 }
 
-void ModuleHello::TestCoroutinue()
-{
-#ifdef USE_COROUTINE
-	static constexpr int kTimes = 100000;
-	LOG4_TRACE("TestCoroutinue");
-	struct Param : public net::tagCoroutineArg
-	{
-		explicit Param(int a1) : m_start1(a1) {}
-		int m_start1;
-	};
-	auto testcoroutinue = [](void *ud) {
-		auto *arg = static_cast<Param *>(ud);
-		for (int i = 0; i < kTimes; ++i)
-		{
-			LOG4_TRACE("TestCoroutinue running id(%d),arg n(%d)", GetLabor()->CoroutineRunning(), arg->m_start1 + i);
-			GetLabor()->CoroutineYield();
-		}
-		LOG4_INFO("TestCoroutinue done id(%d),arg base(%d)", GetLabor()->CoroutineRunning(), arg->m_start1);
-	};
-	GetLabor()->CoroutineNewWithArg(testcoroutinue, new Param(0));
-	GetLabor()->CoroutineNewWithArg(testcoroutinue, new Param(100));
-
-	LOG4_INFO("%s Coroutine start!", __FUNCTION__);
-	m_RunClock.StartClock();
-	GetLabor()->CoroutineResumeWithTimes(kTimes * 2);
-	m_RunClock.EndClock();
-	LOG4_INFO("%s Coroutine end! use time(%lf)", __FUNCTION__, m_RunClock.LastUseTime());
-#endif
-}
-
 bool ModuleHello::TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
@@ -223,7 +188,7 @@ bool ModuleHello::TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, cons
 bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::Launch(new HttpRequestCo(stMsgShell, oInHttpMsg));
+	return net::LaunchCo(new HttpRequestCo(stMsgShell, oInHttpMsg));
 }
 
 } /* namespace core */

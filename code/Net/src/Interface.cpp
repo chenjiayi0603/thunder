@@ -48,6 +48,11 @@ bool LaunchCo(const tagMsgShell& stMsgShell,
 	return Launch(new StepCo20Func(stMsgShell, oMsgHead, std::move(fn)));
 }
 
+bool LaunchCo(StepCo20* stepCo20)
+{
+	return Launch(stepCo20);
+}
+
 bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
 	if (!GetLabor()->RegisterCallback(pStep,dTimeout))

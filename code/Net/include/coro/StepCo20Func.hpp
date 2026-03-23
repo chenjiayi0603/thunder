@@ -56,6 +56,9 @@ bool LaunchCo(const tagMsgShell& stMsgShell,
               const MsgHead& oMsgHead,
               StepCo20Func::CoroFn fn);
 
+/** 自定义 StepCo20 子类走 `Launch(step)`，与 CoroFn 版相同默认超时。 */
+bool LaunchCo(StepCo20* stepCo20);
+
 } // namespace net
 
 #endif // SRC_StepCo20Func_HPP_

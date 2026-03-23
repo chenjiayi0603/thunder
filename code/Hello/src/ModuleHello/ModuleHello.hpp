@@ -46,10 +46,6 @@ private:
     //crytopp
     void TestRSA();
 
-    //Coroutinue
-    void TestCoroutinue();
-    void TestCoroutinueAuto();
-
     // C++20 coroutine
     bool TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     bool TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
@@ -66,7 +62,6 @@ private:
 	void VerifyKey(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
 
     bool boTests = false;
-    net::RunClock m_RunClock;
 };
 
 } /* namespace core */
