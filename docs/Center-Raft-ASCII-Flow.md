@@ -274,20 +274,20 @@
 **请求**
 
 - `req.term` = 候选方 `m_raftTerm`（已 `++` 后）
-- `req.next_node_id_alloc_hint` = 候选方携带的游标（投票方授票时不用它改本地游标；候选人仅在收到 `vote_granted` 的应答里用 `voter_next_node_id_alloc_hint` 做 max）
+- `req.next_node_id_alloc_hint` = 候选方携带的游标（投票方授票时不用它改本地游标；候选人仅在收到 `vote_granted` 的应答里用 `voter_next_node_id_alloc_hint` 与本地做 **`MergeNodeIdAllocRing` 合并**：游标减 1 后按 **mod 255**（即 mod `(NODE_ID_MAX-1)`）判断谁先谁后，不能对游标做线性 `max`）
 
 **响应**
 
 - `rsp.term` = 投票方当前 `m_raftTerm`（可能因 `req.term` 更高刚被拉高）
 - `rsp.vote_granted`：仅表示同意选主，不隐含修改投票方 `m_uiNextNodeIdAlloc`
-- `rsp.voter_next_node_id_alloc_hint` = 投票方当前 `m_uiNextNodeIdAlloc`（供候选人侧在同意票上合并）
+- `rsp.voter_next_node_id_alloc_hint` = 投票方当前 `m_uiNextNodeIdAlloc`（供候选人侧在同意票上与本地游标做 `MergeNodeIdAllocRing` / mod 255 合并）
 
 ### CMD 45 AppendEntries 报文字段与本地变量（心跳）
 
 **请求**
 
 - `req.term` / `req.leader_id` → Follower 更新 `m_raftLeaderId`、`m_raftLastLeaderContact`、重置 `m_raftFollowerLeaseExtra` 与 `m_raftFollowerDeadline`（冷启动公式）
-- `req.leader_next_node_id_alloc` → Follower：`m_uiNextNodeIdAlloc = max(本地, 字段)`
+- `req.leader_next_node_id_alloc` → Follower：与本地 `m_uiNextNodeIdAlloc` 做 `MergeNodeIdAllocRing`（mod 255 语义，非线性 max）
 
 **响应**
 

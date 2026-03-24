@@ -5,7 +5,7 @@
  *
  * 职责概要：
  *   - 多 Center 进程间：RequestVote / AppendEntries（空日志）驱动 term 与 Leader 收敛。
- *   - Leader 经 AppendEntries 携带 leader_next_node_id_alloc，Follower 与 Leader 的分配游标取 max；
+ *   - Leader 经 AppendEntries 携带 leader_next_node_id_alloc，Follower 与本地游标用 MergeNodeIdAllocRing 合并（mod 255 语义，见 cpp 注释）；
  *     同一条 AppendEntries 可携带在线节点全量快照（online_nodes_seq + online_nodes），Follower 整体替换 SessionOnlineNodes 副本。
  *     候选人仅在收到 vote_granted 的 VoteRsp 时合并 voter_next_node_id_alloc_hint（与完整 Raft 日志复制不同，属业务层约定）。
  ******************************************************************************/
@@ -18,7 +18,7 @@
 namespace coor
 {
 
-/** Logic 节点 node_id 上界（不含），游标到达后回绕到 1。 */
+/** 有效 Logic node_id 为 [1, NODE_ID_MAX-1]（即 1..255）；NODE_ID_MAX 为排他上界，游标递增到此后回绕到 1。 */
 #define NODE_ID_MAX (256)
 
 /** Raft 角色：Follower 跟随；Candidate 拉票；Leader 发心跳并广播 AppendEntries。 */
@@ -121,7 +121,7 @@ private:
     bool m_bIsLeader = false;               ///< 业务侧「是否 Leader」快速判断
     uint64 m_uiBeLeaderTime = 0;            ///< 成为 Leader 的微秒时间
 
-    uint16 m_uiNextNodeIdAlloc = 1;         ///< 下一待分配 node_id（Leader 分配；Follower 经 RPC 取 max 对齐）
+    uint16 m_uiNextNodeIdAlloc = 1;         ///< 下一待分配 node_id（Leader 分配；Follower 经 RPC 按 mod 255 规则与主对齐游标）
 
     std::vector<std::string> m_raftClusterPeers; ///< 全体 Center worker identify，有序
     std::vector<std::string> m_raftRemotePeers;  ///< 除本机外的 peers

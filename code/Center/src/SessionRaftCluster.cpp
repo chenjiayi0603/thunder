@@ -39,6 +39,45 @@ ev_tstamp FollowerLeaseExtraFromMargins()
         + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerLeaseMarginRand;
 }
 
+/** 有效 node_id 仅 1..255（NODE_ID_MAX-1 个）。游标表示「下一个将分配的 id」，亦须在 [1,255]。
+ *  合并两游标不能用 std::max：例本地已回绕到 5、对端仍为 200 时 max 会错。将 id 减 1 映射到 0..254，在长度 kNodeIdSpan=255 的环上
+ *  算从本地到远端沿「id 递增、255 后回 1」方向要走几步（forwardLocalToRemote，mod kNodeIdSpan）。
+ *  若 1<=forward<=kNodeIdSpan/2（255 时为 1..127），认为远端在发放顺序上更靠后，取远端；否则保留本地。 */
+constexpr uint32_t kNodeIdSpan = static_cast<uint32_t>(NODE_ID_MAX) - 1u; ///< 255，与有效 id 个数一致
+
+uint16_t SanitizeNodeIdCursor(uint16_t v)
+{
+    if (v == 0u || static_cast<uint32_t>(v) >= static_cast<uint32_t>(NODE_ID_MAX))
+    {
+        return 1u;
+    }
+    return v;
+}
+
+uint16_t MergeNodeIdAllocRing(uint16_t local, uint32_t remoteU32)
+{
+    if (remoteU32 == 0u || remoteU32 >= static_cast<uint32_t>(NODE_ID_MAX))
+    {
+        return SanitizeNodeIdCursor(local);
+    }
+    uint16_t remote = static_cast<uint16_t>(remoteU32);
+    local = SanitizeNodeIdCursor(local);
+    remote = SanitizeNodeIdCursor(remote);
+    const uint32_t a = static_cast<uint32_t>(local) - 1u;
+    const uint32_t b = static_cast<uint32_t>(remote) - 1u;
+    const uint32_t forwardLocalToRemote = (b + kNodeIdSpan - a) % kNodeIdSpan;
+    if (forwardLocalToRemote == 0u)
+    {
+        return local;
+    }
+    const uint32_t halfSpan = kNodeIdSpan / 2u;
+    if (forwardLocalToRemote <= halfSpan)
+    {
+        return remote;
+    }
+    return local;
+}
+
 void RaftVoteCallback(const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
 {
     (void)oInMsgHead;
@@ -203,15 +242,17 @@ void SessionRaftCluster::InitElection(const util::CJsonObject &oCenter)
     }
 }
 
-// 返回当前游标对应 id，并递增；到 NODE_ID_MAX 回绕到 1；禁止返回 0。
+// 分配当前游标指向的 id（必为 1..255），再递增游标；游标到 NODE_ID_MAX 后回绕到 1。
 uint16_t SessionRaftCluster::AllocNextNodeId()
 {
-    const uint16 id = m_uiNextNodeIdAlloc;
-    if (++m_uiNextNodeIdAlloc >= static_cast<uint16>(NODE_ID_MAX))
+    m_uiNextNodeIdAlloc = SanitizeNodeIdCursor(m_uiNextNodeIdAlloc);
+    const uint16_t id = m_uiNextNodeIdAlloc;
+    ++m_uiNextNodeIdAlloc;
+    if (m_uiNextNodeIdAlloc >= static_cast<uint16_t>(NODE_ID_MAX))
     {
         m_uiNextNodeIdAlloc = 1;
     }
-    return (id == 0 ? static_cast<uint16>(1) : id);
+    return id;
 }
 
 // 按 m_raftClusterPeers 顺序输出；与 m_raftLeaderId 相等的项标记 leader=yes（admin show center）。
@@ -439,7 +480,7 @@ void SessionRaftCluster::RaftStartElection(ev_tstamp now)
 /*
  * RaftSendAppendEntriesToAll（Leader 心跳）：
  *   对每个 remote 发 AppendEntries（prev/commit 等为 0，空日志语义）
- *   携带 leader_next_node_id_alloc，Follower 用 max 更新本地 m_uiNextNodeIdAlloc
+ *   携带 leader_next_node_id_alloc，Follower 用 MergeNodeIdAllocRing 与本地游标合并
  */
 void SessionRaftCluster::RaftSendAppendEntriesToAll()
 {
@@ -555,7 +596,7 @@ void SessionRaftCluster::HandleRaftAppendEntries(const std::string & /*remote_id
 
     if (req.leader_next_node_id_alloc() > 0)
     {
-        m_uiNextNodeIdAlloc = static_cast<uint16>(std::max<uint32_t>(m_uiNextNodeIdAlloc, req.leader_next_node_id_alloc()));
+        m_uiNextNodeIdAlloc = MergeNodeIdAllocRing(m_uiNextNodeIdAlloc, req.leader_next_node_id_alloc());
         if (m_uiNextNodeIdAlloc >= static_cast<uint16>(NODE_ID_MAX))
         {
             m_uiNextNodeIdAlloc = 1;
@@ -577,7 +618,7 @@ void SessionRaftCluster::HandleRaftAppendEntries(const std::string & /*remote_id
  *
  *   rsp.term > 本地 -> BecomeFollower，丢弃后续逻辑
  *   非 Candidate 或 rsp.term < m_raftElectionTerm -> 陈旧响应，忽略
- *   vote_granted -> 合并 voter_next_node_id_alloc_hint（max 游标）；从 StepParam 取 peer identify 加入 votes_granted
+ *   vote_granted -> 用 MergeNodeIdAllocRing 合并 hint（mod 255 意义下比谁先谁后，非线性 max）；从 StepParam 取 peer identify 加入 votes_granted
  *   |votes| >= majority -> RaftBecomeLeader
  */
 void SessionRaftCluster::OnRaftVoteResponse(net::StepParam *param, const RaftRequestVoteRsp &rsp)
@@ -596,7 +637,7 @@ void SessionRaftCluster::OnRaftVoteResponse(net::StepParam *param, const RaftReq
     {
         if (rsp.voter_next_node_id_alloc_hint() > 0)
         {
-            m_uiNextNodeIdAlloc = static_cast<uint16>(std::max<uint32_t>(m_uiNextNodeIdAlloc, rsp.voter_next_node_id_alloc_hint()));
+            m_uiNextNodeIdAlloc = MergeNodeIdAllocRing(m_uiNextNodeIdAlloc, rsp.voter_next_node_id_alloc_hint());
             if (m_uiNextNodeIdAlloc >= static_cast<uint16>(NODE_ID_MAX))
             {
                 m_uiNextNodeIdAlloc = 1;
