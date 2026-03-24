@@ -174,7 +174,7 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
     oOutBody.set_body(std::move(strPassthrough));
     MsgHead oOutHead;
     oOutHead.set_cmd(kCmdToLogicTokenBinaryDemo);
-
+    //正常发到 LOGIC 并等待响应时，协程会停在这一步直到回包（或对应失败）；线程一般不会空转阻塞，而是去做别的事件。
     const bool okLogic = co_await step.SendToInternalByNodeTypeAsync("LOGIC", oOutHead, oOutBody);
 
     MsgBody logicBodySnap;

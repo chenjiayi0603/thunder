@@ -1113,6 +1113,7 @@ void Manager::Destroy()
     SAFE_FREE(m_pPeriodicTaskWatcher);
     if (m_loop != nullptr)
     {
+        StopPostToEventLoop();
         ev_loop_destroy(m_loop);
         m_loop = nullptr;
     }
@@ -1150,6 +1151,7 @@ void Manager::CreateLoader(bool boRestart)
 			pid_t iPid = fork();
 			if (iPid == 0)   // 子进程
 			{
+				StopPostToEventLoop();
 				ev_loop_destroy(m_loop);
 				CloseSocket(m_iS2SListenFd);
 				CloseSocket(m_iC2SListenFd);
@@ -1207,6 +1209,7 @@ void Manager::CreateWorker()
         iPid = fork();
         if (iPid == 0)   // 子进程
         {
+            StopPostToEventLoop();
             ev_loop_destroy(m_loop);
             CloseSocket(m_iS2SListenFd);
             CloseSocket(m_iC2SListenFd);
@@ -1283,6 +1286,7 @@ bool Manager::CreateEvents()
     AddSignal(SIGUSR2,SignalCallback);//自定义信号2（处理进程初始化）
 
     AddPeriodicTaskEvent();
+    InitPostToEventLoop();
     return(true);
 }
 
@@ -1339,6 +1343,7 @@ bool Manager::RestartWorker(int iDeathPid)
         iNewPid = fork();
         if (iNewPid == 0)   // 子进程
         {
+            StopPostToEventLoop();
             ev_loop_destroy(m_loop);
             CloseSocket(m_iS2SListenFd);
             CloseSocket(m_iC2SListenFd);

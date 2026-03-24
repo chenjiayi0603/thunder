@@ -10,7 +10,7 @@
 #include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
-#include "Labor.hpp"
+#include "labor/Labor.hpp"
 #include "step/Step.hpp"
 #include "logger/CustomLogger.hpp"
 
@@ -478,6 +478,89 @@ void Labor::AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callb
 	}
 }
 
+void PostToEventLoopAsyncCallback(struct ev_loop* /*loop*/, ev_async* w, int /*revents*/)
+{
+	if (w == nullptr || w->data == nullptr)
+	{
+		return;
+	}
+	Labor* pLabor = static_cast<Labor*>(w->data);
+	pLabor->DrainPostToEventLoopQueue();
+}
 
+void Labor::InitPostToEventLoop()
+{
+	if (m_loop == nullptr || m_postToLoopStarted)
+	{
+		return;
+	}
+	ev_async_init(&m_evPostToLoop, PostToEventLoopAsyncCallback);
+	m_evPostToLoop.data = static_cast<void*>(this);
+	ev_async_start(m_loop, &m_evPostToLoop);
+	m_postToLoopStarted = true;
+}
+
+void Labor::StopPostToEventLoop()
+{
+	if (!m_postToLoopStarted || m_loop == nullptr)
+	{
+		return;
+	}
+	ev_async_stop(m_loop, &m_evPostToLoop);
+	m_postToLoopStarted = false;
+	std::deque<std::function<void()>> junk;
+	{
+		std::lock_guard<std::mutex> lock(m_postToLoopMutex);
+		junk.swap(m_postToLoopQueue);
+	}
+}
+
+void Labor::PostToEventLoop(std::function<void()> fn)
+{
+	if (!fn)
+	{
+		return;
+	}
+	if (m_loop == nullptr)
+	{
+		LOG4_WARN("%s() m_loop is null, drop task", __FUNCTION__);
+		return;
+	}
+	if (!m_postToLoopStarted)
+	{
+		LOG4_WARN("%s() InitPostToEventLoop not called, drop task", __FUNCTION__);
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(m_postToLoopMutex);
+		m_postToLoopQueue.push_back(std::move(fn));
+	}
+	// 通知（唤醒）libev事件循环线程，处理 m_postToLoopQueue 队列中的回调任务
+	ev_async_send(m_loop, &m_evPostToLoop);
+}
+
+void Labor::DrainPostToEventLoopQueue()
+{
+	std::deque<std::function<void()>> local;
+	for (;;)
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_postToLoopMutex);
+			if (m_postToLoopQueue.empty())
+			{
+				break;
+			}
+			local.swap(m_postToLoopQueue);
+		}
+		for (auto& t : local)
+		{
+			if (t)
+			{
+				t();
+			}
+		}
+		local.clear();
+	}
+}
 
 } /* namespace net */

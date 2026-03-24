@@ -169,6 +169,10 @@ public:
     virtual bool ExecStep(RedisStep* pStep)override;
     virtual Step* GetStep(uint32 uiStepSeq)override;
     /**
+	* @brief 线程池等跨线程完成时校验 Step 是否仍由本 Worker 持有，避免晚到 resume UAF
+	*/
+    bool IsRegisteredStep(uint32 uiStepSeq, const Step* pStep);
+    /**
 	* @brief 发送数据
 	* @note 含自动连接成功后，发送待发送数据
 	* param loop libev循环对象

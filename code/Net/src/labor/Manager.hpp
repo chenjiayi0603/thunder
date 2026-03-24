@@ -13,7 +13,7 @@
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
 #include "Attribution.hpp"
-#include "Worker.hpp"
+#include "labor/Worker.hpp"
 #include "labor/Labor.hpp"
 #include "session/Session.hpp"
 #include "Loader.hpp"

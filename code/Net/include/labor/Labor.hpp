@@ -9,6 +9,9 @@
  ******************************************************************************/
 #ifndef SRC_NodeLabor_HPP_
 #define SRC_NodeLabor_HPP_
+#include <deque>
+#include <functional>
+#include <mutex>
 #include "NetDefine.hpp"
 #include "Interface.hpp"
 #include "util/CommonUtils.hpp"
@@ -36,6 +39,7 @@ typedef void (*io_callback)(struct ev_loop*,ev_io*,int);
 
 struct CoSleepAwaiter;
 void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
+void PostToEventLoopAsyncCallback(struct ev_loop*, ev_async*, int);
 
 /**
  * @brief 框架层工作者抽象类
@@ -46,6 +50,7 @@ class Labor
 {
     friend struct CoSleepAwaiter;
     friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
+    friend void PostToEventLoopAsyncCallback(struct ev_loop*, ev_async*, int);
 public:
     Labor();
     virtual ~Labor();
@@ -573,6 +578,12 @@ public:
 	ev_tstamp GetTimeStamp() const {return(ev_now(m_loop));}
 	struct ev_loop* GetEvLoop() const { return m_loop; }
 
+	/**
+	 * @brief 将任务投递到本 Labor 的 libev 线程执行（线程安全，可从线程池线程调用）
+	 * @note 内部使用 ev_async 唤醒 loop；回调内勿长时间阻塞
+	 */
+	void PostToEventLoop(std::function<void()> fn);
+
 	log4cplus::Logger GetLogger(){return(m_oLogger);}
 	log4cplus::Logger GetDataLogger(){return(m_oDataLogger);}
 	/**
@@ -652,6 +663,7 @@ public:
 	bool IsDataInitLogger() const {return m_bDataInitLogger;}
 	const std::string& GetServerConfFileName() {return m_strServerConfFileName;}			///< 服务器配置文件名称
 protected:
+	void DrainPostToEventLoopQueue();
 	bool InitLogger(const util::CJsonObject& oJsonConf);
 	bool InitDataLogger(const util::CJsonObject& oJsonConf);
 
@@ -669,6 +681,14 @@ protected:
 	void AddSignal(int iSignum,signal_callback callback);
 	void AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback);
 	void AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callback);
+	/**
+	 * @brief 在 ev_loop 创建后注册跨线程投递用的 ev_async（Worker/Manager/Loader 的 CreateEvents 末尾调用）
+	 */
+	void InitPostToEventLoop();
+	/**
+	 * @brief 在 ev_loop_destroy 之前停止 ev_async 并丢弃队列中未执行的任务
+	 */
+	void StopPostToEventLoop();
 	/**
 	 * @brief 延迟超时时间（重新设置超时时间）
 	 */
@@ -721,6 +741,11 @@ protected:
 	int32 m_iServerSocketBackLog = 100;         ///<对服务器 socket listen backlog
 
 	struct ev_loop* m_loop = nullptr;
+
+	ev_async m_evPostToLoop {};
+	std::mutex m_postToLoopMutex;
+	std::deque<std::function<void()>> m_postToLoopQueue;
+	bool m_postToLoopStarted = false;
 
 	std::string m_strNodeType;          ///< 节点类型，如 LOGIC
 	std::string m_strWorkPath;          ///< 工作路径

@@ -5,6 +5,9 @@
  *           协程 + 线程池（设计向伪代码，例 A/例 B）见同目录 StepCo20-threadpool-examples.md
  ******************************************************************************/
 #include <map>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 #include "util/CommonUtils.hpp"
 #include "util/StringCoder.hpp"
@@ -14,6 +17,8 @@
 #include "CustomLogger.hpp"
 #include "Interface.hpp"
 #include "coro/StepCo20Func.hpp"
+#include "coro/ThreadPoolAwaitable.hpp"
+#include "labor/WorkerThreadPool.hpp"
 
 MUDULE_CREATE(core::ModuleHello);
 
@@ -52,6 +57,14 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	else if ("TestHttpRequestCo" == strOption)
 	{
 		return TestHttpRequestCo(stMsgShell,oInHttpMsg);
+	}
+	else if ("TestHelloPoolCpu" == strOption)
+	{
+		return TestHelloPoolCpu(stMsgShell, oInHttpMsg);
+	}
+	else if ("TestHelloPoolBlock" == strOption)
+	{
+		return TestHelloPoolBlock(stMsgShell, oInHttpMsg);
 	}
 	else
 	{
@@ -110,6 +123,52 @@ net::AsyncTask VerifyKeyLogicCo(net::StepCo20& step, std::string reqBody, std::s
 		rspJson.Get("code", code);
 	}
 	step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
+	co_return;
+}
+
+} // namespace
+
+namespace
+{
+
+net::AsyncTask HelloPoolCpuCo(net::StepCo20& step)
+{
+	std::vector<uint8_t> buf(256 * 1024, static_cast<uint8_t>(3));
+	const uint64_t checksum = co_await net::MakePoolOffloadAwaiter(
+		&step, net::ThunderWorkerThreadPool(),
+		[](std::vector<uint8_t> b) -> uint64_t {
+			// 运行于线程池子线程（非 Worker/libev 线程）：勿用 GetLabor、ResponseToClient、
+			// 未同步的共享可变状态及非线程安全接口；仅处理入参副本，结果通过返回值传出。
+			uint64_t s = 0;
+			for (uint8_t x : b)
+			{
+				s += x;
+			}
+			return s;
+		},
+		std::move(buf));
+	util::CJsonObject j;
+	j.Add("option", "TestHelloPoolCpu");
+	j.Add("checksum", static_cast<util::int64>(checksum));
+	step.ResponseToClient(200, j.ToString());
+	co_return;
+}
+
+net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
+{
+	const int delay_ms = 80;
+	co_await net::MakePoolOffloadAwaiter(
+		&step, net::ThunderWorkerThreadPool(),
+		[](int delay) {
+			// 典型场景：在线程池子线程中调用无状态、会阻塞的外部 IO 同步 SDK 或函数（此处 sleep 仅作演示）。
+			// 同上约束：不得访问 Step/事件线程资源或未经同步的共享数据。
+			std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+		},
+		delay_ms);
+	util::CJsonObject j;
+	j.Add("option", "TestHelloPoolBlock");
+	j.Add("slept_ms", delay_ms);
+	step.ResponseToClient(200, j.ToString());
 	co_return;
 }
 
@@ -190,6 +249,20 @@ bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const Htt
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
 	return net::LaunchCo(new HttpRequestCo(stMsgShell, oInHttpMsg));
+}
+
+bool ModuleHello::TestHelloPoolCpu(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+{
+	LOG4_TRACE("%s()", __FUNCTION__);
+	return net::LaunchCo(stMsgShell, oInHttpMsg,
+		[](net::StepCo20& s) -> net::AsyncTask { return HelloPoolCpuCo(s); });
+}
+
+bool ModuleHello::TestHelloPoolBlock(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+{
+	LOG4_TRACE("%s()", __FUNCTION__);
+	return net::LaunchCo(stMsgShell, oInHttpMsg,
+		[](net::StepCo20& s) -> net::AsyncTask { return HelloPoolBlockCo(s); });
 }
 
 } /* namespace core */

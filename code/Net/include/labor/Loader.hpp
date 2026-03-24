@@ -5,7 +5,7 @@
  *      Author: lm26
  */
 #include <unordered_map>
-#include "Worker.hpp"
+#include "labor/Worker.hpp"
 
 namespace net
 {

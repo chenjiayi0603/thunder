@@ -1,7 +1,7 @@
 # StepCo20 与线程池协作设计
 
 本文是**设计说明**：描述在本仓库事件驱动模型下，**C++20 协程（`StepCo20`）与线程池**如何安全协作、何时使用、何时不要用。  
-**当前仓库未提供**现成的 `co_await RunOnThreadPool(...)` 封装；若后续落地实现，应遵循本文线程边界与恢复原则。
+**已实现**：`Labor::PostToEventLoop`、`PoolOffloadAwaiter` / `RunOnThreadPool`（[ThreadPoolAwaitable.hpp](../code/Net/include/coro/ThreadPoolAwaitable.hpp)）、全局池 `ThunderWorkerThreadPool`（[WorkerThreadPool.hpp](../code/Net/include/labor/WorkerThreadPool.hpp)）；设计中的 **`ScheduleBackToWorker`** 伪名与 **`PostToEventLoop`** 对应。
 
 相关背景见 [StepCo20-coroutine-migration.md](StepCo20-coroutine-migration.md)。
 
@@ -73,6 +73,16 @@ auto result = co_await RunOnThreadPool(step, pool, [&] {
 - **线程池**：`commit([input_copy, h, loop](){ ...; schedule_resume_on_worker(); })`。
 - **回到事件线程**：使用与现有 **`CoSleepAwaiter`** 相同思路——**`GetLabor()->AddEvent` / `ev_async` / 已有「主线程投递」** 能力（以 Worker 实际提供的为准）投递一个 **一次性回调**，在回调里 **`resume`**。
 
+### 3.2 落地 API 对照（Worker）
+
+| 设计伪名 / 概念 | 代码位置 |
+|------------------|----------|
+| `ScheduleBackToWorker` | **`Labor::PostToEventLoop(fn)`**：`ev_async` + 互斥队列；`InitPostToEventLoop` 在 Worker/Manager/Loader 的 `CreateEvents` 末尾调用，`StopPostToEventLoop` 在 `ev_loop_destroy` 之前调用。 |
+| `g_threadpool` | **`net::ThunderWorkerThreadPool()`**；**`InitThunderWorkerThreadPool`** 在 Worker `Init` 中按 **`custom.worker_thread_pool_size`**（默认 4，上限 `THREADPOOL_MAX_NUM`）调用。 |
+| `PoolOffloadAwaiter` | **[ThreadPoolAwaitable.hpp](../code/Net/include/coro/ThreadPoolAwaitable.hpp)** 中模板 **`PoolOffloadAwaiter` / `MakePoolOffloadAwaiter`**；池尾 **`PostToEventLoop`** 内 **`Worker::IsRegisteredStep`** 校验后再 **`resume`**。 |
+| `RunOnThreadPool`（返回值型） | 同头文件 **`RunOnThreadPool(step, pool, f)`**（`f` 无参、有返回值，非 `void`）。 |
+| Hello 演示 | HTTP JSON **`option`**: **`TestHelloPoolCpu`**（池内累加校验大缓冲区）、**`TestHelloPoolBlock`**（池内 `sleep_for` 模拟阻塞 SDK）。 |
+
 ---
 
 ## 4. 使用方式清单（可执行）
@@ -88,7 +98,7 @@ auto result = co_await RunOnThreadPool(step, pool, [&] {
 
 ### 4.1 举例说明（怎么用）
 
-下面用「大请求体算哈希」说明一条完整链路。仓库里还没有现成封装，步骤是设计目标；「从池里回到 Worker 再 resume」要自研。
+下面用「大请求体算哈希」说明一条完整链路；「从池里回到 Worker 再 resume」请用 **`Labor::PostToEventLoop`** 或 **`co_await MakePoolOffloadAwaiter`**（见 §3.2）。
 
 例一：事件线程发起，池里只算，回到事件线程再回包
 

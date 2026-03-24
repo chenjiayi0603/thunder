@@ -9,6 +9,9 @@
 namespace net
 {
 
+template <class BodyT, class OutT, class WorkFn>
+struct PoolOffloadAwaiter;
+
 /**
  * @brief C++20 协程步骤基类（继承 HttpStep）
  * @note 同步写法、异步调度：
@@ -136,6 +139,8 @@ protected:
     friend struct CoSleepAwaiter;
     friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
     friend class RedisAwaitable;
+    template <class BodyT, class OutT, class WorkFn>
+    friend struct PoolOffloadAwaiter;
 
 protected:
     std::string m_strStepDesc = "StepCo20";

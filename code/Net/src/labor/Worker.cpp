@@ -16,8 +16,10 @@
 #include "protocol/oss_sys.pb.h"
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
-#include "Labor.hpp"
-#include "Worker.hpp"
+#include "labor/Labor.hpp"
+#include "labor/Worker.hpp"
+#include "labor/WorkerThreadPool.hpp"
+#include "thread/threadpool.h"
 
 #include "cmd/Cmd.hpp"
 #include "cmd/Module.hpp"
@@ -1729,6 +1731,20 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     m_oCustomConf = oJsonConf["custom"];
     m_oCustomConf.Get("cat_log_system", m_bCatLogSystem);
 
+    {
+        int iPoolThreads = 4;
+        (void)m_oCustomConf.Get("worker_thread_pool_size", iPoolThreads);
+        if (iPoolThreads < 1)
+        {
+            iPoolThreads = 1;
+        }
+        if (iPoolThreads > static_cast<int>(THREADPOOL_MAX_NUM))
+        {
+            iPoolThreads = THREADPOOL_MAX_NUM;
+        }
+        InitThunderWorkerThreadPool(static_cast<unsigned short>(iPoolThreads));
+    }
+
     InitLogger(oJsonConf);
     InitDataLogger(oJsonConf);
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
@@ -1791,6 +1807,7 @@ bool Worker::CreateEvents()
 		LOG4_WARN("CreateManagerFdAttr(m_iManagerDataFd) == nullptr");
 		return(false);
 	}
+    InitPostToEventLoop();
     return(true);
 }
 
@@ -1880,6 +1897,7 @@ void Worker::Destroy()
 
     if (m_loop != nullptr)
     {
+        StopPostToEventLoop();
         ev_loop_destroy(m_loop);
         m_loop = nullptr;
     }
@@ -3891,6 +3909,16 @@ Step* Worker::GetStep(uint32 uiStepSeq)
 		return nullptr;
 	}
 	return iter->second.get();
+}
+
+bool Worker::IsRegisteredStep(uint32 uiStepSeq, const Step* pStep)
+{
+	auto iter = m_mapCallbackStep.find(uiStepSeq);
+	if (iter == m_mapCallbackStep.end())
+	{
+		return false;
+	}
+	return iter->second.get() == pStep;
 }
 
 void Worker::LoadSo(util::CJsonObject& oSoConf,bool boForce)

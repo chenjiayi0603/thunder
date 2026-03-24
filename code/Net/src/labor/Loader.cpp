@@ -60,6 +60,7 @@ bool Loader::CreateEvents()
 	AddSignal(SIGTERM,TerminatedCallback);
 
 	AddPeriodicTaskEvent();
+	InitPostToEventLoop();
 	return(true);
 }
 
