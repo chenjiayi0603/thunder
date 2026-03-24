@@ -62,6 +62,10 @@ class RaftAppendEntriesRsp;
 struct RaftAppendEntriesRspDefaultTypeInternal;
 extern RaftAppendEntriesRspDefaultTypeInternal _RaftAppendEntriesRsp_default_instance_;
 extern const ::google::protobuf::internal::ClassDataFull RaftAppendEntriesRsp_class_data_;
+class RaftOnlineNodeEntry;
+struct RaftOnlineNodeEntryDefaultTypeInternal;
+extern RaftOnlineNodeEntryDefaultTypeInternal _RaftOnlineNodeEntry_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull RaftOnlineNodeEntry_class_data_;
 class RaftRequestVote;
 struct RaftRequestVoteDefaultTypeInternal;
 extern RaftRequestVoteDefaultTypeInternal _RaftRequestVote_default_instance_;
@@ -552,6 +556,301 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftRequestVote final : public ::go
 extern const ::google::protobuf::internal::ClassDataFull RaftRequestVote_class_data_;
 // -------------------------------------------------------------------
 
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftOnlineNodeEntry final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:coor.RaftOnlineNodeEntry) */ {
+ public:
+  inline RaftOnlineNodeEntry() : RaftOnlineNodeEntry(nullptr) {}
+  ~RaftOnlineNodeEntry() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(RaftOnlineNodeEntry* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(RaftOnlineNodeEntry));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr RaftOnlineNodeEntry(::google::protobuf::internal::ConstantInitialized);
+
+  inline RaftOnlineNodeEntry(const RaftOnlineNodeEntry& from) : RaftOnlineNodeEntry(nullptr, from) {}
+  inline RaftOnlineNodeEntry(RaftOnlineNodeEntry&& from) noexcept
+      : RaftOnlineNodeEntry(nullptr, ::std::move(from)) {}
+  inline RaftOnlineNodeEntry& operator=(const RaftOnlineNodeEntry& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline RaftOnlineNodeEntry& operator=(RaftOnlineNodeEntry&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const RaftOnlineNodeEntry& default_instance() {
+    return *reinterpret_cast<const RaftOnlineNodeEntry*>(
+        &_RaftOnlineNodeEntry_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 2;
+  friend void swap(RaftOnlineNodeEntry& a, RaftOnlineNodeEntry& b) { a.Swap(&b); }
+  inline void Swap(RaftOnlineNodeEntry* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(RaftOnlineNodeEntry* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] RaftOnlineNodeEntry* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<RaftOnlineNodeEntry>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const RaftOnlineNodeEntry& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const RaftOnlineNodeEntry& from) { RaftOnlineNodeEntry::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(RaftOnlineNodeEntry* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "coor.RaftOnlineNodeEntry"; }
+
+  explicit RaftOnlineNodeEntry(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  RaftOnlineNodeEntry(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const RaftOnlineNodeEntry& from);
+  RaftOnlineNodeEntry(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, RaftOnlineNodeEntry&& from) noexcept
+      : RaftOnlineNodeEntry(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_();
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kNodeTypeFieldNumber = 1,
+    kNodeIpFieldNumber = 3,
+    kAccessIpFieldNumber = 5,
+    kNodeIdFieldNumber = 2,
+    kNodePortFieldNumber = 4,
+    kAccessPortFieldNumber = 6,
+    kWorkerNumFieldNumber = 7,
+    kActiveTimeFieldNumber = 8,
+  };
+  // string node_type = 1;
+  void clear_node_type() ;
+  [[nodiscard]] const ::std::string& node_type() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_node_type(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_node_type();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_node_type();
+  void set_allocated_node_type(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_node_type() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_node_type(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_node_type();
+
+  public:
+  // string node_ip = 3;
+  void clear_node_ip() ;
+  [[nodiscard]] const ::std::string& node_ip() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_node_ip(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_node_ip();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_node_ip();
+  void set_allocated_node_ip(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_node_ip() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_node_ip(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_node_ip();
+
+  public:
+  // string access_ip = 5;
+  void clear_access_ip() ;
+  [[nodiscard]] const ::std::string& access_ip() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_access_ip(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_access_ip();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_access_ip();
+  void set_allocated_access_ip(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_access_ip() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_access_ip(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_access_ip();
+
+  public:
+  // uint32 node_id = 2;
+  void clear_node_id() ;
+  [[nodiscard]] ::uint32_t node_id() const;
+  void set_node_id(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_node_id() const;
+  void _internal_set_node_id(::uint32_t value);
+
+  public:
+  // uint32 node_port = 4;
+  void clear_node_port() ;
+  [[nodiscard]] ::uint32_t node_port() const;
+  void set_node_port(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_node_port() const;
+  void _internal_set_node_port(::uint32_t value);
+
+  public:
+  // uint32 access_port = 6;
+  void clear_access_port() ;
+  [[nodiscard]] ::uint32_t access_port() const;
+  void set_access_port(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_access_port() const;
+  void _internal_set_access_port(::uint32_t value);
+
+  public:
+  // uint32 worker_num = 7;
+  void clear_worker_num() ;
+  [[nodiscard]] ::uint32_t worker_num() const;
+  void set_worker_num(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_worker_num() const;
+  void _internal_set_worker_num(::uint32_t value);
+
+  public:
+  // double active_time = 8;
+  void clear_active_time() ;
+  [[nodiscard]] double active_time() const;
+  void set_active_time(double value);
+
+  private:
+  double _internal_active_time() const;
+  void _internal_set_active_time(double value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:coor.RaftOnlineNodeEntry)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<3, 8,
+                                   0, 66,
+                                   2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const RaftOnlineNodeEntry& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr node_type_;
+    ::google::protobuf::internal::ArenaStringPtr node_ip_;
+    ::google::protobuf::internal::ArenaStringPtr access_ip_;
+    ::uint32_t node_id_;
+    ::uint32_t node_port_;
+    ::uint32_t access_port_;
+    ::uint32_t worker_num_;
+    double active_time_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_coor_2eproto;
+};
+
+extern const ::google::protobuf::internal::ClassDataFull RaftOnlineNodeEntry_class_data_;
+// -------------------------------------------------------------------
+
 class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntriesRsp final : public ::google::protobuf::Message
 /* @@protoc_insertion_point(class_definition:coor.RaftAppendEntriesRsp) */ {
  public:
@@ -608,7 +907,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntriesRsp final : public
     return *reinterpret_cast<const RaftAppendEntriesRsp*>(
         &_RaftAppendEntriesRsp_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 3;
+  static constexpr int kIndexInFileMessages = 4;
   friend void swap(RaftAppendEntriesRsp& a, RaftAppendEntriesRsp& b) { a.Swap(&b); }
   inline void Swap(RaftAppendEntriesRsp* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -816,7 +1115,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::
     return *reinterpret_cast<const RaftAppendEntries*>(
         &_RaftAppendEntries_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 2;
+  static constexpr int kIndexInFileMessages = 3;
   friend void swap(RaftAppendEntries& a, RaftAppendEntries& b) { a.Swap(&b); }
   inline void Swap(RaftAppendEntries* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -906,13 +1205,35 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::
 
   // accessors -------------------------------------------------------
   enum : int {
+    kOnlineNodesFieldNumber = 8,
     kLeaderIdFieldNumber = 2,
     kTermFieldNumber = 1,
     kPrevLogIndexFieldNumber = 3,
     kPrevLogTermFieldNumber = 4,
     kLeaderCommitFieldNumber = 5,
+    kOnlineNodesSeqFieldNumber = 7,
     kLeaderNextNodeIdAllocFieldNumber = 6,
   };
+  // repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+  [[nodiscard]] int online_nodes_size()
+      const;
+  private:
+  int _internal_online_nodes_size() const;
+
+  public:
+  void clear_online_nodes() ;
+  [[nodiscard]] ::coor::RaftOnlineNodeEntry* PROTOBUF_NONNULL mutable_online_nodes(int index);
+  [[nodiscard]] ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>* PROTOBUF_NONNULL
+  mutable_online_nodes();
+
+  private:
+  const ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>& _internal_online_nodes() const;
+  ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>* PROTOBUF_NONNULL _internal_mutable_online_nodes();
+  public:
+  [[nodiscard]] const ::coor::RaftOnlineNodeEntry& online_nodes(int index) const;
+  ::coor::RaftOnlineNodeEntry* PROTOBUF_NONNULL add_online_nodes();
+  [[nodiscard]] const ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>& online_nodes()
+      const;
   // string leader_id = 2;
   void clear_leader_id() ;
   [[nodiscard]] const ::std::string& leader_id() const;
@@ -968,6 +1289,16 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::
   void _internal_set_leader_commit(::uint64_t value);
 
   public:
+  // uint64 online_nodes_seq = 7;
+  void clear_online_nodes_seq() ;
+  [[nodiscard]] ::uint64_t online_nodes_seq() const;
+  void set_online_nodes_seq(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_online_nodes_seq() const;
+  void _internal_set_online_nodes_seq(::uint64_t value);
+
+  public:
   // uint32 leader_next_node_id_alloc = 6;
   void clear_leader_next_node_id_alloc() ;
   [[nodiscard]] ::uint32_t leader_next_node_id_alloc() const;
@@ -982,8 +1313,8 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<3, 6,
-                                   0, 40,
+  static const ::google::protobuf::internal::TcParseTable<3, 8,
+                                   1, 48,
                                    2>
       _table_;
 
@@ -1006,11 +1337,13 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RaftAppendEntries final : public ::
         const RaftAppendEntries& from_msg);
     ::google::protobuf::internal::HasBits<1> _has_bits_;
     ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::RepeatedPtrField< ::coor::RaftOnlineNodeEntry > online_nodes_;
     ::google::protobuf::internal::ArenaStringPtr leader_id_;
     ::uint64_t term_;
     ::uint64_t prev_log_index_;
     ::uint64_t prev_log_term_;
     ::uint64_t leader_commit_;
+    ::uint64_t online_nodes_seq_;
     ::uint32_t leader_next_node_id_alloc_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
@@ -1282,6 +1615,330 @@ inline void RaftRequestVoteRsp::_internal_set_voter_next_node_id_alloc_hint(::ui
 
 // -------------------------------------------------------------------
 
+// RaftOnlineNodeEntry
+
+// string node_type = 1;
+inline void RaftOnlineNodeEntry::clear_node_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_type_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline const ::std::string& RaftOnlineNodeEntry::node_type() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.node_type)
+  return _internal_node_type();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void RaftOnlineNodeEntry::set_node_type(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.node_type_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.node_type)
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::mutable_node_type()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_node_type();
+  // @@protoc_insertion_point(field_mutable:coor.RaftOnlineNodeEntry.node_type)
+  return _s;
+}
+inline const ::std::string& RaftOnlineNodeEntry::_internal_node_type() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.node_type_.Get();
+}
+inline void RaftOnlineNodeEntry::_internal_set_node_type(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_type_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::_internal_mutable_node_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.node_type_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE RaftOnlineNodeEntry::release_node_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:coor.RaftOnlineNodeEntry.node_type)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.node_type_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.node_type_.Set("", GetArena());
+  }
+  return released;
+}
+inline void RaftOnlineNodeEntry::set_allocated_node_type(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.node_type_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.node_type_.IsDefault()) {
+    _impl_.node_type_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:coor.RaftOnlineNodeEntry.node_type)
+}
+
+// uint32 node_id = 2;
+inline void RaftOnlineNodeEntry::clear_node_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_id_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000008U);
+}
+inline ::uint32_t RaftOnlineNodeEntry::node_id() const {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.node_id)
+  return _internal_node_id();
+}
+inline void RaftOnlineNodeEntry::set_node_id(::uint32_t value) {
+  _internal_set_node_id(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.node_id)
+}
+inline ::uint32_t RaftOnlineNodeEntry::_internal_node_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.node_id_;
+}
+inline void RaftOnlineNodeEntry::_internal_set_node_id(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_id_ = value;
+}
+
+// string node_ip = 3;
+inline void RaftOnlineNodeEntry::clear_node_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_ip_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000002U);
+}
+inline const ::std::string& RaftOnlineNodeEntry::node_ip() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.node_ip)
+  return _internal_node_ip();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void RaftOnlineNodeEntry::set_node_ip(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  _impl_.node_ip_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.node_ip)
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::mutable_node_ip()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  ::std::string* _s = _internal_mutable_node_ip();
+  // @@protoc_insertion_point(field_mutable:coor.RaftOnlineNodeEntry.node_ip)
+  return _s;
+}
+inline const ::std::string& RaftOnlineNodeEntry::_internal_node_ip() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.node_ip_.Get();
+}
+inline void RaftOnlineNodeEntry::_internal_set_node_ip(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_ip_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::_internal_mutable_node_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.node_ip_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE RaftOnlineNodeEntry::release_node_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:coor.RaftOnlineNodeEntry.node_ip)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  auto* released = _impl_.node_ip_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.node_ip_.Set("", GetArena());
+  }
+  return released;
+}
+inline void RaftOnlineNodeEntry::set_allocated_node_ip(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  }
+  _impl_.node_ip_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.node_ip_.IsDefault()) {
+    _impl_.node_ip_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:coor.RaftOnlineNodeEntry.node_ip)
+}
+
+// uint32 node_port = 4;
+inline void RaftOnlineNodeEntry::clear_node_port() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_port_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000010U);
+}
+inline ::uint32_t RaftOnlineNodeEntry::node_port() const {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.node_port)
+  return _internal_node_port();
+}
+inline void RaftOnlineNodeEntry::set_node_port(::uint32_t value) {
+  _internal_set_node_port(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.node_port)
+}
+inline ::uint32_t RaftOnlineNodeEntry::_internal_node_port() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.node_port_;
+}
+inline void RaftOnlineNodeEntry::_internal_set_node_port(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_port_ = value;
+}
+
+// string access_ip = 5;
+inline void RaftOnlineNodeEntry::clear_access_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.access_ip_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000004U);
+}
+inline const ::std::string& RaftOnlineNodeEntry::access_ip() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.access_ip)
+  return _internal_access_ip();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void RaftOnlineNodeEntry::set_access_ip(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  _impl_.access_ip_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.access_ip)
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::mutable_access_ip()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  ::std::string* _s = _internal_mutable_access_ip();
+  // @@protoc_insertion_point(field_mutable:coor.RaftOnlineNodeEntry.access_ip)
+  return _s;
+}
+inline const ::std::string& RaftOnlineNodeEntry::_internal_access_ip() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.access_ip_.Get();
+}
+inline void RaftOnlineNodeEntry::_internal_set_access_ip(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.access_ip_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL RaftOnlineNodeEntry::_internal_mutable_access_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.access_ip_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE RaftOnlineNodeEntry::release_access_ip() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:coor.RaftOnlineNodeEntry.access_ip)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000004U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+  auto* released = _impl_.access_ip_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.access_ip_.Set("", GetArena());
+  }
+  return released;
+}
+inline void RaftOnlineNodeEntry::set_allocated_access_ip(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+  }
+  _impl_.access_ip_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.access_ip_.IsDefault()) {
+    _impl_.access_ip_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:coor.RaftOnlineNodeEntry.access_ip)
+}
+
+// uint32 access_port = 6;
+inline void RaftOnlineNodeEntry::clear_access_port() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.access_port_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000020U);
+}
+inline ::uint32_t RaftOnlineNodeEntry::access_port() const {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.access_port)
+  return _internal_access_port();
+}
+inline void RaftOnlineNodeEntry::set_access_port(::uint32_t value) {
+  _internal_set_access_port(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.access_port)
+}
+inline ::uint32_t RaftOnlineNodeEntry::_internal_access_port() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.access_port_;
+}
+inline void RaftOnlineNodeEntry::_internal_set_access_port(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.access_port_ = value;
+}
+
+// uint32 worker_num = 7;
+inline void RaftOnlineNodeEntry::clear_worker_num() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.worker_num_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000040U);
+}
+inline ::uint32_t RaftOnlineNodeEntry::worker_num() const {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.worker_num)
+  return _internal_worker_num();
+}
+inline void RaftOnlineNodeEntry::set_worker_num(::uint32_t value) {
+  _internal_set_worker_num(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.worker_num)
+}
+inline ::uint32_t RaftOnlineNodeEntry::_internal_worker_num() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.worker_num_;
+}
+inline void RaftOnlineNodeEntry::_internal_set_worker_num(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.worker_num_ = value;
+}
+
+// double active_time = 8;
+inline void RaftOnlineNodeEntry::clear_active_time() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.active_time_ = 0;
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000080U);
+}
+inline double RaftOnlineNodeEntry::active_time() const {
+  // @@protoc_insertion_point(field_get:coor.RaftOnlineNodeEntry.active_time)
+  return _internal_active_time();
+}
+inline void RaftOnlineNodeEntry::set_active_time(double value) {
+  _internal_set_active_time(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000080U);
+  // @@protoc_insertion_point(field_set:coor.RaftOnlineNodeEntry.active_time)
+}
+inline double RaftOnlineNodeEntry::_internal_active_time() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.active_time_;
+}
+inline void RaftOnlineNodeEntry::_internal_set_active_time(double value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.active_time_ = value;
+}
+
+// -------------------------------------------------------------------
+
 // RaftAppendEntries
 
 // uint64 term = 1;
@@ -1289,7 +1946,7 @@ inline void RaftAppendEntries::clear_term() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.term_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000002U);
+                  0x00000004U);
 }
 inline ::uint64_t RaftAppendEntries::term() const {
   // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.term)
@@ -1297,7 +1954,7 @@ inline ::uint64_t RaftAppendEntries::term() const {
 }
 inline void RaftAppendEntries::set_term(::uint64_t value) {
   _internal_set_term(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.term)
 }
 inline ::uint64_t RaftAppendEntries::_internal_term() const {
@@ -1314,7 +1971,7 @@ inline void RaftAppendEntries::clear_leader_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.leader_id_.ClearToEmpty();
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000001U);
+                  0x00000002U);
 }
 inline const ::std::string& RaftAppendEntries::leader_id() const
     ABSL_ATTRIBUTE_LIFETIME_BOUND {
@@ -1324,13 +1981,13 @@ inline const ::std::string& RaftAppendEntries::leader_id() const
 template <typename Arg_, typename... Args_>
 PROTOBUF_ALWAYS_INLINE void RaftAppendEntries::set_leader_id(Arg_&& arg, Args_... args) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
   _impl_.leader_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_id)
 }
 inline ::std::string* PROTOBUF_NONNULL RaftAppendEntries::mutable_leader_id()
     ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
   ::std::string* _s = _internal_mutable_leader_id();
   // @@protoc_insertion_point(field_mutable:coor.RaftAppendEntries.leader_id)
   return _s;
@@ -1350,10 +2007,10 @@ inline ::std::string* PROTOBUF_NONNULL RaftAppendEntries::_internal_mutable_lead
 inline ::std::string* PROTOBUF_NULLABLE RaftAppendEntries::release_leader_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   // @@protoc_insertion_point(field_release:coor.RaftAppendEntries.leader_id)
-  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
     return nullptr;
   }
-  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
   auto* released = _impl_.leader_id_.Release();
   if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
     _impl_.leader_id_.Set("", GetArena());
@@ -1363,9 +2020,9 @@ inline ::std::string* PROTOBUF_NULLABLE RaftAppendEntries::release_leader_id() {
 inline void RaftAppendEntries::set_allocated_leader_id(::std::string* PROTOBUF_NULLABLE value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   if (value != nullptr) {
-    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
   } else {
-    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
   }
   _impl_.leader_id_.SetAllocated(value, GetArena());
   if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.leader_id_.IsDefault()) {
@@ -1379,7 +2036,7 @@ inline void RaftAppendEntries::clear_prev_log_index() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.prev_log_index_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000004U);
+                  0x00000008U);
 }
 inline ::uint64_t RaftAppendEntries::prev_log_index() const {
   // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.prev_log_index)
@@ -1387,7 +2044,7 @@ inline ::uint64_t RaftAppendEntries::prev_log_index() const {
 }
 inline void RaftAppendEntries::set_prev_log_index(::uint64_t value) {
   _internal_set_prev_log_index(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.prev_log_index)
 }
 inline ::uint64_t RaftAppendEntries::_internal_prev_log_index() const {
@@ -1404,7 +2061,7 @@ inline void RaftAppendEntries::clear_prev_log_term() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.prev_log_term_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000008U);
+                  0x00000010U);
 }
 inline ::uint64_t RaftAppendEntries::prev_log_term() const {
   // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.prev_log_term)
@@ -1412,7 +2069,7 @@ inline ::uint64_t RaftAppendEntries::prev_log_term() const {
 }
 inline void RaftAppendEntries::set_prev_log_term(::uint64_t value) {
   _internal_set_prev_log_term(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.prev_log_term)
 }
 inline ::uint64_t RaftAppendEntries::_internal_prev_log_term() const {
@@ -1429,7 +2086,7 @@ inline void RaftAppendEntries::clear_leader_commit() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.leader_commit_ = ::uint64_t{0u};
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000010U);
+                  0x00000020U);
 }
 inline ::uint64_t RaftAppendEntries::leader_commit() const {
   // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.leader_commit)
@@ -1437,7 +2094,7 @@ inline ::uint64_t RaftAppendEntries::leader_commit() const {
 }
 inline void RaftAppendEntries::set_leader_commit(::uint64_t value) {
   _internal_set_leader_commit(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_commit)
 }
 inline ::uint64_t RaftAppendEntries::_internal_leader_commit() const {
@@ -1454,7 +2111,7 @@ inline void RaftAppendEntries::clear_leader_next_node_id_alloc() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.leader_next_node_id_alloc_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000020U);
+                  0x00000080U);
 }
 inline ::uint32_t RaftAppendEntries::leader_next_node_id_alloc() const {
   // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.leader_next_node_id_alloc)
@@ -1462,7 +2119,7 @@ inline ::uint32_t RaftAppendEntries::leader_next_node_id_alloc() const {
 }
 inline void RaftAppendEntries::set_leader_next_node_id_alloc(::uint32_t value) {
   _internal_set_leader_next_node_id_alloc(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000080U);
   // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.leader_next_node_id_alloc)
 }
 inline ::uint32_t RaftAppendEntries::_internal_leader_next_node_id_alloc() const {
@@ -1472,6 +2129,87 @@ inline ::uint32_t RaftAppendEntries::_internal_leader_next_node_id_alloc() const
 inline void RaftAppendEntries::_internal_set_leader_next_node_id_alloc(::uint32_t value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.leader_next_node_id_alloc_ = value;
+}
+
+// uint64 online_nodes_seq = 7;
+inline void RaftAppendEntries::clear_online_nodes_seq() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.online_nodes_seq_ = ::uint64_t{0u};
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000040U);
+}
+inline ::uint64_t RaftAppendEntries::online_nodes_seq() const {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.online_nodes_seq)
+  return _internal_online_nodes_seq();
+}
+inline void RaftAppendEntries::set_online_nodes_seq(::uint64_t value) {
+  _internal_set_online_nodes_seq(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
+  // @@protoc_insertion_point(field_set:coor.RaftAppendEntries.online_nodes_seq)
+}
+inline ::uint64_t RaftAppendEntries::_internal_online_nodes_seq() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.online_nodes_seq_;
+}
+inline void RaftAppendEntries::_internal_set_online_nodes_seq(::uint64_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.online_nodes_seq_ = value;
+}
+
+// repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+inline int RaftAppendEntries::_internal_online_nodes_size() const {
+  return _internal_online_nodes().size();
+}
+inline int RaftAppendEntries::online_nodes_size() const {
+  return _internal_online_nodes_size();
+}
+inline void RaftAppendEntries::clear_online_nodes() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.online_nodes_.Clear();
+  ClearHasBitForRepeated(_impl_._has_bits_[0],
+                  0x00000001U);
+}
+inline ::coor::RaftOnlineNodeEntry* PROTOBUF_NONNULL RaftAppendEntries::mutable_online_nodes(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:coor.RaftAppendEntries.online_nodes)
+  return _internal_mutable_online_nodes()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>* PROTOBUF_NONNULL RaftAppendEntries::mutable_online_nodes()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_mutable_list:coor.RaftAppendEntries.online_nodes)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _internal_mutable_online_nodes();
+}
+inline const ::coor::RaftOnlineNodeEntry& RaftAppendEntries::online_nodes(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:coor.RaftAppendEntries.online_nodes)
+  return _internal_online_nodes().Get(index);
+}
+inline ::coor::RaftOnlineNodeEntry* PROTOBUF_NONNULL RaftAppendEntries::add_online_nodes()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::coor::RaftOnlineNodeEntry* _add =
+      _internal_mutable_online_nodes()->InternalAddWithArena(
+          ::google::protobuf::MessageLite::internal_visibility(), GetArena());
+  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_add:coor.RaftAppendEntries.online_nodes)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>& RaftAppendEntries::online_nodes() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:coor.RaftAppendEntries.online_nodes)
+  return _internal_online_nodes();
+}
+inline const ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>&
+RaftAppendEntries::_internal_online_nodes() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.online_nodes_;
+}
+inline ::google::protobuf::RepeatedPtrField<::coor::RaftOnlineNodeEntry>* PROTOBUF_NONNULL
+RaftAppendEntries::_internal_mutable_online_nodes() {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return &_impl_.online_nodes_;
 }
 
 // -------------------------------------------------------------------

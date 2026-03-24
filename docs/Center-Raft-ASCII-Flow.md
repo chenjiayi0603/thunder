@@ -165,7 +165,7 @@
 
 - 崩溃重启：内存 Raft 状态与游标不保证和集群完全一致。
 - RequestVote：`last_log_index` / `last_log_term` 不参与 grant 判定。
-- AppendEntries：无 entries 一致性、无按论文的「已提交」推导。
+- AppendEntries：无 entries 一致性、无按论文的「已提交」推导；实现上在同一条 RPC 里附带业务层「在线节点全量快照」供 Follower 替换路由副本（非 Raft 日志条目）。
 
 ---
 
@@ -178,6 +178,7 @@
        |<--------- CMD 44 VoteRsp ----------------+
        |                     |                     |
        +---------- CMD 45 AppendEntries ---------->|
+       |            (可带 online_nodes 全量快照)    |
        |<--------- CMD 46 AppendRsp ----------------+   (Leader 周期心跳)
        |                     |                     |
   SessionRaftCluster    SessionRaftCluster    SessionRaftCluster
@@ -207,6 +208,20 @@
               v
        NodeReportRsp (errcode, current_leader_identify, raft_term, node_id)
 ```
+
+### 业务侧与 Center 的连接策略（发现主 / 稳态）
+
+- **未掌握稳定主**（冷启动、本地无缓存、或刚丢失主信息）：对配置中的**全部** Center 发送 CMD 13 / CMD 11（注册与周期性上报视产品约定），依据 `NodeReportRsp` 的 `current_leader_identify`、`raft_term` 等与 `RaftHasStableLeader` 语义收敛到当前主。
+- **已掌握稳定主**：**仅向主 Center** 周期性上报/保活，减少冗余流量，且与「仅 Leader 侧权威分配 `node_id` / 在线表」一致。
+- **主不可达或疑似失效**：超时、连续失败或明确错误码时**丢弃或降级**缓存的主地址，回到对**全部** Center 的探测，直到再次从回包得到稳定的 `current_leader_identify`（避免长期只打旧主）。
+
+### Center 从节点上的路由视图（与业务连接解耦）
+
+与上节「稳态仅向主上报」配套：**从节点上的在线/路由信息只应来自 Leader 侧的权威状态经同步（全量或等价一致的增量+基准，具体实现依产品）得到**，而不是「本机是否与某业务节点仍保持会话」的推断。
+
+- **权威与副本**：业务 CMD 13 / CMD 11 主要在 **Leader** 上驱动 `SessionOnlineNodes`（及相下游事件）；Follower 持有的是**副本视图**。副本的增删改应与 Leader 判定一致，**不得**在 Follower 上单独按「本地有无连接」维护另一套会员真理。
+- **全量/同步语义**：Leader 在 **`CMD 45 AppendEntries` 周期心跳**上挂载在线表全量快照（`RaftAppendEntries.online_nodes_seq` 非 0 且 `repeated RaftOnlineNodeEntry online_nodes` 与当前 Leader 的 `SessionOnlineNodes` 一致；空表则仅 seq+空 repeated）。Follower 在承认该 AE 后**整体替换**本地副本，拓扑滞后约为 `center_beat` 量级；**不靠**业务周期性直连本机来「猜」全局路由。旧版本 Center 不传 7/8 号字段时 `online_nodes_seq==0`，Follower 不据此改表（需升级全节点后副本才与主收敛）。
+- **与从断连 ≠ 下线**：业务关闭与某 **Follower** 的 TCP（或从未长期连接该 Follower）时，**不应**据此在该 Follower 上移除该业务节点路由；否则易出现「主仍认为在线、从已删表项」的分裂。摘路由、超时剔除等一律以 **Leader 权威变更 + 复制/通知到从** 为准，Follower 只应用变更。
 
 ### Leader 上注册成功后的路由下发（仅 `IsLeadership==true`）
 

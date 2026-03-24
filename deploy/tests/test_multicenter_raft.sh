@@ -8,6 +8,7 @@
 #   RAFT_SETTLE_SEC     启动三 Center 后等待选举稳定的秒数（默认 5）
 #   SKIP_INTERFACE_SMOKE=1  仅测 Raft + admin，不跑 GenKey/VerifyKey
 #   BUILD_LIB             默认 ../build/lib
+#   ADMIN_HOST            curl / nc 探测 admin 时用的地址（默认 127.0.0.1；若 conf 里 access_host 为网卡 IP，请与之对齐，如 ADMIN_HOST=172.24.177.85）
 #
 # 依赖：curl；解析 admin JSON 需 jq 或 python3（二者有其一即可）
 
@@ -17,6 +18,7 @@ DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODE_ROOT="$(cd "${DEPLOY_ROOT}/../code" && pwd)"
 BUILD_LIB="${BUILD_LIB:-${DEPLOY_ROOT}/../build/lib}"
 RAFT_SETTLE_SEC="${RAFT_SETTLE_SEC:-5}"
+ADMIN_HOST="${ADMIN_HOST:-127.0.0.1}"
 FIXTURE="${DEPLOY_ROOT}/tests/fixtures/CenterCmd.multicenter.json"
 CENTER_BIN="${CENTER_BIN:-${DEPLOY_ROOT}/Center/bin/Center}"
 
@@ -37,23 +39,37 @@ _cleanup_multicenter() {
 _curl_admin() {
   local access_port="$1"
   if [[ -x /usr/bin/curl ]]; then
-    env -u LD_LIBRARY_PATH /usr/bin/curl --noproxy '*' -sS -m 15 -X POST "http://127.0.0.1:${access_port}/admin" \
+    env -u LD_LIBRARY_PATH /usr/bin/curl --noproxy '*' -sS -f -m 15 -X POST "http://${ADMIN_HOST}:${access_port}/admin" \
       -H 'Content-Type: application/json' \
       -d '{"cmd":"show","args":["center"]}'
   else
-    env -u LD_LIBRARY_PATH curl --noproxy '*' -sS -m 15 -X POST "http://127.0.0.1:${access_port}/admin" \
+    env -u LD_LIBRARY_PATH curl --noproxy '*' -sS -f -m 15 -X POST "http://${ADMIN_HOST}:${access_port}/admin" \
       -H 'Content-Type: application/json' \
       -d '{"cmd":"show","args":["center"]}'
   fi
 }
 
+# inner 等本机端口：ss 见「任意地址上该端口」即认为已监听；无 ss 时用 nc@127.0.0.1。
 _tcp_listening() {
   local port="$1"
   if command -v ss >/dev/null 2>&1; then
     ss -tln 2>/dev/null | grep -q ":${port} " && return 0
   fi
   if command -v nc >/dev/null 2>&1; then
-    nc -z 127.0.0.1 "${port}" 2>/dev/null && return 0
+    nc -z -w1 127.0.0.1 "${port}" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+# 从「将要 curl 的地址」探测 TCP 是否可连。admin 必须用此函数：仅用 ss+grep 会误判（例如进程绑在 172.x:26000 时 ss 能匹配 :26000，但 curl 127.0.0.1 仍失败）。
+_tcp_endpoint_reachable() {
+  local host="$1"
+  local port="$2"
+  if command -v nc >/dev/null 2>&1; then
+    nc -z -w1 "${host}" "${port}" 2>/dev/null && return 0
+  fi
+  if (echo >/dev/tcp/"${host}"/"${port}") 2>/dev/null; then
+    return 0
   fi
   return 1
 }
@@ -192,13 +208,33 @@ for p in 27000 27022 27032; do
   fi
 done
 
+echo "=== 等待 HTTP admin 口可从 ADMIN_HOST 连上（26000 / 26022 / 26032 @ ${ADMIN_HOST}）==="
+for ap in 26000 26022 26032; do
+  for _i in $(seq 1 60); do
+    _tcp_endpoint_reachable "${ADMIN_HOST}" "${ap}" && break
+    sleep 0.5
+  done
+  if ! _tcp_endpoint_reachable "${ADMIN_HOST}" "${ap}"; then
+    echo "错误: 无法从 ${ADMIN_HOST} 连到 TCP ${ap}（与 curl admin 一致）。请检查对应 conf/Center.json、conf2、conf3 的 access_host 是否与 ADMIN_HOST 一致（多机可绑 0.0.0.0 需脚本里设 ADMIN_HOST=127.0.0.1 且进程实际监听 loopback，或 ADMIN_HOST 用绑定 IP）。安装 netcat-openbsd 可装 nc 做探测。详见 ${LOGF} 与 log/Center_robot*.log" >&2
+    exit 1
+  fi
+done
+
 echo "=== 等待 Raft 收敛（${RAFT_SETTLE_SEC}s）==="
 sleep "${RAFT_SETTLE_SEC}"
 
-echo "=== ModuleAdmin show center（access 26000 / 26022 / 26032）— 应各恰有 1 个 leader=yes 且 identify 一致 ==="
+echo "=== ModuleAdmin show center（http://${ADMIN_HOST}:26000|26022|26032）— 应各恰有 1 个 leader=yes 且 identify 一致 ==="
 LEADER_IDS=()
 for ap in 26000 26022 26032; do
-  body="$(_curl_admin "${ap}")" || true
+  body=""
+  if ! body="$(_curl_admin "${ap}")"; then
+    echo "错误: curl admin 失败（${ADMIN_HOST}:${ap}）。确认 access_host 与 ADMIN_HOST 一致且 ModuleAdmin 已加载。见 ${LOGF}" >&2
+    exit 1
+  fi
+  if [[ -z "${body}" ]]; then
+    echo "错误: admin(${ap}) 返回空 body" >&2
+    exit 1
+  fi
   code="$(_admin_json_code "${body}")"
   if [[ -n "${code}" && "${code}" != "0" && "${code}" != "null" ]]; then
     echo "错误: admin(${ap}) 返回异常 code=${code} body=${body}" >&2
@@ -228,6 +264,7 @@ fi
 echo "=== 调用 test_interfaceserver.sh（SKIP_CENTER_START，三 Center 已运行）==="
 export SKIP_CENTER_START=1
 export REQUIRED_CENTER_INNER_PORTS="27000 27022 27032"
+export ADMIN_HOST
 cd "${DEPLOY_ROOT}"
 bash ./tests/test_interfaceserver.sh
 echo "=== test_multicenter_raft 全部通过 ==="

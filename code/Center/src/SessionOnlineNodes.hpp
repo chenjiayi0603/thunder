@@ -36,6 +36,7 @@ public:
     void AddSubscribe(const std::string &strNodeType, const std::string &strBeSubscribeNodeType);
 
     uint16 AddNode(const NodeReport &oNodeReport, bool boRegister = false);
+    /** need_leadership 时仅 Leader 可摘节点；Follower 无操作（避免本地断连误删副本） */
     void RemoveNode(const std::string &strNodeIdentify);
 
     void GetIpWhite(util::CJsonObject &oIpWhite) const;
@@ -56,6 +57,13 @@ public:
 
     /** Raft 当选 Leader 后调用：把本机已有在线节点重新广播给订阅方（缓解换主后下游迟迟收不到路由） */
     void ReplaySubscriptionsAfterRaftLeadership();
+
+    /** 每轮 Leader 向各 Follower 发 AE 前调用一次，递增快照版本号 */
+    void BumpOnlineSnapshotSeqForRaft();
+    /** 在 Bump 之后向本条 AppendEntries 写入当前 seq 与全量 online_nodes */
+    void FillLeaderOnlineSnapshotForRaftAppend(RaftAppendEntries *ae);
+    /** Follower 收到合法 AppendEntries 且 online_nodes_seq!=0 时整体替换本地副本 */
+    void ApplyOnlineSnapshotFromLeader(const RaftAppendEntries &req);
 
     void AddSendingNodeNotice(const std::string &strToNodeIdentify, const NodeNotice &oNodeNotice)
     {
@@ -98,6 +106,9 @@ private:
 
     /** Leader 上：按节点限频，用心跳(NodeReport)补发路由，避免订阅方晚于首次广播上线时长时间无路由 */
     std::unordered_map<std::string, uint32> m_mapLastHeartbeatRouteBroadcast;
+
+    /** 随 AppendEntries 下发的在线表快照版本号（单调递增，便于日志与排障） */
+    uint64_t m_raftOnlineSnapshotSeq = 0;
 };
 
 inline SessionOnlineNodes *GetSessionOnlineNodes() { return net::GetGlobalConfigSession<SessionOnlineNodes>("CenterCmd.json", 1); }

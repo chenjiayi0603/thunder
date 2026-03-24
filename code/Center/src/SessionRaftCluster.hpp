@@ -6,6 +6,7 @@
  * 职责概要：
  *   - 多 Center 进程间：RequestVote / AppendEntries（空日志）驱动 term 与 Leader 收敛。
  *   - Leader 经 AppendEntries 携带 leader_next_node_id_alloc，Follower 与 Leader 的分配游标取 max；
+ *     同一条 AppendEntries 可携带在线节点全量快照（online_nodes_seq + online_nodes），Follower 整体替换 SessionOnlineNodes 副本。
  *     候选人仅在收到 vote_granted 的 VoteRsp 时合并 voter_next_node_id_alloc_hint（与完整 Raft 日志复制不同，属业务层约定）。
  ******************************************************************************/
 #ifndef SRC_SESSIONRAFTCLUSTER_HPP_

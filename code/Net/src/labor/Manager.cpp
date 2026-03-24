@@ -1626,6 +1626,11 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
     auto center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
     if (center_iter != m_mapCenterMsgShell.end())
     {
+        if (!m_strRaftLeaderCenterKey.empty() && iter->second->strIdentify == m_strRaftLeaderCenterKey)
+        {
+            m_strRaftLeaderCenterKey.clear();
+            LOG4_INFO("%s lost connection to cached raft leader %s, fan-out all centers", __FUNCTION__, iter->second->strIdentify.c_str());
+        }
         center_iter->second.iFd = 0;
         center_iter->second.ulSeq = 0;
     }
@@ -1867,27 +1872,51 @@ bool Manager::ReportToCenter(bool boRegister)
 		oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
 		LOG4_TRACE("%s():%s", __FUNCTION__, oNodeReport.DebugString().c_str());
 
-		for (auto center_iter:m_mapCenterMsgShell)
-		{
-			if (center_iter.second.iFd == 0)
+		auto sendToOneCenter = [&](const std::string& strCenterKey, const tagMsgShell& stShell) {
+			if (stShell.iFd == 0)
 			{
 				oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
-				LOG4_TRACE("%s() cmd %d", __FUNCTION__, oMsgHead.cmd());
-				AutoSend(center_iter.first, oMsgHead, oMsgBody);
+				LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
+				AutoSend(strCenterKey, oMsgHead, oMsgBody);
 			}
 			else
 			{
 				if (boRegister)
 				{
 					oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
-					LOG4_TRACE("%s() cmd %d", __FUNCTION__, oMsgHead.cmd());
-					SendTo(center_iter.second, oMsgHead, oMsgBody);
+					LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
+					SendTo(stShell, oMsgHead, oMsgBody);
 				}
 				else
 				{
 					oMsgHead.set_cmd(CMD_REQ_NODE_STATUS_REPORT);
-					LOG4_TRACE("%s() cmd %d", __FUNCTION__, oMsgHead.cmd());
-					SendTo(center_iter.second, oMsgHead, oMsgBody);
+					LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
+					SendTo(stShell, oMsgHead, oMsgBody);
+				}
+			}
+		};
+
+		if (m_strRaftLeaderCenterKey.empty())
+		{
+			for (const auto& center_iter : m_mapCenterMsgShell)
+			{
+				sendToOneCenter(center_iter.first, center_iter.second);
+			}
+		}
+		else
+		{
+			auto leader_it = m_mapCenterMsgShell.find(m_strRaftLeaderCenterKey);
+			if (leader_it != m_mapCenterMsgShell.end())
+			{
+				sendToOneCenter(leader_it->first, leader_it->second);
+			}
+			else
+			{
+				LOG4_WARN("%s cached leader %s not in center map, clear and fan-out", __FUNCTION__, m_strRaftLeaderCenterKey.c_str());
+				m_strRaftLeaderCenterKey.clear();
+				for (const auto& center_iter : m_mapCenterMsgShell)
+				{
+					sendToOneCenter(center_iter.first, center_iter.second);
 				}
 			}
 		}
@@ -2199,6 +2228,40 @@ bool Manager::DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody&
     return(false);
 }
 
+void Manager::UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeReportRsp)
+{
+    const uint32_t err = oNodeReportRsp.errcode();
+    if (err == 2u)
+    {
+        m_strRaftLeaderCenterKey.clear();
+        LOG4_TRACE("%s err=2 (no stable raft leader), fan-out all centers", __FUNCTION__);
+        return;
+    }
+    const std::string& leader = oNodeReportRsp.current_leader_identify();
+    if (!leader.empty())
+    {
+        if (m_mapCenterMsgShell.find(leader) != m_mapCenterMsgShell.end())
+        {
+            if (m_strRaftLeaderCenterKey != leader)
+            {
+                LOG4_INFO("%s cache raft leader center %s (err=%u raft_term=%llu)", __FUNCTION__, leader.c_str(), err,
+                          (unsigned long long)oNodeReportRsp.raft_term());
+            }
+            m_strRaftLeaderCenterKey = leader;
+        }
+        else
+        {
+            m_strRaftLeaderCenterKey.clear();
+            LOG4_TRACE("%s leader %s not in local center config, fan-out all", __FUNCTION__, leader.c_str());
+        }
+    }
+    else if (err == 0u)
+    {
+        m_strRaftLeaderCenterKey.clear();
+        LOG4_TRACE("%s err=0 without leader hint, fan-out all", __FUNCTION__);
+    }
+}
+
 bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
@@ -2238,6 +2301,7 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
         	NodeReportRsp oNodeReportRsp;
         	if (oNodeReportRsp.ParseFromString(oInMsgBody.body()))
         	{
+        		UpdateRaftLeaderHintFromNodeReportRsp(oNodeReportRsp);
         		if (oNodeReportRsp.errcode() == 0)
         		{
         			if (m_uiNodeId != oNodeReportRsp.node_id())
@@ -2253,7 +2317,7 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
         		}
         		else
         		{
-        			LOG4_WARN("register to center error, errcode %u!", oNodeReportRsp.errcode());
+        			LOG4_WARN("NodeReport/Register rsp from center error, errcode %u!", oNodeReportRsp.errcode());
         		}
         	}
         	else

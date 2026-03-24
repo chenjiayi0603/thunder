@@ -2,7 +2,7 @@
     "node_type": "CENTER",
     "inner_host": "127.0.0.1",
     "inner_port": 27000,
-    "access_host": "172.24.177.85",
+    "access_host": "127.0.0.1",
     "access_port": 26000,
     "access_codec": 3,
     "center": [

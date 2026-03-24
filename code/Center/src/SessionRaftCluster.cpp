@@ -447,6 +447,11 @@ void SessionRaftCluster::RaftSendAppendEntriesToAll()
     {
         return;
     }
+    SessionOnlineNodes *online = GetSessionOnlineNodes();
+    if (online && !m_raftRemotePeers.empty())
+    {
+        online->BumpOnlineSnapshotSeqForRaft();
+    }
     for (const auto &peer : m_raftRemotePeers)
     {
         RaftAppendEntries ae;
@@ -456,6 +461,10 @@ void SessionRaftCluster::RaftSendAppendEntriesToAll()
         ae.set_prev_log_term(0);
         ae.set_leader_commit(0);
         ae.set_leader_next_node_id_alloc(static_cast<uint32_t>(m_uiNextNodeIdAlloc));
+        if (online)
+        {
+            online->FillLeaderOnlineSnapshotForRaftAppend(&ae);
+        }
         const std::string body = ae.SerializeAsString();
         GetLabor()->SendToCallback(this, net::CMD_REQ_RAFT_APPEND_ENTRIES, body, RaftAppendCallback, peer, "", nullptr);
     }
@@ -551,6 +560,12 @@ void SessionRaftCluster::HandleRaftAppendEntries(const std::string & /*remote_id
         {
             m_uiNextNodeIdAlloc = 1;
         }
+    }
+
+    SessionOnlineNodes *online = GetSessionOnlineNodes();
+    if (online)
+    {
+        online->ApplyOnlineSnapshotFromLeader(req);
     }
 
     rsp->set_term(m_raftTerm);

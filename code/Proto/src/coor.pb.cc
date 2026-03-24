@@ -87,6 +87,45 @@ struct RaftRequestVoteDefaultTypeInternal {
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftRequestVoteDefaultTypeInternal _RaftRequestVote_default_instance_;
 
+inline constexpr RaftOnlineNodeEntry::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        node_type_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        node_ip_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        access_ip_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        node_id_{0u},
+        node_port_{0u},
+        access_port_{0u},
+        worker_num_{0u},
+        active_time_{0} {}
+
+template <typename>
+constexpr RaftOnlineNodeEntry::RaftOnlineNodeEntry(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(RaftOnlineNodeEntry_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
+}
+struct RaftOnlineNodeEntryDefaultTypeInternal {
+  constexpr RaftOnlineNodeEntryDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~RaftOnlineNodeEntryDefaultTypeInternal() {}
+  union {
+    RaftOnlineNodeEntry _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftOnlineNodeEntryDefaultTypeInternal _RaftOnlineNodeEntry_default_instance_;
+
 inline constexpr RaftAppendEntriesRsp::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     ::_pbi::ConstantInitialized) noexcept
@@ -118,6 +157,15 @@ inline constexpr RaftAppendEntries::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
+        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
+        online_nodes_{visibility, ::_pbi::InternalMetadataOffset::Build<
+            ::coor::RaftAppendEntries,
+            PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.online_nodes_)>()
+        }
+        #else  // !PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
+        online_nodes_ {}
+        #endif
+        ,
         leader_id_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
@@ -125,6 +173,7 @@ inline constexpr RaftAppendEntries::Impl_::Impl_(
         prev_log_index_{::uint64_t{0u}},
         prev_log_term_{::uint64_t{0u}},
         leader_commit_{::uint64_t{0u}},
+        online_nodes_seq_{::uint64_t{0u}},
         leader_next_node_id_alloc_{0u} {}
 
 template <typename>
@@ -177,20 +226,43 @@ const ::uint32_t
         1,
         2,
         0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_._has_bits_),
+        11, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.node_type_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.node_id_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.node_ip_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.node_port_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.access_ip_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.access_port_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.worker_num_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftOnlineNodeEntry, _impl_.active_time_),
+        0,
+        3,
+        1,
+        4,
+        2,
+        5,
+        6,
+        7,
+        0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_._has_bits_),
-        9, // hasbit index offset
+        11, // hasbit index offset
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.term_),
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_id_),
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.prev_log_index_),
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.prev_log_term_),
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_commit_),
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.leader_next_node_id_alloc_),
-        1,
-        0,
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.online_nodes_seq_),
+        PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.online_nodes_),
         2,
+        1,
         3,
         4,
         5,
+        7,
+        6,
+        0,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntriesRsp, _impl_._has_bits_),
         5, // hasbit index offset
@@ -204,12 +276,14 @@ static const ::_pbi::MigrationSchema
     schemas[] ABSL_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
         {0, sizeof(::coor::RaftRequestVote)},
         {13, sizeof(::coor::RaftRequestVoteRsp)},
-        {22, sizeof(::coor::RaftAppendEntries)},
-        {37, sizeof(::coor::RaftAppendEntriesRsp)},
+        {22, sizeof(::coor::RaftOnlineNodeEntry)},
+        {41, sizeof(::coor::RaftAppendEntries)},
+        {60, sizeof(::coor::RaftAppendEntriesRsp)},
 };
 static const ::_pb::Message* PROTOBUF_NONNULL const file_default_instances[] = {
     &::coor::_RaftRequestVote_default_instance_._instance,
     &::coor::_RaftRequestVoteRsp_default_instance_._instance,
+    &::coor::_RaftOnlineNodeEntry_default_instance_._instance,
     &::coor::_RaftAppendEntries_default_instance_._instance,
     &::coor::_RaftAppendEntriesRsp_default_instance_._instance,
 };
@@ -221,24 +295,31 @@ const char descriptor_table_protodef_coor_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIA
     "\004\022\037\n\027next_node_id_alloc_hint\030\005 \001(\r\"_\n\022Ra"
     "ftRequestVoteRsp\022\014\n\004term\030\001 \001(\004\022\024\n\014vote_g"
     "ranted\030\002 \001(\010\022%\n\035voter_next_node_id_alloc"
-    "_hint\030\003 \001(\r\"\235\001\n\021RaftAppendEntries\022\014\n\004ter"
-    "m\030\001 \001(\004\022\021\n\tleader_id\030\002 \001(\t\022\026\n\016prev_log_i"
-    "ndex\030\003 \001(\004\022\025\n\rprev_log_term\030\004 \001(\004\022\025\n\rlea"
-    "der_commit\030\005 \001(\004\022!\n\031leader_next_node_id_"
-    "alloc\030\006 \001(\r\"5\n\024RaftAppendEntriesRsp\022\014\n\004t"
-    "erm\030\001 \001(\004\022\017\n\007success\030\002 \001(\010b\006proto3"
+    "_hint\030\003 \001(\r\"\256\001\n\023RaftOnlineNodeEntry\022\021\n\tn"
+    "ode_type\030\001 \001(\t\022\017\n\007node_id\030\002 \001(\r\022\017\n\007node_"
+    "ip\030\003 \001(\t\022\021\n\tnode_port\030\004 \001(\r\022\021\n\taccess_ip"
+    "\030\005 \001(\t\022\023\n\013access_port\030\006 \001(\r\022\022\n\nworker_nu"
+    "m\030\007 \001(\r\022\023\n\013active_time\030\010 \001(\001\"\350\001\n\021RaftApp"
+    "endEntries\022\014\n\004term\030\001 \001(\004\022\021\n\tleader_id\030\002 "
+    "\001(\t\022\026\n\016prev_log_index\030\003 \001(\004\022\025\n\rprev_log_"
+    "term\030\004 \001(\004\022\025\n\rleader_commit\030\005 \001(\004\022!\n\031lea"
+    "der_next_node_id_alloc\030\006 \001(\r\022\030\n\020online_n"
+    "odes_seq\030\007 \001(\004\022/\n\014online_nodes\030\010 \003(\0132\031.c"
+    "oor.RaftOnlineNodeEntry\"5\n\024RaftAppendEnt"
+    "riesRsp\022\014\n\004term\030\001 \001(\004\022\017\n\007success\030\002 \001(\010b\006"
+    "proto3"
 };
 static ::absl::once_flag descriptor_table_coor_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_coor_2eproto = {
     false,
     false,
-    474,
+    726,
     descriptor_table_protodef_coor_2eproto,
     "coor.proto",
     &descriptor_table_coor_2eproto_once,
     nullptr,
     0,
-    4,
+    5,
     schemas,
     file_default_instances,
     TableStruct_coor_2eproto::offsets,
@@ -979,6 +1060,523 @@ void RaftRequestVoteRsp::InternalSwap(RaftRequestVoteRsp* PROTOBUF_RESTRICT PROT
 }
 // ===================================================================
 
+class RaftOnlineNodeEntry::_Internal {
+ public:
+  using HasBits =
+      decltype(::std::declval<RaftOnlineNodeEntry>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+      8 * PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_._has_bits_);
+};
+
+RaftOnlineNodeEntry::RaftOnlineNodeEntry(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftOnlineNodeEntry_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:coor.RaftOnlineNodeEntry)
+}
+PROTOBUF_NDEBUG_INLINE RaftOnlineNodeEntry::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+    [[maybe_unused]] const ::coor::RaftOnlineNodeEntry& from_msg)
+      : _has_bits_{from._has_bits_},
+        _cached_size_{0},
+        node_type_(arena, from.node_type_),
+        node_ip_(arena, from.node_ip_),
+        access_ip_(arena, from.access_ip_) {}
+
+RaftOnlineNodeEntry::RaftOnlineNodeEntry(
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
+    const RaftOnlineNodeEntry& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, RaftOnlineNodeEntry_class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  RaftOnlineNodeEntry* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+  ::memcpy(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, node_id_),
+           reinterpret_cast<const char*>(&from._impl_) +
+               offsetof(Impl_, node_id_),
+           offsetof(Impl_, active_time_) -
+               offsetof(Impl_, node_id_) +
+               sizeof(Impl_::active_time_));
+
+  // @@protoc_insertion_point(copy_constructor:coor.RaftOnlineNodeEntry)
+}
+PROTOBUF_NDEBUG_INLINE RaftOnlineNodeEntry::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+      : _cached_size_{0},
+        node_type_(arena),
+        node_ip_(arena),
+        access_ip_(arena) {}
+
+inline void RaftOnlineNodeEntry::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char*>(&_impl_) +
+               offsetof(Impl_, node_id_),
+           0,
+           offsetof(Impl_, active_time_) -
+               offsetof(Impl_, node_id_) +
+               sizeof(Impl_::active_time_));
+}
+RaftOnlineNodeEntry::~RaftOnlineNodeEntry() {
+  // @@protoc_insertion_point(destructor:coor.RaftOnlineNodeEntry)
+  SharedDtor(*this);
+}
+inline void RaftOnlineNodeEntry::SharedDtor(MessageLite& self) {
+  RaftOnlineNodeEntry& this_ = static_cast<RaftOnlineNodeEntry&>(self);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.node_type_.Destroy();
+  this_._impl_.node_ip_.Destroy();
+  this_._impl_.access_ip_.Destroy();
+  this_._impl_.~Impl_();
+}
+
+inline void* PROTOBUF_NONNULL RaftOnlineNodeEntry::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) RaftOnlineNodeEntry(arena);
+}
+constexpr auto RaftOnlineNodeEntry::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(RaftOnlineNodeEntry),
+                                            alignof(RaftOnlineNodeEntry));
+}
+constexpr auto RaftOnlineNodeEntry::InternalGenerateClassData_() {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &_RaftOnlineNodeEntry_default_instance_._instance,
+          &_table_.header,
+          nullptr,  // IsInitialized
+          &RaftOnlineNodeEntry::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<RaftOnlineNodeEntry>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &RaftOnlineNodeEntry::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<RaftOnlineNodeEntry>(), &RaftOnlineNodeEntry::ByteSizeLong,
+              &RaftOnlineNodeEntry::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_._cached_size_),
+          false,
+      },
+      &RaftOnlineNodeEntry::kDescriptorMethods,
+      &descriptor_table_coor_2eproto,
+      nullptr,  // tracker
+  };
+}
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull RaftOnlineNodeEntry_class_data_ =
+        RaftOnlineNodeEntry::InternalGenerateClassData_();
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+RaftOnlineNodeEntry::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&RaftOnlineNodeEntry_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(RaftOnlineNodeEntry_class_data_.tc_table);
+  return RaftOnlineNodeEntry_class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<3, 8, 0, 66, 2>
+RaftOnlineNodeEntry::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_._has_bits_),
+    0, // no _extensions_
+    8, 56,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967040,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    8,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    RaftOnlineNodeEntry_class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::coor::RaftOnlineNodeEntry>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    // double active_time = 8;
+    {::_pbi::TcParser::FastF64S1,
+     {65, 7, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.active_time_)}},
+    // string node_type = 1;
+    {::_pbi::TcParser::FastUS1,
+     {10, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_type_)}},
+    // uint32 node_id = 2;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftOnlineNodeEntry, _impl_.node_id_), 3>(),
+     {16, 3, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_id_)}},
+    // string node_ip = 3;
+    {::_pbi::TcParser::FastUS1,
+     {26, 1, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_ip_)}},
+    // uint32 node_port = 4;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftOnlineNodeEntry, _impl_.node_port_), 4>(),
+     {32, 4, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_port_)}},
+    // string access_ip = 5;
+    {::_pbi::TcParser::FastUS1,
+     {42, 2, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.access_ip_)}},
+    // uint32 access_port = 6;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftOnlineNodeEntry, _impl_.access_port_), 5>(),
+     {48, 5, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.access_port_)}},
+    // uint32 worker_num = 7;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftOnlineNodeEntry, _impl_.worker_num_), 6>(),
+     {56, 6, 0,
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.worker_num_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // string node_type = 1;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_type_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint32 node_id = 2;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_id_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // string node_ip = 3;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_ip_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint32 node_port = 4;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_port_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // string access_ip = 5;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.access_ip_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // uint32 access_port = 6;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.access_port_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // uint32 worker_num = 7;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.worker_num_), _Internal::kHasBitsOffset + 6, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // double active_time = 8;
+    {PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.active_time_), _Internal::kHasBitsOffset + 7, 0, (0 | ::_fl::kFcOptional | ::_fl::kDouble)},
+  }},
+  // no aux_entries
+  {{
+    "\30\11\0\7\0\11\0\0\0\0\0\0\0\0\0\0"
+    "coor.RaftOnlineNodeEntry"
+    "node_type"
+    "node_ip"
+    "access_ip"
+  }},
+};
+PROTOBUF_NOINLINE void RaftOnlineNodeEntry::Clear() {
+// @@protoc_insertion_point(message_clear_start:coor.RaftOnlineNodeEntry)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      _impl_.node_type_.ClearNonDefaultToEmpty();
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      _impl_.node_ip_.ClearNonDefaultToEmpty();
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      _impl_.access_ip_.ClearNonDefaultToEmpty();
+    }
+  }
+  if (BatchCheckHasBit(cached_has_bits, 0x000000f8U)) {
+    ::memset(&_impl_.node_id_, 0, static_cast<::size_t>(
+        reinterpret_cast<char*>(&_impl_.active_time_) -
+        reinterpret_cast<char*>(&_impl_.node_id_)) + sizeof(_impl_.active_time_));
+  }
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::uint8_t* PROTOBUF_NONNULL RaftOnlineNodeEntry::_InternalSerialize(
+    const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
+  const RaftOnlineNodeEntry& this_ = static_cast<const RaftOnlineNodeEntry&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::uint8_t* PROTOBUF_NONNULL RaftOnlineNodeEntry::_InternalSerialize(
+    ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+  const RaftOnlineNodeEntry& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(serialize_to_array_start:coor.RaftOnlineNodeEntry)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = this_._impl_._has_bits_[0];
+  // string node_type = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (!this_._internal_node_type().empty()) {
+      const ::std::string& _s = this_._internal_node_type();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "coor.RaftOnlineNodeEntry.node_type");
+      target = stream->WriteStringMaybeAliased(1, _s, target);
+    }
+  }
+
+  // uint32 node_id = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (this_._internal_node_id() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          2, this_._internal_node_id(), target);
+    }
+  }
+
+  // string node_ip = 3;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (!this_._internal_node_ip().empty()) {
+      const ::std::string& _s = this_._internal_node_ip();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "coor.RaftOnlineNodeEntry.node_ip");
+      target = stream->WriteStringMaybeAliased(3, _s, target);
+    }
+  }
+
+  // uint32 node_port = 4;
+  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (this_._internal_node_port() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          4, this_._internal_node_port(), target);
+    }
+  }
+
+  // string access_ip = 5;
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (!this_._internal_access_ip().empty()) {
+      const ::std::string& _s = this_._internal_access_ip();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "coor.RaftOnlineNodeEntry.access_ip");
+      target = stream->WriteStringMaybeAliased(5, _s, target);
+    }
+  }
+
+  // uint32 access_port = 6;
+  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (this_._internal_access_port() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          6, this_._internal_access_port(), target);
+    }
+  }
+
+  // uint32 worker_num = 7;
+  if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+    if (this_._internal_worker_num() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+          7, this_._internal_worker_num(), target);
+    }
+  }
+
+  // double active_time = 8;
+  if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+    if (::absl::bit_cast<::uint64_t>(this_._internal_active_time()) != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteDoubleToArray(
+          8, this_._internal_active_time(), target);
+    }
+  }
+
+  if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:coor.RaftOnlineNodeEntry)
+  return target;
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::size_t RaftOnlineNodeEntry::ByteSizeLong(const MessageLite& base) {
+  const RaftOnlineNodeEntry& this_ = static_cast<const RaftOnlineNodeEntry&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::size_t RaftOnlineNodeEntry::ByteSizeLong() const {
+  const RaftOnlineNodeEntry& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(message_byte_size_start:coor.RaftOnlineNodeEntry)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void)cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+  cached_has_bits = this_._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x000000ffU)) {
+    // string node_type = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!this_._internal_node_type().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_node_type());
+      }
+    }
+    // string node_ip = 3;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (!this_._internal_node_ip().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_node_ip());
+      }
+    }
+    // string access_ip = 5;
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (!this_._internal_access_ip().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_access_ip());
+      }
+    }
+    // uint32 node_id = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (this_._internal_node_id() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_node_id());
+      }
+    }
+    // uint32 node_port = 4;
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (this_._internal_node_port() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_node_port());
+      }
+    }
+    // uint32 access_port = 6;
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+      if (this_._internal_access_port() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_access_port());
+      }
+    }
+    // uint32 worker_num = 7;
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (this_._internal_worker_num() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+            this_._internal_worker_num());
+      }
+    }
+    // double active_time = 8;
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+      if (::absl::bit_cast<::uint64_t>(this_._internal_active_time()) != 0) {
+        total_size += 9;
+      }
+    }
+  }
+  return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                             &this_._impl_._cached_size_);
+}
+
+void RaftOnlineNodeEntry::MergeImpl(::google::protobuf::MessageLite& to_msg,
+                            const ::google::protobuf::MessageLite& from_msg) {
+   auto* const _this =
+      static_cast<RaftOnlineNodeEntry*>(&to_msg);
+  auto& from = static_cast<const RaftOnlineNodeEntry&>(from_msg);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    from.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftOnlineNodeEntry)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = from._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x000000ffU)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!from._internal_node_type().empty()) {
+        _this->_internal_set_node_type(from._internal_node_type());
+      } else {
+        if (_this->_impl_.node_type_.IsDefault()) {
+          _this->_internal_set_node_type("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (!from._internal_node_ip().empty()) {
+        _this->_internal_set_node_ip(from._internal_node_ip());
+      } else {
+        if (_this->_impl_.node_ip_.IsDefault()) {
+          _this->_internal_set_node_ip("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+      if (!from._internal_access_ip().empty()) {
+        _this->_internal_set_access_ip(from._internal_access_ip());
+      } else {
+        if (_this->_impl_.access_ip_.IsDefault()) {
+          _this->_internal_set_access_ip("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+      if (from._internal_node_id() != 0) {
+        _this->_impl_.node_id_ = from._impl_.node_id_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (from._internal_node_port() != 0) {
+        _this->_impl_.node_port_ = from._impl_.node_port_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+      if (from._internal_access_port() != 0) {
+        _this->_impl_.access_port_ = from._impl_.access_port_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (from._internal_worker_num() != 0) {
+        _this->_impl_.worker_num_ = from._impl_.worker_num_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+      if (::absl::bit_cast<::uint64_t>(from._internal_active_time()) != 0) {
+        _this->_impl_.active_time_ = from._impl_.active_time_;
+      }
+    }
+  }
+  _this->_impl_._has_bits_[0] |= cached_has_bits;
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+
+void RaftOnlineNodeEntry::CopyFrom(const RaftOnlineNodeEntry& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:coor.RaftOnlineNodeEntry)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void RaftOnlineNodeEntry::InternalSwap(RaftOnlineNodeEntry* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+  using ::std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.node_type_, &other->_impl_.node_type_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.node_ip_, &other->_impl_.node_ip_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.access_ip_, &other->_impl_.access_ip_, arena);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.active_time_)
+      + sizeof(RaftOnlineNodeEntry::_impl_.active_time_)
+      - PROTOBUF_FIELD_OFFSET(RaftOnlineNodeEntry, _impl_.node_id_)>(
+          reinterpret_cast<char*>(&_impl_.node_id_),
+          reinterpret_cast<char*>(&other->_impl_.node_id_));
+}
+
+::google::protobuf::Metadata RaftOnlineNodeEntry::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
 class RaftAppendEntries::_Internal {
  public:
   using HasBits =
@@ -1002,6 +1600,15 @@ PROTOBUF_NDEBUG_INLINE RaftAppendEntries::Impl_::Impl_(
     [[maybe_unused]] const ::coor::RaftAppendEntries& from_msg)
       : _has_bits_{from._has_bits_},
         _cached_size_{0},
+        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
+        online_nodes_{visibility, ::_pbi::InternalMetadataOffset::Build<
+            ::coor::RaftAppendEntries,
+            PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.online_nodes_)>()
+        , from.online_nodes_}
+        #else
+        online_nodes_ { visibility, arena, from.online_nodes_ }
+        #endif
+        ,
         leader_id_(arena, from.leader_id_) {}
 
 RaftAppendEntries::RaftAppendEntries(
@@ -1031,6 +1638,15 @@ PROTOBUF_NDEBUG_INLINE RaftAppendEntries::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
     [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
       : _cached_size_{0},
+        #ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
+        online_nodes_{visibility, ::_pbi::InternalMetadataOffset::Build<
+            ::coor::RaftAppendEntries,
+            PROTOBUF_FIELD_OFFSET(::coor::RaftAppendEntries, _impl_.online_nodes_)>()
+        }
+        #else
+        online_nodes_ { visibility, arena }
+        #endif
+        ,
         leader_id_(arena) {}
 
 inline void RaftAppendEntries::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
@@ -1062,10 +1678,29 @@ inline void* PROTOBUF_NONNULL RaftAppendEntries::PlacementNew_(
     ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
   return ::new (mem) RaftAppendEntries(arena);
 }
+#ifdef PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
 constexpr auto RaftAppendEntries::InternalNewImpl_() {
   return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(RaftAppendEntries),
                                             alignof(RaftAppendEntries));
 }
+#else  // !PROTOBUF_INTERNAL_REMOVE_ARENA_PTRS_REPEATED_PTR_FIELD
+constexpr auto RaftAppendEntries::InternalNewImpl_() {
+  constexpr auto arena_bits = ::google::protobuf::internal::EncodePlacementArenaOffsets({
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.online_nodes_) +
+          decltype(RaftAppendEntries::_impl_.online_nodes_)::
+              InternalGetArenaOffset(
+                  ::google::protobuf::Message::internal_visibility()),
+  });
+  if (arena_bits.has_value()) {
+    return ::google::protobuf::internal::MessageCreator::CopyInit(
+        sizeof(RaftAppendEntries), alignof(RaftAppendEntries), *arena_bits);
+  } else {
+    return ::google::protobuf::internal::MessageCreator(&RaftAppendEntries::PlacementNew_,
+                                 sizeof(RaftAppendEntries),
+                                 alignof(RaftAppendEntries));
+  }
+}
+#endif
 constexpr auto RaftAppendEntries::InternalGenerateClassData_() {
   return ::google::protobuf::internal::ClassDataFull{
       ::google::protobuf::internal::ClassData{
@@ -1099,18 +1734,18 @@ RaftAppendEntries::GetClassData() const {
   return RaftAppendEntries_class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 6, 0, 40, 2>
+const ::_pbi::TcParseTable<3, 8, 1, 48, 2>
 RaftAppendEntries::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_._has_bits_),
     0, // no _extensions_
-    6, 56,  // max_field_number, fast_idx_mask
+    8, 56,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967232,  // skipmap
+    4294967040,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    6,  // num_field_entries
-    0,  // num_aux_entries
-    offsetof(decltype(_table_), field_names),  // no aux_entries
+    8,  // num_field_entries
+    1,  // num_aux_entries
+    offsetof(decltype(_table_), aux_entries),
     RaftAppendEntries_class_data_.base(),
     nullptr,  // post_loop_handler
     ::_pbi::TcParser::GenericFallback,  // fallback
@@ -1118,51 +1753,63 @@ RaftAppendEntries::_table_ = {
     ::_pbi::TcParser::GetTable<::coor::RaftAppendEntries>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
-    {::_pbi::TcParser::MiniParse, {}},
+    // repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+    {::_pbi::TcParser::FastMtR1,
+     {66, 0, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.online_nodes_)}},
     // uint64 term = 1;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.term_), 1>(),
-     {8, 1, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.term_), 2>(),
+     {8, 2, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_)}},
     // string leader_id = 2;
     {::_pbi::TcParser::FastUS1,
-     {18, 0, 0,
+     {18, 1, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_id_)}},
     // uint64 prev_log_index = 3;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_index_), 2>(),
-     {24, 2, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_index_), 3>(),
+     {24, 3, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_index_)}},
     // uint64 prev_log_term = 4;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_term_), 3>(),
-     {32, 3, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.prev_log_term_), 4>(),
+     {32, 4, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_term_)}},
     // uint64 leader_commit = 5;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.leader_commit_), 4>(),
-     {40, 4, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.leader_commit_), 5>(),
+     {40, 5, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_commit_)}},
     // uint32 leader_next_node_id_alloc = 6;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), 5>(),
-     {48, 5, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), 7>(),
+     {48, 7, 0,
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_)}},
-    {::_pbi::TcParser::MiniParse, {}},
+    // uint64 online_nodes_seq = 7;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint64_t, offsetof(RaftAppendEntries, _impl_.online_nodes_seq_), 6>(),
+     {56, 6, 0,
+      PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.online_nodes_seq_)}},
   }}, {{
     65535, 65535
   }}, {{
     // uint64 term = 1;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.term_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
     // string leader_id = 2;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_id_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_id_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
     // uint64 prev_log_index = 3;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_index_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_index_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
     // uint64 prev_log_term = 4;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_term_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.prev_log_term_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
     // uint64 leader_commit = 5;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_commit_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_commit_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
     // uint32 leader_next_node_id_alloc = 6;
-    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_), _Internal::kHasBitsOffset + 7, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // uint64 online_nodes_seq = 7;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.online_nodes_seq_), _Internal::kHasBitsOffset + 6, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt64)},
+    // repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+    {PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.online_nodes_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
   }},
-  // no aux_entries
   {{
-    "\26\0\11\0\0\0\0\0"
+      {::_pbi::TcParser::GetTable<::coor::RaftOnlineNodeEntry>()},
+  }},
+  {{
+    "\26\0\11\0\0\0\0\0\0\0\0\0\0\0\0\0"
     "coor.RaftAppendEntries"
     "leader_id"
   }},
@@ -1175,10 +1822,15 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   (void) cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
-    _impl_.leader_id_.ClearNonDefaultToEmpty();
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
+      _impl_.online_nodes_.Clear();
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      _impl_.leader_id_.ClearNonDefaultToEmpty();
+    }
   }
-  if (BatchCheckHasBit(cached_has_bits, 0x0000003eU)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x000000fcU)) {
     ::memset(&_impl_.term_, 0, static_cast<::size_t>(
         reinterpret_cast<char*>(&_impl_.leader_next_node_id_alloc_) -
         reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_next_node_id_alloc_));
@@ -1207,7 +1859,7 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
 
   cached_has_bits = this_._impl_._has_bits_[0];
   // uint64 term = 1;
-  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
     if (this_._internal_term() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
@@ -1216,7 +1868,7 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   }
 
   // string leader_id = 2;
-  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
     if (!this_._internal_leader_id().empty()) {
       const ::std::string& _s = this_._internal_leader_id();
       ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
@@ -1226,7 +1878,7 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   }
 
   // uint64 prev_log_index = 3;
-  if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
     if (this_._internal_prev_log_index() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
@@ -1235,7 +1887,7 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   }
 
   // uint64 prev_log_term = 4;
-  if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
     if (this_._internal_prev_log_term() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
@@ -1244,7 +1896,7 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   }
 
   // uint64 leader_commit = 5;
-  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
     if (this_._internal_leader_commit() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
@@ -1253,11 +1905,33 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
   }
 
   // uint32 leader_next_node_id_alloc = 6;
-  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000080U)) {
     if (this_._internal_leader_next_node_id_alloc() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
           6, this_._internal_leader_next_node_id_alloc(), target);
+    }
+  }
+
+  // uint64 online_nodes_seq = 7;
+  if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+    if (this_._internal_online_nodes_seq() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteUInt64ToArray(
+          7, this_._internal_online_nodes_seq(), target);
+    }
+  }
+
+  // repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+  if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
+    for (unsigned i = 0, n = static_cast<unsigned>(
+                             this_._internal_online_nodes_size());
+         i < n; i++) {
+      const auto& repfield = this_._internal_online_nodes().Get(i);
+      target =
+          ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
+              8, repfield, repfield.GetCachedSize(),
+              target, stream);
     }
   }
 
@@ -1286,44 +1960,58 @@ PROTOBUF_NOINLINE void RaftAppendEntries::Clear() {
 
   ::_pbi::Prefetch5LinesFrom7Lines(&this_);
   cached_has_bits = this_._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x000000ffU)) {
+    // repeated .coor.RaftOnlineNodeEntry online_nodes = 8;
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
+      total_size += 1UL * this_._internal_online_nodes_size();
+      for (const auto& msg : this_._internal_online_nodes()) {
+        total_size += ::google::protobuf::internal::WireFormatLite::MessageSize(msg);
+      }
+    }
     // string leader_id = 2;
-    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
       if (!this_._internal_leader_id().empty()) {
         total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
                                         this_._internal_leader_id());
       }
     }
     // uint64 term = 1;
-    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
       if (this_._internal_term() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
             this_._internal_term());
       }
     }
     // uint64 prev_log_index = 3;
-    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
       if (this_._internal_prev_log_index() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
             this_._internal_prev_log_index());
       }
     }
     // uint64 prev_log_term = 4;
-    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
       if (this_._internal_prev_log_term() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
             this_._internal_prev_log_term());
       }
     }
     // uint64 leader_commit = 5;
-    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
       if (this_._internal_leader_commit() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
             this_._internal_leader_commit());
       }
     }
+    // uint64 online_nodes_seq = 7;
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (this_._internal_online_nodes_seq() != 0) {
+        total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(
+            this_._internal_online_nodes_seq());
+      }
+    }
     // uint32 leader_next_node_id_alloc = 6;
-    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
       if (this_._internal_leader_next_node_id_alloc() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_leader_next_node_id_alloc());
@@ -1342,14 +2030,20 @@ void RaftAppendEntries::MergeImpl(::google::protobuf::MessageLite& to_msg,
   if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
     from.CheckHasBitConsistency();
   }
+  ::google::protobuf::Arena* arena = _this->GetArena();
   // @@protoc_insertion_point(class_specific_merge_from_start:coor.RaftAppendEntries)
   ABSL_DCHECK_NE(&from, _this);
   ::uint32_t cached_has_bits = 0;
   (void)cached_has_bits;
 
   cached_has_bits = from._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
-    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x000000ffU)) {
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
+      _this->_internal_mutable_online_nodes()->InternalMergeFromWithArena(
+          ::google::protobuf::MessageLite::internal_visibility(), arena,
+          from._internal_online_nodes());
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
       if (!from._internal_leader_id().empty()) {
         _this->_internal_set_leader_id(from._internal_leader_id());
       } else {
@@ -1358,27 +2052,32 @@ void RaftAppendEntries::MergeImpl(::google::protobuf::MessageLite& to_msg,
         }
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
       if (from._internal_term() != 0) {
         _this->_impl_.term_ = from._impl_.term_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000004U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
       if (from._internal_prev_log_index() != 0) {
         _this->_impl_.prev_log_index_ = from._impl_.prev_log_index_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000008U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
       if (from._internal_prev_log_term() != 0) {
         _this->_impl_.prev_log_term_ = from._impl_.prev_log_term_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
       if (from._internal_leader_commit() != 0) {
         _this->_impl_.leader_commit_ = from._impl_.leader_commit_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (from._internal_online_nodes_seq() != 0) {
+        _this->_impl_.online_nodes_seq_ = from._impl_.online_nodes_seq_;
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
       if (from._internal_leader_next_node_id_alloc() != 0) {
         _this->_impl_.leader_next_node_id_alloc_ = from._impl_.leader_next_node_id_alloc_;
       }
@@ -1403,6 +2102,7 @@ void RaftAppendEntries::InternalSwap(RaftAppendEntries* PROTOBUF_RESTRICT PROTOB
   ABSL_DCHECK_EQ(arena, other->GetArena());
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  _impl_.online_nodes_.InternalSwap(&other->_impl_.online_nodes_);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.leader_id_, &other->_impl_.leader_id_, arena);
   ::google::protobuf::internal::memswap<
       PROTOBUF_FIELD_OFFSET(RaftAppendEntries, _impl_.leader_next_node_id_alloc_)

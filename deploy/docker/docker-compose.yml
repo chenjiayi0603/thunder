@@ -1,0 +1,103 @@
+# Thunder deploy 节点（Docker Compose）
+#
+# 前置：在仓库根已 cmake 安装到 deploy/（见 deploy/deploy.md），且各节点 bin/ 已存在。
+#
+# 用法（在 deploy/docker 目录）:
+#   docker compose build
+#   docker compose up -d
+#   docker compose logs -f
+#   docker compose down
+#   ./test_interfaceserver_smoke.sh   # 宿主机 HTTP 冒烟（GenKey/VerifyKey，无需本机 Interface 二进制）
+#
+# 说明：
+# - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。
+# - 卷挂载仓库根 ../../ → /thunder，以便 deploy 与 code/3party 库路径与 start.sh 一致。
+# - Center 默认拉起 conf + conf2 + conf3 三实例（Raft）；健康检查等待 27000/27022/27032。
+# - start.sh 拉起守护进程后脚本会结束，故用 tail 保持容器运行；已开启 init: true 便于回收子进程。
+
+name: thunder-deploy
+
+x-thunder-node: &thunder-node
+  build:
+    context: .
+    dockerfile: Dockerfile
+  init: true
+  network_mode: host
+  volumes:
+    - ../../:/thunder:rw
+
+services:
+  center:
+    <<: *thunder-node
+    working_dir: /thunder/deploy/Center
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
+        ./start.sh
+        exec tail -f /dev/null
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ss -tln | grep -q ':27000 ' && ss -tln | grep -q ':27022 ' && ss -tln | grep -q ':27032 '",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 25
+      start_period: 30s
+
+  logic:
+    <<: *thunder-node
+    working_dir: /thunder/deploy/Logic
+    depends_on:
+      center:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
+        ./start.sh
+        exec tail -f /dev/null
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':16068 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  hello:
+    <<: *thunder-node
+    working_dir: /thunder/deploy/Hello
+    depends_on:
+      center:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
+        ./start.sh
+        exec tail -f /dev/null
+
+  interface:
+    <<: *thunder-node
+    working_dir: /thunder/deploy/Interface
+    depends_on:
+      center:
+        condition: service_healthy
+      logic:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
+        ./start.sh
+        exec tail -f /dev/null

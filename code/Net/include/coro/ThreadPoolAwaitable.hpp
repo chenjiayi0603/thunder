@@ -97,12 +97,15 @@ struct PoolOffloadAwaiter
 					}
 					return;
 				}
-				ResultT r = work(std::move(body), out);
-				if (Labor* labor = GetLabor())
+				else
 				{
-					labor->PostToEventLoop(resumeOnWorker);
+					ResultT r = work(std::move(body), out);
+					if (Labor* labor = GetLabor())
+					{
+						labor->PostToEventLoop(resumeOnWorker);
+					}
+					return r;
 				}
-				return r;
 			});
 		}
 		catch (...)

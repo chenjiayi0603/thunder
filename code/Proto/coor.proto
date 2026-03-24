@@ -19,6 +19,19 @@ message RaftRequestVoteRsp
     uint32 voter_next_node_id_alloc_hint = 3;
 }
 
+/** Leader -> Follower：在线节点全量快照中的一条（与 NodeReport 核心字段对齐，不含 node/workers 负载细项） */
+message RaftOnlineNodeEntry
+{
+    string node_type   = 1;
+    uint32 node_id     = 2;
+    string node_ip     = 3;
+    uint32 node_port   = 4;
+    string access_ip   = 5;
+    uint32 access_port = 6;
+    uint32 worker_num  = 7;
+    double active_time = 8;
+}
+
 /** Raft AppendEntries（可为空日志的心跳） */
 message RaftAppendEntries
 {
@@ -28,6 +41,9 @@ message RaftAppendEntries
     uint64 prev_log_term   = 4;
     uint64 leader_commit   = 5;
     uint32 leader_next_node_id_alloc = 6; ///< Leader 侧下一待分配游标，Follower 取 max 对齐
+    /** 非 0 表示携带一次在线表全量快照；Follower 用其整体替换本地副本（与 Center-Raft 文档「主下发全量路由」一致） */
+    uint64 online_nodes_seq = 7;
+    repeated RaftOnlineNodeEntry online_nodes = 8;
 }
 
 message RaftAppendEntriesRsp

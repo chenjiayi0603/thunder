@@ -28,3 +28,5 @@ deploy/include/gmock/
 deploy/include/gtest/
 *.a
 deploy/lib/
+build-agent/cmake_install.cmake
+build-agent/

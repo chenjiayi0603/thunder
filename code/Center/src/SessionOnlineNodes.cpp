@@ -182,6 +182,12 @@ uint16 SessionOnlineNodes::AddNode(const NodeReport &oNodeReport, bool boRegiste
 
 void SessionOnlineNodes::RemoveNode(const std::string &strNodeIdentify)
 {
+    // need_leadership 时在线表以 Leader 为准；Follower 上 TCP 断连不代表业务下线（见 Center-Raft-ASCII-Flow 从节点路由视图）
+    if (m_boNeedLeadership && !IsLeadership())
+    {
+        LOG4_TRACE("%s() skip remove on non-leader nodeIdentify(%s)", __FUNCTION__, strNodeIdentify.c_str());
+        return;
+    }
     LOG4_TRACE("%s() GetWorkerIdentify(%s) oNodeInfo(%s)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), strNodeIdentify.c_str());
     auto identity_node_iter = m_mapIdentifyNodeId.find(strNodeIdentify);
     if (identity_node_iter != m_mapIdentifyNodeId.end())
@@ -380,6 +386,76 @@ void SessionOnlineNodes::ReplaySubscriptionsAfterRaftLeadership()
             AddNodeBroadcast(byIdent.second, true);
         }
     }
+}
+
+void SessionOnlineNodes::BumpOnlineSnapshotSeqForRaft()
+{
+    if (!m_boNeedLeadership || !IsLeadership())
+    {
+        return;
+    }
+    ++m_raftOnlineSnapshotSeq;
+}
+
+void SessionOnlineNodes::FillLeaderOnlineSnapshotForRaftAppend(RaftAppendEntries *ae)
+{
+    if (ae == nullptr || !m_boNeedLeadership || !IsLeadership() || m_raftOnlineSnapshotSeq == 0)
+    {
+        return;
+    }
+    ae->set_online_nodes_seq(m_raftOnlineSnapshotSeq);
+    ae->clear_online_nodes();
+    for (const auto &byType : m_mapOnlineNodes)
+    {
+        for (const auto &byIdent : byType.second)
+        {
+            const NodeReport &nr = byIdent.second;
+            RaftOnlineNodeEntry *e = ae->add_online_nodes();
+            e->set_node_type(nr.node_type());
+            e->set_node_id(nr.node_id());
+            e->set_node_ip(nr.node_ip());
+            e->set_node_port(nr.node_port());
+            e->set_access_ip(nr.access_ip());
+            e->set_access_port(nr.access_port());
+            e->set_worker_num(nr.worker_num());
+            e->set_active_time(nr.active_time());
+        }
+    }
+    LOG4_TRACE("%s() seq=%llu entries=%d", __FUNCTION__, (unsigned long long)m_raftOnlineSnapshotSeq, ae->online_nodes_size());
+}
+
+void SessionOnlineNodes::ApplyOnlineSnapshotFromLeader(const RaftAppendEntries &req)
+{
+    if (req.online_nodes_seq() == 0u)
+    {
+        return;
+    }
+    if (!m_boNeedLeadership || IsLeadership())
+    {
+        return;
+    }
+    m_mapOnlineNodes.clear();
+    m_mapIdentifyNodeId.clear();
+    m_mapLastHeartbeatRouteBroadcast.clear();
+    for (int i = 0; i < req.online_nodes_size(); ++i)
+    {
+        const RaftOnlineNodeEntry &e = req.online_nodes(i);
+        NodeReport nr;
+        nr.set_node_type(e.node_type());
+        nr.set_node_id(e.node_id());
+        nr.set_node_ip(e.node_ip());
+        nr.set_node_port(e.node_port());
+        nr.set_access_ip(e.access_ip());
+        nr.set_access_port(e.access_port());
+        nr.set_worker_num(e.worker_num());
+        nr.set_active_time(e.active_time());
+        nr.clear_node();
+        nr.clear_workers();
+        const std::string id = nr.node_ip() + std::string(":") + std::to_string(nr.node_port());
+        m_mapIdentifyNodeId[id] = nr.node_type();
+        m_mapOnlineNodes[nr.node_type()][id] = std::move(nr);
+    }
+    LOG4_TRACE("%s() seq=%llu entries=%d", __FUNCTION__, (unsigned long long)req.online_nodes_seq(), req.online_nodes_size());
 }
 
 void SessionOnlineNodes::CheckSendingNodeNotice()
