@@ -1,5 +1,4 @@
 #include "coro/RedisAwaitable.hpp"
-#include "coro/StepCo20.hpp"
 #include "step/RedisStep.hpp"
 #include "labor/Labor.hpp"
 #include "hiredis_vip/read.h"

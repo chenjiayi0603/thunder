@@ -1,7 +1,7 @@
 # Net: libNet.so（COMM 目录顶层源）+ Hello / Center 可执行文件（全量 src 下 *.cpp/*.cc）
 set(NET_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-set(_libnet_dirs cmd step session labor protocol storage)
+set(_libnet_dirs cmd step session labor protocol storage coro)
 set(LIBNET_SOURCES "")
 foreach(_d ${_libnet_dirs})
   file(GLOB _f "${NET_SRC}/${_d}/*.cpp" "${NET_SRC}/${_d}/*.cc")

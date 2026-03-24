@@ -2,6 +2,7 @@
  * Project:  Hello
  * @file     ModuleHello.cpp
  * @brief    精简：Echo、C++20 协程 HTTP 演示
+ *           协程 + 线程池（设计向伪代码，例 A/例 B）见同目录 StepCo20-threadpool-examples.md
  ******************************************************************************/
 #include <map>
 

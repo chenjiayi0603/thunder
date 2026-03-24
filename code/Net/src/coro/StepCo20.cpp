@@ -4,7 +4,6 @@
 #include "labor/Labor.hpp"
 #include "labor/Worker.hpp"
 #include <ev.h>
-#include <memory>
 
 namespace net
 {
