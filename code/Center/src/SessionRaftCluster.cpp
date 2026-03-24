@@ -16,11 +16,28 @@ namespace coor
 {
 namespace
 {
-/** 略收紧以缩短多 Center 冷启动选主时间（仍保留随机退避避免活锁） */
-constexpr ev_tstamp kFollowerElectionBase = 0.18;
-constexpr ev_tstamp kFollowerElectionRand = 0.22;
+/** 冷启动 / 从未收到 Leader AE（m_raftLastLeaderContact==0）：仅用于 m_raftFollowerDeadline。
+ *  0.20s + U(0,1)*0.30s → [0.20,0.50]s：在 1s Session 周期下通常 1 个 tick 内即有节点起选，随机段减轻多机同时拉票。 */
+constexpr ev_tstamp kFollowerColdStartBase = 0.20;
+constexpr ev_tstamp kFollowerColdStartRand = 0.30;
+
+/** 跟主租约（与冷启动拆开）：RaftTick 中若 last_leader_contact>0，则 lease =
+ *    kFollowerLeaseCenterBeatMult * max(1,center_beat) + m_raftFollowerLeaseExtra（秒，与 GetTimeStamp 一致）。
+ *  mult=2：租约下限为 2 格心跳；默认 center_beat=3s 时 6s > 3s，避免「心跳未到却误判掉主」。
+ *  m_raftFollowerLeaseExtra 在每次合法 AppendEntries 内重置为 1.0 + U(0,1)*0.5：固定 1s 裕量 + 至多 0.5s 抖动，
+ *  吸收网络延迟、调度及 Leader 用 GetNowTime 发心跳与 Follower GetTimeStamp 判超时的步进差。 */
+constexpr int kFollowerLeaseCenterBeatMult = 2;
+constexpr ev_tstamp kFollowerLeaseMarginBase = 1.0;
+constexpr ev_tstamp kFollowerLeaseMarginRand = 0.5;
+
 constexpr ev_tstamp kCandidateRetryBase = 0.08;
 constexpr ev_tstamp kCandidateRetryRand = 0.12;
+
+ev_tstamp FollowerLeaseExtraFromMargins()
+{
+    return kFollowerLeaseMarginBase
+        + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerLeaseMarginRand;
+}
 
 void RaftVoteCallback(const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
 {
@@ -162,6 +179,7 @@ void SessionRaftCluster::InitElection(const util::CJsonObject &oCenter)
     m_raftLeaderId.clear();
     m_raftLastLeaderContact = 0;
     m_raftLastAppendSend = 0;
+    m_raftFollowerLeaseExtra = 0;
 
     if (m_raftSingleNode)
     {
@@ -178,7 +196,8 @@ void SessionRaftCluster::InitElection(const util::CJsonObject &oCenter)
         m_raftRole = CenterRaftRole::Follower;
         m_bIsLeader = false;
         m_uiBeLeaderTime = 0;
-        m_raftFollowerDeadline = now + kFollowerElectionBase + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerElectionRand;
+        m_raftFollowerDeadline = now + kFollowerColdStartBase
+            + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerColdStartRand;
         m_raftCandidateDeadline = now;
         LOG4_TRACE("%s() multi-node raft follower, first election after %.3f", __FUNCTION__, m_raftFollowerDeadline - now);
     }
@@ -334,20 +353,23 @@ void SessionRaftCluster::FillNodeReportRspRaftForResponse(NodeReportRsp &rsp, ui
  *
  *   Candidate && now >= candidate_deadline --> RaftStartElection（重试拉票）
  *   Follower:
- *     若曾收到 Leader（last_leader_contact>0）且未超时 -> 保持
- *     否则若未到首次 follower_deadline -> 保持
+ *     若曾收到 Leader（last_leader_contact>0）且在租约内 -> 保持（租约 = mult*center_beat + lease_extra）
+ *     否则若未到冷启动 follower_deadline -> 保持
  *     否则 -> RaftStartElection
  */
 void SessionRaftCluster::RaftTick(ev_tstamp now)
 {
+    // 如果是单节点集群，直接返回
     if (m_raftSingleNode)
     {
         return;
     }
+    // 如果当前为 Leader，直接返回
     if (m_raftRole == CenterRaftRole::Leader)
     {
         return;
     }
+    // 如果当前为 Candidate，并且已经到达或超过 Candidate 超时时间，启动新一轮选举
     if (m_raftRole == CenterRaftRole::Candidate)
     {
         if (now >= m_raftCandidateDeadline)
@@ -356,18 +378,23 @@ void SessionRaftCluster::RaftTick(ev_tstamp now)
         }
         return;
     }
+    // Follower：曾收到 Leader AE 则在租约内不抢选（租约随 center_beat 放大，见文件顶常量注释）
     if (m_raftLastLeaderContact > 0.0)
     {
-        const ev_tstamp follower_timeout = kFollowerElectionBase + kFollowerElectionRand;
-        if (now < m_raftLastLeaderContact + follower_timeout)
+        const uint32 beat = std::max<uint32>(1u, m_uiCenterBeat);
+        const ev_tstamp lease =
+            static_cast<ev_tstamp>(static_cast<uint64_t>(kFollowerLeaseCenterBeatMult) * beat) + m_raftFollowerLeaseExtra;
+        if (now < m_raftLastLeaderContact + lease)
         {
             return;
         }
     }
+    // 如果未曾联系过 Leader，但未到 follower_deadline，同样保持不动
     else if (now < m_raftFollowerDeadline)
     {
         return;
     }
+    // 前面条件都不满足，启动选举
     RaftStartElection(now);
 }
 
@@ -471,7 +498,8 @@ void SessionRaftCluster::HandleRaftRequestVote(const std::string & /*remote_iden
     {
         m_raftVotedFor = req.candidate_id();
         rsp->set_vote_granted(true);
-        m_raftFollowerDeadline = now + kFollowerElectionBase + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerElectionRand;
+        m_raftFollowerDeadline = now + kFollowerColdStartBase
+            + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerColdStartRand;
     }
     else
     {
@@ -512,7 +540,9 @@ void SessionRaftCluster::HandleRaftAppendEntries(const std::string & /*remote_id
 
     m_raftLeaderId = req.leader_id();
     m_raftLastLeaderContact = now;
-    m_raftFollowerDeadline = now + kFollowerElectionBase + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerElectionRand;
+    m_raftFollowerLeaseExtra = FollowerLeaseExtraFromMargins();
+    m_raftFollowerDeadline = now + kFollowerColdStartBase
+        + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerColdStartRand;
 
     if (req.leader_next_node_id_alloc() > 0)
     {

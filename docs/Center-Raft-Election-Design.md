@@ -161,7 +161,7 @@ Thunder 选择 **业务侧固定解析 `NodeReportRsp`**，以降低客户端改
 - 消息定义：[`coor.proto`](../code/Proto/coor.proto)
 - 业务协议：[`oss_sys.proto`](../code/Net/src/protocol/oss_sys.proto)
 - 命令字：[`CW.hpp`](../code/Net/include/cmd/CW.hpp)
-- 进程 `so` 映射：`Center.json` 中 **cmd 43 → `CmdRaftRequestVote.so`**、**cmd 45 → `CmdRaftAppendEntries.so`**（[`code/Center/src/Center.json`](../code/Center/src/Center.json) 及 `deploy/Center/conf*`）
+- 进程 `so` 映射：`Center.json` 中 **cmd 43 → `CmdRaftRequestVote.so`**、**cmd 45 → `CmdRaftAppendEntries.so`**（见 `deploy/Center/conf/Center.json` 等部署目录）
 
 **算法级流程见 §15；字段级行为见 §14。**
 
@@ -203,9 +203,10 @@ Thunder 选择 **业务侧固定解析 `NodeReportRsp`**，以降低客户端改
 
 - **`SessionRaftCluster::Timeout()`**（独立 Session 定时器）：**每次**调用 `RaftTick(now)`（`now = GetLabor()->GetTimeStamp()`）；与 `SessionOnlineNodes::Timeout()` **分离**——后者只负责 `CheckNodesBeat` / `CheckSendingNodeNotice` 等业务节拍，**不**驱动 Raft。
 - **Leader** 按配置 **`center_beat`**（秒，`m_uiCenterBeat`，默认 3）周期向所有远端发 **`RaftAppendEntries`**（空日志心跳）；节拍复用成员 **`m_uiLastSendCenterBeat`** 与 wall 时钟 `GetNowTime()`，与业务 `CheckNodesBeat` 独立。
-- **选举超时**（匿名命名空间常量，秒级）：
-  - Follower：`kFollowerElectionBase` 0.35 + 随机 up to `kFollowerElectionRand` 0.35；在收到有效 AppendEntries 或投票相关处理时会 **重置** 随机截止。
-  - Candidate：拆分票重选间隔 `kCandidateRetryBase` 0.15 + 随机 `kCandidateRetryRand` 0.15。
+- **选举 / 租约**（`SessionRaftCluster.cpp` 匿名命名空间，秒级，`now` 与 `GetTimeStamp()` 一致）：
+  - **冷启动**（`m_raftFollowerDeadline`，路径：`last_leader_contact==0` 或授票时延后抢选）：`kFollowerColdStartBase` 0.20 + `U(0,1)*kFollowerColdStartRand` 0.30 → 约 [0.20, 0.50]s；与 1s Session 周期配合尽快首轮选主。
+  - **跟主租约**（`last_leader_contact>0`）：`kFollowerLeaseCenterBeatMult`（2）× `max(1, m_uiCenterBeat)` + `m_raftFollowerLeaseExtra`；每次合法 **AppendEntries** 重置 `m_raftFollowerLeaseExtra = kFollowerLeaseMarginBase`（1.0）+ `U(0,1)*kFollowerLeaseMarginRand`（0.5）。默认 `center_beat=3` 时租约约 7～7.5s，大于单格心跳，避免误判掉主。
+  - **Candidate** 重试：`kCandidateRetryBase` 0.08 + `U(0,1)*kCandidateRetryRand` 0.12。
 
 ### 14.3 成员与单节点
 
@@ -262,7 +263,7 @@ Thunder 选择 **业务侧固定解析 `NodeReportRsp`**，以降低客户端改
 |-----------|----------------|
 | **任期 term** | `m_raftTerm`；更大 term 的 RPC 迫使本机 `RaftBecomeFollower` |
 | **角色** | `CenterRaftRole`：`Follower` / `Candidate` / `Leader` |
-| **选举超时** | Follower：随机退避 `kFollowerElectionBase` + `kFollowerElectionRand`；Candidate 重试间隔 `kCandidateRetryBase` + `kCandidateRetryRand` |
+| **选举超时 / 租约** | 冷启动：`kFollowerColdStartBase` + `kFollowerColdStartRand` → `m_raftFollowerDeadline`；跟主：`2*center_beat` + `m_raftFollowerLeaseExtra`（AE 重置）；Candidate：`kCandidateRetryBase` + `kCandidateRetryRand` |
 | **RequestVote** | CMD 43/44；Candidate 向所有远端并发拉票；`m_raftVotesGranted` 达 **多数派** → `RaftBecomeLeader` |
 | **AppendEntries** | CMD 45/46；Leader 周期性发送，作 **心跳** + **leader_next_node_id_alloc** 同步 |
 | **日志复制** | **未实现**：`prev_log_index` / `entries` / `leader_commit` 等不参与真实条目匹配与提交 |
@@ -270,7 +271,7 @@ Thunder 选择 **业务侧固定解析 `NodeReportRsp`**，以降低客户端改
 ### 15.2 单节点与多节点入口
 
 - **单节点**（配置中仅本机或无对等）：`InitElection` 后 `term=1`，直接 **Leader**，不跑选举定时逻辑（`RaftTick` 对单节点立即返回）。
-- **多节点**：初始均为 **Follower**，`term=0`；首个 **随机 follower_deadline** 到期后进入 **Candidate**，`term++`，给自己一票并向各 peer 发 **RequestVote**。
+- **多节点**：初始均为 **Follower**，`term=0`；在从未收到 Leader AE 时，首个 **`m_raftFollowerDeadline`（冷启动随机）** 到期后进入 **Candidate**，`term++`，给自己一票并向各 peer 发 **RequestVote**。
 
 ### 15.3 状态转换（与代码一致）
 
@@ -283,12 +284,12 @@ stateDiagram-v2
     Candidate --> Leader: 收集票数≥majority\n(OnRaftVoteResponse)
     Candidate --> Follower: 收到更大 term\n(RPC 或 VoteRsp)
     Leader --> Follower: 收到更大 term\n(AppendEntriesRsp 等)
-    Follower --> Follower: AppendEntries 合法\n刷新 last_leader_contact
+    Follower --> Follower: AppendEntries 合法\n刷新 last_leader_contact\n与 lease_extra / follower_deadline
 ```
 
 ### 15.4 选举时序（文字）
 
-1. **Follower** `RaftTick`：若仍在「跟主」窗口内（`m_raftLastLeaderContact` + 固定超时），或尚未到首次 `m_raftFollowerDeadline`，则不发起选举。
+1. **Follower** `RaftTick`：若 `m_raftLastLeaderContact>0` 且仍在 **跟主租约**内（`last + 2*max(1,center_beat) + m_raftFollowerLeaseExtra`），或 `last_leader_contact==0` 且尚未到 **`m_raftFollowerDeadline`（冷启动）**，则不发起选举。
 2. 超时则 **`RaftStartElection`**：`role=Candidate`，`term++`，`m_raftElectionTerm` 记录本轮 term，`m_raftVotesGranted={self}`，向每个 **remote** `SendToCallback(RequestVote, DataStepCustom(peer))`。
 3. 对端 **`HandleRaftRequestVote`**：term 旧则拒绝；term 新则先降为 Follower；**同 term 且本机已是 Leader** 则拒绝外来票；否则在 `votedFor` 允许时 **grant**（授票不改本地 `m_uiNextNodeIdAlloc`）。
 4. 本机 **`OnRaftVoteResponse`**：若 `rsp.term > m_raftTerm` → Follower；若已非 Candidate 或 `rsp.term < m_raftElectionTerm` → 忽略陈旧票；若 **`vote_granted`** 则合并 `voter_next_node_id_alloc_hint` 并将 **对端 identify** 记入集合；**`|votes| >= m_raftMajority`** → **`RaftBecomeLeader`**。
@@ -297,7 +298,7 @@ stateDiagram-v2
 
 1. **Leader** 在 `SessionRaftCluster::Timeout` 中，每当 wall 时间跨过 **`center_beat`**，调用 **`RaftSendAppendEntriesToAll`**。
 2. 每条 **AppendEntries** 带当前 **`leader_next_node_id_alloc`**（及 term、`leader_id` 等）。
-3. **Follower** `HandleRaftAppendEntries`：term 校验；更新 **`m_raftLeaderId`**、**`m_raftLastLeaderContact`**，重置 Follower 随机选举截止；用 **`max`** 对齐本地 **`m_uiNextNodeIdAlloc`**。
+3. **Follower** `HandleRaftAppendEntries`：term 校验；更新 **`m_raftLeaderId`**、**`m_raftLastLeaderContact`**，重置 **`m_raftFollowerLeaseExtra`** 与 **`m_raftFollowerDeadline`**（冷启动公式）；用 **`max`** 对齐本地 **`m_uiNextNodeIdAlloc`**。
 4. **Leader** 收到 **AppendEntriesRsp** 时，若对端 **term 更大**，则 **`RaftBecomeFollower`**（分区恢复后旧 Leader 让位）。
 
 ### 15.6 与完整 Raft 的差异（必读）

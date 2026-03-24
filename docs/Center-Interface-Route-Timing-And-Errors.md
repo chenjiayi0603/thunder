@@ -4,8 +4,9 @@
 
 ```
 选主（代码侧，多 Center）
-  SessionRaftCluster 定时器周期 ≈ 0.2s
-  首次允许发起选举：约 0.18～0.4s 随机退避 + 按拍执行 → 常见约 0.5～3s 级出 Leader（视机器与 RPC）
+  SessionRaftCluster 定时器周期 1s（CenterCmd.json 中该 session 超时）
+  冷启动首次允许拉选：m_raftFollowerDeadline ≈ 0.20～0.50s（kFollowerColdStart*）+ 按拍执行 → 常见约 1～数秒级出 Leader（视机器与 RPC）
+  跟主后误判掉主：租约 ≈ 2*center_beat + 1.0～1.5s（默认 center_beat=3 时约 7～7.5s 无 AE 才抢选）
   centers 为空单节点：无选举，启动即 Leader
 
 选主（脚本侧，保守等待）

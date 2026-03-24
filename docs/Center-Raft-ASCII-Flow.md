@@ -32,7 +32,7 @@
 
 ### 何时发起选举（RaftTick）
 
-要点：跟过主且在「跟主窗口」内不抢选；Candidate 超时则加 term 再拉一轮。
+要点：跟过主则在「跟主租约」内不抢选（租约随 `center_beat` 放大，与冷启动截止拆开）；Candidate 超时则加 term 再拉一轮。
 
 ```
               RaftTick（非 Leader、非单节点）
@@ -43,15 +43,19 @@
         |                                |
   now>=candidate_deadline?             last_leader_contact > 0 ?
    是: RaftStartElection                   |
-   否: 保持                          是: now < last+跟主超时? 是:保持 否:拉选
-        |                                |
-        |                            否: now < follower_deadline? 是:保持 否:拉选
-        |                                |
+   否: 保持                          是: now < last+跟主租约? 是:保持 否:拉选
+        |                                |      租约 = mult*center_beat + lease_extra
+        |                            否: now < m_raftFollowerDeadline? 是:保持 否:拉选
+        |                                |      （冷启动随机截止，见下）
         +---------- RaftStartElection <--+
                     (term++, 重发 RequestVote)
 ```
 
-定时常量：Follower 首次截止与跟主窗口用 `kFollowerElectionBase` + 随机 `kFollowerElectionRand`；Candidate 重试用 `kCandidateRetryBase` + 随机 `kCandidateRetryRand`。
+定时常量（`SessionRaftCluster.cpp` 匿名命名空间）：
+
+- **冷启动 / `m_raftFollowerDeadline`**（`last_leader_contact==0` 或授票时延长）：`kFollowerColdStartBase`（0.20s）+ `U(0,1) * kFollowerColdStartRand`（0.30s）→ 约 **[0.20, 0.50]s**；与 1s Session 周期配合，尽快首轮选主并打散同时拉票。
+- **跟主租约**（`last_leader_contact>0`）：`kFollowerLeaseCenterBeatMult`（2）× `max(1, m_uiCenterBeat)` + `m_raftFollowerLeaseExtra`；`m_raftFollowerLeaseExtra` 在每次合法 **AppendEntries** 重置为 `kFollowerLeaseMarginBase`（1.0s）+ `U(0,1) * kFollowerLeaseMarginRand`（0.5s）。默认 `center_beat=3` 时租约约 **7～7.5s**，大于单格心跳，避免误判掉主。
+- **Candidate 重试**：`kCandidateRetryBase` + 随机 `kCandidateRetryRand`。
 
 ### RaftStartElection（当候选人）
 
@@ -92,7 +96,7 @@
         |
         v
   授予：vote_granted=true，写 votedFor；不根据 req.next_node_id_alloc_hint 改本地游标
-        重置 follower 选举随机截止
+        重置 m_raftFollowerDeadline（冷启动公式 kFollowerColdStart*，推迟未跟主时的抢选）
 ```
 
 ### OnRaftVoteResponse（候选人收票）
@@ -127,7 +131,7 @@
 
 - 何时算这一轮没成主：`|m_raftVotesGranted| < m_raftMajority` 且角色仍为 Candidate。
 - 怎样重选：`RaftTick` 里 `now >= m_raftCandidateDeadline` 时调用 `RaftStartElection`。`m_raftCandidateDeadline` 在每次 `RaftStartElection` 末尾被设为 `now + kCandidateRetryBase + 随机 * kCandidateRetryRand`（秒级），因此失败后会先等这段延迟，再 `term++`、票数重置为仅含本机、向所有 remote 重发 `RequestVote`。
-- 其它出口：更大 `term` 或合法 `AppendEntries` 可能先把本机变成 Follower；之后由 Follower 的跟主超时或 `follower_deadline` 再触发 `RaftStartElection`，路径与 Candidate 超时不同。
+- 其它出口：更大 `term` 或合法 `AppendEntries` 可能先把本机变成 Follower；之后由 **跟主租约**到期或（从未跟主时）**`m_raftFollowerDeadline`** 再触发 `RaftStartElection`，路径与 Candidate 超时不同。
 
 ```
   Candidate，票数 < majority
@@ -148,7 +152,7 @@
   AppendEntries 合法（term 步进 OK）
         |
         v
-  写 m_raftLeaderId，刷新 last_leader_contact，重置选举超时
+  写 m_raftLeaderId，刷新 last_leader_contact，重置 m_raftFollowerLeaseExtra 与 m_raftFollowerDeadline（跟主租约 + 冷启动字段）
         |
         +-- 若本机是同 term Candidate --> 降为 Follower（认主）
 ```
@@ -239,6 +243,9 @@
 | `m_raftVotedFor` | 本 term 把票投给了谁（`candidate_id`）；Leader 侧同 term 拒外来票 |
 | `m_raftLeaderId` | 认定的 Leader identify；Leader 上台时=本机；Follower 收 AE 时=`leader_id` |
 | `m_raftVotesGranted` | 本轮选举投赞成票的对端集合（含自己）；集合大小 ≥ majority → 当选 |
+| `m_uiCenterBeat` | Leader 发 AppendEntries 的间隔（秒，配置 `center_beat`）；参与跟主租约计算 |
+| `m_raftFollowerDeadline` | 冷启动路径：从未跟主时最早允许拉选的时刻（`kFollowerColdStart*` 随机）；授票时同公式延后 |
+| `m_raftFollowerLeaseExtra` | 每次合法 AE 重置：`kFollowerLeaseMarginBase` + 随机 `kFollowerLeaseMarginRand`；与 `2*center_beat` 相加得跟主租约 |
 | `m_uiNextNodeIdAlloc` | 下一待分配 `node_id` 游标 `[1, NODE_ID_MAX)`；仅 Leader 调用 `AllocNextNodeId` 递增；其余场景与对端 hint 做 `max` 对齐 |
 
 ### 与 proto / 回包的对应
@@ -264,7 +271,7 @@
 
 **请求**
 
-- `req.term` / `req.leader_id` → Follower 更新 `m_raftLeaderId`、刷新选举超时
+- `req.term` / `req.leader_id` → Follower 更新 `m_raftLeaderId`、`m_raftLastLeaderContact`、重置 `m_raftFollowerLeaseExtra` 与 `m_raftFollowerDeadline`（冷启动公式）
 - `req.leader_next_node_id_alloc` → Follower：`m_uiNextNodeIdAlloc = max(本地, 字段)`
 
 **响应**

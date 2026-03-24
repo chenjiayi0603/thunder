@@ -131,7 +131,8 @@ private:
     std::string m_raftVotedFor;             ///< 本 term 已投给的 candidate（空表示未投）
     CenterRaftRole m_raftRole = CenterRaftRole::Follower;
     std::string m_raftLeaderId;             ///< 当前认为的 Leader identify
-    ev_tstamp m_raftFollowerDeadline = 0;   ///< 首次允许发起选举的时间（启动随机退避）
+    ev_tstamp m_raftFollowerDeadline = 0;   ///< 冷启动/未跟主：首次允许拉选的随机时刻（与跟主租约无关）
+    ev_tstamp m_raftFollowerLeaseExtra = 0; ///< 每次合法 AE 重置的随机裕量（秒），与 center_beat 倍数相加得跟主租约
     ev_tstamp m_raftCandidateDeadline = 0;  ///< Candidate 拉票超时后重试
     ev_tstamp m_raftLastLeaderContact = 0;  ///< 上次收到合法 Leader 消息的时间
     ev_tstamp m_raftLastAppendSend = 0;     ///< 上次发 AppendEntries 的时间戳（预留）
