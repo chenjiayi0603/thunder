@@ -39,39 +39,31 @@ ev_tstamp FollowerLeaseExtraFromMargins()
         + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerLeaseMarginRand;
 }
 
-/** 有效 node_id 仅 1..255（NODE_ID_MAX-1 个）。游标表示「下一个将分配的 id」，亦须在 [1,255]。
- *  合并两游标不能用 std::max：例本地已回绕到 5、对端仍为 200 时 max 会错。将 id 减 1 映射到 0..254，在长度 kNodeIdSpan=255 的环上
- *  算从本地到远端沿「id 递增、255 后回 1」方向要走几步（forwardLocalToRemote，mod kNodeIdSpan）。
- *  若 1<=forward<=kNodeIdSpan/2（255 时为 1..127），认为远端在发放顺序上更靠后，取远端；否则保留本地。 */
-constexpr uint32_t kNodeIdSpan = static_cast<uint32_t>(NODE_ID_MAX) - 1u; ///< 255，与有效 id 个数一致
-
-uint16_t SanitizeNodeIdCursor(uint16_t v)
-{
-    if (v == 0u || static_cast<uint32_t>(v) >= static_cast<uint32_t>(NODE_ID_MAX))
-    {
-        return 1u;
-    }
-    return v;
-}
-
+/** 游标在 [1, NODE_ID_MAX-1]，发满后再从 1 开始。合并两个游标不能用 std::max：
+ *  例：本机已回绕到 5、对端仍是 200 时，max(5,200)=200 会错。做法：先把两边都变成 0～NODE_ID_MAX-2（游标减 1），
+ *  想象 255 个格子排成一圈（每次「下一个 id」+1，到顶再绕回 0）。从**本地**那一格出发，只按这个方向一格一格数，
+ *  数到**远端**那一格要经过几格，代码里就是 forwardLocalToRemote，用 mod 255 算（NODE_ID_MAX==256 时模数为 255）。
+ *  若这个格数在 1～127 之间，就认为远端在发放顺序上更「靠后」，合并取远端；否则保留本地（和 TCP 比序号谁新谁旧同类）。 */
 uint16_t MergeNodeIdAllocRing(uint16_t local, uint32_t remoteU32)
 {
     if (remoteU32 == 0u || remoteU32 >= static_cast<uint32_t>(NODE_ID_MAX))
     {
-        return SanitizeNodeIdCursor(local);
+        return (local == 0u) ? static_cast<uint16_t>(1u) : local;
     }
-    uint16_t remote = static_cast<uint16_t>(remoteU32);
-    local = SanitizeNodeIdCursor(local);
-    remote = SanitizeNodeIdCursor(remote);
+    const uint16_t remote = static_cast<uint16_t>(remoteU32);
+    if (local == 0u)
+    {
+        local = 1u;
+    }
+    const uint32_t ring = static_cast<uint32_t>(NODE_ID_MAX - 1u);
     const uint32_t a = static_cast<uint32_t>(local) - 1u;
     const uint32_t b = static_cast<uint32_t>(remote) - 1u;
-    const uint32_t forwardLocalToRemote = (b + kNodeIdSpan - a) % kNodeIdSpan;
+    const uint32_t forwardLocalToRemote = (b + ring - a) % ring;
     if (forwardLocalToRemote == 0u)
     {
         return local;
     }
-    const uint32_t halfSpan = kNodeIdSpan / 2u;
-    if (forwardLocalToRemote <= halfSpan)
+    if (forwardLocalToRemote < (ring + 1u) / 2u)
     {
         return remote;
     }
