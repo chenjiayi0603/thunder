@@ -406,6 +406,8 @@ AsyncTask BodySyncApi(StepCo20& step) {
 
 **反例**：在 OpenMP 的 for 体里对每个分片 co_await HttpGetAsync。子线程上没有本框架的 Step 恢复路径，模型不成立。
 
+与 TBB、OpenMP 的详细对比与选型表见：[StepCo20-threadpool-vs-TBB-OpenMP.md](StepCo20-threadpool-vs-TBB-OpenMP.md)。
+
 ---
 
 ## 8. 迁移建议（从现有协程逐步引入）
