@@ -38,4 +38,23 @@ if(THUNDER_DEPLOY_AUTO)
   thunder_deploy_copy(ModuleHello "Hello/plugins/ModuleHello.so")
 endif()
 
-add_custom_target(HelloPlugins DEPENDS ModuleHello)
+set(_cmd_hello_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/CmdHello")
+add_library(CmdHello SHARED
+  "${_cmd_hello_dir}/CmdHello.cpp"
+  "${_hello_src}/CustomLogger.cpp"
+  "${_hello_src}/HelloSession.cpp"
+)
+set_target_properties(CmdHello PROPERTIES OUTPUT_NAME "CmdHello" PREFIX "")
+target_compile_features(CmdHello PRIVATE cxx_std_20)
+target_compile_definitions(CmdHello PRIVATE _LINUX_OS_ NODE_BEAT=10.0)
+target_include_directories(CmdHello PRIVATE
+  "${_cmd_hello_dir}"
+  "${_hello_src}"
+)
+thunder_plugin_include_base(CmdHello)
+thunder_plugin_link_net_proto_util(CmdHello)
+if(THUNDER_DEPLOY_AUTO)
+  thunder_deploy_copy(CmdHello "Hello/plugins/CmdHello.so")
+endif()
+
+add_custom_target(HelloPlugins DEPENDS ModuleHello CmdHello)

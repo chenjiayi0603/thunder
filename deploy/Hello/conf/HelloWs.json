@@ -1,10 +1,10 @@
 {
     "node_type": "HELLO",
     "access_host": "127.0.0.1",
-    "access_port": 27006,
-    "access_codec": 3,
+    "access_port": 27010,
+    "access_codec": 5,
     "inner_host": "127.0.0.1",
-    "inner_port": 27007,
+    "inner_port": 27011,
     "center": [
         {
             "host": "127.0.0.1",
@@ -19,7 +19,7 @@
             "port": "27032"
         }
     ],
-    "server_name": "Hello_robot",
+    "server_name": "Hello_ws_robot",
     "process_num": 1,
     "worker_capacity": 1000000,
     "config_path": "conf/",
@@ -48,11 +48,20 @@
     },
     "log_level": 10000,
     "load_so_interval": 60.0,
-    "so": [],
+    "so": [
+        {
+            "cmd": 20001,
+            "so_path": "plugins/CmdHello.so",
+            "entrance_symbol": "create",
+            "process_num": 0,
+            "load": true,
+            "version": 1
+        }
+    ],
     "module": [
         {
-            "url_path": "/hello/hello",
-            "so_path": "plugins/ModuleHello.so",
+            "url_path": "/hello/shake",
+            "so_path": "plugins/ModuleShake.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1

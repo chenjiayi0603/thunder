@@ -26,11 +26,10 @@
     "log_level":10000,
     "load_so_interval":60.0,
     "so":[
-         {"cmd":20001, "so_path":"plugins/CmdHello.so", "entrance_symbol":"create","process_num":0, "load":false, "version":1}
+         {"cmd":20001, "so_path":"plugins/CmdHello.so", "entrance_symbol":"create","process_num":0, "load":true, "version":1}
     ],
     "module":[
     {"url_path":"/hello/shake","so_path":"plugins/ModuleShake.so","entrance_symbol":"create", "load":true, "version":1},
-    {"url_path":"/hello/locatedata","so_path":"plugins/ModuleLocateData.so","entrance_symbol":"create", "load":true, "version":1},
     {"url_path":"/hello/hello","so_path":"plugins/ModuleHello.so","entrance_symbol":"create", "load":true, "version":1},
     {"url_path":"/hello/democlient","so_path":"plugins/ModuleDemoClient.so","entrance_symbol":"create", "load":true, "version":1}
     ]

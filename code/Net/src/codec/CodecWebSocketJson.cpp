@@ -8,8 +8,6 @@
  * Modify history:
  ******************************************************************************/
 #include <netinet/in.h>
-#include "absl/status/status.h"
-#include "google/protobuf/util/json_util.h"
 #include "CodecWebSocketJson.hpp"
 
 namespace net
@@ -190,13 +188,6 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
      0xA表示pong
      0xB-F暂时无定义，为以后的控制帧保留
      * */
-    MsgBody oSwitchMsgBody;
-    oSwitchMsgBody.set_sbody(oMsgBody.sbody());
-    if (oSwitchMsgBody.ByteSize() > 64000000) // pb 最大限制
-    {
-        LOG4_ERROR("oSwitchMsgBody.ByteSize() > 64000000");
-        return (CODEC_STATUS_ERR);
-    }
     uint8 ucFirstByte = 0;
     uint8 ucSecondByte = 0;
 //    int iErrno = 0;
@@ -236,15 +227,15 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
         std::string strCompressData;//压缩数据
         std::string strEncryptData;//加密数据
         std::string strJsonMsg;
-        if(oSwitchMsgBody.sbody().size() > 0)
+        // 帧内仅承载 MsgBody.body 的 UTF-8 原文（业务 JSON 等）；不再使用 sbody
+        if (oMsgBody.body().size() > 0)
         {
-            google::protobuf::util::JsonPrintOptions oJsonOption;
-            absl::Status oStatus = google::protobuf::util::MessageToJsonString(oSwitchMsgBody, &strJsonMsg, oJsonOption);
-            if (!oStatus.ok())
+            if (oMsgBody.body().size() > 64000000)
             {
-                LOG4_ERROR("failed to MessageToJsonString error(%s)",oStatus.ToString().c_str());
+                LOG4_ERROR("websocket json body length > 64000000");
                 return (CODEC_STATUS_ERR);
             }
+            strJsonMsg.assign(oMsgBody.body().data(), oMsgBody.body().size());
         }
         LOG4_TRACE("strJsonMsg(%u,%s)",strJsonMsg.size(),strJsonMsg.c_str());
         /*
@@ -394,8 +385,8 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
         iHadWriteLen += iWriteLen;
         LOG4_TRACE("body iNeedWriteLen = %d, iWriteLen = %d",
                         iNeedWriteLen, iWriteLen);
-        LOG4_TRACE("oMsgBody.ByteSize() = %d,oSwitchMsgBody.ByteSize() = %d,sizeof(stOutMsgHead) = %d,iHadWriteLen = %d(compress or encrypt maybe)",
-                            oMsgBody.ByteSize(),oSwitchMsgBody.ByteSize(),sizeof(stOutMsgHead), iHadWriteLen);
+        LOG4_TRACE("oMsgBody.ByteSize() = %d,strJsonMsg.size() = %u,sizeof(stOutMsgHead) = %d,iHadWriteLen = %d(compress or encrypt maybe)",
+                            oMsgBody.ByteSize(), (unsigned)strJsonMsg.size(), sizeof(stOutMsgHead), iHadWriteLen);
     }
     return (CODEC_STATUS_OK);
 }
@@ -1375,26 +1366,17 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
             pBuff->SetReadIndex(iReadIdx);
             return (CODEC_STATUS_PAUSE);
         }
-        google::protobuf::util::JsonParseOptions oParseOptions;
-        absl::Status oStatus;
         if (stMsgHead.encript == 0)       // 未压缩也未加密
         {
             std::string strJsonBody;
             strJsonBody.resize(stMsgHead.body_len);
             strJsonBody.assign(pBuff->GetRawReadBuffer(), stMsgHead.body_len);
-            if(strJsonBody.size() > 0)
+            oMsgBody.Clear();
+            if (strJsonBody.size() > 0)
             {
-                oStatus = google::protobuf::util::JsonStringToMessage(strJsonBody, &oMsgBody, oParseOptions);
+                oMsgBody.set_body(strJsonBody);
             }
             oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-            if(!oStatus.ok())
-            {
-                LOG4_ERROR("cmd[%u],seq[%lu] json string to MsgBody error(%s)!strJsonBody(%s)",
-                                    oMsgHead.cmd(),oMsgHead.seq(),
-                                    oStatus.ToString().c_str(),
-                                    strJsonBody.c_str());
-                return (CODEC_STATUS_ERR);
-            }
             pBuff->SkipBytes(stMsgHead.body_len);
             return (CODEC_STATUS_OK);
         }
@@ -1458,34 +1440,17 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 }
             }
 
+            oMsgBody.Clear();
             if (strUncompressData.size() > 0)       // 解压后的数据
             {
-                //oMsgBody为json，并且没有其他数据
-                oStatus = google::protobuf::util::JsonStringToMessage(strUncompressData, &oMsgBody, oParseOptions);
+                oMsgBody.set_body(strUncompressData);
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-                if(!oStatus.ok())
-                {
-                    LOG4_ERROR("cmd[%u],seq[%u] json string to MsgBody error(%s)!strUncompressData(%s)",
-                                        oMsgHead.cmd(),oMsgHead.seq(),
-                                        oStatus.ToString().c_str(),
-                                        strUncompressData.c_str());
-                    return (CODEC_STATUS_ERR);
-                }
                 pBuff->SkipBytes(stMsgHead.body_len);
             }
             else if (strDecryptData.size() > 0)     // 解密后的数据
             {
-                //oMsgBody为json，并且没有其他数据
-                oStatus = google::protobuf::util::JsonStringToMessage(strDecryptData, &oMsgBody, oParseOptions);
+                oMsgBody.set_body(strDecryptData);
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-                if(!oStatus.ok())
-                {
-                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%s)!strDecryptData(%s)",
-                                        oMsgHead.cmd(), oMsgHead.seq(),
-                                        oStatus.ToString().c_str(),
-                                        strDecryptData.c_str());
-                    return (CODEC_STATUS_ERR);
-                }
                 pBuff->SkipBytes(stMsgHead.body_len);
             }
             else    // 无效的压缩或解密算法，仍然解析原数据
@@ -1494,20 +1459,11 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 strJsonBody.resize(stMsgHead.body_len);
                 strJsonBody.assign(pBuff->GetRawReadBuffer(),
                                 stMsgHead.body_len);
-                if(strJsonBody.size() > 0)
+                if (strJsonBody.size() > 0)
                 {
-                    //oMsgBody为json，并且没有其他数据
-                    oStatus = google::protobuf::util::JsonStringToMessage(strJsonBody, &oMsgBody, oParseOptions);
+                    oMsgBody.set_body(strJsonBody);
                 }
                 oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-                if(!oStatus.ok())
-                {
-                    LOG4_ERROR("cmd[%u], seq[%lu] json string to MsgBody error(%s)!strJsonBody(%s)",
-                                        oMsgHead.cmd(), oMsgHead.seq(),
-                                        oStatus.ToString().c_str(),
-                                        strJsonBody.c_str());
-                    return (CODEC_STATUS_ERR);
-                }
                 pBuff->SkipBytes(stMsgHead.body_len);
             }
             LOG4_TRACE("decode oMsgBody:%s",oMsgBody.DebugString().c_str());
@@ -1520,4 +1476,4 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
     }
 }
 
-} /* namespace neb */
+} /* namespace net */

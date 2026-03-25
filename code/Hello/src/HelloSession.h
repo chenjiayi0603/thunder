@@ -60,7 +60,6 @@ public:
     {
         m_uiCurrentTime = ::time(NULL);
     }
-    const util::CJsonObject & GetLocateDataRequest() {return m_objModuleLocateDataRequest;}
     //权限字段
     const std::string&  GetAccessControlAllowOrigin()const {return m_AccessControlAllowOrigin;}
     const std::string&  GetAccessControlAllowHeaders()const {return m_AccessControlAllowHeaders;}
@@ -83,16 +82,7 @@ private:
     uint64 m_succCounter = 0;
     uint32 m_ValidTimeDelay = 0;
     uint64 m_uiCurrentTime = ::time(NULL); //当前时间
-    /*
-     *数据库连接配置,如：
-       "dbip":"192.168.18.68",
-       "dbport":3395,
-       "dbuser":"robot",
-       "dbpwd":"robot123456",
-       "dbname":"db_im3_center",
-       "dbcharacterset":"utf8",
-     * */
-    util::CJsonObject m_objModuleLocateDataRequest;
+
     std::string m_AccessControlAllowOrigin;
     std::string m_AccessControlAllowHeaders;
     std::string m_AccessControlAllowMethods;

@@ -150,7 +150,9 @@ template <class WorkFn, class... BodyTs,
 auto MakePoolOffloadAwaiter(StepCo20* s, std::threadpool& p, WorkFn&& w, BodyTs&&... bodyArgs)
 {
 	using BodyPack = std::tuple<std::decay_t<BodyTs>...>;
-	using W = std::decay_t<WorkFn>;
+	// std::decay_t 是 C++ 标准库类型萃取工具，通常用于将类型参数变为它的“原始”形式（去除引用、const、volatile、数组等），常用于泛型编程以获得更适合实例化/存储的类型。
+	using W = typename std::decay<WorkFn>::type;
+	// std::invoke_result_t 是 C++17 提供的类型萃取，用于获得“用类型为 W 的可调用对象，以 BodyTs... 作为参数调用后返回值类型”
 	using R = std::invoke_result_t<W, BodyTs...>;
 	auto body = std::make_tuple(std::forward<BodyTs>(bodyArgs)...);
 	auto workAdapter = [w = std::forward<WorkFn>(w)](BodyPack body, std::shared_ptr<std::monostate>) mutable -> R {

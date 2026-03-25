@@ -2293,31 +2293,26 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell)
 
 bool Worker::ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &message)
 {
-	if (oInMsgBody.body().size() > 0)//privage pb
+	if (oInMsgBody.body().size() > 0)
 	{
-		if (!message.ParseFromString(oInMsgBody.body()))
+		if (message.ParseFromString(oInMsgBody.body()))
 		{
-			LOG4_ERROR("%s() oInMsgBody body to message error!message.descriptor(%s)",
-							__FUNCTION__,message.GetDescriptor()->DebugString().c_str());
-			return (false);
+			return true;
+		}
+		google::protobuf::util::JsonParseOptions oOption;
+		const std::string jsonUtf8(oInMsgBody.body().data(), oInMsgBody.body().size());
+		absl::Status oStatus = google::protobuf::util::JsonStringToMessage(jsonUtf8, &message, oOption);
+		if (!oStatus.ok())
+		{
+			LOG4_ERROR("%s() body as pb or json failed(%s)! body(%s) descriptor(%s)",
+			            __FUNCTION__, oStatus.ToString().c_str(), jsonUtf8.c_str(),
+			            message.GetDescriptor()->DebugString().c_str());
+			return false;
 		}
 		return true;
 	}
-	else if (oInMsgBody.sbody().size() > 0)//websocket json
-    {
-        google::protobuf::util::JsonParseOptions oOption;
-        absl::Status oStatus = google::protobuf::util::JsonStringToMessage(oInMsgBody.sbody(),&message, oOption);
-        if(!oStatus.ok())
-        {
-            LOG4_ERROR("%s() json sbody to MsgBody error(%s)!sbody(%s) message.descriptor(%s)",
-                                __FUNCTION__,oStatus.ToString().c_str(),oInMsgBody.sbody().c_str(),
-                                message.GetDescriptor()->DebugString().c_str());
-            return (false);
-        }
-        return true;
-    }
-    LOG4_TRACE("%s() empty msg body and sbody",__FUNCTION__);//如果请求消息体为空，则请求内容为空
-    return true;
+	LOG4_TRACE("%s() empty msg body",__FUNCTION__);
+	return true;
 }
 
 bool Worker::SendToClient(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional,const std::string& strTargetId,bool boJsonBody)
@@ -2400,7 +2395,7 @@ bool Worker::BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::prot
             LOG4_ERROR("MessageToJsonString failed error(%s)",oStatus.ToString().c_str());
             return false;
         }
-        oMsgBody.set_sbody(strJson);
+        oMsgBody.set_body(strJson);
     }
     else
     {

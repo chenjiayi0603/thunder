@@ -22,7 +22,6 @@ bool HelloSession::Init(const util::CJsonObject& conf)
 
 void HelloSession::LoadConfig(const util::CJsonObject& conf)
 {
-	conf.Get("module_locate_data_request", m_objModuleLocateDataRequest);
 	conf.Get("access_control_allow_origin",m_AccessControlAllowOrigin);
 	conf.Get("access_control_allow_headers",m_AccessControlAllowHeaders);
 	conf.Get("access_control_allow_methods",m_AccessControlAllowMethods);
@@ -31,7 +30,6 @@ void HelloSession::LoadConfig(const util::CJsonObject& conf)
 		m_ValidTimeDelay = 60;
 	}
 	LOG4_INFO("%s valid time delay:%u",__FUNCTION__,m_ValidTimeDelay);
-	LOG4_TRACE("%s() objModuleLocateDataRequest(%s)",__FUNCTION__,m_objModuleLocateDataRequest.ToString().c_str());
 	SetCurrentTime();
 }
 

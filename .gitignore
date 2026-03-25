@@ -30,3 +30,5 @@ deploy/include/gtest/
 deploy/lib/
 build-agent/cmake_install.cmake
 build-agent/
+deploy/Logic/bin/Logic
+deploy/Hello/bin/HelloWs
