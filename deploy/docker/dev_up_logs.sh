@@ -5,8 +5,10 @@
 #   ./deploy/docker/dev_up_logs.sh
 #   ./deploy/docker/dev_up_logs.sh down                  # 仅关闭 Compose 栈（等价 stop）
 #   ./deploy/docker/dev_up_logs.sh status                # 仅查看 Compose 容器状态（等价 ps）
+#   ./deploy/docker/dev_up_logs.sh restart               # 若有运行中容器则先 down，再走构建/启动/日志；无则跳过 down
 #   DOCKER_DOWN=1 ./deploy/docker/dev_up_logs.sh         # 同上
 #   DOCKER_STATUS=1 ./deploy/docker/dev_up_logs.sh       # 同上 status
+#   DOCKER_RESTART=1 ./deploy/docker/dev_up_logs.sh      # 同上 restart（与首参 restart 二选一）
 #   SKIP_BUILD=1 ./deploy/docker/dev_up_logs.sh          # 跳过 cmake，直接 docker
 #   FOLLOW=1 ./deploy/docker/dev_up_logs.sh              # 持续跟随 docker 日志（Ctrl+C 结束）
 #   SERVICES="center logic" LOG_TAIL=100 ./deploy/docker/dev_up_logs.sh
@@ -23,6 +25,7 @@
 #   SERVICES              空格分隔服务名，默认 center logic hello interface
 #   DOCKER_DOWN=1         只执行 docker compose down，不做构建与 up
 #   DOCKER_STATUS=1       只查看 docker compose 状态（ps -a、images、top）
+#   DOCKER_RESTART=1      进入主流程前：有运行中容器则 compose down，否则跳过；再 build/up/日志
 #
 set -euo pipefail
 
@@ -40,11 +43,13 @@ FOLLOW="${FOLLOW:-0}"
 SERVICES="${SERVICES:-center logic hello interface}"
 DOCKER_DOWN="${DOCKER_DOWN:-0}"
 DOCKER_STATUS="${DOCKER_STATUS:-0}"
+DOCKER_RESTART="${DOCKER_RESTART:-0}"
 
-# 子命令: down | stop | status | ps
+# 子命令: down | stop | status | ps | restart
 case "${1:-}" in
   down | stop) DOCKER_DOWN=1 ;;
   status | ps) DOCKER_STATUS=1 ;;
+  restart) DOCKER_RESTART=1 ;;
 esac
 
 if [[ "${DOCKER_DOWN}" == "1" ]]; then
@@ -89,6 +94,17 @@ else
 fi
 
 cd "${DOCKER_DIR}"
+
+if [[ "${DOCKER_RESTART}" == "1" ]]; then
+  # docker compose ps -q 默认仅运行中容器；无则无需 down
+  if [[ -n "$(docker compose ps -q 2>/dev/null || true)" ]]; then
+    echo "==> [2/3] 重启：先 docker compose down（${DOCKER_DIR}）"
+    docker compose down --remove-orphans
+  else
+    echo "==> [2/3] 重启：当前无运行中 Compose 容器，跳过 down"
+  fi
+fi
+
 echo "==> [2/3] docker compose build（并行度由 Docker 控制；若卡可另开终端 DOCKER_BUILDKIT=0 docker compose build）"
 docker compose build
 
@@ -127,5 +143,5 @@ else
   docker compose logs --tail "${LOG_TAIL}" ${SERVICES} 2>/dev/null || docker compose logs --tail "${LOG_TAIL}"
   _log_deploy_files
   echo ""
-  echo "提示: FOLLOW=1 $0 可持续跟踪容器日志；状态: $0 status；停止栈: $0 down"
+  echo "提示: FOLLOW=1 $0 可持续跟踪容器日志；状态: $0 status；停止栈: $0 down；重启栈: $0 restart"
 fi

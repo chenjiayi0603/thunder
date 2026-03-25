@@ -16,25 +16,55 @@
 # - 卷挂载仓库根 ../../ → /thunder，以便 deploy 与 code/3party 库路径与 start.sh 一致。
 # - Center 默认拉起 conf + conf2 + conf3 三实例（Raft）；健康检查等待 27000/27022/27032。
 # - redis / mysql：供 Hello 模块 JSON option「TestHelloCoRedis」「TestHelloCoMysql」（默认 127.0.0.1:6379 / :3306，与 host 网络一致）。
-# - start.sh 拉起守护进程后脚本会结束，故用 tail 保持容器运行；已开启 init: true 便于回收子进程。
+# - start.sh 拉起守护进程后脚本会结束，故用 tail -f /dev/null 保持容器运行；已开启 init: true 便于回收子进程。
+#
+# 资源（与常见编排一致：limits 防拖垮宿主机 + 进程内上限与容器 memory 对齐）:
+# - 下列 limits 按「探测样机 ≈16G RAM / 28 CPU」设比例尺；总内存上限约 9G，留足宿主机与其它进程。
+# - 小内存机器请同比缩小各 memory / Redis maxmemory / innodb-buffer-pool-size。
+# - deploy.resources 由 Docker Compose v2+ 在 docker compose up 时下发给运行时（非仅 Swarm）。
 
 name: thunder-deploy
 
+# x- 前缀：扩展片段，不作为独立 service；&thunder-node 为锚点，供各业务服务 <<: 合并复用。
 x-thunder-node: &thunder-node
   build:
-    context: .
+    context: . # 即 deploy/docker/
     dockerfile: Dockerfile
-  init: true
-  network_mode: host
+  init: true # PID1 用 init，便于回收子进程（start.sh 拉起守护进程后 tail 常驻）
+  network_mode: host # 与 conf 里 127.0.0.1 端口一致，监听在宿主机而非 bridge
   volumes:
-    - ../../:/thunder:rw
+    - ../../:/thunder:rw # 仓库根挂载，与宿主机 deploy、code/3party、编译产物路径一致
+
+# 网络服务常见：提高句柄上限，避免高并发时 accept 失败
+x-thunder-ulimits: &thunder-ulimits
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
 
 services:
   redis:
     image: redis:7-alpine
     network_mode: host
-    command: ["redis-server", "--bind", "127.0.0.1", "--port", "6379"]
+    # maxmemory 须低于下方 deploy memory，避免 Redis 与 cgroup 双头限死或 OOM 行为难预期
+    command:
+      - redis-server
+      - --bind
+      - "127.0.0.1"
+      - --port
+      - "6379"
+      - --maxmemory
+      - "384mb"
+      - --maxmemory-policy
+      - allkeys-lru
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
       interval: 2s
@@ -53,7 +83,16 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --bind-address=127.0.0.1
       - --port=3306
+      # 缓冲池显著小于容器 memory，余量给连接/临时表与系统开销
+      - --innodb-buffer-pool-size=512M
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          memory: 512M
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 3s
@@ -62,7 +101,7 @@ services:
       start_period: 35s
 
   center:
-    <<: *thunder-node
+    <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Center
     command:
       - bash
@@ -72,6 +111,13 @@ services:
         chmod +x ./start.sh ./stop.sh 2>/dev/null || true
         ./start.sh
         exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "3.00"
+          memory: 2G
+        reservations:
+          memory: 256M
     healthcheck:
       test:
         [
@@ -84,7 +130,7 @@ services:
       start_period: 30s
 
   logic:
-    <<: *thunder-node
+    <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Logic
     depends_on:
       center:
@@ -97,6 +143,13 @@ services:
         chmod +x ./start.sh ./stop.sh 2>/dev/null || true
         ./start.sh
         exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1536M
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "ss -tln | grep -q ':16068 '"]
       interval: 2s
@@ -105,7 +158,7 @@ services:
       start_period: 20s
 
   hello:
-    <<: *thunder-node
+    <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Hello
     depends_on:
       center:
@@ -122,9 +175,16 @@ services:
         chmod +x ./start.sh ./stop.sh 2>/dev/null || true
         ./start.sh
         exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 1G
+        reservations:
+          memory: 128M
 
   hello_ws:
-    <<: *thunder-node
+    <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Hello
     depends_on:
       center:
@@ -141,6 +201,13 @@ services:
         chmod +x ./start_ws.sh ./stop_ws.sh ./start.sh ./stop.sh 2>/dev/null || true
         ./start_ws.sh
         exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "ss -tln | grep -q ':27010 '"]
       interval: 2s
@@ -149,7 +216,7 @@ services:
       start_period: 15s
 
   interface:
-    <<: *thunder-node
+    <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Interface
     depends_on:
       center:
@@ -164,3 +231,10 @@ services:
         chmod +x ./start.sh ./stop.sh 2>/dev/null || true
         ./start.sh
         exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          memory: 128M
