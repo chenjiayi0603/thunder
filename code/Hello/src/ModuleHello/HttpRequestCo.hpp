@@ -8,7 +8,7 @@ namespace core
 
 /**
  * @brief 使用 C++20 协程的 HTTP 请求示例（基于 StepCo20）
- * @note 与 StepHttpRequestCo 同为协程写法演示；JSON 中 stepType 区分标识
+ * @note 同为协程写法示例；JSON 中 stepType / option 区分标识
  */
 class HttpRequestCo : public net::StepCo20
 {

@@ -9,7 +9,7 @@
 # 可选环境变量（与 test_helloserver_wrk.sh 一致）：
 #   HELLO_HOST HELLO_PORT HELLO_PATH WRK_SCRIPT
 #   CURL_MAXTIME_HELLO     — 单条 curl 超时秒（默认 60；线程池阻塞用例约 sleep 80ms）
-#   HELLO_TEST_EXTERNAL_CO20 — 置 1 时额外跑 TestStepHttpRequestCo / TestHttpRequestCo（需出网访问百度等，超时 120s）
+#   HELLO_TEST_EXTERNAL_CO20 — 置 1 时额外跑 TestHttpRequestCo（需出网访问百度等，超时 120s）
 #   STARTUP_WAIT_SEC
 
 set -euo pipefail
@@ -104,11 +104,9 @@ _hello_post_check 'UnknownOption' '{"option":"NoSuchOption"}' '"code"'
 if [[ "${HELLO_TEST_EXTERNAL_CO20:-0}" == "1" ]]; then
   echo "=== HELLO_TEST_EXTERNAL_CO20=1：外网协程用例（可能较慢/失败）==="
   CURL_MAXTIME_HELLO="${HELLO_TEST_EXTERNAL_CO20_MAXTIME:-120}" \
-    _hello_post_check 'TestStepHttpRequestCo' '{"option":"TestStepHttpRequestCo"}' '"code"'
-  CURL_MAXTIME_HELLO="${HELLO_TEST_EXTERNAL_CO20_MAXTIME:-120}" \
     _hello_post_check 'TestHttpRequestCo' '{"option":"TestHttpRequestCo"}' '"code"'
 else
-  echo "=== 跳过外网协程用例（TestStepHttpRequestCo / TestHttpRequestCo）；需出网时: HELLO_TEST_EXTERNAL_CO20=1 $0 ==="
+  echo "=== 跳过外网协程用例（TestHttpRequestCo）；需出网时: HELLO_TEST_EXTERNAL_CO20=1 $0 ==="
 fi
 
 if ! command -v wrk >/dev/null 2>&1; then

@@ -6,24 +6,174 @@
  ******************************************************************************/
 #include <map>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <vector>
+#include <memory>
 
 #include "util/CommonUtils.hpp"
 #include "util/StringCoder.hpp"
 #include "ModuleHello.hpp"
-#include "StepHttpRequestCo.hpp"
 #include "HttpRequestCo.hpp"
-#include "CustomLogger.hpp"
 #include "Interface.hpp"
 #include "coro/StepCo20Func.hpp"
+#include "coro/RedisAwaitable.hpp"
+#include "dbi/MysqlDbi.hpp"
 #include "coro/ThreadPoolAwaitable.hpp"
 #include "labor/WorkerThreadPool.hpp"
+#include "dbi/Dbi.hpp"
 
 MUDULE_CREATE(core::ModuleHello);
 
 namespace core
 {
+
+namespace hello_co_demo
+{
+
+util::tagDbConnInfo MakeTagDbConn(const std::string& host,
+                                  unsigned int port,
+                                  const std::string& user,
+                                  const std::string& pwd,
+                                  const std::string& db,
+                                  const std::string& charset)
+{
+	util::tagDbConnInfo c{};
+	std::strncpy(c.m_szDbHost, host.c_str(), sizeof(c.m_szDbHost) - 1);
+	std::strncpy(c.m_szDbUser, user.c_str(), sizeof(c.m_szDbUser) - 1);
+	std::strncpy(c.m_szDbPwd, pwd.c_str(), sizeof(c.m_szDbPwd) - 1);
+	std::strncpy(c.m_szDbName, db.c_str(), sizeof(c.m_szDbName) - 1);
+	std::strncpy(c.m_szDbCharSet, charset.c_str(), sizeof(c.m_szDbCharSet) - 1);
+	c.m_uiDbPort = port;
+	c.uiTimeOut = 5;
+	return c;
+}
+
+int JsonIntOrDefault(const util::CJsonObject& o, const char* key, int defVal)
+{
+	int32_t v = static_cast<int32_t>(defVal);
+	if (o.Get(key, v))
+	{
+		return static_cast<int>(v);
+	}
+	std::string s;
+	if (o.Get(key, s) && !s.empty())
+	{
+		return std::atoi(s.c_str());
+	}
+	return defVal;
+}
+
+std::string JsonStrOrDefault(const util::CJsonObject& o, const char* key, const std::string& def)
+{
+	std::string s;
+	if (o.Get(key, s) && !s.empty())
+	{
+		return s;
+	}
+	return def;
+}
+
+net::AsyncTask HelloCoRedisCo(net::StepCo20& step, std::string redisHost, int redisPort)
+{
+	net::RedisCoHelper r(&step, redisHost, redisPort);
+	const std::string key = "hello_co20_demo";
+	const std::string val = "ok_from_co20";
+	const net::RedisReply setRsp = co_await r.Set(key, val);
+	const net::RedisReply getRsp = co_await r.Get(key);
+
+	util::CJsonObject j;
+	j.Add("option", "TestHelloCoRedis");
+	j.Add("redis_host", redisHost);
+	j.Add("redis_port", static_cast<util::int64>(redisPort));
+	j.Add("set_ok", setRsp.IsOk() ? 1 : 0);
+	j.Add("get_ok", getRsp.IsOk() ? 1 : 0);
+	if (getRsp.IsOk())
+	{
+		j.Add("get_value", getRsp.AsString());
+	}
+	if (!setRsp.IsOk())
+	{
+		j.Add("set_err", setRsp.errMsg);
+		j.Add("set_errno", static_cast<util::int64>(setRsp.errNo));
+	}
+	if (!getRsp.IsOk())
+	{
+		j.Add("get_err", getRsp.errMsg);
+		j.Add("get_errno", static_cast<util::int64>(getRsp.errNo));
+	}
+	step.ResponseToClient(200, j.ToString());
+	co_return;
+}
+
+net::AsyncTask HelloCoMysqlCo(net::StepCo20& step, util::tagDbConnInfo dbConn)
+{
+	// 为了让冒烟测试稳定，改为同步 DBI（避免 MysqlAsyncConn 事件回调时序问题）。
+	util::CMysqlDbi db(dbConn.m_szDbHost,
+	                    dbConn.m_szDbUser,
+	                    dbConn.m_szDbPwd,
+	                    dbConn.m_szDbName,
+	                    dbConn.m_szDbCharSet,
+	                    dbConn.m_uiDbPort);
+
+	const std::string createSql =
+	    "CREATE TABLE IF NOT EXISTS hello_co20_demo (id INT AUTO_INCREMENT PRIMARY KEY, v VARCHAR(128))";
+	const std::string insertSql =
+	    "INSERT INTO hello_co20_demo (v) VALUES ('co20_smoke')";
+	const std::string selectSql =
+	    "SELECT v FROM hello_co20_demo ORDER BY id DESC LIMIT 1";
+
+	const int createRet = db.ExecSql(createSql);
+	const int createErrno = db.GetErrno();
+	const std::string createErr = db.GetError();
+
+	const int insertRet = db.ExecSql(insertSql);
+	const int insertErrno = db.GetErrno();
+	const std::string insertErr = db.GetError();
+
+	util::T_vecResultSet vec;
+	const int selectRet = db.ExecSql(selectSql, vec);
+	const int selectErrno = db.GetErrno();
+	const std::string selectErr = db.GetError();
+
+	util::CJsonObject j;
+	j.Add("option", "TestHelloCoMysql");
+	j.Add("create_ok", createRet == 0 ? 1 : 0);
+	j.Add("insert_ok", insertRet == 0 ? 1 : 0);
+	j.Add("select_ok", selectRet == 0 && !vec.empty() ? 1 : 0);
+
+	if (createRet != 0)
+	{
+		j.Add("create_err", createErr);
+		j.Add("create_errno", static_cast<util::int64>(createErrno));
+	}
+	if (insertRet != 0)
+	{
+		j.Add("insert_err", insertErr);
+		j.Add("insert_errno", static_cast<util::int64>(insertErrno));
+	}
+	if (selectRet != 0)
+	{
+		j.Add("select_err", selectErr);
+		j.Add("select_errno", static_cast<util::int64>(selectErrno));
+	}
+
+	if (!vec.empty())
+	{
+		const util::T_mapRow& row = vec[0];
+		const auto it = row.find("v");
+		if (it != row.end())
+		{
+			j.Add("last_v", it->second);
+		}
+	}
+	step.ResponseToClient(200, j.ToString());
+	co_return;
+}
+
+} // namespace hello_co_demo
 
 ModuleHello::~ModuleHello()
 {
@@ -50,10 +200,6 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	{
 		Response(stMsgShell,oInHttpMsg,0);
 	}
-	else if ("TestStepHttpRequestCo" == strOption)
-	{
-		return TestStepHttpRequestCo(stMsgShell, oInHttpMsg);
-	}
 	else if ("TestHttpRequestCo" == strOption)
 	{
 		return TestHttpRequestCo(stMsgShell,oInHttpMsg);
@@ -65,6 +211,14 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	else if ("TestHelloPoolBlock" == strOption)
 	{
 		return TestHelloPoolBlock(stMsgShell, oInHttpMsg);
+	}
+	else if ("TestHelloCoRedis" == strOption)
+	{
+		return TestHelloCoRedis(stMsgShell, oInHttpMsg, obj);
+	}
+	else if ("TestHelloCoMysql" == strOption)
+	{
+		return TestHelloCoMysql(stMsgShell, oInHttpMsg, obj);
 	}
 	else
 	{
@@ -157,17 +311,21 @@ net::AsyncTask HelloPoolCpuCo(net::StepCo20& step)
 net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
 {
 	const int delay_ms = 80;
-	co_await net::MakePoolOffloadAwaiter(
+	const int delay_ms2 = delay_ms + 1;
+	const int result = co_await net::MakePoolOffloadAwaiter(
 		&step, net::ThunderWorkerThreadPool(),
-		[](int delay) {
+		[](int d1, int d2) -> int {
 			// 典型场景：在线程池子线程中调用无状态、会阻塞的外部 IO 同步 SDK 或函数（此处 sleep 仅作演示）。
 			// 同上约束：不得访问 Step/事件线程资源或未经同步的共享数据。
-			std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+			(void)d2; // 仅为参与计算展示：实际阻塞用 d1
+			std::this_thread::sleep_for(std::chrono::milliseconds(d1));
+			return d1 + d2;
 		},
-		delay_ms);
+		delay_ms, delay_ms2);
 	util::CJsonObject j;
 	j.Add("option", "TestHelloPoolBlock");
 	j.Add("slept_ms", delay_ms);
+	j.Add("result", result);
 	step.ResponseToClient(200, j.ToString());
 	co_return;
 }
@@ -239,16 +397,10 @@ void ModuleHello::Response(const net::tagMsgShell& stMsgShell,const HttpMsg& oIn
 	GetLabor()->SendToClient(stMsgShell,oInHttpMsg,oJsonObj.ToString());
 }
 
-bool ModuleHello::TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
-{
-	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::Launch(new StepHttpRequestCo(stMsgShell, oInHttpMsg));
-}
-
 bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::LaunchCo(new HttpRequestCo(stMsgShell, oInHttpMsg));
+	return net::LaunchCo(std::make_unique<HttpRequestCo>(stMsgShell, oInHttpMsg));
 }
 
 bool ModuleHello::TestHelloPoolCpu(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
@@ -263,6 +415,38 @@ bool ModuleHello::TestHelloPoolBlock(const net::tagMsgShell& stMsgShell, const H
 	LOG4_TRACE("%s()", __FUNCTION__);
 	return net::LaunchCo(stMsgShell, oInHttpMsg,
 		[](net::StepCo20& s) -> net::AsyncTask { return HelloPoolBlockCo(s); });
+}
+
+bool ModuleHello::TestHelloCoRedis(const net::tagMsgShell& stMsgShell,
+                                   const HttpMsg& oInHttpMsg,
+                                   const util::CJsonObject& obj)
+{
+	LOG4_TRACE("%s()", __FUNCTION__);
+	const std::string host = hello_co_demo::JsonStrOrDefault(obj, "redis_host", "127.0.0.1");
+	const int port = hello_co_demo::JsonIntOrDefault(obj, "redis_port", 6379);
+	return net::LaunchCo(stMsgShell, oInHttpMsg,
+		[host, port](net::StepCo20& step) -> net::AsyncTask {
+			return hello_co_demo::HelloCoRedisCo(step, host, port);
+		});
+}
+
+bool ModuleHello::TestHelloCoMysql(const net::tagMsgShell& stMsgShell,
+                                   const HttpMsg& oInHttpMsg,
+                                   const util::CJsonObject& obj)
+{
+	LOG4_TRACE("%s()", __FUNCTION__);
+	const std::string h = hello_co_demo::JsonStrOrDefault(obj, "mysql_host", "127.0.0.1");
+	const int p = hello_co_demo::JsonIntOrDefault(obj, "mysql_port", 3306);
+	const std::string user = hello_co_demo::JsonStrOrDefault(obj, "mysql_user", "root");
+	const std::string pwd = hello_co_demo::JsonStrOrDefault(obj, "mysql_password", "thunder");
+	const std::string db = hello_co_demo::JsonStrOrDefault(obj, "mysql_db", "thunder_test");
+	const std::string charset = hello_co_demo::JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
+	const util::tagDbConnInfo dbConn = hello_co_demo::MakeTagDbConn(h, static_cast<unsigned int>(p), user,
+	                                                                pwd, db, charset);
+	return net::LaunchCo(stMsgShell, oInHttpMsg,
+		[dbConn](net::StepCo20& step) -> net::AsyncTask {
+			return hello_co_demo::HelloCoMysqlCo(step, dbConn);
+		});
 }
 
 } /* namespace core */

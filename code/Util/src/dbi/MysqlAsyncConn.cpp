@@ -63,7 +63,10 @@ int MysqlAsyncConn::init(const char *ip, int port,const char *user, const char *
     strncpy(m_dbcharacterset, dbcharacterset, sizeof(m_dbcharacterset));
     m_port = port;
     mysql_init(&m_mysql);
-    mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, 0);
+    // 让 MySQL Client 进入真正的非阻塞模式，
+    // 否则 mysql_real_connect_start/mysql_real_query_start 的状态机可能无法按预期触发 cont 回调。
+    my_bool nonblock = 1;
+    mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &nonblock);
     unsigned int uiTimeOut = 3;
     mysql_options(&m_mysql, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<char *>(&uiTimeOut));
     mysql_options(&m_mysql, MYSQL_OPT_COMPRESS, NULL);           //设置传输数据压缩

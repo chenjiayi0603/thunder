@@ -70,6 +70,18 @@ uint16_t MergeNodeIdAllocRing(uint16_t local, uint32_t remoteU32)
     return local;
 }
 
+/** 将游标强制归一到有效范围 [1, NODE_ID_MAX-1]。
+ *  主要用于防御性处理：Leader/follower 合并 ring 后、或外部兼容路径把游标推到 0 或 NODE_ID_MAX 的情况。
+ */
+uint16_t SanitizeNodeIdCursor(uint16_t cursor)
+{
+    if (cursor == 0u || cursor >= static_cast<uint16_t>(NODE_ID_MAX))
+    {
+        return 1u;
+    }
+    return cursor;
+}
+
 void RaftVoteCallback(const MsgHead &oInMsgHead, const MsgBody &oInMsgBody, net::StepParam *data, net::Session *pSession)
 {
     (void)oInMsgHead;

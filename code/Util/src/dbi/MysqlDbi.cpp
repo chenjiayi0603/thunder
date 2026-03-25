@@ -16,13 +16,13 @@ void StringReplace(string &str, const string &old_value,const string &new_value)
 {
     for(string::size_type pos=0; pos!=string::npos; pos+=new_value.length())
     {
-    	if((pos=str.find(old_value, pos)) != string::npos)
+        if ((pos = str.find(old_value, pos)) != string::npos)
         {
             str.replace(pos, old_value.length(), new_value);
         }
         else
         {
-                break;
+            break;
         }
     }
 }
@@ -77,6 +77,14 @@ int util::CMysqlDbi::InitDbConn(const util::tagDbConfDetail& stDbConfDetail)
     unsigned int uiTimeOut = stDbConfDetail.m_stDbConnInfo.uiTimeOut;
     mysql_options(&m_dbInstance, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<char *>(&uiTimeOut));
 
+    int iSslEnforceRet = -1; // for debug
+    int iSslVerifyRet = -1;  // for debug
+    // 兼容当前测试环境（容器内 MariaDB 不支持 TLS）。
+    // MariaDB Connector/C 支持的关闭方式：关闭 SSL 强制和服务端证书校验。
+    my_bool bFalse = 0;
+    iSslEnforceRet = mysql_options(&m_dbInstance, MYSQL_OPT_SSL_ENFORCE, &bFalse);
+    iSslVerifyRet = mysql_options(&m_dbInstance, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &bFalse);
+
     mysql_options(&m_dbInstance, MYSQL_OPT_COMPRESS, NULL);           //设置传输数据压缩
     mysql_options(&m_dbInstance, MYSQL_OPT_LOCAL_INFILE, NULL);       //设置允许使用LOAD FILE
 
@@ -91,6 +99,8 @@ int util::CMysqlDbi::InitDbConn(const util::tagDbConfDetail& stDbConfDetail)
     {
         m_iErrno = mysql_errno(&m_dbInstance);
         m_strError = mysql_error(&m_dbInstance);
+        m_strError += " [ssl_enforce_ret=" + std::to_string(iSslEnforceRet) +
+                      " ssl_verify_ret=" + std::to_string(iSslVerifyRet) + "]";
         return -2;
     }
     SetDbConnCharacterSet(stDbConfDetail.m_stDbConnInfo.m_szDbCharSet);

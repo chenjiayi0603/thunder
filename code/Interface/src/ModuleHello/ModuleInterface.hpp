@@ -7,7 +7,6 @@
 #define SRC_ModuleInterface_ModuleInterface_HPP_
 
 #include "cmd/Module.hpp"
-#include "RobotError.h"
 
 namespace robot
 {
@@ -21,7 +20,7 @@ public:
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
 
 private:
-    /// body JSON 中 option：Echo、TestStepHttpRequestCo、GenKey/VerifyKey（均为 StepCo20Func + `AsyncTask` lambda）等
+    /// body JSON 中 option：Echo、GenKey/VerifyKey（均为 StepCo20Func + `AsyncTask` lambda）等
     bool DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     void Response(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg, int iCode);
 };

@@ -2,6 +2,7 @@
 #include "step/RedisStep.hpp"
 #include "labor/Labor.hpp"
 #include "hiredis_vip/read.h"
+#include <utility>
 
 namespace net
 {
@@ -162,7 +163,7 @@ void RedisAwaitable::await_suspend(std::coroutine_handle<> h)
 
 RedisReply RedisAwaitable::await_resume()
 {
-    return m_reply;
+    return std::move(m_reply);
 }
 
 } // namespace net

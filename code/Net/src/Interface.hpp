@@ -59,7 +59,6 @@ bool GetFileData(std::string& strFileData,const std::string &strConfFile);
  * @return 是否成功
  * */
 bool Launch(std::unique_ptr<Step> step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
-bool Launch(Step *step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
 /*
  * @brief 注册 MysqlStep（未执行 Emit）
  * @param uiTimeOutMax 超时次数

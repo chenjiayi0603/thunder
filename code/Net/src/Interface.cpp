@@ -29,28 +29,23 @@ bool Launch(std::unique_ptr<Step> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 	return GetLabor()->ExecStep(pStep.release(),dTimeout);
 }
 
-bool Launch(Step *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
-{
-	return Launch(std::unique_ptr<Step>(pStep), uiTimeOutMax, uiToRetry, dTimeout);
-}
-
 bool LaunchCo(const tagMsgShell& stMsgShell,
               const HttpMsg& oHttpMsg,
               StepCo20Func::CoroFn fn)
 {
-	return Launch(new StepCo20Func(stMsgShell, oHttpMsg, std::move(fn)));
+	return Launch(std::make_unique<StepCo20Func>(stMsgShell, oHttpMsg, std::move(fn)));
 }
 
 bool LaunchCo(const tagMsgShell& stMsgShell,
               const MsgHead& oMsgHead,
               StepCo20Func::CoroFn fn)
 {
-	return Launch(new StepCo20Func(stMsgShell, oMsgHead, std::move(fn)));
+	return Launch(std::make_unique<StepCo20Func>(stMsgShell, oMsgHead, std::move(fn)));
 }
 
-bool LaunchCo(StepCo20* stepCo20)
+bool LaunchCo(std::unique_ptr<StepCo20> pStep)
 {
-	return Launch(stepCo20);
+	return Launch(std::move(pStep));
 }
 
 bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)

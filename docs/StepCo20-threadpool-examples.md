@@ -63,4 +63,4 @@ AsyncTask BodySyncApi(StepCo20& step) {
 
 ## 与 ModuleHello 里已有协程示例的关系
 
-ModuleHello 中 TestStepHttpRequestCo、TestHttpRequestCo 等演示的是 StepCo20 + HttpGetAsync 等**已有异步路径**，未接线程池。若将来在 Hello 里做「重 CPU / 阻塞 SDK」演示，可按上列伪代码接入 threadpool::commit + 投递回 Worker，并先实现 PoolOffloadAwaiter 或等价封装。
+ModuleHello 中 TestHttpRequestCo 等演示的是 StepCo20 + HttpGetAsync 等**已有异步路径**，未接线程池。若将来在 Hello 里做「重 CPU / 阻塞 SDK」演示，可按上列伪代码接入 threadpool::commit + 投递回 Worker，并先实现 PoolOffloadAwaiter 或等价封装。

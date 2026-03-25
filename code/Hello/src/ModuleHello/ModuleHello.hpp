@@ -47,10 +47,14 @@ private:
     void TestRSA();
 
     // C++20 coroutine
-    bool TestStepHttpRequestCo(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     bool TestHttpRequestCo(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg);
     bool TestHelloPoolCpu(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
     bool TestHelloPoolBlock(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg);
+    /// JSON option TestHelloCoRedis / TestHelloCoMysql（需本机或 compose 中 redis、mysql）
+    bool TestHelloCoRedis(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
+                          const util::CJsonObject& oJson);
+    bool TestHelloCoMysql(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
+                          const util::CJsonObject& oJson);
 
     //pb
     void Base64Encode(const char* data,unsigned int datalen,std::string &strEncode);

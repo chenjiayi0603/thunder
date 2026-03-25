@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Interface ModuleInterface：JSON option TestStepHttpRequestCo（与 ModuleInterface.cpp 中 StepCo20Func 分支一致）
-# → 外呼 http://example.com/（小页面），成功则 HTTP 响应体 JSON 中 code=0。
+# Interface ModuleInterface：JSON option Echo
+# → 返回 code=0
 #
 # 参考同目录 test_interfaceserver.sh 的环境变量与 curl 用法；本脚本默认只拉起 Interface，不依赖 Center/Logic。
 #
@@ -104,14 +104,14 @@ if ! _tcp_listening "${INTERFACE_PORT}"; then
 fi
 
 BASE_URL="http://${INTERFACE_HOST}:${INTERFACE_PORT}${INTERFACE_PATH}"
-echo "=== [2/2] HTTP：POST {\"option\":\"TestStepHttpRequestCo\"} — ${BASE_URL} ==="
+echo "=== [2/2] HTTP：POST {\"option\":\"Echo\"} — ${BASE_URL} ==="
 
 RESP_BODY=""
 if ! RESP_BODY=$(_curl_smoke -f -sS -m "${TEST_HTTP_CO20_MAXTIME}" -X POST "${BASE_URL}" \
   -H 'Content-Type: application/json' \
-  -d '{"option":"TestStepHttpRequestCo"}' \
+  -d '{"option":"Echo"}' \
   -w '\n[HTTP %{http_code}]\n'); then
-  echo "错误: TestStepHttpRequestCo 请求失败。(404) 多为未部署 ModuleInterface.so；(52) 常为异步回包前连接关闭" >&2
+  echo "错误: Echo 请求失败。(404) 多为未部署 ModuleInterface.so" >&2
   echo "日志: ${DEPLOY_ROOT}/Interface/log/test_interface_http_co20.log" >&2
   exit 1
 fi
@@ -134,9 +134,9 @@ _check_code_zero() {
 }
 
 if ! _check_code_zero "${JSON_LINE}"; then
-  echo "错误: 期望 JSON 中 code==0（外呼 example.com 成功）。当前响应见上；code=1 多为网络不可达或 HttpGetAsync 失败" >&2
+  echo "错误: 期望 JSON 中 code==0（Echo 成功）。当前响应见上" >&2
   exit 1
 fi
 
-echo "=== TestStepHttpRequestCo 通过（code=0）==="
+echo "=== Echo 通过（code=0）==="
 echo "=== Interface 仍在后台运行；日志: tail -f ${DEPLOY_ROOT}/Interface/log/test_interface_http_co20.log ==="

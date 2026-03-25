@@ -139,6 +139,7 @@ protected:
     friend struct CoSleepAwaiter;
     friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
     friend class RedisAwaitable;
+    friend class MySqlAwaitable;
     template <class BodyT, class OutT, class WorkFn>
     friend struct PoolOffloadAwaiter;
 

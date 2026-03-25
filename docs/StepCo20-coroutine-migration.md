@@ -27,7 +27,7 @@
 | 删除 | `code/Net/include/step/CoroutineState.hpp`、`code/Net/src/step/CoroutineState.cpp` |
 | Redis | `RedisAwaitable` / `RedisCoHelper` 由 `CoroutineState*` 改为 `StepCo20*`；`StepCo20` 对 `RedisAwaitable` 声明 `friend`；实现见 `code/Net/src/coro/RedisAwaitable.cpp` |
 | 上下文 | `coro/Awaitable.hpp` 中 `CoroutineContext::state` 类型改为 `StepCo20*` |
-| Hello 示例 | `HttpRequestCo` / `StepHttpRequestCo` 继承 `StepCo20`，实现 `StepAsync()`，返回 `net::AsyncTask`；正常结束前调用 `NotifyEmitCoroutineSuccess()` |
+| Hello 示例 | `HttpRequestCo` 继承 `StepCo20`，实现 `StepAsync()`，返回 `net::AsyncTask`；正常结束前调用 `NotifyEmitCoroutineSuccess()` |
 | Interface 注释 | `Interface.hpp`：`Register`/`Init` 针对 `MysqlStep`；协程 Step 多用 `Launch`，超时用 `SetTimeoutParams` |
 
 `code/Net/CMakeLists.txt` 对 `step/*.cpp` 使用 GLOB，删除 `CoroutineState.cpp` 后无需再显式维护该文件名。
@@ -50,12 +50,10 @@
 
 ## 示例类与 JSON 选项（Hello / Interface）
 
-- **`StepHttpRequestCo`**（原 `StepHttpRequestCo20`）：多站点串行 `HttpGetAsync` 演示（Hello）。  
-  - JSON **`option`**：`TestStepHttpRequestCo`（避免与下面一项重名）。
 - **`HttpRequestCo`**：另一路协程 HTTP 演示（含更多站点 / 不同 JSON 字段）。  
   - JSON **`option`**：`TestHttpRequestCo`。
 
-Interface 插件中 **`TestStepHttpRequestCo` / GenKey / VerifyKey** 等已改为 **`net::StepCo20Func` + lambda**（见 `ModuleInterface.cpp`）；Hello 仍保留独立类 **`StepHttpRequestCo`**。联调脚本见 `deploy/tests/test_interface_http_co20.sh`。
+Interface 插件中 **`GenKey` / `VerifyKey`** 等已改为 **`net::StepCo20Func` + lambda**（见 `ModuleInterface.cpp`）。联调脚本见 `deploy/tests/test_interface_http_co20.sh`。
 
 ## StepState 已删除
 

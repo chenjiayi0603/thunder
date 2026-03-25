@@ -7,8 +7,6 @@
 #include "coro/StepCo20Func.hpp"
 #include "util/CommonUtils.hpp"
 
-#include <memory>
-
 MUDULE_CREATE(robot::ModuleHello);
 
 namespace robot
@@ -19,81 +17,6 @@ namespace {
 constexpr uint32_t kCmdToLogicTokenBinaryDemo = 10001u;
 constexpr size_t kMaxPassthroughBytes = 64 * 1024;
 constexpr size_t kMaxUpstreamBodyInClientJson = static_cast<size_t>(64 * 1024);
-
-/** TestStepHttpRequestCo：原 StepHttpRequestCo::Response，用 StepCo20Func 内联时复用 */
-void SendTestStepHttpRequestCoJsonResponse(net::StepCo20& step, int nCode,
-                                          const HttpMsg* pUpstreamRsp, uint32_t uiTestVal)
-{
-    HttpMsg oHttpMsg;
-    util::CJsonObject oJsonObj;
-    oHttpMsg.set_type(HTTP_RESPONSE);
-    oHttpMsg.set_status_code(200);
-    oHttpMsg.set_http_major(step.m_oInHttpMsg.http_major());
-    oHttpMsg.set_http_minor(step.m_oInHttpMsg.http_minor());
-    oJsonObj.Add("code", nCode);
-    oJsonObj.Add("msg", "ok");
-    oJsonObj.Add("testVal", uiTestVal);
-    if (pUpstreamRsp != nullptr)
-    {
-        oJsonObj.Add("upstream_http_status", static_cast<int32_t>(pUpstreamRsp->status_code()));
-        const std::string& raw = pUpstreamRsp->body();
-        if (raw.size() <= kMaxUpstreamBodyInClientJson)
-        {
-            oJsonObj.Add("upstream_body", raw);
-            oJsonObj.Add("upstream_body_truncated", false, false);
-        }
-        else
-        {
-            oJsonObj.Add("upstream_body", raw.substr(0, kMaxUpstreamBodyInClientJson));
-            oJsonObj.Add("upstream_body_truncated", true, true);
-        }
-    }
-    oHttpMsg.set_body(oJsonObj.ToString());
-    GetLabor()->SendTo(step.m_stReqMsgShell, oHttpMsg);
-}
-
-net::AsyncTask TestStepHttpRequestCoLogicCo(net::StepCo20& step,
-                                            std::shared_ptr<uint32_t> pTestVal)
-{
-    LOG4_TRACE("TestStepHttpRequestCo lambda start");
-    try
-    {
-        LOG4_TRACE("TestStepHttpRequestCo request example.com, testVal:%u", ++*pTestVal);
-        const bool bSuccess = co_await step.HttpGetAsync("http://example.com/");
-        if (!bSuccess)
-        {
-            LOG4_ERROR("HttpGet http://example.com/ error");
-            SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-            co_return;
-        }
-
-        LOG4_TRACE("TestStepHttpRequestCo complete, testVal:%u", ++*pTestVal);
-        SendTestStepHttpRequestCoJsonResponse(step, 0, &step.GetLastRspHttpMsg(), *pTestVal);
-    }
-    catch (const std::exception& e)
-    {
-        LOG4_ERROR("TestStepHttpRequestCo exception: %s", e.what());
-        SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-    }
-    catch (...)
-    {
-        LOG4_ERROR("TestStepHttpRequestCo unknown exception");
-        SendTestStepHttpRequestCoJsonResponse(step, 1, nullptr, *pTestVal);
-    }
-    co_return;
-}
-
-HttpMsg MakeSyntheticHttpFromJsonBody(const std::string& body)
-{
-    HttpMsg oHttp;
-    oHttp.set_body(body);
-    oHttp.set_type(HTTP_REQUEST);
-    oHttp.set_method(HTTP_POST);
-    oHttp.set_url("http://127.0.0.1/interface");
-    oHttp.set_http_major(1);
-    oHttp.set_http_minor(1);
-    return oHttp;
-}
 
 net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
 {
@@ -262,18 +185,6 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
     {
         replyOk(0);
         return true;
-    }
-
-    if ("TestStepHttpRequestCo" == strOption)
-    {
-        LOG4_TRACE("%s TestStepHttpRequestCo (StepCo20Func)", __FUNCTION__);
-        HttpMsg oHttp = MakeSyntheticHttpFromJsonBody(body);
-        auto pTestVal = std::make_shared<uint32_t>(0);
-        // 仅在此 lambda 捕获 pTestVal；协程体放在 TestStepHttpRequestCoLogicCo（带捕获的 lambda 不宜直接作 AsyncTask 协程体）
-        return net::LaunchCo(stMsgShell, oHttp,
-            [pTestVal](net::StepCo20& step) -> net::AsyncTask {
-                return TestStepHttpRequestCoLogicCo(step, pTestVal);
-            });
     }
 
     // GenKey / VerifyKey （协程 co_await→LOGIC，StepCo20Func + lambda）

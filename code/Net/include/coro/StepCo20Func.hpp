@@ -3,6 +3,7 @@
 
 #include "StepCo20.hpp"
 #include <functional>
+#include <memory>
 
 namespace net
 {
@@ -57,7 +58,7 @@ bool LaunchCo(const tagMsgShell& stMsgShell,
               StepCo20Func::CoroFn fn);
 
 /** 自定义 StepCo20 子类走 `Launch(step)`，与 CoroFn 版相同默认超时。 */
-bool LaunchCo(StepCo20* stepCo20);
+bool LaunchCo(std::unique_ptr<StepCo20> pStep);
 
 } // namespace net
 

@@ -8,11 +8,13 @@
 #   docker compose logs -f
 #   docker compose down
 #   ./test_interfaceserver_smoke.sh   # 宿主机 HTTP 冒烟（GenKey/VerifyKey，无需本机 Interface 二进制）
+#   ./test_helloserver_smoke.sh       # 宿主机 HTTP 冒烟（Echo/HelloPool，默认无需本机 Hello 二进制）
 #
 # 说明：
 # - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。
 # - 卷挂载仓库根 ../../ → /thunder，以便 deploy 与 code/3party 库路径与 start.sh 一致。
 # - Center 默认拉起 conf + conf2 + conf3 三实例（Raft）；健康检查等待 27000/27022/27032。
+# - redis / mysql：供 Hello 模块 JSON option「TestHelloCoRedis」「TestHelloCoMysql」（默认 127.0.0.1:6379 / :3306，与 host 网络一致）。
 # - start.sh 拉起守护进程后脚本会结束，故用 tail 保持容器运行；已开启 init: true 便于回收子进程。
 
 name: thunder-deploy
@@ -27,6 +29,37 @@ x-thunder-node: &thunder-node
     - ../../:/thunder:rw
 
 services:
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    command: ["redis-server", "--bind", "127.0.0.1", "--port", "6379"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  mysql:
+    image: docker.1ms.run/library/mariadb:11.2
+    network_mode: host
+    environment:
+      MARIADB_ROOT_PASSWORD: thunder
+      MARIADB_DATABASE: thunder_test
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --bind-address=127.0.0.1
+      - --port=3306
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 35s
+
   center:
     <<: *thunder-node
     working_dir: /thunder/deploy/Center
@@ -75,6 +108,10 @@ services:
     working_dir: /thunder/deploy/Hello
     depends_on:
       center:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     command:
       - bash
