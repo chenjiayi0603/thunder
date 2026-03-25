@@ -7,8 +7,9 @@
 #   docker compose up -d
 #   docker compose logs -f
 #   docker compose down
-#   ./test_interfaceserver_smoke.sh   # 宿主机 HTTP 冒烟（GenKey/VerifyKey，无需本机 Interface 二进制）
-#   ./test_helloserver_smoke.sh       # 宿主机 HTTP 冒烟（Echo/HelloPool，默认无需本机 Hello 二进制）
+#   ./test_interfaceserver_smoke.sh    # 宿主机 HTTP 冒烟（GenKey/VerifyKey，无需本机 Interface 二进制）
+#   ./test_helloserver_smoke.sh        # 宿主机 HTTP 冒烟（Echo/HelloPool，默认无需本机 Hello 二进制）
+#   ./test_helloserver_ws_smoke.sh     # WebSocket 冒烟（hello_ws 默认监听 27010，见 conf/HelloWs.json）
 #
 # 说明：
 # - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。
@@ -121,6 +122,31 @@ services:
         chmod +x ./start.sh ./stop.sh 2>/dev/null || true
         ./start.sh
         exec tail -f /dev/null
+
+  hello_ws:
+    <<: *thunder-node
+    working_dir: /thunder/deploy/Hello
+    depends_on:
+      center:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start_ws.sh ./stop_ws.sh ./start.sh ./stop.sh 2>/dev/null || true
+        ./start_ws.sh
+        exec tail -f /dev/null
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':27010 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
   interface:
     <<: *thunder-node
