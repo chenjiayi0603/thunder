@@ -1,4 +1,6 @@
 .cache/
+# Eclipse CDT 工程碎片（本仓库用 CMake，不提交）
+.settings/
 build/
 code/3party/build-3party/
 code/3party/include/
