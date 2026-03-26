@@ -37,7 +37,7 @@ struct tagIoWatcherData
  * @brief 子进程工作者
  * @note 处理逻辑业务,Worker是子进程,Manager是父进程
  */
-class Worker : public Labor
+class Worker : public Labor, private WorkerRuntimeContext
 {
 public:
 	Worker() = default;
@@ -103,7 +103,7 @@ public:
 	*/
 	virtual void SetProcessName(const util::CJsonObject& oJsonConf)override;
     virtual const std::string& GetWorkerIdentify()override;
-    virtual int GetWorkerIndex() const override{return(m_ctx.iWorkerIndex);}
+    virtual int GetWorkerIndex() const override{return(iWorkerIndex);}
     /**
 	* @brief 注册步骤
 	*/
@@ -303,8 +303,8 @@ protected:
     bool Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, HttpMsg& oOutHttpMsg);
 public:
     //连接
-    const std::unordered_map<std::string, tagMsgShell>& GetMsgShellMap()const {return m_ctx.mapMsgShell;}
-    Nodes& GetNodesMgr() {return m_ctx.nodesMgr;}
+    const std::unordered_map<std::string, tagMsgShell>& GetMsgShellMap()const {return mapMsgShell;}
+    Nodes& GetNodesMgr() {return nodesMgr;}
     //动态库
     void LoadSo(util::CJsonObject& oSoConf,bool boForce=false);
     void ReloadSo(util::CJsonObject& oCmds);
@@ -315,7 +315,6 @@ public:
     tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
-    WorkerRuntimeContext m_ctx;
 };
 
 } /* namespace net */
