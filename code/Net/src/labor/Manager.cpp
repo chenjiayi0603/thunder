@@ -9,7 +9,7 @@
  ******************************************************************************/
 #include <memory>
 #include "protocol/oss_sys.pb.h"
-#include "Manager.hpp"
+#include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
 #include "Interface.hpp"
