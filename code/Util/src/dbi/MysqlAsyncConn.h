@@ -1,88 +1,80 @@
 #ifndef __MYSQL_CONN__
 #define __MYSQL_CONN__
 
+#include <cstddef>
+#include <libev/ev.h>
+#include <list>
 #include <memory>
 #include <mysql.h>
-#include <stdint.h>
-#include <assert.h>
-#include <sys/queue.h>
-#include <sys/time.h>
-#include <map>
-#include <list>
 #include <string>
-#include <stdio.h>
-#include <libev/ev.h>
+
 #include "Dbi.hpp"
 
 namespace util
 {
+
 class MysqlAsyncConn;
 class MysqlResSet;
 struct SqlTask;
 
-enum eSqlTaskOper
-{
+enum eSqlTaskOper {
 	eSqlTaskOper_select,
 	eSqlTaskOper_exec,
 };
 
 class MysqlHandler {
 public:
-	MysqlHandler(){}
-	virtual ~MysqlHandler(){}
-	virtual int on_execsql(MysqlAsyncConn *c, SqlTask *task) = 0;
-	virtual int on_query(MysqlAsyncConn *c, SqlTask *task, MYSQL_RES *pResultSet) = 0;//pResultSet对象由回调者管理
+	MysqlHandler() = default;
+	virtual ~MysqlHandler() = default;
+	virtual int on_execsql(MysqlAsyncConn* c, SqlTask* task) = 0;
+	/// pResultSet 由回调方管理生命周期
+	virtual int on_query(MysqlAsyncConn* c, SqlTask* task, MYSQL_RES* pResultSet) = 0;
 };
 
 struct SqlTask {
-	SqlTask(const std::string& s,eSqlTaskOper o,MysqlHandler *h);
+	SqlTask(const std::string& s, eSqlTaskOper o, MysqlHandler* h);
 	virtual ~SqlTask() = default;
 	std::string sql;
 	eSqlTaskOper oper;
 	std::unique_ptr<MysqlHandler> handler;
-	int iErrno;
+	int iErrno{};
 	std::string errmsg;
 };
 
-MysqlAsyncConn *mysqlAsyncConnect(const char *ip, int port,const char *user,const char *passwd,const char *dbname,
-		const char *dbcharacterset,struct ev_loop *loop);
+MysqlAsyncConn* mysqlAsyncConnect(const char* ip, int port, const char* user, const char* passwd,
+	const char* dbname, const char* dbcharacterset, struct ev_loop* loop);
 
 class MysqlResSet {
 public:
 	MysqlResSet();
-	MysqlResSet(MYSQL_RES *pResultSet,MYSQL *mysql);
+	MysqlResSet(MYSQL_RES* pResultSet, MYSQL* mysql);
 	~MysqlResSet();
-	void Init(MYSQL_RES *pResultSet,MYSQL *mysql);
-	//关闭结果集
+	void Init(MYSQL_RES* pResultSet, MYSQL* mysql);
+	// 关闭结果集
 	void Clear();
-	//获取结果集
+	// 获取结果集（填充 vecResultSet）
 	int GetResultSet(T_vecResultSet& vecResultSet);
-	//结果集操作
-	//返回结果集记录行
+	// 返回结果集当前行 / 遍历行
 	MYSQL_ROW GetRow();
 	const MYSQL_RES* UseResult();
-	//返回结果集内当前行的列的长度
+	// 当前行各列长度
 	unsigned long* FetchLengths();
-	//返回当前结果集列数
 	unsigned int FetchFieldNum();
-	//返回当前结果集行数
 	unsigned int GetRowsNum();
-	//返回当前结果集列名
+	// 列元数据
 	MYSQL_FIELD* FetchFields();
-	//取上一次数据库操作错误码
-	int GetErrno() const{return m_iErrno;}
-	//取上一次数据库操作错误信息
-	const std::string& GetError() const{return m_strError;}
+	// 取上一次数据库操作错误码 / 错误信息
+	int GetErrno() const { return m_iErrno; }
+	const std::string& GetError() const { return m_strError; }
+
 private:
-	MYSQL_RES *m_pResultSet;
-	MYSQL_ROW m_stCurrRow;
-	int m_dwRowCount;
-	int m_dwFieldCount;
-
-	int m_iErrno;
+	MYSQL_RES* m_pResultSet{nullptr};
+	MYSQL_ROW m_stCurrRow{nullptr};
+	int m_dwRowCount{0};
+	int m_dwFieldCount{0};
+	int m_iErrno{0};
 	std::string m_strError;
-
-	MYSQL *m_pMysql;
+	MYSQL* m_pMysql{nullptr};
 };
 
 enum mysql_conn_state {
@@ -94,101 +86,106 @@ enum mysql_conn_state {
 	STORE_WAITING
 };
 
-#define util_offsetof(Type, Member) ( (size_t)( &(((Type*)8)->Member) ) - 8 )
-
 class MysqlAsyncConn {
 public:
 	MysqlAsyncConn();
 	~MysqlAsyncConn();
-	static inline MysqlAsyncConn* get_self_by_watcher(ev_io* watcher) {
-		return reinterpret_cast<MysqlAsyncConn*>(reinterpret_cast<uint8_t*>(watcher) - util_offsetof(MysqlAsyncConn, m_watcher));
-	}
-	static void libev_io_cb(struct ev_loop *loop, ev_io *watcher, int event);
 
-	int init(const char *ip, int port,const char *user, const char *passwd,
-			const char *dbname,const char *dbcharacterset,struct ev_loop *loop);
-	int init(const tagDbConnInfo &stDbConnInfo,struct ev_loop *loop);
+	/// libev ev_io 嵌入本对象：从 watcher 反查连接（类型含非标准布局成员，offsetof 为编译器扩展支持场景）
+	static MysqlAsyncConn* get_self_by_watcher(ev_io* watcher) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+		return reinterpret_cast<MysqlAsyncConn*>(
+			reinterpret_cast<char*>(watcher) - offsetof(MysqlAsyncConn, m_watcher));
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+	}
+
+	static void libev_io_cb(struct ev_loop* loop, ev_io* watcher, int event);
+
+	int init(const char* ip, int port, const char* user, const char* passwd, const char* dbname,
+		const char* dbcharacterset, struct ev_loop* loop);
+	int init(const tagDbConnInfo& stDbConnInfo, struct ev_loop* loop);
 	int event_to_mysql_status(int event);
 	int mysql_status_to_event(int status);
-	int wait_next_task(int libev_event=EV_WRITE);//目前只有主动发起的写事件
+	int wait_next_task(int libev_event = EV_WRITE);//目前只有主动发起的写事件
 
 	void stop_task();
 
-	int state_handle(struct ev_loop *loop, ev_io *watcher, int event);
+	int state_handle(struct ev_loop* loop, ev_io* watcher, int event);
 
-	int check_error_reconnect(SqlTask *task);
+	int check_error_reconnect(SqlTask* task);
 
 	int connect_start();
-	int connect_wait(struct ev_loop *loop, ev_io *watcher, int event);
+	int connect_wait(struct ev_loop* loop, ev_io* watcher, int event);
 
 	int execsql_start();
-	int execsql_wait(struct ev_loop *loop, ev_io *watcher, int event);
+	int execsql_wait(struct ev_loop* loop, ev_io* watcher, int event);
 
 	int query_start();
-	int query_wait(struct ev_loop *loop, ev_io *watcher, int event);
+	int query_wait(struct ev_loop* loop, ev_io* watcher, int event);
 
 	int store_result_start();
-	int store_result_wait(struct ev_loop *loop, ev_io *watcher, int event);
+	int store_result_wait(struct ev_loop* loop, ev_io* watcher, int event);
 
 	int close();
 
-	void add_task(SqlTask *task) {
-		if (task)
-		{
+	void add_task(SqlTask* task) {
+		if (task != nullptr) {
 			m_SqlTaskList.push_back(task);
 			wait_next_task();
 		}
 	}
-	int task_size()const{return m_SqlTaskList.size();}
-	int all_task_size()const{return m_SqlTaskList.size() + (m_curSqlTask ? 1:0);}
+
+	int task_size() const { return static_cast<int>(m_SqlTaskList.size()); }
+
+	int all_task_size() const {
+		return static_cast<int>(m_SqlTaskList.size() + (m_curSqlTask != nullptr ? 1U : 0U));
+	}
+
 	SqlTask* fetch_next_task() {
-		SqlTask *task = NULL;
-		if (m_SqlTaskList.size() > 0)
-		{
-			task = m_SqlTaskList.front();
-			m_SqlTaskList.pop_front();
+		if (m_SqlTaskList.empty()) {
+			return nullptr;
 		}
+		SqlTask* task = m_SqlTaskList.front();
+		m_SqlTaskList.pop_front();
 		return task;
 	}
+
 	SqlTask* fetch_top_task() {
-		if (m_SqlTaskList.size() > 0)
-		{
-			return m_SqlTaskList.front();
+		if (m_SqlTaskList.empty()) {
+			return nullptr;
 		}
-		return NULL;
+		return m_SqlTaskList.front();
 	}
 
-	void printf_all_sql() {
-		for(std::list<SqlTask *>::const_iterator it = m_SqlTaskList.begin();it != m_SqlTaskList.end();++it)
-		{
-			printf("sql:%s\n", (*it)->sql.c_str());
-		}
-	}
-	MYSQL* GetMysql(){return &m_mysql;}
+	MYSQL* GetMysql() { return &m_mysql; }
+
 private:
-	bool m_boInit;
+	bool m_boInit{false};
 
-	char m_ip[32];
-	int  m_port;
-	char m_user[256];
-	char m_passwd[256];
-	char m_dbname[256];
-	char m_dbcharacterset[32];
+	char m_ip[32]{};
+	int m_port{0};
+	char m_user[256]{};
+	char m_passwd[256]{};
+	char m_dbname[256]{};
+	char m_dbcharacterset[32]{};
 
-	int m_connIndex;
-	MYSQL m_mysql;
-	MYSQL_RES *m_queryres;
-	MYSQL_ROW row;
+	int m_connIndex{0};
+	MYSQL m_mysql{};
+	MYSQL_RES* m_queryres{nullptr};
+	MYSQL_ROW row{nullptr};
 
-	ev_io m_watcher;
-	struct ev_loop *m_loop;
-	std::list<SqlTask *> m_SqlTaskList;
-	mysql_conn_state m_state;
-	SqlTask *m_curSqlTask;
-	int m_taskCounter;
+	ev_io m_watcher{};
+	struct ev_loop* m_loop{nullptr};
+	std::list<SqlTask*> m_SqlTaskList;
+	mysql_conn_state m_state{NO_CONNECTED};
+	SqlTask* m_curSqlTask{nullptr};
+	int m_taskCounter{0};
 };
 
-
 }
-
 #endif

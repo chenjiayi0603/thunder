@@ -58,6 +58,13 @@ public:
     /** Raft 当选 Leader 后调用：把本机已有在线节点重新广播给订阅方（缓解换主后下游迟迟收不到路由） */
     void ReplaySubscriptionsAfterRaftLeadership();
 
+    /** 构造 subscriberNodeType 在订阅关系中所需的在线节点列表（仅 node_arry_reg） */
+    void BuildSubscribedRouteNotice(const std::string &subscriberNodeType, NodeNotice &oOut) const;
+
+    /** Leader 成功处理注册/心跳后：按需将全量订阅路由快照写入 NodeReportRsp（注册强制带快照；心跳按间隔） */
+    void MaybeAttachSubscribedRouteSnapshotToRsp(const std::string &strNodeIdentify, const std::string &reporterNodeType, bool force_full,
+                                                  uint32_t err, NodeReportRsp &rsp);
+
     /** 每轮 Leader 向各 Follower 发 AE 前调用一次，递增快照版本号 */
     void BumpOnlineSnapshotSeqForRaft();
     /** 在 Bump 之后向本条 AppendEntries 写入当前 seq 与全量 online_nodes */
@@ -104,8 +111,10 @@ private:
 
     std::map<std::string, std::list<std::pair<NodeNotice, uint32>>> m_mapSendingNodeNotice; // map<to_node_Identify,list<NodeNotice,timestamp>>
 
-    /** Leader 上：按节点限频，用心跳(NodeReport)补发路由，避免订阅方晚于首次广播上线时长时间无路由 */
-    std::unordered_map<std::string, uint32> m_mapLastHeartbeatRouteBroadcast;
+    /** Leader：上次在 NodeReportRsp 中带 subscribed_route_snapshot 的时间（秒），按节点限频 */
+    std::unordered_map<std::string, uint32> m_mapLastRouteFullSnapshotRsp;
+    /** 心跳应答中带全量订阅路由快照的最小间隔（秒）；注册应答不受此限制 */
+    uint32_t m_uiRouteFullSnapshotIntervalSec = 120u;
 
     /** 随 AppendEntries 下发的在线表快照版本号（单调递增，便于日志与排障） */
     uint64_t m_raftOnlineSnapshotSeq = 0;

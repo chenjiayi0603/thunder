@@ -12,6 +12,7 @@
 #include "coro/StepCo20.hpp"
 #include "labor/Labor.hpp"
 #include "labor/Worker.hpp"
+#include "labor/WorkerThreadPool.hpp"
 #include "logger/CustomLogger.hpp"
 #include "thread/threadpool.h"
 
@@ -142,6 +143,15 @@ PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
 		s, p, std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
 }
 
+/** @brief 使用 Worker 全局线程池（ThunderWorkerThreadPool） */
+template <class BodyT, class OutT, class WorkFn>
+PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
+	StepCo20* s, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
+{
+	return MakePoolOffloadAwaiter(
+		s, ThunderWorkerThreadPool(), std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
+}
+
 /**
  * @brief 无 out：work 紧跟 pool（避免 BodyTs..., WorkFn&& 推导把包推成空）；其后 0～多个 body；签名为 R(BodyTs...) / void(BodyTs...)
  */
@@ -170,6 +180,15 @@ auto MakePoolOffloadAwaiter(StepCo20* s, std::threadpool& p, WorkFn&& w, BodyTs&
 	};
 	return PoolOffloadAwaiter<BodyPack, std::monostate, decltype(workAdapter)>(
 		s, p, std::move(body), std::make_shared<std::monostate>(), std::move(workAdapter));
+}
+
+/** @brief 无 out：使用 Worker 全局线程池（ThunderWorkerThreadPool） */
+template <class WorkFn, class... BodyTs,
+	std::enable_if_t<std::is_invocable_v<std::decay_t<WorkFn>, BodyTs...>, int> = 0>
+auto MakePoolOffloadAwaiter(StepCo20* s, WorkFn&& w, BodyTs&&... bodyArgs)
+{
+	return MakePoolOffloadAwaiter(
+		s, ThunderWorkerThreadPool(), std::forward<WorkFn>(w), std::forward<BodyTs>(bodyArgs)...);
 }
 
 /** @brief 池内执行无参 lambda 并返回值（非 void）；等价于 MakePoolOffloadAwaiter(&step, pool, f) */

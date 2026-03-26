@@ -42,7 +42,7 @@ Step::~Step()
 
 bool Step::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
 {
-    return GetLabor()->RegisterCallback(GetSequence(), pStep, dTimeout);
+    return GetLabor()->RegisterCallback(pStep, dTimeout);
 }
 
 uint32 Step::GetSequence()

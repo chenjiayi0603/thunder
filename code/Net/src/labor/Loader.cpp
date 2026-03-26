@@ -7,8 +7,13 @@ namespace net
 Loader::Loader(const std::string& strWorkPath,const std::string& strConfFile,util::CJsonObject& oJsonConf,
 		LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM,bool boRestart)
 {
+	(void)boRestart;
 	m_strWorkPath = strWorkPath;
 	m_strConfFile = strConfFile;
+	if (pLoaderConfigVersionMM)
+	{
+		GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
+	}
 	{
 		auto pos = m_strConfFile.rfind("/");
 		if (pos != std::string::npos)
@@ -36,7 +41,24 @@ Loader::Loader(const std::string& strWorkPath,const std::string& strConfFile,uti
 
 void Loader::GetConfig(util::CJsonObject& oJsonConf,bool boRestart)
 {
-	//todo 获取配置文件
+	(void)boRestart;
+	if (!GetLoaderConfigVersionData().IsConfigVersionChange())
+	{
+		return;
+	}
+	GetLoaderConfigVersionData().UpdateLoaderConfigVersion();
+	std::string configContent;
+	if (!GetLoaderConfigVersionData().GetServerConfigFile(configContent))
+	{
+		SAFE_LOG4_WARN("%s no config in shm", __FUNCTION__);
+		return;
+	}
+	if (!oJsonConf.Parse(configContent))
+	{
+		SAFE_LOG4_ERROR("%s parse shm config failed", __FUNCTION__);
+		return;
+	}
+	Init(oJsonConf);
 }
 
 void Loader::Run()
@@ -77,9 +99,11 @@ void Loader::PeriodicTaskCallback(struct ev_loop* loop, struct ev_timer* watcher
 {
     if (watcher->data != nullptr)
     {
-    	Loader* pWorker = (Loader*)(watcher->data);
-        pWorker->CheckParent();
-        pWorker->RefreshEvent(1.0,watcher);//NODE_BEAT
+    	Loader* pLoader = (Loader*)(watcher->data);
+    	util::CJsonObject oJsonFromCenter;
+    	pLoader->GetConfig(oJsonFromCenter, false);
+        pLoader->CheckParent();
+        pLoader->RefreshEvent(1.0,watcher);//NODE_BEAT
     }
 }
 

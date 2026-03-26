@@ -43,6 +43,8 @@ class MySqlAwaitable
     friend class MySqlStepBridge;
 
 public:
+    static constexpr double kDefaultTimeoutSeconds = 300.0;
+
     MySqlAwaitable(StepCo20* pState,
                    const util::tagDbConnInfo& dbConn,
                    std::string strSql,
@@ -67,7 +69,7 @@ private:
     std::uint8_t m_uiCmdType = 0;
     std::uint32_t m_uiTimeOutMax = 3;
     std::uint8_t m_uiTimeOutRetry = 0;
-    double m_dTimeout = 0.0;
+    double m_dTimeout = kDefaultTimeoutSeconds;
 
     MySqlReply m_reply;
 };

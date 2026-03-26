@@ -113,6 +113,8 @@ message NodeReportRsp
 	uint32 node_id = 2;
 	string current_leader_identify = 3;
 	uint64 raft_term = 4;
+	// 低频全量：仅含本节点订阅需要的在线节点（node_arry_reg，与推送 NodeNotice 一致）；注册应答必带，心跳应答按 Center 配置的间隔附带
+	NodeNotice subscribed_route_snapshot = 5;
 }
 
 

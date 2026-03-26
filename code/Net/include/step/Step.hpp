@@ -140,7 +140,7 @@ public:
     void DeleteCallback(Step* pStep)
     {
         LOG4_TRACE("Step[%u]::%s()", GetSequence(), __FUNCTION__);
-        GetLabor()->DeleteCallback(GetSequence(), pStep);
+        GetLabor()->DeleteCallback(pStep);
     }
     /*
      * 发送客户端封装(只有构造函数传入shell使用)

@@ -371,24 +371,10 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      */
     virtual bool RegisterCallback(Step* pStep, double dTimeout = 0.0){return(false);}
     /**
-	 * @brief 注册步骤回调
-	 * @param uiSelfStepSeq 调用注册step的当前step seq
-	 * @param pStep 步骤回调
-	 * @param dTimeout 超时时间
-	 * @return 是否注册成功
-	 */
-    virtual bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, double dTimeout = 0.0){return(false);}
-    /**
      * @brief 删除步骤回调
      * @param pStep 步骤回调
      */
     virtual void DeleteCallback(Step* pStep){}
-    /**
-	* @brief 删除步骤回调
-	* @param 执行删除操作的当前步骤seq
-	* @param pStep 步骤回调
-	*/
-    virtual void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep){}
     /**
      * @brief 注册会话
      * @param pSession 会话

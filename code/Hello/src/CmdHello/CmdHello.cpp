@@ -181,7 +181,7 @@ net::AsyncTask HelloPoolCpuCo(net::StepCo20& step)
 {
 	std::vector<uint8_t> buf(256 * 1024, static_cast<uint8_t>(3));
 	const uint64_t checksum = co_await net::MakePoolOffloadAwaiter(
-	    &step, net::ThunderWorkerThreadPool(),
+	    &step,
 	    [](std::vector<uint8_t> b) -> uint64_t {
 		    uint64_t s = 0;
 		    for (uint8_t x : b)
@@ -203,7 +203,7 @@ net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
 	const int delay_ms = 80;
 	const int delay_ms2 = delay_ms + 1;
 	const int result = co_await net::MakePoolOffloadAwaiter(
-	    &step, net::ThunderWorkerThreadPool(),
+	    &step,
 	    [](int d1, int d2) -> int {
 		    (void)d2;
 		    std::this_thread::sleep_for(std::chrono::milliseconds(d1));

@@ -136,12 +136,10 @@ public:
 	* @brief 注册步骤
 	*/
     virtual bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0)override;
-    virtual bool RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTimeout = 0.0)override;
     /**
    	* @brief 删除步骤
    	*/
     virtual void DeleteCallback(Step* pStep)override;
-    virtual void DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)override;
     /**
 	* @brief 注册会话
 	*/

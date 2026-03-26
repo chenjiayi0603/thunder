@@ -11,6 +11,7 @@
 #define SRC_STEP_MYSQLSTEP_HPP_
 #include <set>
 #include <list>
+#include <memory>
 #include "dbi/MysqlAsyncConn.h"
 #include "Step.hpp"
 
@@ -18,16 +19,6 @@ namespace net
 {
 class CustomMysqlHandler;
 class Worker;
-
-/**
- * @brief 通用参数类（可根据需求自定义参数类）
- */
-struct SendToMysqlParam:public StepParam
-{
-	SendToMysqlParam(const std::string &strSql,uint8 uiCmdType):m_strSql(strSql),m_uiCmdType(uiCmdType){}
-	std::string m_strSql;
-	uint8 m_uiCmdType;
-};
 
 /**
  * @brief Mysql访问步骤
@@ -88,7 +79,7 @@ public:
      * @brief 超时回调
      * @return 回调状态
      */
-    virtual E_CMD_STATUS Timeout();
+    virtual E_CMD_STATUS Timeout()override;
     /**
 	* @brief 设置mysql访问任务
 	* @note (注册过的MysqlStep才能追加).追加mysql访问任务后，会异步提交访问并返回结果
@@ -140,7 +131,7 @@ public:
     std::string m_strLastCmd;
     uint8 m_uiCmdType = 0;
 	//回调结果
-	util::MysqlResSet *m_pMysqlResSet = nullptr;
+	std::unique_ptr<util::MysqlResSet> m_pMysqlResSet;
 
 	int m_iErrno = 0;
 	std::string m_strStepDesc = "MysqlStep";

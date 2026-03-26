@@ -289,7 +289,7 @@ net::AsyncTask HelloPoolCpuCo(net::StepCo20& step)
 {
 	std::vector<uint8_t> buf(256 * 1024, static_cast<uint8_t>(3));
 	const uint64_t checksum = co_await net::MakePoolOffloadAwaiter(
-		&step, net::ThunderWorkerThreadPool(),
+		&step,
 		[](std::vector<uint8_t> b) -> uint64_t {
 			// 运行于线程池子线程（非 Worker/libev 线程）：勿用 GetLabor、ResponseToClient、
 			// 未同步的共享可变状态及非线程安全接口；仅处理入参副本，结果通过返回值传出。
@@ -313,7 +313,7 @@ net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
 	const int delay_ms = 80;
 	const int delay_ms2 = delay_ms + 1;
 	const int result = co_await net::MakePoolOffloadAwaiter(
-		&step, net::ThunderWorkerThreadPool(),
+		&step,
 		[](int d1, int d2) -> int {
 			// 典型场景：在线程池子线程中调用无状态、会阻塞的外部 IO 同步 SDK 或函数（此处 sleep 仅作演示）。
 			// 同上约束：不得访问 Step/事件线程资源或未经同步的共享数据。

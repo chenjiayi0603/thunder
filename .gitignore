@@ -25,12 +25,10 @@ deploy/Hello/bin/Hello
 deploy/Logic/bin/Logic
 build_asan/
 core.*
-deploy/Logic/bin/Logic
 deploy/include/gmock/
 deploy/include/gtest/
 *.a
 deploy/lib/
 build-agent/cmake_install.cmake
 build-agent/
-deploy/Logic/bin/Logic
 deploy/Hello/bin/HelloWs

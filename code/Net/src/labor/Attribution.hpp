@@ -11,6 +11,8 @@
 #define SRC_LABOR_DUTY_ATTRIBUTION_HPP_
 
 #include <stdlib.h>
+#include <algorithm>
+#include <cstring>
 #include <memory>
 #include <unordered_map>
 #include <sys/mman.h>
@@ -124,111 +126,102 @@ struct tagConnectionAttr
 };
 
 
+/** Manager/Loader/Worker 共用 MAP_SHARED；shm.seq_* 为跨进程事件序号，m_ack 为本进程已消费序号 */
 struct LoaderConfigVersionData
 {
-	struct LoaderConfigVersionMM {
-		uint64 uiConfigVersion = 0;
-		char szServerConfigName[64] = {0};//服务配置名（服务器的第一个服务配置）
-		char szServerConfigContent[16 * 1024] = {0};//服务配置内容
-
-		uint32 iNodeId = 0;//节点id
-
-	    uint32 iNodeNoticeLen = 0;//节点变化通知长度
-	    uint64 uiNodeNoticeVersion = 0;
-	    char szNodeNotice[16 * 1024];//节点变化通知(可存储500+个节点)
-
-	    uint64 uiRestartWorkerOnUpdateConfigVersion = 0;//由于更新配置而重启工作者（由主进程操作）
+	struct LoaderConfigVersionMM
+	{
+		uint64 seq_config = 0;
+		uint64 seq_node_notice = 0;
+		uint64 seq_restart_workers = 0;
+		uint32 node_id = 0;
+		uint32 node_notice_len = 0;
+		char server_config_name[64] = {0};
+		char server_config_body[16 * 1024] = {0};
+		char node_notice_blob[16 * 1024] = {0};
 	};
-	struct LoaderConfigVersionMM *m_LoaderConfigVersionMM = nullptr;//配置递增序号共享内存(从1开始递增)
-	uint64 m_uiLoaderConfigVersion = 0;//配置版本递增序号(从1开始递增) （每个进程得到一个拷贝,对应uiConfigVersion）
-	uint64 m_uiNodeNoticeVersion = 0;//节点通知版本递增序号(从1开始递增) （每个进程得到一个拷贝，对应uiNodeNoticeVersion）
 
-	uint64 m_uiRestartWorkerOnUpdateConfigVersion = 0;
+private:
+	LoaderConfigVersionMM* m_pShm = nullptr;
+	struct {
+		uint64 config = 0;
+		uint64 node_notice = 0;
+		uint64 restart_workers = 0;
+	} m_ack{};
 
+public:
 	bool m_bLoaderProcess = false;
 
-	void SetLoaderConfigVersionMM(LoaderConfigVersionMM *loaderConfigVersionMM = nullptr)
+	void SetLoaderConfigVersionMM(LoaderConfigVersionMM* loaderConfigVersionMM = nullptr)
 	{
 		if (loaderConfigVersionMM)
 		{
 			DelLoaderConfigVersionMM();
-			m_LoaderConfigVersionMM = loaderConfigVersionMM;
+			m_pShm = loaderConfigVersionMM;
 		}
-		else if (m_LoaderConfigVersionMM == nullptr)
+		else if (m_pShm == nullptr)
 		{
-			m_LoaderConfigVersionMM = (LoaderConfigVersionMM *)mmap(NULL, sizeof(LoaderConfigVersionMM), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0);//映射区不与任何文件关联
-			memset(m_LoaderConfigVersionMM, 0, sizeof(*m_LoaderConfigVersionMM));  //初始化内存
+			m_pShm = static_cast<LoaderConfigVersionMM*>(mmap(
+				NULL, sizeof(LoaderConfigVersionMM), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0));
+			memset(m_pShm, 0, sizeof(*m_pShm));
 		}
 	}
 
-	LoaderConfigVersionMM * GetLoaderConfigVersionMM()
+	LoaderConfigVersionMM* GetLoaderConfigVersionMM()
 	{
-		if (nullptr == m_LoaderConfigVersionMM)
+		if (m_pShm == nullptr)
 		{
 			SetLoaderConfigVersionMM();
 		}
-		return m_LoaderConfigVersionMM;
+		return m_pShm;
 	}
 
 	void DelLoaderConfigVersionMM()
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			munmap(m_LoaderConfigVersionMM,sizeof(*m_LoaderConfigVersionMM));                         //释放映射区
-			m_LoaderConfigVersionMM = nullptr;
+			munmap(m_pShm, sizeof(*m_pShm));
+			m_pShm = nullptr;
 		}
 	}
 
-	void SetLoaderConfigVersion(uint64 uiLoaderConfigVersion){m_uiLoaderConfigVersion = uiLoaderConfigVersion;}
-	uint64 GetLoaderConfigVersion()const{return m_uiLoaderConfigVersion;}
+	bool IsLoaderProcess() const { return m_bLoaderProcess; }
 
-	uint64 IncLoaderConfigVersion()
-	{
-		if (m_LoaderConfigVersionMM)
-		{
-			return ++m_LoaderConfigVersionMM->uiConfigVersion;
-		}
-		return 0;
-	}
+	uint64 IncLoaderConfigVersion() { return m_pShm ? ++m_pShm->seq_config : 0; }
 
-	bool IsConfigVersionChange()
-	{
-		if (m_LoaderConfigVersionMM && m_LoaderConfigVersionMM->uiConfigVersion > m_uiLoaderConfigVersion)
-		{
-			return true;
-		}
-		return false;
-	}
+	bool IsConfigVersionChange() const { return m_pShm && (m_pShm->seq_config > m_ack.config); }
 
 	void UpdateLoaderConfigVersion()
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			m_uiLoaderConfigVersion = m_LoaderConfigVersionMM->uiConfigVersion;
+			m_ack.config = m_pShm->seq_config;
 		}
 	}
-	bool IsLoaderProcess()const {return m_bLoaderProcess;}
 
-	void SetServerConfigFile(const std::string& configName,const std::string& configContent)
+	/** Center 等写入；须 IncLoaderConfigVersion() 通知各进程 */
+	void SetServerConfigFile(const std::string& configName, const std::string& configContent)
 	{
-		if (m_LoaderConfigVersionMM && configName.size() > 0 && configContent.size() > 0)
+		if (!m_pShm || configName.empty() || configContent.empty())
 		{
-			if (m_LoaderConfigVersionMM->szServerConfigName[0] == 0)
-			{
-				memcpy(m_LoaderConfigVersionMM->szServerConfigName,configName.c_str(),std::min(configName.size(),sizeof(m_LoaderConfigVersionMM->szServerConfigName)) );
-				memcpy(m_LoaderConfigVersionMM->szServerConfigContent,configContent.c_str(),std::min(configContent.size(),sizeof(m_LoaderConfigVersionMM->szServerConfigContent)) );
-			}
-			else if (m_LoaderConfigVersionMM->szServerConfigName[0] != 0 && strcmp(m_LoaderConfigVersionMM->szServerConfigName,configName.c_str()) == 0)
-			{
-				memcpy(m_LoaderConfigVersionMM->szServerConfigContent,configContent.c_str(),std::min(configContent.size(),sizeof(m_LoaderConfigVersionMM->szServerConfigContent)) );
-			}
+			return;
 		}
+		const size_t nameCap = sizeof(m_pShm->server_config_name);
+		const size_t nameLen = std::min(configName.size(), nameCap - 1);
+		memcpy(m_pShm->server_config_name, configName.c_str(), nameLen);
+		m_pShm->server_config_name[nameLen] = '\0';
+
+		const size_t bodyCap = sizeof(m_pShm->server_config_body);
+		const size_t bodyLen = std::min(configContent.size(), bodyCap - 1);
+		memcpy(m_pShm->server_config_body, configContent.c_str(), bodyLen);
+		m_pShm->server_config_body[bodyLen] = '\0';
 	}
-	bool GetServerConfigFile(std::string& configContent)const
+
+	bool GetServerConfigFile(std::string& configContent) const
 	{
-		if (m_LoaderConfigVersionMM && m_LoaderConfigVersionMM->szServerConfigContent[0] != 0)
+		if (m_pShm && m_pShm->server_config_body[0] != 0)
 		{
-			configContent = m_LoaderConfigVersionMM->szServerConfigContent;
+			configContent = m_pShm->server_config_body;
 			return true;
 		}
 		return false;
@@ -236,89 +229,71 @@ struct LoaderConfigVersionData
 
 	bool SetNodeNotice(const NodeNotice& oNodeNotice)
 	{
-		if (m_LoaderConfigVersionMM && oNodeNotice.ByteSize() > 0 && oNodeNotice.ByteSize() < (int)sizeof(m_LoaderConfigVersionMM->szNodeNotice))
+		const int bs = oNodeNotice.ByteSize();
+		if (!m_pShm || bs <= 0 || bs >= static_cast<int>(sizeof(m_pShm->node_notice_blob)))
 		{
-			std::string data = std::move(oNodeNotice.SerializeAsString());
-			memcpy(m_LoaderConfigVersionMM->szNodeNotice,data.data(),data.size());
-			m_LoaderConfigVersionMM->iNodeNoticeLen = data.size();
-			++m_LoaderConfigVersionMM->uiNodeNoticeVersion;
-			return true;
+			return false;
 		}
-		return false;
+		std::string data = std::move(oNodeNotice.SerializeAsString());
+		memcpy(m_pShm->node_notice_blob, data.data(), data.size());
+		m_pShm->node_notice_len = static_cast<uint32_t>(data.size());
+		++m_pShm->seq_node_notice;
+		return true;
 	}
-	bool GetNodeNotice(NodeNotice& oNodeNotice)const
+
+	bool GetNodeNotice(NodeNotice& oNodeNotice) const
 	{
-		if (m_LoaderConfigVersionMM && m_LoaderConfigVersionMM->iNodeNoticeLen > 0)
+		if (!m_pShm || m_pShm->node_notice_len == 0)
 		{
-			if (oNodeNotice.ParseFromArray(m_LoaderConfigVersionMM->szNodeNotice,m_LoaderConfigVersionMM->iNodeNoticeLen))
-			{
-				return true;
-			}
+			return false;
 		}
-		return false;
+		return oNodeNotice.ParseFromArray(m_pShm->node_notice_blob, static_cast<int>(m_pShm->node_notice_len));
 	}
+
 	void UpdateNodeNoticeVersion()
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			m_uiNodeNoticeVersion = m_LoaderConfigVersionMM->uiNodeNoticeVersion;
+			m_ack.node_notice = m_pShm->seq_node_notice;
 		}
 	}
-	bool IsNodeNoticeVersionChange()
+
+	bool IsNodeNoticeVersionChange() const
 	{
-		if (m_LoaderConfigVersionMM && m_LoaderConfigVersionMM->uiNodeNoticeVersion > m_uiNodeNoticeVersion)
-		{
-			return true;
-		}
-		return false;
+		return m_pShm && (m_pShm->seq_node_notice > m_ack.node_notice);
 	}
-	uint64 GetNodeNoticeVersion()const
-	{
-		if (m_LoaderConfigVersionMM)
-		{
-			return m_LoaderConfigVersionMM->uiNodeNoticeVersion;
-		}
-		return 0;
-	}
+
+	uint64 GetNodeNoticeVersion() const { return m_pShm ? m_pShm->seq_node_notice : 0; }
+
 	void SetNodeId(uint32 iNodeId)
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			m_LoaderConfigVersionMM->iNodeId = iNodeId;
+			m_pShm->node_id = iNodeId;
 		}
 	}
-	uint32 GetNodeId()const
-	{
-		if (m_LoaderConfigVersionMM)
-		{
-			return m_LoaderConfigVersionMM->iNodeId;
-		}
-		return 0;
-	}
+
+	uint32 GetNodeId() const { return m_pShm ? m_pShm->node_id : 0; }
 
 	void IncRestartWorkerOnUpdateConfigVersion()
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			++m_LoaderConfigVersionMM->uiRestartWorkerOnUpdateConfigVersion;
+			++m_pShm->seq_restart_workers;
 		}
 	}
 
 	void UpdateRestartWorkerOnUpdateConfigVersion()
 	{
-		if (m_LoaderConfigVersionMM)
+		if (m_pShm)
 		{
-			m_uiRestartWorkerOnUpdateConfigVersion = m_LoaderConfigVersionMM->uiRestartWorkerOnUpdateConfigVersion;
+			m_ack.restart_workers = m_pShm->seq_restart_workers;
 		}
 	}
 
-	bool IsRestartWorkerOnUpdateConfigChange()
+	bool IsRestartWorkerOnUpdateConfigChange() const
 	{
-		if (m_LoaderConfigVersionMM && m_LoaderConfigVersionMM->uiRestartWorkerOnUpdateConfigVersion > m_uiRestartWorkerOnUpdateConfigVersion)
-		{
-			return true;
-		}
-		return false;
+		return m_pShm && (m_pShm->seq_restart_workers > m_ack.restart_workers);
 	}
 };
 

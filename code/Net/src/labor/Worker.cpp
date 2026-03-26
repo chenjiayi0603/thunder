@@ -279,7 +279,7 @@ bool Worker::CheckParent()// 向父进程上报当前进程负载
 
 bool Worker::CheckShareMem()
 {
-	{//uiConfigVersion
+	{// shm.seq_config（共享配置修订）
 		if (GetLoaderConfigVersionData().IsConfigVersionChange())
 		{
 			GetLoaderConfigVersionData().UpdateLoaderConfigVersion();
@@ -1351,28 +1351,6 @@ bool Worker::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
     return(ret.second);
 }
 
-bool Worker::RegisterCallback(uint32 uiSelfStepSeq, Step* pStep, ev_tstamp dTimeout)
-{
-    LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep, dTimeout);
-    if (pStep == nullptr)return(false);
-
-    if (pStep->IsRegistered())  // 已注册过，不必重复注册，不过认为本次注册成功
-    {
-        return(true);
-    }
-    pStep->SetRegistered();
-    pStep->SetActiveTime(ev_now(m_loop));
-
-    auto ret = m_mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), std::unique_ptr<Step>(pStep)));
-    if (ret.second)
-    {
-    	AddStep(pStep,dTimeout,StepTimeoutCallback);
-        LOG4_TRACE("Step(seq %u, active_time %lf, lifetime %lf) register successful.",
-                        pStep->GetSequence(), pStep->GetActiveTime(), pStep->GetTimeout());
-    }
-    return(ret.second);
-}
-
 void Worker::DeleteCallback(Step* pStep)
 {
     LOG4_TRACE("%s(Step* %p)", __FUNCTION__, pStep);
@@ -1386,23 +1364,6 @@ void Worker::DeleteCallback(Step* pStep)
     if (callback_iter != m_mapCallbackStep.end())
     {
         LOG4_TRACE("delete step(seq %u)", pStep->GetSequence());
-        m_mapCallbackStep.erase(callback_iter);
-    }
-}
-
-void Worker::DeleteCallback(uint32 uiSelfStepSeq, Step* pStep)
-{
-    LOG4_TRACE("%s(self_seq[%u], Step* 0x%p)", __FUNCTION__, uiSelfStepSeq, pStep);
-    if (pStep == nullptr)
-    {
-        return;
-    }
-    DelEvent(pStep->m_pTimeoutWatcher);
-
-    auto callback_iter = m_mapCallbackStep.find(pStep->GetSequence());
-    if (callback_iter != m_mapCallbackStep.end())
-    {
-        LOG4_TRACE("step[%u] try to delete step[%u,%p]", uiSelfStepSeq, pStep->GetSequence(),pStep);
         m_mapCallbackStep.erase(callback_iter);
     }
 }
@@ -3819,7 +3780,7 @@ bool Worker::ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno,
     	int nRet = step_iter->second->Emit(iErrno, strErrMsg, strErrShow);
         if (net::STATUS_CMD_RUNNING != nRet)
         {
-            DeleteCallback(uiCallerStepSeq, step_iter->second.get());
+            DeleteCallback(step_iter->second.get());
         }
         if (nRet != net::STATUS_CMD_FAULT)return true;
     }

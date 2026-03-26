@@ -17,8 +17,6 @@ namespace
 constexpr uint32_t kNodeNoticeScanIntervalSec = 1u;
 constexpr uint32_t kNodeNoticeRetryAfterSec = 2u;
 constexpr uint32_t kNodeNoticeDropAfterSec = 30u;
-/** Leader 上同节点两次「心跳补发路由」最小间隔（秒），与 Logic 上报周期同量级即可 */
-constexpr uint32_t kMinHeartbeatRouteBroadcastSec = 8u;
 } // namespace
 
 bool SessionOnlineNodes::Init(const util::CJsonObject &conf)
@@ -36,7 +34,9 @@ bool SessionOnlineNodes::InitFromLocal(util::CJsonObject oCustomConf)
 {
     oCustomConf.Get("need_leadership", m_boNeedLeadership);
     oCustomConf.Get("node_overdue", m_uiNodeOverdue);
-    LOG4_TRACE("%s() boNeedLeadership(%d) uiNodeOverdue(%u)", __FUNCTION__, m_boNeedLeadership, m_uiNodeOverdue);
+    oCustomConf.Get("route_full_snapshot_interval_sec", m_uiRouteFullSnapshotIntervalSec);
+    LOG4_TRACE("%s() boNeedLeadership(%d) uiNodeOverdue(%u) route_full_snapshot_interval_sec(%u)", __FUNCTION__, m_boNeedLeadership,
+               m_uiNodeOverdue, m_uiRouteFullSnapshotIntervalSec);
     for (int i = 0; i < oCustomConf["ipwhite"].GetArraySize(); ++i)
     {
         AddIpwhite(oCustomConf["ipwhite"](i));
@@ -164,17 +164,6 @@ uint16 SessionOnlineNodes::AddNode(const NodeReport &oNodeReport, bool boRegiste
             {
                 AddNodeBroadcast(oNodeInfoObj, boRegister);
             }
-            else if (IsLeadership())
-            {
-                const uint32_t now = GetLabor()->GetNowTime();
-                uint32_t &last = m_mapLastHeartbeatRouteBroadcast[strNodeIdentify];
-                if (last == 0u || now >= last + kMinHeartbeatRouteBroadcastSec)
-                {
-                    last = now;
-                    LOG4_TRACE("%s() heartbeat re-broadcast route for %s", __FUNCTION__, strNodeIdentify.c_str());
-                    AddNodeBroadcast(oNodeInfoObj, false);
-                }
-            }
             return (oNodeInfoObj.node_id());
         }
     }
@@ -207,7 +196,7 @@ void SessionOnlineNodes::RemoveNode(const std::string &strNodeIdentify)
         }
         m_mapIdentifyNodeId.erase(strNodeIdentify);
     }
-    m_mapLastHeartbeatRouteBroadcast.erase(strNodeIdentify);
+    m_mapLastRouteFullSnapshotRsp.erase(strNodeIdentify);
 }
 
 void SessionOnlineNodes::GetIpWhite(util::CJsonObject &oIpWhite) const
@@ -436,7 +425,7 @@ void SessionOnlineNodes::ApplyOnlineSnapshotFromLeader(const RaftAppendEntries &
     }
     m_mapOnlineNodes.clear();
     m_mapIdentifyNodeId.clear();
-    m_mapLastHeartbeatRouteBroadcast.clear();
+    m_mapLastRouteFullSnapshotRsp.clear();
     for (int i = 0; i < req.online_nodes_size(); ++i)
     {
         const RaftOnlineNodeEntry &e = req.online_nodes(i);
@@ -517,6 +506,60 @@ void SessionOnlineNodes::SendNodeNotice(const std::string &strToNodeIdentify, co
     }
 }
 
+void SessionOnlineNodes::BuildSubscribedRouteNotice(const std::string &subscriberNodeType, NodeNotice &oOut) const
+{
+    oOut.Clear();
+    for (const auto &publisher_iter : m_mapPublisher)
+    {
+        const std::string &subscribedNodeType = publisher_iter.first;
+        for (const auto &sub : publisher_iter.second)
+        {
+            if (sub != subscriberNodeType)
+            {
+                continue;
+            }
+            auto onlineNodesIter = m_mapOnlineNodes.find(subscribedNodeType);
+            if (onlineNodesIter == m_mapOnlineNodes.end())
+            {
+                continue;
+            }
+            for (const auto &node_iter : onlineNodesIter->second)
+            {
+                NodeReport oExistNodeInfo = node_iter.second;
+                oExistNodeInfo.clear_node();
+                oExistNodeInfo.clear_workers();
+                (*oOut.add_node_arry_reg()) = std::move(oExistNodeInfo);
+            }
+        }
+    }
+}
+
+void SessionOnlineNodes::MaybeAttachSubscribedRouteSnapshotToRsp(const std::string &strNodeIdentify, const std::string &reporterNodeType, bool force_full,
+                                                                 uint32_t err, NodeReportRsp &rsp)
+{
+    rsp.clear_subscribed_route_snapshot();
+    if (err != 0u || !IsLeadership())
+    {
+        return;
+    }
+    const uint32_t now = static_cast<uint32_t>(GetLabor()->GetNowTime());
+    uint32_t &last = m_mapLastRouteFullSnapshotRsp[strNodeIdentify];
+    if (!force_full && last != 0u && m_uiRouteFullSnapshotIntervalSec > 0u &&
+        now < last + m_uiRouteFullSnapshotIntervalSec)
+    {
+        return;
+    }
+    last = now;
+    NodeNotice notice;
+    BuildSubscribedRouteNotice(reporterNodeType, notice);
+    if (notice.node_arry_reg_size() > 0)
+    {
+        rsp.mutable_subscribed_route_snapshot()->Swap(&notice);
+        LOG4_TRACE("%s() attach subscribed_route_snapshot for %s reg_size=%d", __FUNCTION__, strNodeIdentify.c_str(),
+                   rsp.subscribed_route_snapshot().node_arry_reg_size());
+    }
+}
+
 void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport, bool boRegister)
 {
     (void)boRegister;
@@ -528,6 +571,7 @@ void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport, bool bo
     }
     LOG4_TRACE("%s() %s", __FUNCTION__, oNodeReport.DebugString().c_str());
     NodeNotice oSubcribeNodeInfo;
+    BuildSubscribedRouteNotice(oNodeReport.node_type(), oSubcribeNodeInfo);
     NodeNotice oAddNodes;
     NodeReport oAddedNodeInfo = oNodeReport;
     oAddedNodeInfo.clear_node();
@@ -556,24 +600,6 @@ void SessionOnlineNodes::AddNodeBroadcast(const NodeReport &oNodeReport, bool bo
             }
             LOG4_TRACE("%s() mapOnlineNodes's size %zu reportNodeType(%s) subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, m_mapOnlineNodes.size(),
                        reportNodeType.c_str(), subscribedNodeType.c_str(), subscriberNodeType.c_str());
-            if ((subscriberNodeType) == oNodeReport.node_type())
-            {
-                LOG4_TRACE("%s() subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, subscribedNodeType.c_str(), subscriberNodeType.c_str());
-                auto onlineNodesIter = m_mapOnlineNodes.find(subscribedNodeType);
-                if (onlineNodesIter != m_mapOnlineNodes.end())
-                {
-                    LOG4_TRACE("%s() onlineNodes subscribedNodeType(%s) subscriberNodeType(%s)", __FUNCTION__, subscribedNodeType.c_str(),
-                               subscriberNodeType.c_str());
-                    for (const auto &node_iter : onlineNodesIter->second)
-                    {
-                        NodeReport oExistNodeInfo = node_iter.second;
-                        LOG4_TRACE("oExistNodeInfo(%s)", oExistNodeInfo.DebugString().c_str());
-                        oExistNodeInfo.clear_node();
-                        oExistNodeInfo.clear_workers();
-                        (*oSubcribeNodeInfo.add_node_arry_reg()) = std::move(oExistNodeInfo);
-                    }
-                }
-            }
         }
     }
 

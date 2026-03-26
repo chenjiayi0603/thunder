@@ -65,7 +65,7 @@ void MysqlStep::Init(const std::string& strHost, int iPort,const std::string& db
 	m_dbcharacterset = dbcharacterset;
 	m_uiTimeOut = uiTimeOut;
 
-	m_pMysqlResSet = new util::MysqlResSet();
+	m_pMysqlResSet = std::make_unique<util::MysqlResSet>();
 }
 
 void MysqlStep::SetConf(const util::tagDbConnInfo &dbConnInfo)
@@ -94,7 +94,7 @@ void MysqlStep::SetConf(const std::string& strHost, int iPort,const std::string&
 MysqlStep::~MysqlStep()
 {
 	LOG4_TRACE("%s() uiMysqlStepDectructCounter:%llu",__FUNCTION__,++uiMysqlStepDectructCounter);
-	SAFE_DELETE(m_pMysqlResSet);
+	m_pMysqlResSet.reset();
 }
 
 E_CMD_STATUS MysqlStep::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
@@ -227,16 +227,13 @@ bool MysqlStep::AppendTask(uint8 uiCmdType,const char *fmt,...)
 	return true;
 }
 
-static uint64 uiExecTaskCounter = 0;
 int CustomMysqlHandler::on_execsql(util::MysqlAsyncConn *c, util::SqlTask *task) {
-	++uiExecTaskCounter;
-	LOG4_TRACE("%s:%d sql: %s done uiExecTaskCounter:%llu",__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
+	LOG4_TRACE("%s:%d sql: %s done",__FUNCTION__,__LINE__, task->sql.c_str());
 	((net::Worker*)GetLabor())->Dispose(c,task,NULL);
 	return 0;
 }
 int CustomMysqlHandler::on_query(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pResultSet) {
-	++uiExecTaskCounter;
-	LOG4_TRACE("%s:%d sql: %s done uiExecTaskCounter:%llu",__FUNCTION__,__LINE__, task->sql.c_str(),uiExecTaskCounter);
+	LOG4_TRACE("%s:%d sql: %s done",__FUNCTION__,__LINE__, task->sql.c_str());
 	((net::Worker*)GetLabor())->Dispose(c,task,pResultSet);
 	return 0;
 }

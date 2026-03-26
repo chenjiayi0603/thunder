@@ -64,10 +64,15 @@ bool CmdNodeRegister::AnyMessage(const net::tagMsgShell &stMsgShell, const MsgHe
     NodeReport oNodeReport;
     NodeReportRsp oNodeReportRsp;
     uint32_t err = 1;
+    bool boParsed = false;
+    std::string strNodeIdentify;
+    std::string strReporterNodeType;
     SessionRaftCluster *raft = GetSessionRaftCluster();
     if (oNodeReport.ParseFromString(oMsgBody.body()))
     {
-        std::string strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
+        boParsed = true;
+        strNodeIdentify = oNodeReport.node_ip() + std::string(":") + std::to_string(oNodeReport.node_port());
+        strReporterNodeType = oNodeReport.node_type();
         LOG4_TRACE("%s() NodeRegister oMsgHead.cmd:%u nodeIdentify:%s", __FUNCTION__, oMsgHead.cmd(), strNodeIdentify.c_str());
         uint16 unNodeId = m_pSessionOnlineNodes->AddNode(oNodeReport, true);
         err = ApplyNodeRegisterRaftOutcome(raft, m_pSessionOnlineNodes, unNodeId, strNodeIdentify, oNodeReportRsp);
@@ -84,6 +89,10 @@ bool CmdNodeRegister::AnyMessage(const net::tagMsgShell &stMsgShell, const MsgHe
     if (raft)
     {
         raft->FillNodeReportRspRaftForResponse(oNodeReportRsp, err);
+    }
+    if (boParsed)
+    {
+        m_pSessionOnlineNodes->MaybeAttachSubscribedRouteSnapshotToRsp(strNodeIdentify, strReporterNodeType, true, err, oNodeReportRsp);
     }
     LOG4_INFO("oNodeReportRsp(%s)!", oNodeReportRsp.DebugString().c_str());
     return GetLabor()->SendToClient(stMsgShell, oMsgHead, oNodeReportRsp.SerializeAsString());
