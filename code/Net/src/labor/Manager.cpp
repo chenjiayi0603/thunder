@@ -10,6 +10,8 @@
 #include <memory>
 #include "protocol/oss_sys.pb.h"
 #include "Manager.hpp"
+#include "labor/Worker.hpp"
+#include "labor/Loader.hpp"
 #include "Interface.hpp"
 
 #include "cmd/sys_cmd/CmdMgrBeat.hpp"
@@ -1127,6 +1129,8 @@ void Manager::Destroy()
         m_loop = nullptr;
     }
     GetLoaderConfigVersionData().DelLoaderConfigVersionMM();
+    GetRouteNoticeVersionData().DelRouteNoticeVersionMM();
+    GetCustomConfigVersionData().DelCustomConfigVersionMM();
 }
 
 void Manager::CreateLoader(bool boRestart)
@@ -1157,6 +1161,8 @@ void Manager::CreateLoader(bool boRestart)
 		{
 			SAFE_LOG4_INFO("%s fork Loader", __FUNCTION__);
 			LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();//需要先创建
+			RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
+            CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
 			pid_t iPid = fork();
 			if (iPid == 0)   // 子进程
 			{
@@ -1165,6 +1171,8 @@ void Manager::CreateLoader(bool boRestart)
 				CloseSocket(m_iS2SListenFd);
 				CloseSocket(m_iC2SListenFd);
 				Loader* pLoader = new Loader(m_strWorkPath,m_strConfFile,oCurrentConf,pLoaderConfigVersionMM);
+				pLoader->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
+                pLoader->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
 				pLoader->Run();
 				LOG4_FATAL("Loader terminated");
 				delete pLoader;
@@ -1202,6 +1210,8 @@ void Manager::CreateWorker()
     LOG4_TRACE("%s", __FUNCTION__);
     int iPid = 0;
     LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
+    RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
+    CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
     for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
     {
         int iControlFds[2];
@@ -1228,6 +1238,8 @@ void Manager::CreateWorker()
             x_sock_set_block(iDataFds[1], 0);
             Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
+            pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
+            pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
             pWorker->Run();
             LOG4_FATAL("Worker terminated");
             delete pWorker;
@@ -1349,6 +1361,8 @@ bool Manager::RestartWorker(int iDeathPid)
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, errMsg, 1024));
         }
         LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
+        RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
+        CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
         iNewPid = fork();
         if (iNewPid == 0)   // 子进程
         {
@@ -1363,6 +1377,8 @@ bool Manager::RestartWorker(int iDeathPid)
             sleep(1);// 子进程重启避免过快重启导致快速触发错误
             Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
+            pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
+            pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
             pWorker->Run();
             LOG4_FATAL("Worker terminated");
             delete pWorker;
@@ -2296,6 +2312,32 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
 				LOG4_TRACE("%s CMD_REQ_NODE_RESTART_WORKERS", __FUNCTION__);//重启工作者
 				return(true);
 			}
+            else if (CMD_REQ_SET_NODE_CUSTOM_CONFIG == oInMsgHead.cmd())
+            {
+                OrdinaryResponse oRes;
+                ConfigInfo oConfigInfo;
+                if (!oConfigInfo.ParseFromString(oInMsgBody.body()))
+                {
+                    oRes.set_err_no(1);
+                    oRes.set_err_msg("invalid ConfigInfo");
+                }
+                else if (!GetCustomConfigVersionData().SetCustomConfig(oConfigInfo.file_content()))
+                {
+                    oRes.set_err_no(2);
+                    oRes.set_err_msg("write custom shm failed");
+                }
+                else
+                {
+                    oRes.set_err_no(0);
+                    oRes.set_err_msg("OK");
+                    LOG4_INFO("%s() custom mirror updated, version=%llu, bytes=%zu",
+                              __FUNCTION__,
+                              static_cast<unsigned long long>(GetCustomConfigVersionData().GetCustomVersion()),
+                              oConfigInfo.file_content().size());
+                }
+                SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(), oRes.SerializeAsString());
+                return true;
+            }
 			SendToWorker(oInMsgHead, oInMsgBody);
 			OrdinaryResponse oRes;
 			oRes.set_err_no(0);
@@ -2313,16 +2355,64 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
         		UpdateRaftLeaderHintFromNodeReportRsp(oNodeReportRsp);
         		if (oNodeReportRsp.errcode() == 0)
         		{
-        			if (m_uiNodeId != oNodeReportRsp.node_id())
-        			{
-        				m_uiNodeId = oNodeReportRsp.node_id();
-        				LOG4_INFO("SetNodeId node_id(%u)!",oNodeReportRsp.node_id());
-        			}
-        			MsgHead oMsgHead;
-					oMsgHead.set_cmd(CMD_REQ_REFRESH_NODE_ID);
-					oMsgHead.set_seq(oInMsgHead.seq());
-					oMsgHead.set_msgbody_len(oInMsgHead.msgbody_len());
-					SendToWorker(oMsgHead, oInMsgBody);
+                    // 1) 路由镜像：由 Manager 负责落地到共享内存（只有当订阅快照内容变化才写）
+                    //    Worker 只轮询版本并消费，不依赖此处主动通知。
+                    {
+                        const NodeNotice& oSnapshot = oNodeReportRsp.subscribed_route_snapshot();
+                        // 按 Center 现有逻辑：仅当 node_arry_reg_size() > 0 时才会附带路由快照
+                        if (oSnapshot.node_arry_reg_size() > 0)
+                        {
+                            NodeNotice oldSnapshot;
+                            bool hasOld = GetRouteNoticeVersionData().GetNodeNotice(oldSnapshot);
+                            std::string newSer = oSnapshot.SerializeAsString();
+                            std::string oldSer;
+                            if (hasOld)
+                            {
+                                oldSer = oldSnapshot.SerializeAsString();
+                            }
+
+                            if (!hasOld || oldSer != newSer)
+                            {
+                                const size_t bytes = newSer.size();
+                                if (GetRouteNoticeVersionData().SetNodeNotice(oSnapshot))
+                                {
+                                    LOG4_INFO("%s() route mirror updated, version=%llu, bytes=%zu",
+                                              __FUNCTION__,
+                                              static_cast<unsigned long long>(GetRouteNoticeVersionData().GetNodeNoticeVersion()),
+                                              bytes);
+                                }
+                                else
+                                {
+                                    const auto bs = oSnapshot.ByteSize();
+                                    LOG4_ERROR("%s() route mirror shm write failed, bytes=%d, reg_size=%d, exit_size=%d",
+                                                __FUNCTION__,
+                                                bs,
+                                                oSnapshot.node_arry_reg_size(),
+                                                oSnapshot.node_arry_exit_size());
+                                }
+                            }
+                            else
+                            {
+                                LOG4_TRACE("%s() route mirror unchanged, skip write. version=%llu, bytes=%zu",
+                                           __FUNCTION__,
+                                           static_cast<unsigned long long>(GetRouteNoticeVersionData().GetNodeNoticeVersion()),
+                                           newSer.size());
+                            }
+                        }
+                    }
+
+                    // 2) node_id 更新：仅 node_id 变化时主动通知 Worker
+                    if (m_uiNodeId != oNodeReportRsp.node_id())
+                    {
+                        m_uiNodeId = oNodeReportRsp.node_id();
+                        LOG4_INFO("SetNodeId node_id(%u)!", oNodeReportRsp.node_id());
+
+                        MsgHead oMsgHead;
+                        oMsgHead.set_cmd(CMD_REQ_REFRESH_NODE_ID);
+                        oMsgHead.set_seq(oInMsgHead.seq());
+                        oMsgHead.set_msgbody_len(oInMsgHead.msgbody_len());
+                        SendToWorker(oMsgHead, oInMsgBody);
+                    }
         		}
         		else
         		{

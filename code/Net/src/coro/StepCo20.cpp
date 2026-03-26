@@ -2,7 +2,6 @@
 #include "NetError.hpp"
 #include "NetDefine.hpp"
 #include "labor/Labor.hpp"
-#include "labor/Worker.hpp"
 #include <ev.h>
 
 namespace net
@@ -12,30 +11,73 @@ namespace
 {
 struct CoSleepPayload
 {
-    StepCo20* step{};
+    StepCo20* context{};
 };
 } // namespace
 
 void CoSleepTimerTrampoline(struct ev_loop* /*loop*/, ev_timer* w, int /*revents*/)
 {
     auto* p = static_cast<CoSleepPayload*>(w->data);
-    StepCo20* step = p->step;
+    StepCo20* context = p->context;
     GetLabor()->DelEvent(w);
     delete w;
     delete p;
-    if (step->m_coroHandle && !step->m_coroHandle.done())
+    if (context->m_context.handle && !context->m_context.handle.done())
     {
-        step->m_coroHandle.resume();
+        context->m_context.handle.resume();
     }
 }
 
 void CoSleepAwaiter::await_suspend(std::coroutine_handle<> handle) noexcept
 {
-    pStep->m_coroHandle = handle;
+    pStep->m_context.handle = handle;
     auto* w = new ev_timer();
     auto* p = new CoSleepPayload{pStep};
     w->data = static_cast<void*>(p);
     GetLabor()->AddEvent(delaySec, w, CoSleepTimerTrampoline);
+}
+
+LibevIo::IoBoolAwaitable::IoBoolAwaitable(StepCo20* pStep,
+                                          std::function<bool()> startFn)
+    : pStep_(pStep)
+    , startFn_(std::move(startFn))
+{
+}
+
+void LibevIo::IoBoolAwaitable::await_suspend(std::coroutine_handle<> handle) noexcept
+{
+    pStep_->m_context.handle = handle;
+    StartOrFail();
+}
+
+bool LibevIo::IoBoolAwaitable::await_resume() noexcept
+{
+    if (forceResultReady_)
+    {
+        return forceResult_;
+    }
+    const HttpMsg& rsp = pStep_->GetLastRspHttpMsg();
+    if (rsp.type() == HTTP_RESPONSE)
+    {
+        const int code = rsp.status_code();
+        return code >= 200 && code < 400;
+    }
+    return true;
+}
+
+void LibevIo::IoBoolAwaitable::StartOrFail() noexcept
+{
+    const bool sent = startFn_ ? startFn_() : false;
+
+    if (!sent)
+    {
+        forceResultReady_ = true;
+        forceResult_ = false;
+        if (pStep_->m_context.handle && !pStep_->m_context.handle.done())
+        {
+            pStep_->m_context.handle.resume();
+        }
+    }
 }
 
 E_CMD_STATUS StepCo20::Emit(int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
@@ -117,9 +159,9 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
     m_uiTimeOutCounter = 0;
     
     // 恢复协程执行
-    if (m_coroHandle && !m_coroHandle.done())
+    if (m_context.handle && !m_context.handle.done())
     {
-        m_coroHandle.resume();
+        m_context.handle.resume();
         // resume() drives the full chain via symmetric transfer: inner Task → StepAsync
         // AsyncTask → final_suspend(suspend_always).  By the time resume() returns,
         // m_bCoroutineCompleted is true and the outer frame is suspended (not destroyed).
@@ -146,9 +188,9 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
     m_uiTimeOutCounter = 0;
     
     // 恢复协程执行
-    if (m_coroHandle && !m_coroHandle.done())
+    if (m_context.handle && !m_context.handle.done())
     {
-        m_coroHandle.resume();
+        m_context.handle.resume();
     }
     
     if (m_bCoroutineCompleted)
@@ -184,171 +226,93 @@ E_CMD_STATUS StepCo20::Timeout()
     return STATUS_CMD_FAULT;
 }
 
-/**
- * @brief 异步 HTTP GET（`Task<bool>` 协程体）。
- ```
-  父协程  StepCo20::StepAsync()  (AsyncTask) 或 Func 内 co_await 的用户 Task
-           |
-           |  co_await HttpGetAsync(url)
-           v
-  +------------------------+
-  | Task<bool>::co_await   |  task_awaiter::await_suspend(父句柄 h)
-  | continuation_ <- 父 h   |  return 子 coro_  ->  runtime resume(子)
-  +------------------------+
-           |
-           v
-  +------------------------+
-  | 子协程 HttpGetAsync    |  get_return_object / initial_suspend 后进体
-  +------------------------+
-           |
-           v
-      HttpGet(url) / SentTo(...)
-           |
-     +-----+-----+
-     |           |
-     v           v
-  返回 false   返回 true（已入队）
-     |           |
-     |           v
-     |      co_await HttpRespAwaiter
-     |           |  await_suspend: m_coroHandle = 当前子帧
-     |           v
-     |      [Worker 发送 / 收包 … 异步]
-     |           |
-     |           v
-     |      Callback(...) -> m_coroHandle.resume()
-     |           |
-     |           v
-     |      await_resume -> 得到 bool，继续子协程体
-     +-----+-----+
-           |
-           v
-  co_return <bool>  ->  return_value -> final_suspend
-           |
-           v
-  final_awaiter: return continuation_(父)  ->  resume(父)
-           |
-           v
-  父协程在 co_await 点:  task_awaiter::await_resume -> result() -> bool
-```
-
-说明（与上图对应）：`Task` 父子衔接用 `promise.continuation_`；等待 HTTP 响应用 Step 侧 `m_coroHandle`，与 `continuation_` 无关。帧生命周期见 `~Task` / `coro_.destroy()`，细节仍以源码为准。
-
- */
- 
-Task<bool> StepCo20::HttpGetAsync(const std::string& strUrl)
+StepCo20::IoBoolAwaitable StepCo20::HttpGetAsync(const std::string& strUrl)
 {
-    bool bSuccess = HttpGet(strUrl);
-    if (!bSuccess)
-    {
-        co_return false;
-    }
-
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    return m_context.HttpGetAsync(strUrl);
 }
 
-Task<bool> StepCo20::HttpPostAsync(const std::string& strUrl, const std::string& strBody)
+StepCo20::IoBoolAwaitable StepCo20::HttpPostAsync(const std::string& strUrl, const std::string& strBody)
 {
-    bool bSuccess = HttpPost(strUrl, strBody);
-    if (!bSuccess)
-    {
-        co_return false;
-    }
-    
-    // 等待 HTTP 响应
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    return m_context.HttpPostAsync(strUrl, strBody);
 }
 
-Task<bool> StepCo20::SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg)
+StepCo20::IoBoolAwaitable StepCo20::SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg)
 {
-    bool bSuccess = SendTo(stMsgShell, oHttpMsg);
-    if (!bSuccess)
-    {
-        co_return false;
-    }
-    
-    // 等待响应
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    return m_context.SendToAsync(stMsgShell, oHttpMsg);
 }
 
-Task<bool> StepCo20::SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody)
+StepCo20::IoBoolAwaitable StepCo20::SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody)
 {
-    oMsgHead.set_seq(GetSequence());
-    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
-    bool bSuccess = GetLabor()->SendTo(stMsgShell, oMsgHead, oMsgBody);
-    if (!bSuccess)
-    {
-        co_return false;
-    }
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    return m_context.SendToInternalAsync(stMsgShell, std::move(oMsgHead), std::move(oMsgBody));
 }
 
-Task<bool> StepCo20::SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody)
+StepCo20::IoBoolAwaitable StepCo20::SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody)
 {
-    oMsgHead.set_seq(GetSequence());
-    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
-    bool bSuccess = GetLabor()->SendTo(strIdentify, oMsgHead, oMsgBody);
-    if (!bSuccess)
-    {
-        co_return false;
-    }
-    HttpRespAwaiter awaiter(this);
-    bool bResult = co_await awaiter;
-    co_return bResult;
+    return m_context.SendToInternalByIdentifyAsync(strIdentify, std::move(oMsgHead), std::move(oMsgBody));
 }
 
-Task<bool> StepCo20::SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody)
+StepCo20::IoBoolAwaitable StepCo20::SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody)
 {
-    oMsgHead.set_seq(GetSequence());
-    oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
-    if (GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody))
+    return m_context.SendToInternalByNodeTypeAsync(strNodeType, std::move(oMsgHead), std::move(oMsgBody));
+}
+
+LibevIo::IoBoolAwaitable LibevIo::HttpGetAsync(const std::string& strUrl)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, strUrl]()
     {
-        HttpRespAwaiter awaiter(this);
-        co_return co_await awaiter;
-    }
-    constexpr double kRetrySec = 0.05;
-    if (auto* w = dynamic_cast<Worker*>(GetLabor()))
+        return step->HttpGet(strUrl);
+    });
+}
+
+LibevIo::IoBoolAwaitable LibevIo::HttpPostAsync(const std::string& strUrl, const std::string& strBody)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, strUrl, strBody]()
     {
-        int waited = 0;
-        while (!w->HasNodeIdentifys(strNodeType) && waited < 60)
-        {
-            co_await CoSleepAwaiter{this, kRetrySec};
-            ++waited;
-        }
-        if (w->HasNodeIdentifys(strNodeType))
-        {
-            oMsgHead.set_seq(GetSequence());
-            oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
-            if (GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody))
-            {
-                HttpRespAwaiter awaiter(this);
-                co_return co_await awaiter;
-            }
-        }
-    }
-    co_return false;
+        return step->HttpPost(strUrl, strBody);
+    });
+}
+
+LibevIo::IoBoolAwaitable LibevIo::SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, stMsgShell, oHttpMsg]()
+    {
+        return step->SendTo(stMsgShell, oHttpMsg);
+    });
+}
+
+LibevIo::IoBoolAwaitable LibevIo::SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, stMsgShell, oMsgHead = std::move(oMsgHead), oMsgBody = std::move(oMsgBody)]() mutable
+    {
+        oMsgHead.set_seq(step->GetSequence());
+        oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+        return GetLabor()->SendTo(stMsgShell, oMsgHead, oMsgBody);
+    });
+}
+
+LibevIo::IoBoolAwaitable LibevIo::SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, strIdentify, oMsgHead = std::move(oMsgHead), oMsgBody = std::move(oMsgBody)]() mutable
+    {
+        oMsgHead.set_seq(step->GetSequence());
+        oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+        return GetLabor()->SendTo(strIdentify, oMsgHead, oMsgBody);
+    });
+}
+
+LibevIo::IoBoolAwaitable LibevIo::SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody)
+{
+    return IoBoolAwaitable(pStep_, [step = pStep_, strNodeType, oMsgHead = std::move(oMsgHead), oMsgBody = std::move(oMsgBody)]() mutable
+    {
+        oMsgHead.set_seq(step->GetSequence());
+        oMsgHead.set_msgbody_len(static_cast<uint32_t>(oMsgBody.ByteSizeLong()));
+        return GetLabor()->SendToSession(strNodeType, oMsgHead, oMsgBody);
+    });
 }
 
 void StepCo20::OnCoroutineComplete(bool bSuccess)
 {
     LOG4_TRACE("%s() success:%d", __FUNCTION__, bSuccess);
-    
-    if (bSuccess)
-    {
-        ResponseToClient(200, "{\"code\":0,\"msg\":\"ok\"}");
-    }
-    else
-    {
-        ResponseToClient(500, "{\"code\":1,\"msg\":\"internal error\"}");
-    }
 }
 
 void StepCo20::OnCoroutineError(int iErrno, const std::string& strErrMsg)
@@ -357,9 +321,6 @@ void StepCo20::OnCoroutineError(int iErrno, const std::string& strErrMsg)
     
     m_iErrno = iErrno;
     m_strErrMsg = strErrMsg;
-    
-    ResponseToClient(500, "{\"code\":" + std::to_string(iErrno) + 
-                     ",\"msg\":\"" + strErrMsg + "\"}");
 }
 
 void StepCo20::ResponseToClient(int iCode, const std::string& strBody)

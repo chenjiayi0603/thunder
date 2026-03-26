@@ -12,11 +12,9 @@
 #include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
-#include "Attribution.hpp"
-#include "labor/Worker.hpp"
 #include "labor/Labor.hpp"
+#include "labor/ManagerContext.hpp"
 #include "session/Session.hpp"
-#include "Loader.hpp"
 
 class NodeReportRsp;
 
@@ -53,7 +51,7 @@ struct tagManagerWaitExitWatcherData
  * @brief 框架层管理者
  * @note 框架层管理者实现类，工作者包括Manager和Worker,Worker是子进程,Manager是父进程
  */
-class Manager : public Labor
+class Manager : public Labor, private ManagerRuntimeContext
 {
 public:
     Manager(const std::string& strConfFile);
@@ -187,34 +185,6 @@ private:
     /**
 	 * @brief 配置、记录成员
 	 */
-    int32 m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
-    int32 m_iWorkerBeat = 0;                      ///< worker进程心跳超时时间，若大于此心跳未收到worker进程上报，则重启worker进程
-
-    int32 m_iRefreshInterval = 0;                 ///< 刷新Server的间隔周期
-
-    util::E_CODEC_TYPE m_eCodec = util::CODEC_PB_INTERNAL;            ///< 接入端编解码器
-    int32 m_iS2SListenFd = -1;                     ///< Server to Server监听文件描述符（Server与Server之间的连接较少，但每个Server的每个Worker均与其他Server的每个Worker相连）
-    int32 m_iC2SListenFd = -1;                     ///< Client to Server监听文件描述符（Client与Server之间的连接较多，但每个Client只需连接某个Server的某个Worker）
-
-    ev_timer* m_pPeriodicTaskWatcher = nullptr;              ///< 周期任务定时器
-
-    std::unordered_map<int32, tagWorkerAttr> m_mapWorker;       ///< 业务逻辑工作进程及进程属性，key为pid
-    std::unordered_map<int32, int32> m_mapWorkerRestartNum;       ///< 进程被重启次数，key为WorkerIdx
-    std::unordered_map<int32, int32> m_mapWorkerFdPid;            ///< 工作进程通信FD对应的进程号
-    std::unordered_map<std::string, tagMsgShell> m_mapCenterMsgShell; ///< 到center服务器的连接
-    /** 与 m_mapCenterMsgShell 的 key 一致（Center WorkerIdentify）；空表示对所有 Center 上报/注册 */
-    std::string m_strRaftLeaderCenterKey;
-
-    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>> m_mapFdAttr;  ///< 连接的文件描述符属性
-    std::unordered_map<uint32, int32> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
-    std::unordered_map<in_addr_t, uint32> m_mapClientConnFrequency; ///< 客户端连接频率 (unsigned long,uint32)
-    std::unordered_map<int32, std::unique_ptr<Cmd>> m_mapSysCmd;
-
-    std::unordered_map<std::string, std::unordered_map<std::string, Session*> > m_mapCallbackSession;
-
-    int32 m_iConfigProcessPid = -1;
-    uint32 m_iConfigProcessStartTime = 0;
-    uint32 m_iConfigProcessRestartCounter = 0;
 };
 
 } /* namespace net */

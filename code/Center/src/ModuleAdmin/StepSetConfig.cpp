@@ -8,9 +8,32 @@
  * Modify history:
  ******************************************************************************/
 #include "StepSetConfig.hpp"
+#include <unistd.h>
 
 namespace coor
 {
+namespace
+{
+constexpr int kConfigRetryMax = 3;
+constexpr useconds_t kConfigRetryDelayUs = 200000;  // 200ms
+
+bool SendWithRetry(net::Labor* labor, const std::string& identify, int32 cmd, uint32 seq,
+                   const std::string& body, int maxRetry)
+{
+    for (int attempt = 1; attempt <= maxRetry; ++attempt)
+    {
+        if (labor->SendTo(identify, cmd, seq, body))
+        {
+            return true;
+        }
+        if (attempt < maxRetry)
+        {
+            usleep(kConfigRetryDelayUs);
+        }
+    }
+    return false;
+}
+}
 
 StepSetConfig::StepSetConfig(
 		SessionOnlineNodes* pSessionOnlineNodes,
@@ -50,6 +73,7 @@ net::E_CMD_STATUS StepSetConfig::Emit(int iErrno, const std::string& strErrMsg, 
     oConfigFileInfo.set_file_content(pBufPlain, iDecodeBytes);
     oConfigFileInfo.set_file_path(m_strConfigFileRelativePath);
     free(pBufPlain);
+    m_strReqBody = oConfigFileInfo.SerializeAsString();
 
     HttpMsg oHttpMsg;
     oHttpMsg.set_type(HTTP_RESPONSE);
@@ -59,7 +83,7 @@ net::E_CMD_STATUS StepSetConfig::Emit(int iErrno, const std::string& strErrMsg, 
     util::CJsonObject oResponseData;
     if (m_strNodeIdentify.size() > 0)
     {
-        if (GetLabor()->SendTo(m_strNodeIdentify, m_iCmd, GetSequence(), oConfigFileInfo.SerializeAsString()))
+        if (SendWithRetry(GetLabor(), m_strNodeIdentify, m_iCmd, GetSequence(), m_strReqBody, kConfigRetryMax))
         {
             ++m_iEmitNum;
             return(net::STATUS_CMD_RUNNING);
@@ -80,14 +104,14 @@ net::E_CMD_STATUS StepSetConfig::Emit(int iErrno, const std::string& strErrMsg, 
         {
             for (auto it = vecNodes.begin(); it != vecNodes.end(); ++it)
             {
-                if (GetLabor()->SendTo(*it, m_iCmd, GetSequence(), oConfigFileInfo.SerializeAsString()))
+                if (SendWithRetry(GetLabor(), *it, m_iCmd, GetSequence(), m_strReqBody, kConfigRetryMax))
                 {
                     ++m_iEmitNum;
                 }
                 else
                 {
                     m_iSetResultCode |= ERR_NODE_IDENTIFY;
-                    m_oSetResultMsg.Add(*it, "connect failed");
+                    m_oSetResultMsg.Add(*it, "connect failed after retries");
                 }
             }
             if (m_iEmitNum == 0)
@@ -122,12 +146,36 @@ net::E_CMD_STATUS StepSetConfig::Emit(int iErrno, const std::string& strErrMsg, 
 
 net::E_CMD_STATUS StepSetConfig::Callback(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, void* data)
 {
-    --m_iEmitNum;
+    const std::string identify = GetLabor()->GetConnectIdentify(stMsgShell);
     OrdinaryResponse oRes;
     if (oRes.ParseFromString(oInMsgBody.body()))
     {
+        if (oRes.err_no() != 0 && !identify.empty())
+        {
+            int& retryTimes = m_mapRetryTimes[identify];
+            if (retryTimes < kConfigRetryMax)
+            {
+                ++retryTimes;
+                LOG4_WARN("%s() config apply failed on %s, retry=%d/%d, err=%d msg=%s",
+                          __FUNCTION__, identify.c_str(), retryTimes, kConfigRetryMax,
+                          oRes.err_no(), oRes.err_msg().c_str());
+                usleep(kConfigRetryDelayUs);
+                if (GetLabor()->SendTo(identify, m_iCmd, GetSequence(), m_strReqBody))
+                {
+                    return net::STATUS_CMD_RUNNING;
+                }
+            }
+            else
+            {
+                LOG4_ERROR("%s() config apply failed on %s, retries exhausted(%d), err=%d msg=%s",
+                           __FUNCTION__, identify.c_str(), kConfigRetryMax,
+                           oRes.err_no(), oRes.err_msg().c_str());
+            }
+        }
+
+        --m_iEmitNum;
     	m_iSetResultCode |= oRes.err_no();
-		m_oSetResultMsg.Add(GetLabor()->GetConnectIdentify(stMsgShell), oRes.err_msg());
+		m_oSetResultMsg.Add(identify, oRes.err_msg());
 		if (0 == m_iEmitNum)
 		{
 			HttpMsg oHttpMsg;

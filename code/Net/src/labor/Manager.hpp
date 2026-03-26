@@ -12,11 +12,9 @@
 #include <memory>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
-#include "Attribution.hpp"
-#include "labor/Worker.hpp"
 #include "labor/Labor.hpp"
+#include "labor/types/WorkerAttr.hpp"
 #include "session/Session.hpp"
-#include "Loader.hpp"
 
 class NodeReportRsp;
 

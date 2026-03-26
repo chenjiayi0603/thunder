@@ -74,12 +74,11 @@ bool CmdUpdateNodeId::AnyMessage(
 			if (GetLabor()->GetNodeId() != oNodeReportRsp.node_id())
 			{
 				GetLabor()->SetNodeId(oNodeReportRsp.node_id());
+				GetLabor()->GetRouteNoticeVersionData().SetNodeId(oNodeReportRsp.node_id());
 				LOG4_INFO("SetNodeId node_id(%u)!",oNodeReportRsp.node_id());
 			}
-			if (oNodeReportRsp.has_subscribed_route_snapshot())
-			{
-				ApplySubscribedRouteSnapshot(GetLabor(), oNodeReportRsp.subscribed_route_snapshot());
-			}
+			// Route mirror is handled by shared-memory + Worker polling.
+			// This command only updates node_id.
 		}
 		else
 		{

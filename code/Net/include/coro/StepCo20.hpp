@@ -4,13 +4,45 @@
 #include "Coroutine20.hpp"
 #include "step/HttpStep.hpp"
 #include "NetDefine.hpp"
+#include <functional>
 #include <optional>
+#include <string>
 
 namespace net
 {
 
 template <class BodyT, class OutT, class WorkFn>
 struct PoolOffloadAwaiter;
+class StepCo20;
+struct Context;
+
+class LibevIo
+{
+public:
+    class IoBoolAwaitable;
+
+    LibevIo() = default;
+    explicit LibevIo(StepCo20* pStep) : pStep_(pStep) {}
+
+    IoBoolAwaitable HttpGetAsync(const std::string& strUrl);
+    IoBoolAwaitable HttpPostAsync(const std::string& strUrl, const std::string& strBody);
+    IoBoolAwaitable SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
+    IoBoolAwaitable SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody);
+    IoBoolAwaitable SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody);
+    IoBoolAwaitable SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody);
+
+protected:
+    StepCo20* pStep_{nullptr};
+};
+
+/**
+ * @brief 协程上下文（持有恢复句柄 + Libev IO 能力）
+ */
+struct Context : public LibevIo
+{
+    explicit Context(StepCo20* pStep = nullptr) : LibevIo(pStep) {}
+    std::coroutine_handle<> handle{};
+};
 
 /**
  * @brief C++20 协程步骤基类（继承 HttpStep）
@@ -19,18 +51,19 @@ struct PoolOffloadAwaiter;
  *       - 节点间二进制（PB/内部协议）：SendToInternalAsync / SendToInternalByIdentifyAsync，
  *         发出前将 MsgHead.seq 置为本 Step 的 GetSequence()，与 Worker 按 seq 将响应路由回
  *         Callback(MsgHead, MsgBody) 的机制一致；co_await 后读 GetLastRspMsgHead() / Body()。
- *       - HttpRespAwaiter 实际表示「任意一次回调」后的恢复（HTTP 或二进制）。
+ *       - 统一 `IoBoolAwaitable` 表示一次 I/O 等待（发起后挂起，回调恢复并返回 bool）。
  */
 class StepCo20 : public HttpStep
 {
 public:
-    StepCo20() = default;
+    using IoBoolAwaitable = LibevIo::IoBoolAwaitable;
+    StepCo20() : m_context(this) {}
     StepCo20(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead)
-        : HttpStep(stInMsgShell, oInMsgHead) {}
+        : HttpStep(stInMsgShell, oInMsgHead), m_context(this) {}
     StepCo20(const tagMsgShell& stInMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody)
-        : HttpStep(stInMsgShell, oInMsgHead, oInMsgBody) {}
+        : HttpStep(stInMsgShell, oInMsgHead, oInMsgBody), m_context(this) {}
     StepCo20(const tagMsgShell& stInMsgShell, const HttpMsg& oInHttpMsg)
-        : HttpStep(stInMsgShell, oInHttpMsg) {}
+        : HttpStep(stInMsgShell, oInHttpMsg), m_context(this) {}
     
     virtual ~StepCo20() = default;
 
@@ -42,7 +75,7 @@ public:
                               const std::string& strErrShow = "") override;
     
     /**
-     * @brief 单条最外层 AsyncTask：Emit() 将其 emplace 进 m_oAsyncBootstrap，不在此帧外再 co_await 一层 Task<void>。
+     * @brief 单条最外层 AsyncTask：Emit() 将其 emplace 进 m_oAsyncBootstrap 并持有到 Step 生命周期结束。
      * @note 协程首参须为 `StepCo20&`（可有更多形参）；`StepAsync()` 内 `return Body(*this)` 或 `return Body(*this,...)`。
      *       勿用 lambda 直接写 co_await；LaunchCo 宜 `return 具名协程(step,...)`。
      */
@@ -82,38 +115,22 @@ public:
         m_uiTimeOutRetry = uiTimeOutRetry;
     }
     
-    /**
-     * @brief 异步 HTTP GET 请求
-     * @return Task<bool> 表示请求是否成功发起
-     */
-    Task<bool> HttpGetAsync(const std::string& strUrl);
+    /// 异步 HTTP GET，co_await 后返回 bool（统一 IoBoolAwaitable）
+    IoBoolAwaitable HttpGetAsync(const std::string& strUrl);
     
-    /**
-     * @brief 异步 HTTP POST 请求
-     * @return Task<bool> 表示请求是否成功发起
-     */
-    Task<bool> HttpPostAsync(const std::string& strUrl, const std::string& strBody);
+    /// 异步 HTTP POST，co_await 后返回 bool（统一 IoBoolAwaitable）
+    IoBoolAwaitable HttpPostAsync(const std::string& strUrl, const std::string& strBody);
     
-    /**
-     * @brief 异步发送数据
-     * @return Task<bool> 表示发送是否成功
-     */
-    Task<bool> SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
+    /// 异步发送 HTTP 消息，co_await 后返回 bool（统一 IoBoolAwaitable）
+    IoBoolAwaitable SendToAsync(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg);
 
-    /**
-     * @brief 向指定连接异步发送内部二进制协议（MsgHead+MsgBody），并挂起直到本次请求的响应回调
-     * @note 自动设置 oMsgHead.seq = GetSequence()、msgbody_len，以便 Worker 按 seq 回调本 Step
-     */
-    Task<bool> SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody);
+    /// 发送内部二进制协议并等待响应，co_await 后返回 bool
+    IoBoolAwaitable SendToInternalAsync(const tagMsgShell& stMsgShell, MsgHead oMsgHead, MsgBody oMsgBody);
 
-    /**
-     * @brief 向 strIdentify 对应节点异步发送内部二进制协议（与 Labor::SendTo(identify,...) 一致）
-     */
-    Task<bool> SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody);
-    /**
-     * @brief 向 strNodeType 对应节点异步发送内部二进制协议（与 Labor::SendToSession(nodeType,...) 一致）
-     */
-    Task<bool> SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody);
+    /// 按 identify 发送内部二进制协议并等待响应，co_await 后返回 bool
+    IoBoolAwaitable SendToInternalByIdentifyAsync(const std::string& strIdentify, MsgHead oMsgHead, MsgBody oMsgBody);
+    /// 按 nodeType 发送内部二进制协议并等待响应（含短轮询重试），co_await 后返回 bool
+    IoBoolAwaitable SendToInternalByNodeTypeAsync(const std::string& strNodeType, MsgHead oMsgHead, MsgBody oMsgBody);
 
     const MsgHead& GetLastRspMsgHead() const { return m_oResMsgHead; }
     const MsgBody& GetLastRspMsgBody() const { return m_oResMsgBody; }
@@ -135,9 +152,11 @@ protected:
      */
     virtual void OnCoroutineError(int iErrno, const std::string& strErrMsg);
 
+    friend struct Context;
     friend struct HttpRespAwaiter;
     friend struct CoSleepAwaiter;
     friend void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
+    friend class LibevIo::IoBoolAwaitable;
     friend class RedisAwaitable;
     friend class MySqlAwaitable;
     template <class BodyT, class OutT, class WorkFn>
@@ -151,8 +170,9 @@ private:
     /// destroy，Callback 里 resume 的内层协程完成后会回到已销毁外层（崩溃 / curl 52）。
     std::optional<AsyncTask> m_oAsyncBootstrap;
 
-    // 协程句柄
-    std::coroutine_handle<> m_coroHandle;
+    /// 当前“待恢复”的协程帧句柄（由 await_suspend(handle) 写入）。
+    /// 仅保存恢复入口，不拥有协程生命周期；生命周期由 m_oAsyncBootstrap 持有。
+    Context m_context;
     
     // 超时参数
     uint32 m_uiTimeOutCounter = 0;
@@ -173,35 +193,42 @@ private:
     std::string m_strErrMsg;
 };
 
-/**
- * @brief 在 Step 协程体内 `co_await HttpRespAwaiter(this)`，把当前协程挂起直到 Worker 回调里 `m_coroHandle.resume()`。
- * @note 触发顺序（相对 `Task::continuation_` 独立，用 Step 侧槽位接异步）：
- *       1. 求值 `co_await` 时构造本 awaiter（构造函数）。
- *       2. `await_ready()`：恒 false，总是进入挂起路径。
- *       3. `await_suspend(handle)`：handle 为**当前正在 co_await 的这条 Step 协程帧**（多为 HttpGetAsync 等子 Task 本体），
- *          写入 `pStep->m_coroHandle`，供 `StepCo20::Callback` 在填好 `m_oResHttpMsg` 等之后 resume。
- *       4. `await_resume()`：`Callback`（或等价路径）已 `resume` 且协程继续执行到 `co_await` 的恢复点时调用；
- *          此时读 `m_oResHttpMsg` 判定成功与否，返回值作为 `co_await` 表达式的结果。
- */
+class LibevIo::IoBoolAwaitable
+{
+public:
+    IoBoolAwaitable(StepCo20* pStep,
+                    std::function<bool()> startFn);
+
+    bool await_ready() const noexcept { return false; }
+    /**
+     * @brief 编译器在 `co_await` 展开时，把当前协程帧句柄传入 await_suspend(handle)。
+     * @note 保存到 `StepCo20::m_context.handle`，后续在 Callback/Timer 中 resume 回该帧。
+     */
+    void await_suspend(std::coroutine_handle<> handle) noexcept;
+    bool await_resume() noexcept;
+
+private:
+    void StartOrFail() noexcept;
+
+    StepCo20* pStep_{nullptr};
+    std::function<bool()> startFn_;
+    bool forceResultReady_{false};
+    bool forceResult_{false};
+};
+
 struct HttpRespAwaiter
 {
-    StepCo20* pStep;
+    StepCo20* pContext{};
 
-    explicit HttpRespAwaiter(StepCo20* step) : pStep(step) {}
-
-    /// 每次进入该 `co_await` 时由运行时先问；恒 false 表示必须挂起，不能同步继续。
+    explicit HttpRespAwaiter(StepCo20* pStep) : pContext(pStep) {}
     bool await_ready() const noexcept { return false; }
-
-    /// 父协程（此处即 co_await 所在的那条 Step 协程）即将挂起时调用；handle 为该帧句柄，非 Labor/Worker。
     void await_suspend(std::coroutine_handle<> handle) noexcept
     {
-        pStep->m_coroHandle = handle;
+        pContext->m_context.handle = handle;
     }
-
-    /// 异步路径已 `m_coroHandle.resume()` 后，在 `co_await` 恢复点调用；HTTP 按 status_code；非 RESPONSE 视为成功。
     bool await_resume() noexcept
     {
-        const HttpMsg& rsp = pStep->m_oResHttpMsg;
+        const HttpMsg& rsp = pContext->GetLastRspHttpMsg();
         if (rsp.type() == HTTP_RESPONSE)
         {
             const int code = rsp.status_code();

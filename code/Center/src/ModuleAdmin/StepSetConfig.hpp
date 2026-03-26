@@ -13,6 +13,7 @@
 #include "Comm.hpp"
 #include "CoorError.hpp"
 #include "SessionOnlineNodes.hpp"
+#include <unordered_map>
 
 namespace coor
 {
@@ -57,6 +58,8 @@ private:
     std::string m_strConfigFileContent;
     std::string m_strConfigFileRelativePath;
     std::string m_strConfigFileName;
+    std::string m_strReqBody;
+    std::unordered_map<std::string, int> m_mapRetryTimes;
     util::CJsonObject m_oSetResultMsg;
 };
 

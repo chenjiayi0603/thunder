@@ -7,9 +7,7 @@
  * @note
  * Modify history:
  ******************************************************************************/
-#include <iostream>
 #include <cmd/sys_cmd/CmdNodeNotice.hpp>
-#include "util/json/CJsonObject.hpp"
 
 namespace net
 {

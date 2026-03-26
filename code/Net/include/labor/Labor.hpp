@@ -17,7 +17,10 @@
 #include "util/CommonUtils.hpp"
 #include "cmd/CW.hpp"
 #include "dispatcher/Nodes.hpp"
-#include "Attribution.hpp"
+#include "labor/types/ConnectionAttr.hpp"
+#include "labor/types/LoaderConfigVersionData.hpp"
+#include "labor/types/RouteNoticeVersionData.hpp"
+#include "labor/types/CustomConfigVersionData.hpp"
 #include "storage/dataproxy.pb.h"
 namespace netcustomcat {
 	class CatClientConnent;
@@ -645,6 +648,8 @@ public:
 
 
 	LoaderConfigVersionData& GetLoaderConfigVersionData(){return m_pLoaderConfigVersionData;}
+	RouteNoticeVersionData& GetRouteNoticeVersionData(){return m_pRouteNoticeVersionData;}
+	CustomConfigVersionData& GetCustomConfigVersionData(){return m_pCustomConfigVersionData;}
 	bool IsInitLogger()const {return m_bInitLogger;}
 	bool IsDataInitLogger() const {return m_bDataInitLogger;}
 	const std::string& GetServerConfFileName() {return m_strServerConfFileName;}			///< 服务器配置文件名称
@@ -753,6 +758,8 @@ protected:
 	netcustomcat::CatClientConnent* m_pCatClientConnent = nullptr;
 
 	LoaderConfigVersionData m_pLoaderConfigVersionData;
+	RouteNoticeVersionData m_pRouteNoticeVersionData;
+	CustomConfigVersionData m_pCustomConfigVersionData;
 };
 
 } /* namespace net */

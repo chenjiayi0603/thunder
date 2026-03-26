@@ -62,7 +62,7 @@ struct PoolOffloadAwaiter
 		{
 			return;
 		}
-		step_->m_coroHandle = h;
+		step_->m_context.handle = h;
 		BodyT body = std::move(body_);
 		std::shared_ptr<OutT> out = out_;
 		WorkFn work = std::move(work_);

@@ -15,43 +15,15 @@
 #include "../NetError.hpp"
 #include "Interface.hpp"
 
-#include "Attribution.hpp"
 #include "labor/Labor.hpp"
+#include "labor/WorkerContext.hpp"
 #include "step/StepNode.hpp"
 #include "step/MysqlStep.hpp"
-#include "cmd/Module.hpp"
-#include "codec/ThunderCodec.hpp"
 
 namespace net
 {
 
-struct tagRedisAttr;
-
-typedef Cmd* CreateCmd();
-
 class Worker;
-
-struct tagSo
-{
-    void* pSoHandle = nullptr;//不在本对象内管理
-    std::unique_ptr<Cmd> pCmd;
-    int iVersion = 0;
-    std::string strSoPath;
-    std::string strSymbol;
-    std::string strLoadTime = util::GetCurrentTime(20);
-    tagSo() = default;
-};
-
-struct tagModule
-{
-    void* pSoHandle = nullptr;//不在本对象内管理
-    std::unique_ptr<Module> pModule;
-    int iVersion = 0;
-    std::string strSoPath;
-    std::string strSymbol;
-    std::string strLoadTime = util::GetCurrentTime(20);
-    tagModule() = default;
-};
 
 struct tagIoWatcherData
 {
@@ -131,7 +103,7 @@ public:
 	*/
 	virtual void SetProcessName(const util::CJsonObject& oJsonConf)override;
     virtual const std::string& GetWorkerIdentify()override;
-    virtual int GetWorkerIndex() const override{return(m_iWorkerIndex);}
+    virtual int GetWorkerIndex() const override{return(m_ctx.iWorkerIndex);}
     /**
 	* @brief 注册步骤
 	*/
@@ -298,7 +270,7 @@ protected:
 	* @brief 初始化配置
 	* @param oJsonConf 配置
 	*/
-    virtual bool Init(util::CJsonObject& oJsonConf);
+    virtual bool Init(util::CJsonObject& oJsonConf)override;
     bool CreateEvents();
     void AddCmd(Cmd* pCmd,int iCmd);
     void PreloadCmd();
@@ -331,8 +303,8 @@ protected:
     bool Dispose(const tagConnectionAttr* pConn,const HttpMsg& oInHttpMsg, HttpMsg& oOutHttpMsg);
 public:
     //连接
-    const std::unordered_map<std::string, tagMsgShell>& GetMsgShellMap()const {return m_mapMsgShell;}
-    Nodes& GetNodesMgr() {return m_NodesMgr;}
+    const std::unordered_map<std::string, tagMsgShell>& GetMsgShellMap()const {return m_ctx.mapMsgShell;}
+    Nodes& GetNodesMgr() {return m_ctx.nodesMgr;}
     //动态库
     void LoadSo(util::CJsonObject& oSoConf,bool boForce=false);
     void ReloadSo(util::CJsonObject& oCmds);
@@ -343,48 +315,7 @@ public:
     tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
-    bool m_boAcceptTimeoutCheck = true;///< 接收的连接是否超时检查
-
-    int m_iManagerControlFd = 0;            ///< 与Manager父进程通信fd（控制流）
-    int m_iManagerDataFd = 0;               ///< 与Manager父进程通信fd（数据流）
-    int m_iWorkerIndex = 0;
-
-    int m_iRecvNum = 0;                     ///< 接收数据包（head+body）数量
-    int m_iRecvByte = 0;                    ///< 接收字节数（已到达应用层缓冲区）
-    int m_iSendNum = 0;                     ///< 发送数据包（head+body）数量（只到达应用层缓冲区，不一定都已发送出去）
-    int m_iSendByte = 0;                    ///< 发送字节数（已到达系统发送缓冲区，可认为已发送出去）
-
-    uint32 m_iInnerFdCounter = 0;  //服务端之间连接的文件描述符数量
-
-    std::unordered_map<int32, std::unique_ptr<ThunderCodec>> m_mapCodec;   ///< 编解码器 util::E_CODEC_TYPE, ThunderCodec*
-    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>> m_mapFdAttr;   ///< 连接的文件描述符属性
-    std::unordered_map<uint32, int32> m_mapSeq2WorkerIndex;      ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）
-
-    std::unordered_map<int32, std::unique_ptr<Cmd>> m_mapSysCmd;                  ///< 预加载逻辑处理命令（一般为系统级命令）
-    std::unordered_map<int32, std::unique_ptr<tagSo>> m_mapSo;                   ///< 动态加载业务逻辑处理命令
-    std::unordered_map<std::string, std::unique_ptr<tagModule>> m_mapModule;   ///< 动态加载的http逻辑处理模块
-
-    std::unordered_map<uint32, std::unique_ptr<Step>> m_mapCallbackStep;
-    std::unordered_map<int32, std::list<uint32> > m_mapHttpAttr;       ///< TODO 以类似处理redis回调的方式来处理http回调
-    std::unordered_map<redisAsyncContext*, tagRedisAttr*> m_mapRedisAttr;    ///< Redis连接属性
-    std::unordered_map<std::string, std::unordered_map<std::string, Session*> > m_mapCallbackSession;
-
-    //节点连接
-    std::unordered_map<std::string, tagMsgShell> m_mapMsgShell;            // key为Identify
-
-    Nodes m_NodesMgr;
-
-    //redis节点连接
-    std::unordered_map<std::string, const redisAsyncContext*> m_mapRedisContext;       ///< redis连接，key为identify(192.168.16.22:9988形式的IP+端口)
-    std::unordered_map<const redisAsyncContext*, std::string> m_mapContextIdentify;    ///< redis标识，与m_mapRedisContext的key和value刚好对调
-    //redis cluster连接
-    std::unordered_map<std::string,redisClusterAsyncContext*> m_mapRedisClusterContext;
-    std::unordered_map<redisClusterAsyncContext*,std::string> m_mapRedisClusterContextIdentify;
-    std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*> m_mapRedisClusterAttr;    ///< Redis连接属性
-    //mysql节点连接
-    typedef std::unordered_map<std::string, std::pair<std::set<util::MysqlAsyncConn*>::iterator,std::set<util::MysqlAsyncConn*> > > MysqlContextMap;
-    MysqlContextMap m_mapMysqlContext;       ///< mysql连接，key为identify(192.168.16.22:9988形式的IP+端口)
-	std::unordered_map<util::MysqlAsyncConn*, std::string> m_mapMysqlContextIdentify;    ///< mysql标识，与m_mapMysqlContext的key和value刚好对调
+    WorkerRuntimeContext m_ctx;
 };
 
 } /* namespace net */
