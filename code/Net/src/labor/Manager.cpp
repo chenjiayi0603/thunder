@@ -18,8 +18,6 @@
 #include "cmd/sys_cmd/CmdMgrLogicConfig.hpp"
 #include "cmd/sys_cmd/CmdMgrServerConfig.hpp"
 
-#include "util/FileUtil.h"
-
 namespace net
 {
 
@@ -1150,59 +1148,55 @@ void Manager::CreateLoader(bool boRestart)
 		return;
 	}
     SetProcessName(oCurrentConf);//先设置进程名
-    if (util::IsArchive(NACOS_CONFIGFILE))
-    {
-    	if (!oCurrentConf.Get("loader_process", GetLoaderConfigVersionData().m_bLoaderProcess))//"loader_process":true,
-    	{
-    		GetLoaderConfigVersionData().m_bLoaderProcess = true;
-    	}
+    // Loader 是否启用仅由配置项控制，默认关闭。
+    GetLoaderConfigVersionData().m_bLoaderProcess = false;
+    oCurrentConf.Get("loader_process", GetLoaderConfigVersionData().m_bLoaderProcess);
 
-    	if (GetLoaderConfigVersionData().IsLoaderProcess())
+    if (GetLoaderConfigVersionData().IsLoaderProcess())
+	{
+		SAFE_LOG4_INFO("%s fork Loader", __FUNCTION__);
+		LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();//需要先创建
+		RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
+        CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
+		pid_t iPid = fork();
+		if (iPid == 0)   // 子进程
 		{
-			SAFE_LOG4_INFO("%s fork Loader", __FUNCTION__);
-			LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();//需要先创建
-			RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
-            CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
-			pid_t iPid = fork();
-			if (iPid == 0)   // 子进程
+			StopPostToEventLoop();
+			ev_loop_destroy(m_loop);
+			CloseSocket(m_iS2SListenFd);
+			CloseSocket(m_iC2SListenFd);
+			Loader* pLoader = new Loader(m_strWorkPath,m_strConfFile,oCurrentConf,pLoaderConfigVersionMM);
+			pLoader->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
+            pLoader->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
+			pLoader->Run();
+			LOG4_FATAL("Loader terminated");
+			delete pLoader;
+			exit(-2);
+		}
+		else if (iPid > 0)   // 父进程
+		{
+			m_iConfigProcessPid = iPid;
+			if (0 == m_iConfigProcessStartTime)
 			{
-				StopPostToEventLoop();
-				ev_loop_destroy(m_loop);
-				CloseSocket(m_iS2SListenFd);
-				CloseSocket(m_iC2SListenFd);
-				Loader* pLoader = new Loader(m_strWorkPath,m_strConfFile,oCurrentConf,pLoaderConfigVersionMM);
-				pLoader->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
-                pLoader->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
-				pLoader->Run();
-				LOG4_FATAL("Loader terminated");
-				delete pLoader;
-				exit(-2);
+				m_iConfigProcessStartTime = util::GetSecond();
 			}
-			else if (iPid > 0)   // 父进程
+			if (!boRestart)
 			{
-				m_iConfigProcessPid = iPid;
-				if (0 == m_iConfigProcessStartTime)
-				{
-					m_iConfigProcessStartTime = util::GetSecond();
+				int iSleepCounter(0);
+				while (!GetLoaderConfigVersionData().IsConfigVersionChange() && (iSleepCounter < 3000))
+				{//等待拉取配置,最多等待3秒
+					usleep(1000);
+					++iSleepCounter;
 				}
-				if (!boRestart)
-				{
-					int iSleepCounter(0);
-					while (!GetLoaderConfigVersionData().IsConfigVersionChange() && (iSleepCounter < 3000))
-					{//等待拉取配置,最多等待3秒
-						usleep(1000);
-						++iSleepCounter;
-					}
-	//				GetLoaderConfigVersionData().UpdateLoaderConfigVersion();
-				}
-			}
-			else
-			{
-				std::cerr << "error "<<  errno << ":" << strerror_r(errno, m_pErrBuff, gc_iErrBuffLen) << std::endl;
-				exit(1);
+//				GetLoaderConfigVersionData().UpdateLoaderConfigVersion();
 			}
 		}
-    }
+		else
+		{
+			std::cerr << "error "<<  errno << ":" << strerror_r(errno, m_pErrBuff, gc_iErrBuffLen) << std::endl;
+			exit(1);
+		}
+	}
 }
 
 void Manager::CreateWorker()
@@ -1758,33 +1752,21 @@ void Manager::RefreshServer()
     {
     	if (boChanged)
     	{
-//    		if (m_oLastConf["custom"].ToString() != m_oCustomConf.ToString())
-//			{
-//				std::string strCustom = m_oCurrentConf["custom"].ToString();
-//				LOG4_INFO("update custom:(%s)",strCustom.c_str());
-//				SendToWorker(CMD_REQ_SET_NODE_CUSTOM_CONFIG, GetSequence(),strCustom);
-//			}
-//			if (m_oLastConf("log_level") != m_oCurrentConf("log_level"))
-//			{
-//				LOG4_TRACE("update log_level:(%s)",m_oCurrentConf("log_level").c_str());
-//				ResetLogLevel(m_iLogLevel);
-//				LogLevel oLogLevel;
-//				oLogLevel.set_log_level(m_iLogLevel);
-//				SendToWorker(CMD_REQ_SET_LOG_LEVEL, GetSequence(),oLogLevel.SerializeAsString());
-//			}
-//			// 更新动态库配置或重新加载动态库
-//			if (m_oLastConf["so"].ToString() != m_oCurrentConf["so"].ToString())
-//			{
-//				std::string strSo = m_oCurrentConf["so"].ToString();
-//				LOG4_INFO("update So:(%s)",strSo.c_str());
-//				SendToWorker(CMD_REQ_RELOAD_SO, GetSequence(),strSo);
-//			}
-//			if (m_oLastConf["module"].ToString() != m_oCurrentConf["module"].ToString())
-//			{
-//				std::string strModule = m_oCurrentConf["module"].ToString();
-//				LOG4_INFO("update Module:(%s)",strModule.c_str());
-//				SendToWorker(CMD_REQ_RELOAD_MODULE, GetSequence(),strModule);
-//			}
+   		    if (m_oLastConf["custom"].ToString() != m_oCustomConf.ToString())
+			{
+				std::string strCustom = m_oCurrentConf["custom"].ToString();
+				LOG4_INFO("update custom:(%s)",strCustom.c_str());
+				SendToWorker(CMD_REQ_SET_NODE_CUSTOM_CONFIG, GetSequence(),strCustom);
+			}
+			if (m_oLastConf("log_level") != m_oCurrentConf("log_level"))
+			{
+				LOG4_TRACE("update log_level:(%s)",m_oCurrentConf("log_level").c_str());
+				ResetLogLevel(m_iLogLevel);
+				LogLevel oLogLevel;
+				oLogLevel.set_log_level(m_iLogLevel);
+				SendToWorker(CMD_REQ_SET_LOG_LEVEL, GetSequence(),oLogLevel.SerializeAsString());
+			}
+
     	}
     }
     else

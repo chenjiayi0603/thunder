@@ -151,8 +151,6 @@ net::Cmd* create() \
 
 #define LOAD_CONFIG(conf,name,member) if (!conf.Get(name, member)) {LOG4_ERROR("config load(%s) failed",name);return false;}
 
-#define NACOS_CONFIGFILE ("./conf/nacos-cpp-cli.properties")
-
 namespace net
 {
 
