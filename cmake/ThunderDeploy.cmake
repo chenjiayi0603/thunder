@@ -7,9 +7,9 @@
 #   deploy/lib/libUtil.so
 #   deploy/lib/libNet.so
 #   deploy/lib/libProto.so
-#   deploy/Hello/bin/Hello
+#   deploy/HelloHttp/bin/HelloHttp
 #   deploy/Center/bin/Center
-#   deploy/Hello/plugins/ModuleHello.so
+#   deploy/HelloHttp/plugins/ModuleHello.so
 #   deploy/Interface/plugins/ModuleInterface.so
 #   deploy/Logic/plugins/CmdGetToken.so
 #   deploy/Center/plugins/*.so

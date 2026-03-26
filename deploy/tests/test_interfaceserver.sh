@@ -123,11 +123,11 @@ if [[ -n "${INTERFACE_BIN:-}" ]]; then
   BIN="${INTERFACE_BIN}"
 elif [[ -x "${DEPLOY_ROOT}/Interface/bin/Interface" ]]; then
   BIN="${DEPLOY_ROOT}/Interface/bin/Interface"
-elif [[ -x "${DEPLOY_ROOT}/Hello/bin/Hello" ]]; then
-  BIN="${DEPLOY_ROOT}/Hello/bin/Hello"
+elif [[ -x "${DEPLOY_ROOT}/HelloHttp/bin/HelloHttp" ]]; then
+  BIN="${DEPLOY_ROOT}/HelloHttp/bin/HelloHttp"
   echo "提示: 未找到 Interface/bin/Interface，使用 Hello 二进制 + Interface 配置（Net 主程序入口相同）" >&2
 else
-  echo "错误: 未找到可执行文件。请先编译安装：deploy/Interface/bin/Interface 或 deploy/Hello/bin/Hello" >&2
+  echo "错误: 未找到可执行文件。请先编译安装：deploy/Interface/bin/Interface 或 deploy/HelloHttp/bin/HelloHttp" >&2
   exit 1
 fi
 if [[ ! -x "${BIN}" ]]; then

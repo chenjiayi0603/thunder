@@ -6,18 +6,9 @@
     "inner_host": "127.0.0.1",
     "inner_port": 27007,
     "center": [
-        {
-            "host": "127.0.0.1",
-            "port": "27000"
-        },
-        {
-            "host": "127.0.0.1",
-            "port": "27022"
-        },
-        {
-            "host": "127.0.0.1",
-            "port": "27032"
-        }
+        { "host": "127.0.0.1", "port": "27000" },
+        { "host": "127.0.0.1", "port": "27022" },
+        { "host": "127.0.0.1", "port": "27032" }
     ],
     "server_name": "Hello_robot",
     "process_num": 1,
@@ -27,25 +18,12 @@
     "max_log_file_num": 10,
     "max_log_file_size": 20480000,
     "permission": {
-        "addr_permit": {
-            "stat_interval": 1.0,
-            "permit_num": 500
-        },
-        "uin_permit": {
-            "stat_interval": 1.0,
-            "permit_num": 500
-        }
+        "addr_permit": { "stat_interval": 1.0, "permit_num": 500 },
+        "uin_permit": { "stat_interval": 1.0, "permit_num": 500 }
     },
     "io_timeout": 300.0,
     "step_timeout": 5.0,
-    "log_levels": {
-        "FATAL": 50000,
-        "ERROR": 40000,
-        "WARN": 30000,
-        "INFO": 20000,
-        "DEBUG": 10000,
-        "TRACE": 0
-    },
+    "log_levels": { "FATAL": 50000, "ERROR": 40000, "WARN": 30000, "INFO": 20000, "DEBUG": 10000, "TRACE": 0 },
     "log_level": 10000,
     "load_so_interval": 60.0,
     "so": [],

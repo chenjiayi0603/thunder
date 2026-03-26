@@ -54,7 +54,9 @@ if(THUNDER_BUILD_NODE_PLUGINS)
 endif()
 
 # cmake --install 与 POST_BUILD 复制布局一致（路径相对于安装前缀，默认 deploy/）
-install(TARGETS Hello RUNTIME DESTINATION Hello/bin)
+install(TARGETS Hello RUNTIME DESTINATION HelloHttp/bin)
+install(TARGETS Hello RUNTIME DESTINATION HelloWs/bin RENAME HelloWs)
+install(TARGETS Hello RUNTIME DESTINATION HelloHttps/bin RENAME HelloHttps)
 install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
 
 if(THUNDER_BUILD_CENTER AND TARGET Center)
@@ -62,7 +64,8 @@ if(THUNDER_BUILD_CENTER AND TARGET Center)
 endif()
 
 if(THUNDER_BUILD_HELLO_PLUGINS AND TARGET ModuleHello)
-  install(TARGETS ModuleHello LIBRARY DESTINATION Hello/plugins)
+  install(TARGETS ModuleHello LIBRARY DESTINATION HelloHttp/plugins)
+  install(TARGETS ModuleHello LIBRARY DESTINATION HelloHttps/plugins)
 endif()
 
 if(THUNDER_BUILD_NODE_PLUGINS)

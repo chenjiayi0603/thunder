@@ -290,7 +290,8 @@ protected:
    	* @brief 创建连接
    	*/
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType = util::CODEC_PB_INTERNAL);
-    tagConnectionAttr* CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::string& strHost);
+    tagConnectionAttr* CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::string& strHost,
+            util::E_CODEC_TYPE eCodecType = util::CODEC_HTTP);
     tagConnectionAttr* CreateManagerFdAttr(int iFd,uint32 ulSeq);
     tagConnectionAttr* CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODEC_TYPE eCodecType);
     tagConnectionAttr* CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::string & strIdentify);
@@ -298,6 +299,8 @@ protected:
     bool DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter, bool bMsgShellNotice = true);
     /** Worker 退出时从 map/libev 摘除连接（含 Manager IPC），避免 Destroy() 在受保护 fd 上死循环 */
     void RemoveFdAttrForShutdown(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator iter);
+    E_CODEC_STATUS EncodeByConnectionCodec(tagConnectionAttr* pConn, ThunderCodec* pCodec, const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff);
+    E_CODEC_STATUS EncodeByConnectionCodec(tagConnectionAttr* pConn, ThunderCodec* pCodec, const HttpMsg& oHttpMsg, util::CBuffer* pBuff);
 
     //消息
     void MsgShellNotice(const tagConnectionAttr* pConn);

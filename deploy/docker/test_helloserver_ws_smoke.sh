@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Hello WebSocket 接入冒烟（Docker Compose / 宿主机直连）
 #
-# 假定 WebSocket 节点已监听（与 deploy/Hello/conf/HelloWs.json 一致：access_codec=5，默认 127.0.0.1:27010）。
-# Docker Compose 提供独立服务 hello_ws（默认 ./start_ws.sh）；若仅起 hello 容器则需自行在容器内 ./start_ws.sh 或宿主机 deploy/Hello 下等价启动。
+# 假定 WebSocket 节点已监听（与 deploy/HelloWs/conf/HelloWs.json 一致：access_codec=5，默认 127.0.0.1:27010）。
+# Docker Compose 提供独立服务 hello_ws（默认 /thunder/deploy/HelloWs/start.sh）。
 #
 # 本脚本只在宿主机用 python3 发 WebSocket 二进制帧，不要求 Hello 可执行文件在宿主机。
 # 卷挂载 ../../:/thunder 时建议存在:
-#   deploy/Hello/plugins/CmdHello.so
-#   deploy/Hello/plugins/ModuleShake.so
+#   deploy/HelloWs/plugins/CmdHello.so
+#   deploy/HelloWs/plugins/ModuleShake.so
 #
 # 用法（在 deploy/docker 下）:
 #   ./test_helloserver_ws_smoke.sh
@@ -39,8 +39,8 @@ HELLO_WS_CMD="${HELLO_WS_CMD:-20001}"
 HELLO_WS_EXPECT_HELLO_JSON="${HELLO_WS_EXPECT_HELLO_JSON:-1}"
 HELLO_TEST_REDIS_MYSQL="${HELLO_TEST_REDIS_MYSQL:-0}"
 
-PLUGIN_CMD_HELLO="${DEPLOY_ROOT}/Hello/plugins/CmdHello.so"
-PLUGIN_SHAKE="${DEPLOY_ROOT}/Hello/plugins/ModuleShake.so"
+PLUGIN_CMD_HELLO="${DEPLOY_ROOT}/HelloWs/plugins/CmdHello.so"
+PLUGIN_SHAKE="${DEPLOY_ROOT}/HelloWs/plugins/ModuleShake.so"
 
 _tcp_listening() {
   local port="$1"
@@ -72,7 +72,7 @@ fi
 
 if [[ "${REQUIRE_PORTS}" == "1" ]]; then
   if ! _tcp_listening "${HELLO_PORT}"; then
-    echo "错误: ${HELLO_HOST}:${HELLO_PORT} 未监听（请先启动 WS 节点：deploy/Hello/start_ws.sh 或容器内同等操作）" >&2
+    echo "错误: ${HELLO_HOST}:${HELLO_PORT} 未监听（请先启动 WS 节点：deploy/HelloWs/start.sh 或容器内同等操作）" >&2
     exit 1
   fi
   echo "已检测到端口监听: ${HELLO_PORT}"

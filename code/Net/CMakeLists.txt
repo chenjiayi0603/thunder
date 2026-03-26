@@ -38,7 +38,20 @@ endif()
 if(THUNDER_DEPLOY_AUTO)
   include("${CMAKE_SOURCE_DIR}/cmake/ThunderDeploy.cmake")
   thunder_deploy_copy(Net "lib/libNet.so")
-  thunder_deploy_copy(Hello "Hello/bin/Hello")
+  thunder_deploy_copy(Hello "HelloHttp/bin/HelloHttp")
+  add_custom_command(
+    TARGET Hello
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/HelloWs/bin"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/HelloHttps/bin"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Hello>"
+            "${THUNDER_DEPLOY_ROOT}/HelloWs/bin/HelloWs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Hello>"
+            "${THUNDER_DEPLOY_ROOT}/HelloHttps/bin/HelloHttps"
+    COMMENT "Deploy: deploy/HelloWs/bin/HelloWs + deploy/HelloHttps/bin/HelloHttps"
+  )
   if(THUNDER_BUILD_CENTER AND TARGET Center)
     # 与 deploy 脚本默认 CENTER_BIN=deploy/Center/bin/Center 一致
     thunder_deploy_copy(Center "Center/bin/Center")

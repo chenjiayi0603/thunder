@@ -160,7 +160,7 @@ services:
 
   hello:
     <<: [*thunder-node, *thunder-ulimits]
-    working_dir: /thunder/deploy/Hello
+    working_dir: /thunder/deploy/HelloHttp
     depends_on:
       center:
         condition: service_healthy
@@ -186,7 +186,7 @@ services:
 
   hello_ws:
     <<: [*thunder-node, *thunder-ulimits]
-    working_dir: /thunder/deploy/Hello
+    working_dir: /thunder/deploy/HelloWs
     depends_on:
       center:
         condition: service_healthy
@@ -199,8 +199,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start_ws.sh ./stop_ws.sh ./start.sh ./stop.sh 2>/dev/null || true
-        ./start_ws.sh
+        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
+        ./start.sh
         exec tail -f /dev/null
     deploy:
       resources:
@@ -211,6 +211,39 @@ services:
           memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "ss -tln | grep -q ':27010 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  hello_https:
+    <<: [*thunder-node, *thunder-ulimits]
+    working_dir: /thunder/deploy/HelloHttps
+    depends_on:
+      center:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./start.sh ./stop.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
+        ./scripts/gen_self_signed_https_cert.sh || true
+        ./start.sh
+        exec tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':27443 '"]
       interval: 2s
       timeout: 5s
       retries: 20

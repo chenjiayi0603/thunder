@@ -9,6 +9,7 @@
 #   POST_UP_WAIT_SEC                dev_up 完成后到开始测 HTTP 前的等待秒数（默认 15）
 #   SKIP_TEST_HELLOSERVER_SMOKE=1   跳过 test_helloserver_smoke.sh
 #   SKIP_TEST_HELLOSERVER_WS_SMOKE=1 跳过 test_helloserver_ws_smoke.sh
+#   SKIP_TEST_HELLOSERVER_HTTPS_SMOKE=1 跳过 test_helloserver_https_smoke.sh
 #   SKIP_TEST_INTERFACESERVER_SMOKE=1 跳过 test_interfaceserver_smoke.sh
 #   dev_up_logs.sh 常用变量子进程继承: SKIP_BUILD、SKIP_THIRD_PARTY、BUILD_JOBS、CMAKE_BUILD_TYPE 等
 #   各子脚本原有变量仍生效（PRE_CURL_SEC、HELLO_TEST_REDIS_MYSQL、REQUIRE_PORTS 等）
@@ -71,6 +72,12 @@ if [[ "${SKIP_TEST_HELLOSERVER_WS_SMOKE:-0}" != "1" ]]; then
   _run "test_helloserver_ws_smoke.sh" bash "${DOCKER_DIR}/test_helloserver_ws_smoke.sh"
 else
   echo "# 跳过 SKIP_TEST_HELLOSERVER_WS_SMOKE=1"
+fi
+
+if [[ "${SKIP_TEST_HELLOSERVER_HTTPS_SMOKE:-0}" != "1" ]]; then
+  _run "test_helloserver_https_smoke.sh" bash "${DOCKER_DIR}/test_helloserver_https_smoke.sh"
+else
+  echo "# 跳过 SKIP_TEST_HELLOSERVER_HTTPS_SMOKE=1"
 fi
 
 if [[ "${SKIP_TEST_INTERFACESERVER_SMOKE:-0}" != "1" ]]; then

@@ -116,7 +116,7 @@ HELLO_HOST=127.0.0.1 HELLO_PORT=27006 HELLO_PATH=/hello/hello \
 
 ## 配置说明
 
-- 节点配置示例：`deploy/Hello/conf/HelloTemplate.json`
+- 节点配置示例：`deploy/HelloHttp/conf/Hello.json`、`deploy/HelloWs/conf/HelloWs.json`、`deploy/HelloHttps/conf/HelloHttps.json`
 - 网络/节点基础入口：`code/Net/src/main.cpp`、`code/Net/src/labor/Manager.cpp`、`code/Net/src/labor/Worker.cpp`
 - 默认部署和启停脚本：`deploy/nodes.sh`
 

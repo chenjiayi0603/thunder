@@ -25,6 +25,7 @@ enum E_CODEC_TYPE
 	CODEC_TEST = 8,
 	CODEC_APP = 9,
 	CODEC_WEBSOCKET_EX_PB_APP = 10,        ///< websocket extent Protobuf（与app通信协议）
+    CODEC_HTTPS             = 11,       ///< HTTPS编解码（TLS传输层由上层实现）
 };
 
 class CStreamCodec

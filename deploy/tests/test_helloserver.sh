@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 启动 Hello 节点（deploy/Hello/bin/Hello，工作目录 deploy/Hello）
+# 启动 Hello HTTP 节点（deploy/HelloHttp/bin/HelloHttp，工作目录 deploy/HelloHttp）
 # 若已有 Hello_robot 进程则先结束；启动后对 /hello/hello 做 JSON POST 用例 + 可选 wrk 冒烟；
 # 脚本退出时（成功或失败）会再次 pkill Hello_robot，避免测试进程残留。
 #

@@ -5,7 +5,7 @@
 #   cd deploy && ./test_helloserver.sh
 #
 # 环境变量（可选）：
-#   HELLO_HOST       默认 127.0.0.1（与 deploy/Hello/conf/Hello.json 中 access_host 一致）
+#   HELLO_HOST       默认 127.0.0.1（与 deploy/HelloHttp/conf/Hello.json 中 access_host 一致）
 #   HELLO_PORT       默认 27006（access_port）
 #   HELLO_PATH       默认 /hello/hello（Hello.json module 里 ModuleHello 的 url_path）
 #   WRK_THREADS      wrk -t，默认 4

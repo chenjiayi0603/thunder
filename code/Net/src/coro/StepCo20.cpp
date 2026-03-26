@@ -67,6 +67,14 @@ bool LibevIo::IoBoolAwaitable::await_resume() noexcept
 
 void LibevIo::IoBoolAwaitable::StartOrFail() noexcept
 {
+    // 超时/故障或协程生命周期已结束时，避免继续发起新的异步发送。
+    if (pStep_ == nullptr || pStep_->m_iErrno != 0 || pStep_->m_bCoroutineCompleted)
+    {
+        forceResultReady_ = true;
+        forceResult_ = false;
+        return;
+    }
+
     const bool sent = startFn_ ? startFn_() : false;
 
     if (!sent)

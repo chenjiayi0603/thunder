@@ -19,7 +19,7 @@ deploy/Center/bin/Center
 deploy/Interface/bin/Interface
 code/Net/src/Hello
 code/Net/src/Center
-deploy/Hello/bin/Hello
+deploy/HelloHttp/bin/HelloHttp
 *.log
 *.pid
 deploy/Logic/bin/Logic
@@ -31,6 +31,11 @@ deploy/include/gtest/
 deploy/lib/
 build-agent/cmake_install.cmake
 build-agent/
-deploy/Hello/bin/HelloWs
+deploy/HelloWs/bin/HelloWs
 __pycache__/
 *.pyc
+deploy/HelloHttps/bin/HelloHttps
+deploy/HelloHttps/conf/certs/ca.crt
+deploy/HelloHttps/conf/certs/server.crt
+deploy/HelloHttps/conf/certs/server.key 
+deploy/HelloHttps/conf/certs/ca.key

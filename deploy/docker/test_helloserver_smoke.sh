@@ -7,7 +7,7 @@
 #
 # 本脚本只在宿主机发 curl，不要求 Hello 可执行文件在宿主机。
 # 但在卷挂载路径下（- ../../:/thunder），需要存在：
-#   deploy/Hello/plugins/ModuleHello.so
+#   deploy/HelloHttp/plugins/ModuleHello.so
 # 否则容器内可能路由失败或空响应。
 #
 # 用法（在 deploy/docker 下）:
@@ -36,7 +36,7 @@ REQUIRE_PORTS="${REQUIRE_PORTS:-0}"
 SKIP_PLUGIN_CHECK="${SKIP_PLUGIN_CHECK:-0}"
 HELLO_TEST_REDIS_MYSQL="${HELLO_TEST_REDIS_MYSQL:-0}"
 
-PLUGIN_SO="${DEPLOY_ROOT}/Hello/plugins/ModuleHello.so"
+PLUGIN_SO="${DEPLOY_ROOT}/HelloHttp/plugins/ModuleHello.so"
 
 _tcp_listening() {
   local port="$1"

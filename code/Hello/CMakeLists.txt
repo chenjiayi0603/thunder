@@ -35,7 +35,8 @@ thunder_plugin_link_net_proto_util(ModuleHello)
 
 if(THUNDER_DEPLOY_AUTO)
   include("${CMAKE_SOURCE_DIR}/cmake/ThunderDeploy.cmake")
-  thunder_deploy_copy(ModuleHello "Hello/plugins/ModuleHello.so")
+  thunder_deploy_copy(ModuleHello "HelloHttp/plugins/ModuleHello.so")
+  thunder_deploy_copy(ModuleHello "HelloHttps/plugins/ModuleHello.so")
 endif()
 
 set(_cmd_hello_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/CmdHello")
@@ -54,7 +55,28 @@ target_include_directories(CmdHello PRIVATE
 thunder_plugin_include_base(CmdHello)
 thunder_plugin_link_net_proto_util(CmdHello)
 if(THUNDER_DEPLOY_AUTO)
-  thunder_deploy_copy(CmdHello "Hello/plugins/CmdHello.so")
+  thunder_deploy_copy(CmdHello "HelloWs/plugins/CmdHello.so")
 endif()
 
-add_custom_target(HelloPlugins DEPENDS ModuleHello CmdHello)
+set(_module_shake_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/ModuleShake")
+add_library(ModuleShake SHARED
+  "${_module_shake_dir}/ModuleShake.cpp"
+  "${_hello_src}/CustomLogger.cpp"
+  "${_hello_src}/HelloSession.cpp"
+)
+set_target_properties(ModuleShake PROPERTIES OUTPUT_NAME "ModuleShake" PREFIX "")
+target_compile_features(ModuleShake PRIVATE cxx_std_20)
+target_compile_definitions(ModuleShake PRIVATE _LINUX_OS_ NODE_BEAT=10.0)
+target_include_directories(ModuleShake PRIVATE
+  "${_module_shake_dir}"
+  "${_hello_src}"
+  "${THUNDER_3PARTY}"
+  "${THUNDER_3PARTY}/cryptopp"
+)
+thunder_plugin_include_base(ModuleShake)
+thunder_plugin_link_net_proto_util(ModuleShake)
+if(THUNDER_DEPLOY_AUTO)
+  thunder_deploy_copy(ModuleShake "HelloWs/plugins/ModuleShake.so")
+endif()
+
+add_custom_target(HelloPlugins DEPENDS ModuleHello CmdHello ModuleShake)

@@ -1,6 +1,0 @@
-{
-    "access_control_allow_origin":"*",
-    "access_control_allow_headers":"Content-Type",
-    "access_control_allow_methods":"POST,GET",
-    "valid_time_delay":60
-}

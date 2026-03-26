@@ -9,6 +9,8 @@
  * Modify history:
  ******************************************************************************/
 #include <memory>
+#include <algorithm>
+#include <cctype>
 #include "hiredis_vip/async.h"
 #include "storage/RedisClusterLibevAttach.hpp"
 #include "absl/status/status.h"
@@ -28,6 +30,7 @@
 #include "codec/ProtoCodec.hpp"
 #include "codec/ClientMsgCodec.hpp"
 #include "codec/HttpCodec.hpp"
+#include "codec/HttpsCodec.hpp"
 #include "codec/CodecWebSocketJson.hpp"
 #include "codec/CodecWebSocketPb.hpp"
 #include "codec/CodecWebSocketPbApp.hpp"
@@ -540,12 +543,18 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                 return(false);
             }
             ThunderCodec* pCodec = codec_iter->second.get();
-            while (pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize)
+            while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
+                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
             {
                 oInMsgHead.Clear();
                 oInMsgBody.Clear();
 
                 E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
+                if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+                {
+                    conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
+                    conn_iter->second->pSendBuff->Compact(8192);
+                }
 //				#ifdef _DEBUG
 //                if (conn_iter->second->eCodecType == util::CODEC_TEST)
 //				{
@@ -650,7 +659,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         }
                         if (oOutMsgHead.ByteSize() > 0)
                         {
-                            eCodecStatus = pCodec->Encode(oOutMsgHead, oOutMsgBody, pConn->pSendBuff.get());
+                            eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutMsgHead, oOutMsgBody, pConn->pSendBuff.get());
                             if (CODEC_STATUS_OK == eCodecStatus)
                             {
                                 conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
@@ -703,7 +712,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         HttpMsg oOutHttpMsg;
                         if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
                         {
-                            if (util::CODEC_HTTP == pConn->eCodecType)
+                            if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
                             {
                             	pConn->dKeepAlive = 10;   // 未带KeepAlive参数的http协议，默认10秒钟关闭
                                 LOG4_TRACE("set dKeepAlive(%lf)",pConn->dKeepAlive);
@@ -742,7 +751,8 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
 										AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
 									}
                             	}
-                                else if (util::CODEC_HTTP == pConn->eCodecType && pConn->dKeepAlive > 0)
+                                else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                                                && pConn->dKeepAlive > 0)
                                 {
                                     // 无 Keep-Alive / Connection 时，上面未刷新定时器；accept 阶段 1s 检测仍在，
                                     // 异步 Step/协程回包前会误关连接（curl 52 Empty reply）
@@ -772,7 +782,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                             }
                             if (oOutHttpMsg.ByteSize() > 0)
                             {
-                                eCodecStatus = (pCodec)->Encode(oOutHttpMsg, pConn->pSendBuff.get());
+                                eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutHttpMsg, pConn->pSendBuff.get());
                                 if (CODEC_STATUS_OK == eCodecStatus)
                                 {
                                     conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
@@ -1817,12 +1827,30 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
 
     mapCodec.insert(std::make_pair(util::CODEC_PB_INTERNAL, std::make_unique<ProtoCodec>(util::CODEC_PB_INTERNAL)));
     mapCodec.insert(std::make_pair(util::CODEC_HTTP, std::make_unique<HttpCodec>(util::CODEC_HTTP)));
+    mapCodec.insert(std::make_pair(util::CODEC_HTTPS, std::make_unique<HttpsCodec>()));
     mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, std::make_unique<ClientMsgCodec>(util::CODEC_PRIVATE)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, std::make_unique<CodecWebSocketJson>(util::CODEC_WEBSOCKET_EX_JS)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, std::make_unique<CodecWebSocketPb>(util::CODEC_WEBSOCKET_EX_PB)));
 	mapCodec.insert(std::make_pair(util::CODEC_TEST, std::make_unique<CodecCustom>(util::CODEC_TEST)));
 	mapCodec.insert(std::make_pair(util::CODEC_APP, std::make_unique<AppMsgCodec>(util::CODEC_APP)));
 	mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, std::make_unique<CodecWebSocketPbApp>(util::CODEC_WEBSOCKET_EX_PB_APP)));
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        if (codec_iter != mapCodec.end())
+        {
+            HttpsCodec::HttpsConfig oHttpsCfg;
+            util::CJsonObject oHttpsConf = m_oCustomConf["https"];
+            util::CJsonObject oHttpsServer = oHttpsConf["server"];
+            util::CJsonObject oHttpsClient = oHttpsConf["client"];
+            oHttpsServer.Get("cert_file", oHttpsCfg.strServerCertFile);
+            oHttpsServer.Get("key_file", oHttpsCfg.strServerKeyFile);
+            oHttpsServer.Get("ca_file", oHttpsCfg.strServerCaFile);
+            oHttpsServer.Get("verify_client", oHttpsCfg.bServerVerifyClient);
+            oHttpsClient.Get("ca_file", oHttpsCfg.strClientCaFile);
+            oHttpsClient.Get("verify_peer", oHttpsCfg.bClientVerifyPeer);
+            static_cast<HttpsCodec*>(codec_iter->second.get())->SetHttpsConfig(oHttpsCfg);
+        }
+    }
 
     bool bCpuAffinity = false;
 	oJsonConf.Get("cpu_affinity", bCpuAffinity);
@@ -2449,6 +2477,14 @@ bool Worker::SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHe
 
 bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody)
 {
+    // auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
+    // if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
+    // {
+    //     LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
+    //               __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
+    //     return false;
+    // }
+
 	MsgHead oOutMsgHead;
 	MsgBody oOutMsgBody;
 	oOutMsgBody.set_body(strBody);
@@ -2465,6 +2501,14 @@ bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgH
 
 bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::unordered_map<std::string,std::string> &heads)
 {
+    // auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
+    // if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
+    // {
+    //     LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
+    //               __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
+    //     return false;
+    // }
+
 	HttpMsg oHttpMsg;
 	for(const auto & iter:heads)
 	{
@@ -2745,7 +2789,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                     if (oMsgHead.cmd() <= CMD_RSP_TELL_WORKER)   // 创建连接的过程
                     {
                         LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
+                        eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
                         if(oMsgHead.cmd() == CMD_RSP_TELL_WORKER)
                         {
                             conn_iter->second->ucConnectStatus = eConnectStatus_ok;
@@ -2758,7 +2802,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                     else    // 创建连接过程中的其他数据发送请求
                     {
                         LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                        eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pWaitForSendBuff.get());
+                        eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oMsgHead, oMsgBody, conn_iter->second->pWaitForSendBuff.get());
                         if (CODEC_STATUS_OK == eCodecStatus)//其他请求在连接过程中先不发送
                         {
                             return(true);
@@ -2769,13 +2813,13 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
                 else//连接已完成
                 {
                     LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                    eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
+                    eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
                 }
             }
             else
             {
                 LOG4_TRACE("codec_iter->second->Encode,oMsgHead.cmd(%u),connect status %u",oMsgHead.cmd(),conn_iter->second->ucConnectStatus);
-                eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
+                eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oMsgHead, oMsgBody, conn_iter->second->pSendBuff.get());
             }
             if (CODEC_STATUS_OK == eCodecStatus)
             {
@@ -3172,18 +3216,19 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
             }
             E_CODEC_STATUS eCodecStatus;
             if (util::CODEC_HTTP == conn_iter->second->eCodecType
+                    || util::CODEC_HTTPS == conn_iter->second->eCodecType
             		|| util::CODEC_WEBSOCKET_EX_PB == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_JS == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_PB_APP == conn_iter->second->eCodecType)
 			{
 				if (pConn->pWaitForSendBuff->ReadableBytes() > 0)   // 正在连接
 				{
-					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pWaitForSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pWaitForSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pWaitForSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pWaitForSendBuff->ReadableBytes());
 				}
 				else
 				{
-					eCodecStatus = (codec_iter->second)->Encode(oHttpMsg, pConn->pSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff->ReadableBytes());
 				}
 			}
@@ -3356,7 +3401,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
-	E_CODEC_STATUS eCodecStatus = codec_iter->second->Encode(oMsgHead, oMsgBody, pConn->pWaitForSendBuff.get());
+	E_CODEC_STATUS eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oMsgHead, oMsgBody, pConn->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
 		++iSendNum;
@@ -3384,7 +3429,15 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		return(false);
 	}
 	tagMsgShell stMsgShell(iFd,GetFdSequence());
-    tagConnectionAttr* pConnAttr = CreateHttpFdAttr(stMsgShell.iFd, stMsgShell.ulSeq,strHost);
+    util::E_CODEC_TYPE eHttpCodecType = util::CODEC_HTTP;
+    std::string strScheme = strUrlPath.substr(0, strUrlPath.find_first_of(':'));
+    std::transform(strScheme.begin(), strScheme.end(), strScheme.begin(),
+            [](unsigned char c) -> unsigned char { return std::tolower(c); });
+    if (strScheme == std::string("https"))
+    {
+        eHttpCodecType = util::CODEC_HTTPS;
+    }
+    tagConnectionAttr* pConnAttr = CreateHttpFdAttr(stMsgShell.iFd, stMsgShell.ulSeq, strHost, eHttpCodecType);
     if (!pConnAttr)
 	{
     	LOG4_ERROR("CreateHttpFdAttr null");
@@ -3397,7 +3450,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
-	E_CODEC_STATUS eCodecStatus = ((HttpCodec*)codec_iter->second.get())->Encode(oHttpMsg, pConnAttr->pWaitForSendBuff.get());
+	E_CODEC_STATUS eCodecStatus = EncodeByConnectionCodec(pConnAttr, codec_iter->second.get(), oHttpMsg, pConnAttr->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
 		++iSendNum;
@@ -4483,6 +4536,34 @@ bool Worker::AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, e
     }
 }
 
+E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, ThunderCodec* pCodec,
+        const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff)
+{
+    if (pConn == nullptr || pCodec == nullptr || pBuff == nullptr)
+    {
+        return CODEC_STATUS_ERR;
+    }
+    if (pConn->eCodecType == util::CODEC_HTTPS)
+    {
+        return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
+    }
+    return pCodec->Encode(oMsgHead, oMsgBody, pBuff);
+}
+
+E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, ThunderCodec* pCodec,
+        const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
+{
+    if (pConn == nullptr || pCodec == nullptr || pBuff == nullptr)
+    {
+        return CODEC_STATUS_ERR;
+    }
+    if (pConn->eCodecType == util::CODEC_HTTPS)
+    {
+        return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
+    }
+    return pCodec->Encode(oHttpMsg, pBuff);
+}
+
 tagConnectionAttr* Worker::CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::string & strIdentify)
 {
 	tagConnectionAttr* pConn = CreateFdAttr(iFd, ulSeq);
@@ -4540,6 +4621,14 @@ tagConnectionAttr* Worker::CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODE
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(nullptr);
 	}
+    if (eCodecType == util::CODEC_HTTPS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
+        }
+    }
 	return(pConn);
 }
 
@@ -4570,9 +4659,9 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
     }
 }
 
-tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::string& strHost)
+tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::string& strHost, util::E_CODEC_TYPE eCodecType)
 {
-	tagConnectionAttr* pConnAttr = CreateFdAttr(iFd, ulSeq,util::CODEC_HTTP);
+	tagConnectionAttr* pConnAttr = CreateFdAttr(iFd, ulSeq, eCodecType);
 	if (!pConnAttr)// 没有足够资源分配给新连接，直接close掉
 	{
 		close(iFd);
@@ -4599,6 +4688,14 @@ tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::str
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(nullptr);
 	}
+    if (eCodecType == util::CODEC_HTTPS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
+        }
+    }
 	return pConnAttr;
 }
 
@@ -4633,6 +4730,14 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     	LOG4_TRACE("refuse DestroyConnect on manager ipc fd(%u) control(%u) data(%u)",
     			pConn->iFd,iManagerControlFd,iManagerDataFd);
     	return false;
+    }
+    if (pConn->eCodecType == util::CODEC_HTTPS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<HttpsCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
+        }
     }
     LOG4_TRACE("%s disconnect, identify %s", pConn->szRemoteAddr, pConn->strIdentify.c_str());
     tagMsgShell stMsgShell(pConn->iFd,pConn->ulSeq);

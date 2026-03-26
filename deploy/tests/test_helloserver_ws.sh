@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 启动 WebSocket 接入 Hello 节点（deploy/Hello/bin/Hello + conf/HelloWs.json，access_codec=5）
+# 启动 WebSocket 接入 Hello 节点（deploy/HelloWs/bin/HelloWs + conf/HelloWs.json，access_codec=5）
 # 若已有 Hello_ws_robot 进程则先结束；握手 /hello/shake 后对 CodecWebSocketJson 二进制帧跑与 test_helloserver.sh 同构的 JSON 业务体（option 字段）；
 # 脚本退出时 pkill Hello_ws_robot，避免残留。
 #
@@ -7,7 +7,7 @@
 #       CONF=conf/HelloWs.json ./test_helloserver_ws.sh
 #
 # 环境变量:
-#   HELLO_HOST HELLO_PORT HELLO_SHAKE_PATH — 默认 127.0.0.1 27010 /hello/shake（与 deploy/Hello/conf/HelloWs.json 一致）
+#   HELLO_HOST HELLO_PORT HELLO_SHAKE_PATH — 默认 127.0.0.1 27010 /hello/shake（与 deploy/HelloWs/conf/HelloWs.json 一致）
 #   CURL_MAXTIME_WS           — 单次 socket 超时秒（默认 60）
 #   STARTUP_WAIT_SEC          — 启动后等待秒（默认 2）
 #   HELLO_WS_CMD              — WS 业务帧命令字（默认 20001，与 Hello.json 中 CmdHello 一致）
@@ -276,7 +276,7 @@ try:
 finally:
     sock.close()
 
-print("=== WebSocket Hello 用例完成；日志见 deploy/Hello/log/test_helloserver_ws.log ===")
+print("=== WebSocket Hello 用例完成；日志见 deploy/HelloWs/log/test_helloserver_ws.log ===")
 PY
 
 echo "提示: 未使用 wrk（WebSocket 与 test_helloserver.sh 的 HTTP wrk 场景不同）。" >&2
