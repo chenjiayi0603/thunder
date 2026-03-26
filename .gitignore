@@ -32,3 +32,5 @@ deploy/lib/
 build-agent/cmake_install.cmake
 build-agent/
 deploy/Hello/bin/HelloWs
+__pycache__/
+*.pyc
