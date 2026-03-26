@@ -319,7 +319,7 @@ bool Manager::AcceptServerConn(int iFd)
 
 bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 {
-    LOG4_TRACE("fd %d, seq %llu", pData->iFd, pData->ulSeq);
+    LOG4_TRACE("fd %d, seq %u", pData->iFd, pData->ulSeq);
     int iErrno = 0;
     int iReadLen = 0;
     auto conn_iter = m_mapFdAttr.find(pData->iFd);
@@ -332,17 +332,18 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
     	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pData->ulSeq != pConn->ulSeq)
         {
-            LOG4_TRACE("callback seq %llu not match the conn attr seq %llu",pData->ulSeq, conn_iter->second->ulSeq);
+            LOG4_TRACE("callback seq %u not match the conn attr seq %u", pData->ulSeq, conn_iter->second->ulSeq);
             DelEvent(watcher,pData);
             return(false);
         }
         iReadLen = pConn->pRecvBuff->ReadFD(pData->iFd, iErrno);
-        LOG4_TRACE("recv from fd %d data len %d. and conn_iter->second->pRecvBuff->ReadableBytes() = %d", pData->iFd, iReadLen,conn_iter->second->pRecvBuff->ReadableBytes());
+        LOG4_TRACE("recv from fd %d data len %d. and conn_iter->second->pRecvBuff->ReadableBytes() = %zu",
+                        pData->iFd, iReadLen, conn_iter->second->pRecvBuff->ReadableBytes());
         if (iReadLen > 0)
         {
             while (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize)
             {
-                LOG4_TRACE("pConn->pRecvBuff->ReadableBytes() = %d",pConn->pRecvBuff->ReadableBytes());
+                LOG4_TRACE("pConn->pRecvBuff->ReadableBytes() = %zu", pConn->pRecvBuff->ReadableBytes());
                 MsgHead oInMsgHead;
                 bool bResult = oInMsgHead.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
                 if (bResult)
@@ -370,7 +371,8 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
                             }
                             else
                             {
-                            	LOG4_TRACE("strIdentify: %s, m_mapCenterMsgShell.size()=%d",conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
+                                LOG4_TRACE("strIdentify: %s, m_mapCenterMsgShell.size()=%zu",
+                                                conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
 								auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
 								if (center_iter != m_mapCenterMsgShell.end())
 								{//center发来的
@@ -442,7 +444,8 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     	tagConnectionAttr* pConn = attr_iter->second.get();
         if ((pData->ulSeq != pConn->ulSeq) || (pData->iFd != pConn->iFd))
         {
-            LOG4_TRACE("callback seq %llu or ifd(%d) not match the conn attr seq %llu or ifd(%d)",pData->ulSeq, pData->iFd,pConn->ulSeq,pConn->iFd);
+            LOG4_TRACE("callback seq %u or ifd(%d) not match the conn attr seq %u or ifd(%d)",
+                            pData->ulSeq, pData->iFd, pConn->ulSeq, pConn->iFd);
             DelEvent(watcher,pData);
             return(false);
         }
@@ -466,8 +469,8 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         else if (iWriteLen > 0)
         {
-        	pConn->dActiveTime = ev_now(m_loop);
-        	if (iWriteLen == iNeedWriteLen) // 已无内容可写，取消监听fd写事件
+            pConn->dActiveTime = ev_now(m_loop);
+            if (iWriteLen == iNeedWriteLen) // 已无内容可写，取消监听fd写事件
             {
                 RemoveIoWriteEvent(pConn);
             }
@@ -519,7 +522,7 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     {
         if (pData->ulSeq != iter->second->ulSeq || pData->iFd != iter->second->iFd)
         {
-            LOG4_TRACE("callback seq %llu not match the conn attr seq %llu",pData->ulSeq, iter->second->ulSeq);
+            LOG4_TRACE("callback seq %u not match the conn attr seq %u", pData->ulSeq, iter->second->ulSeq);
             DelEvent(watcher,pData);
             return(false);
         }
@@ -665,8 +668,8 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
         }
         else
         {
-        	LOG4_ERROR("pConn iFd(%d) ulSeq(%llu) stMsgShell iFd(%d) ulSeq(%llu) not match!",
-        			pConn->iFd,pConn->ulSeq,stMsgShell.iFd,stMsgShell.ulSeq);
+            LOG4_ERROR("pConn iFd(%d) ulSeq(%u) stMsgShell iFd(%d) ulSeq(%u) not match!",
+                            pConn->iFd, pConn->ulSeq, stMsgShell.iFd, stMsgShell.ulSeq);
         }
     }
     return(false);
@@ -747,7 +750,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
         }
         else
         {
-            LOG4_ERROR("fd %d sequence %llu not match the iFd(%d) sequence %llu in m_mapFdAttr",
+            LOG4_ERROR("fd %d sequence %u not match the iFd(%d) sequence %u in m_mapFdAttr",
                             stMsgShell.iFd, stMsgShell.ulSeq, iter->second->iFd,iter->second->ulSeq);
             return(false);
         }
@@ -783,7 +786,7 @@ bool Manager::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::strin
         }
         else
         {
-            LOG4_ERROR("fd %d sequence %llu not match the sequence %llu in m_mapFdAttr",
+            LOG4_ERROR("fd %d sequence %u not match the sequence %u in m_mapFdAttr",
                             stMsgShell.iFd, stMsgShell.ulSeq, iter->second->ulSeq);
             return(false);
         }
@@ -854,8 +857,8 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 		pConn->pWaitForSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
 		LOG4_TRACE("%s(),write oMsgBody size(%u)", __FUNCTION__,oMsgBody.ByteSize());
 		pConn->strIdentify = strIdentify;
-		LOG4_TRACE("fd %d seq %u identify %s.iter->second->pWaitForSendBuff->ReadableBytes()=%u", iFd, ulSeq, strIdentify.c_str(),
-						pConn->pWaitForSendBuff->ReadableBytes());
+        LOG4_TRACE("fd %d seq %u identify %s.iter->second->pWaitForSendBuff->ReadableBytes()=%zu",
+                        iFd, ulSeq, strIdentify.c_str(), pConn->pWaitForSendBuff->ReadableBytes());
 		m_mapSeq2WorkerIndex.insert(std::make_pair(ulSeq, iWorkerIndex));
 		auto center_iter = m_mapCenterMsgShell.find(strIdentify);
 		if (center_iter != m_mapCenterMsgShell.end())
@@ -863,7 +866,12 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 			center_iter->second.iFd = iFd;
 			center_iter->second.ulSeq = ulSeq;
 		}
-		connect(iFd,&addr, sizeof(addr));
+        if (connect(iFd, &addr, sizeof(addr)) < 0 && errno != EINPROGRESS)
+        {
+            LOG4_ERROR("connect error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            DestroyConnect(m_mapFdAttr.find(iFd));
+            return false;
+        }
 		return(true);
     }
     else    // 没有足够资源分配给新连接，直接close掉
@@ -1083,7 +1091,8 @@ bool Manager::Init()
     	// CenterServer只有一个Worker
         std::string strIdentify = m_oCurrentConf["center"][i]("host") + std::string(":") + m_oCurrentConf["center"][i]("port") + std::string(".0");
         tagMsgShell stMsgShell;
-        LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %llu) = %u",strIdentify.c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
+        LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %u)", strIdentify.c_str(),
+                        stMsgShell.iFd, stMsgShell.ulSeq);
         m_mapCenterMsgShell.insert(std::make_pair(strIdentify, stMsgShell));
     }
 #ifdef WORKER_OVERDUE

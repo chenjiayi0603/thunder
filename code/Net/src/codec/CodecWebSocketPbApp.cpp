@@ -381,7 +381,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
             ullPayload = htonll(ullPayload);
             iWriteLen = pBuff->Write(&ullPayload, sizeof(ullPayload));
             iHadWriteLen += iWriteLen;
-            LOG4_TRACE("websocket head iNeedWriteLen = %d,payloadLen(%d)",2 + sizeof(ullPayload),payloadLen);
+            LOG4_TRACE("websocket head iNeedWriteLen = %zu,payloadLen(%d)", 2 + sizeof(ullPayload), payloadLen);
         }
         else if (payloadLen >= 126)
         {
@@ -394,7 +394,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
             unPayload = htons(unPayload);
             iWriteLen = pBuff->Write(&unPayload, sizeof(unPayload));
             iHadWriteLen += iWriteLen;
-            LOG4_TRACE("websocket head iNeedWriteLen = %d,payloadLen(%d)",2 + sizeof(unPayload),payloadLen);
+            LOG4_TRACE("websocket head iNeedWriteLen = %zu,payloadLen(%d)", 2 + sizeof(unPayload), payloadLen);
         }
         else //if (payloadLen < 126)
         {
@@ -409,7 +409,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
         iNeedWriteLen = sizeof(stAppMsgHead);
         iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
         iHadWriteLen += iWriteLen;
-        LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d",sizeof(stAppMsgHead), iWriteLen);
+        LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
         if (iWriteLen != iNeedWriteLen)
         {
             LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -435,8 +435,8 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
         }
         iHadWriteLen += iWriteLen;
         LOG4_TRACE("body iNeedWriteLen = %d, iWriteLen = %d",iNeedWriteLen, iWriteLen);
-        LOG4_TRACE("oMsgBody.ByteSize() = %d,oSwitchMsgBody.ByteSize() = %d,sizeof(stAppMsgHead) = %d,iHadWriteLen = %d(compress or encrypt maybe)",
-                            oMsgBody.ByteSize(),oMsgSwitchBody.ByteSize(),sizeof(stAppMsgHead), iHadWriteLen);
+        LOG4_TRACE("oMsgBody.ByteSize() = %d,oSwitchMsgBody.ByteSize() = %d,sizeof(stAppMsgHead) = %zu,iHadWriteLen = %d(compress or encrypt maybe)",
+                            oMsgBody.ByteSize(), oMsgSwitchBody.ByteSize(), sizeof(stAppMsgHead), iHadWriteLen);
     }
     return (CODEC_STATUS_OK);
 }
@@ -467,7 +467,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const HttpMsg& oHttpMsg,util::CBuffer
 
 E_CODEC_STATUS CodecWebSocketPbApp::EncodeHandShake(const HttpMsg& oHttpMsg,util::CBuffer* pBuff)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu",
                             __FUNCTION__, pBuff->ReadableBytes(),pBuff->GetReadIndex(), pBuff->GetWriteIndex());
     m_mapAddingHttpHeader.clear();
     if (oHttpMsg.http_major() == 0 && oHttpMsg.http_minor() == 0)//1.1
@@ -523,7 +523,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::EncodeHandShake(const HttpMsg& oHttpMsg,util
     size_t iWriteIndex = pBuff->GetWriteIndex();
     LOG4_TRACE("%s", pBuff->GetRawReadBuffer());
     pBuff->SetWriteIndex(iWriteIndex - iWriteSize);
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u, iHadWriteSize = %d",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu, iHadWriteSize = %d",
                     __FUNCTION__, pBuff->ReadableBytes(),pBuff->GetReadIndex(), pBuff->GetWriteIndex(),iHadWriteSize);
     m_mapAddingHttpHeader.clear();
     return (CODEC_STATUS_OK);
@@ -531,7 +531,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::EncodeHandShake(const HttpMsg& oHttpMsg,util
 
 E_CODEC_STATUS CodecWebSocketPbApp::EncodeHttp(const HttpMsg& oHttpMsg,util::CBuffer* pBuff)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex(),pBuff->GetWriteIndex());
     if (oHttpMsg.http_major() == 0 && oHttpMsg.http_minor() == 0)
     {
@@ -1025,7 +1025,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::EncodeHttp(const HttpMsg& oHttpMsg,util::CBu
     size_t iWriteIndex = pBuff->GetWriteIndex();
     LOG4_TRACE("%s", pBuff->GetRawReadBuffer());
     pBuff->SetWriteIndex(iWriteIndex - iWriteSize);
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u, iHadWriteSize = %d",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu, iHadWriteSize = %d",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex(),
                     pBuff->GetWriteIndex(), iHadWriteSize);
     m_mapAddingHttpHeader.clear();
@@ -1279,11 +1279,11 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
             if (pBuff->ReadableBytes() < uiPayload)
             {
                 pBuff->SetReadIndex(iReadIdx);
-                LOG4_TRACE("wait for data.ReadableBytes:%u,Payload:%u",
+                LOG4_TRACE("wait for data.ReadableBytes:%zu,Payload:%u",
                                 pBuff->ReadableBytes(),uiPayload);
                 return (CODEC_STATUS_PAUSE);
             }
-            LOG4_TRACE("uiPayload %llu", uiPayload);
+            LOG4_TRACE("uiPayload %u", uiPayload);
         }
         {//payload data
             char cData;
@@ -1301,14 +1301,14 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
             std::string strPayload;
             strPayload.resize(pBuff->ReadableBytes());
             strPayload.assign(pBuff->GetRawReadBuffer(), pBuff->ReadableBytes());
-            LOG4_TRACE("ReadableBytes(%u) < uiHeadSize(%u),strPayload(%s),wait for data",
+            LOG4_TRACE("ReadableBytes(%zu) < uiHeadSize(%zu),strPayload(%s),wait for data",
                             pBuff->ReadableBytes(), uiHeadSize,strPayload.c_str());
             pBuff->SetReadIndex(iReadIdx);
             return (CODEC_STATUS_PAUSE);
         }
 
         {//处理app头
-        	LOG4_TRACE("%s() pBuff->ReadableBytes() = %u iReadIdx = %d", __FUNCTION__, pBuff->ReadableBytes(),iReadIdx);
+            LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu iReadIdx = %d", __FUNCTION__, pBuff->ReadableBytes(), iReadIdx);
 
 			size_t uiHeadSize = sizeof(tagAppMsgHead);
 			if (pBuff->ReadableBytes() >= uiHeadSize)
@@ -1329,7 +1329,8 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
 				}
 		#endif
 				stAppMsgHead.seq = ntohl(stAppMsgHead.seq);
-				LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %u",stAppMsgHead.cmd, stAppMsgHead.seq, stAppMsgHead.len,pBuff->ReadableBytes());
+                LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %zu",
+                                stAppMsgHead.cmd, stAppMsgHead.seq, stAppMsgHead.len, pBuff->ReadableBytes());
 				oMsgHead.set_cmd(stAppMsgHead.cmd);
 		//        oMsgHead.set_msgbody_len(stAppMsgHead.len);
 				oMsgHead.set_seq(stAppMsgHead.seq);
@@ -1377,7 +1378,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
 					}
 					else
 					{
-						LOG4_WARN("cmd[%u], seq[%lu] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
+                        LOG4_WARN("cmd[%u], seq[%u] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
 						return(CODEC_STATUS_ERR);
 					}
 				}

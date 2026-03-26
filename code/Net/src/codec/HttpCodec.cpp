@@ -7,7 +7,6 @@
  * @note
  * Modify history:
  ******************************************************************************/
-#include <iostream>
 #include "HttpCodec.hpp"
 #include "util/StringCoder.hpp"
 #include "CodecCommon.hpp"
@@ -54,7 +53,7 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
     if (eConnectStatus_init == pConn->ucConnectStatus)
     {
         // Do not pass full recv buffer into LOG4 %s: binary/NULs and large snapshots can corrupt log4cplus buffers (seen as mangled __FILE__ on next line).
-        LOG4_TRACE("%s() pBuff->ReadableBytes() = %u (init http, body omitted from log)", __FUNCTION__,
+        LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu (init http, body omitted from log)", __FUNCTION__,
                         pConn->pRecvBuff->ReadableBytes());
         E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(),oMsgHead,oMsgBody);
         if (CODEC_STATUS_OK == eCodecStatus)//第一个消息解析成功则连接初始化成功
@@ -108,7 +107,7 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, MsgBody
 
 E_CODEC_STATUS HttpCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex(), pBuff->GetWriteIndex());
     if (oHttpMsg.ByteSize() > 64000000) // pb 最大限制
     {
@@ -628,7 +627,7 @@ E_CODEC_STATUS HttpCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
     size_t iWriteIndex = pBuff->GetWriteIndex();
     LOG4_TRACE("%s", pBuff->GetRawReadBuffer());
     pBuff->SetWriteIndex(iWriteIndex - iWriteSize);
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u, ReadIndex = %u, WriteIndex = %u, iHadWriteSize = %d",
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu, ReadIndex = %zu, WriteIndex = %zu, iHadWriteSize = %d",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex(), pBuff->GetWriteIndex(), iHadWriteSize);
     m_mapAddingHttpHeader.clear();
     return(CODEC_STATUS_OK);
@@ -704,7 +703,7 @@ const std::string& HttpCodec::ToString(const HttpMsg& oHttpMsg)
     LOG4_TRACE("%s()", __FUNCTION__);
     m_strHttpString.clear();
     char prover[16];
-    sprintf(prover, "HTTP/%u.%u", oHttpMsg.http_major(), oHttpMsg.http_minor());
+    snprintf(prover, sizeof(prover), "HTTP/%u.%u", oHttpMsg.http_major(), oHttpMsg.http_minor());
 
     if (HTTP_REQUEST == oHttpMsg.type())
     {
@@ -723,8 +722,8 @@ const std::string& HttpCodec::ToString(const HttpMsg& oHttpMsg)
         m_strHttpString += prover;
         if (oHttpMsg.status_code() > 0)
         {
-            char tmp[10];
-            sprintf(tmp, " %u\r\n", oHttpMsg.status_code());
+            char tmp[16];
+            snprintf(tmp, sizeof(tmp), " %u\r\n", oHttpMsg.status_code());
             m_strHttpString += tmp;
         }
     }

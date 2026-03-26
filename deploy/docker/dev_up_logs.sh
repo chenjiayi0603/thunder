@@ -3,6 +3,7 @@
 #
 # 用法（仓库任意路径）:
 #   ./deploy/docker/dev_up_logs.sh
+#   ./deploy/docker/test_all_docker_smoke.sh   # 起栈 + docker 下全部 smoke + down
 #   ./deploy/docker/dev_up_logs.sh down                  # 仅关闭 Compose 栈（等价 stop）
 #   ./deploy/docker/dev_up_logs.sh status                # 仅查看 Compose 容器状态（等价 ps）
 #   ./deploy/docker/dev_up_logs.sh restart               # 若有运行中容器则先 down，再走构建/启动/日志；无则跳过 down

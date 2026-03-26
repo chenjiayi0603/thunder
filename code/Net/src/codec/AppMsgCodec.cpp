@@ -8,7 +8,6 @@
  * Modify history:
  ******************************************************************************/
 #include <netinet/in.h>
-#include "protocol/oss_sys.pb.h"
 #include "AppMsgCodec.hpp"
 
 
@@ -150,14 +149,14 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     int iNeedWriteLen = sizeof(stAppMsgHead);
     if (oMsgBody.body().size() == 0)    // 无包体（心跳包等）
     {
-    	LOG4_TRACE("cmd %u, seq %u, body size %u", oMsgHead.cmd(), oMsgHead.seq(), oMsgBody.body().size());
+    	LOG4_TRACE("cmd %u, seq %u, body size %zu", oMsgHead.cmd(), oMsgHead.seq(), oMsgBody.body().size());
 #ifdef USE_HEAD_LEN
     	stAppMsgHead.len = htonl((unsigned int)APP_HEAD_LEN);
 #else
     	stAppMsgHead.len = htonl((unsigned int)0);
 #endif
         iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
-        LOG4_TRACE("sizeof(stAppMsgHead) = %d, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
+        LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
         if (iWriteLen != iNeedWriteLen)
         {
             LOG4_ERROR("buff write head iWriteLen != sizeof(stAppMsgHead)");
@@ -168,7 +167,7 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     }
     MsgBody oMsgSwitchBody;
 	oMsgSwitchBody.set_body(oMsgBody.body());//只是发送body字段
-	LOG4_TRACE("cmd %u, seq %u, len %u body size %u", oMsgHead.cmd(), oMsgHead.seq(), oMsgSwitchBody.ByteSize(),oMsgBody.body().size());
+	LOG4_TRACE("cmd %u, seq %u, len %u body size %zu", oMsgHead.cmd(), oMsgHead.seq(), oMsgSwitchBody.ByteSize(),oMsgBody.body().size());
     iHadWriteLen += iWriteLen;
     if ((gc_app_Aes_ReserveBit & stAppMsgHead.reserve))///< 采用256位aes 0x04
 	{
@@ -194,7 +193,7 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
 		stAppMsgHead.len = htonl((unsigned int)destData.size());
 #endif
 		iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
-		LOG4_TRACE("sizeof(stAppMsgHead) = %d, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
+		LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
 		if (iWriteLen != iNeedWriteLen)
 		{
 			LOG4_ERROR("buff write head iWriteLen != sizeof(stAppMsgHead)");
@@ -219,7 +218,7 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     	stAppMsgHead.len = htonl((unsigned int)oMsgSwitchBody.ByteSize());
 #endif
     	iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
-        LOG4_TRACE("sizeof(stAppMsgHead) = %d, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
+        LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
         if (iWriteLen != iNeedWriteLen)
         {
             LOG4_ERROR("buff write head iWriteLen != sizeof(stAppMsgHead)");
@@ -244,7 +243,7 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
 
 E_CODEC_STATUS AppMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u", __FUNCTION__, pBuff->ReadableBytes());
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu", __FUNCTION__, pBuff->ReadableBytes());
     size_t uiHeadSize = sizeof(tagAppMsgHead);
     if (pBuff->ReadableBytes() >= uiHeadSize)
     {
@@ -265,7 +264,8 @@ E_CODEC_STATUS AppMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgB
         }
 #endif
         stAppMsgHead.seq = ntohl(stAppMsgHead.seq);
-        LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %u",stAppMsgHead.cmd, stAppMsgHead.seq, stAppMsgHead.len,pBuff->ReadableBytes());
+        LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %zu",
+                        stAppMsgHead.cmd, stAppMsgHead.seq, stAppMsgHead.len, pBuff->ReadableBytes());
         oMsgHead.set_cmd(stAppMsgHead.cmd);
 //        oMsgHead.set_msgbody_len(stAppMsgHead.len);
         oMsgHead.set_seq(stAppMsgHead.seq);
@@ -311,7 +311,7 @@ E_CODEC_STATUS AppMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgB
             }
             else
             {
-                LOG4_WARN("cmd[%u], seq[%lu] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
+                LOG4_WARN("cmd[%u], seq[%u] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
                 return(CODEC_STATUS_ERR);
             }
         }

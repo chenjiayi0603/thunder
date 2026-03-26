@@ -23,7 +23,7 @@ ProtoCodec::~ProtoCodec()
 
 E_CODEC_STATUS ProtoCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes()=%u", __FUNCTION__, pBuff->ReadableBytes());
+    LOG4_TRACE("%s() pBuff->ReadableBytes()=%zu", __FUNCTION__, pBuff->ReadableBytes());
     if (oMsgBody.ByteSize() > 64000000) // pb 最大限制
     {
         LOG4_ERROR("oHttpMsg.ByteSize() > 64000000");
@@ -55,7 +55,7 @@ E_CODEC_STATUS ProtoCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBo
     if (iWriteLen == iNeedWriteLen)
     {
         LOG4_TRACE("buff write msgbody iWriteLen(%d)",iWriteLen);
-        LOG4_TRACE("pBuff->ReadableBytes()=%u", pBuff->ReadableBytes());
+        LOG4_TRACE("pBuff->ReadableBytes()=%zu", pBuff->ReadableBytes());
 //        pBuff->Compact(8192);
         return(CODEC_STATUS_OK);
     }
@@ -90,7 +90,7 @@ E_CODEC_STATUS ProtoCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Ms
 
 E_CODEC_STATUS ProtoCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes()=%d, pBuff->GetReadIndex()=%d",
+    LOG4_TRACE("%s() pBuff->ReadableBytes()=%zu, pBuff->GetReadIndex()=%zu",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex());
     if ((int)(pBuff->ReadableBytes()) >= gc_uiMsgHeadSize)
     {
@@ -114,7 +114,7 @@ E_CODEC_STATUS ProtoCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBo
                 }
                 else
                 {
-                    LOG4_ERROR("cmd[%u], seq[%lu] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
+                    LOG4_ERROR("cmd[%u], seq[%u] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
                     return(CODEC_STATUS_ERR);
                 }
             }

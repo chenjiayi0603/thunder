@@ -46,7 +46,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
     if (oMsgHead.msgbody_len() == 0)    // 无包体（心跳包等）
     {
         iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
-        LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
+        LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
         if (iWriteLen != iNeedWriteLen)
         {
             LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -60,7 +60,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
     if (stClientMsgHead.encript == 0)       // 不压缩也不加密
     {
         iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
-        LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
+        LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
         if (iWriteLen != iNeedWriteLen)
         {
             LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -121,7 +121,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
         {
             stClientMsgHead.body_len = htonl((unsigned int)strEncryptData.size());
             iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
-            LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
+            LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
             if (iWriteLen != iNeedWriteLen)
             {
                 LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -142,7 +142,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
         {
             stClientMsgHead.body_len = htonl((unsigned int)strCompressData.size());
             iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
-            LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
+            LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
             if (iWriteLen != iNeedWriteLen)
             {
                 LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -162,7 +162,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
         else    // 无效的压缩或加密算法，打包原数据
         {
             iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
-            LOG4_TRACE("sizeof(stClientMsgHead) = %d, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
+            LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
             if (iWriteLen != iNeedWriteLen)
             {
                 LOG4_ERROR("buff write head iWriteLen != sizeof(stClientMsgHead)");
@@ -187,7 +187,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
 
 E_CODEC_STATUS ClientMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s() pBuff->ReadableBytes() = %u", __FUNCTION__, pBuff->ReadableBytes());
+    LOG4_TRACE("%s() pBuff->ReadableBytes() = %zu", __FUNCTION__, pBuff->ReadableBytes());
     size_t uiHeadSize = sizeof(tagClientMsgHead);
     if (pBuff->ReadableBytes() >= uiHeadSize)
     {
@@ -198,7 +198,7 @@ E_CODEC_STATUS ClientMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, M
         stClientMsgHead.body_len = ntohl(stClientMsgHead.body_len);
         stClientMsgHead.seq = ntohl(stClientMsgHead.seq);
         stClientMsgHead.checksum = ntohs(stClientMsgHead.checksum);
-        LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %u",
+        LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %zu",
                         stClientMsgHead.cmd, stClientMsgHead.seq, stClientMsgHead.body_len,
                         pBuff->ReadableBytes());
         oMsgHead.set_cmd(((unsigned int)stClientMsgHead.encript << 24) | stClientMsgHead.cmd);
@@ -297,7 +297,7 @@ E_CODEC_STATUS ClientMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, M
             }
             else
             {
-                LOG4_WARN("cmd[%u], seq[%lu] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
+                LOG4_WARN("cmd[%u], seq[%u] oMsgBody.ParseFromArray() error!", oMsgHead.cmd(), oMsgHead.seq());
                 return(CODEC_STATUS_ERR);
             }
         }

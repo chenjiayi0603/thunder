@@ -24,7 +24,7 @@ CodecCustom::~CodecCustom()
 
 E_CODEC_STATUS CodecCustom::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff)
 {
-    LOG4_TRACE("pBuff->ReadableBytes()=%u, oMsgHead.ByteSize() = %d", pBuff->ReadableBytes(), oMsgHead.ByteSize());
+    LOG4_TRACE("pBuff->ReadableBytes()=%zu, oMsgHead.ByteSize() = %d", pBuff->ReadableBytes(), oMsgHead.ByteSize());
     int iHadWriteLen = 0;
     int iWriteLen = 0;
     int iNeedWriteLen = sizeof(clientMsgHead);
@@ -60,7 +60,7 @@ E_CODEC_STATUS CodecCustom::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
 
 E_CODEC_STATUS CodecCustom::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("pBuff->ReadableBytes() = %u", pBuff->ReadableBytes());
+    LOG4_TRACE("pBuff->ReadableBytes() = %zu", pBuff->ReadableBytes());
     size_t uiHeadSize = sizeof(clientMsgHead);
     if (pBuff->ReadableBytes() >= uiHeadSize)
     {
@@ -70,7 +70,7 @@ E_CODEC_STATUS CodecCustom::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgB
         LOG4_TRACE("=======packet len = %u, packet seq = %u==========", stMsgHead.body_len, stMsgHead.seq);
         stMsgHead.body_len = ntohs(stMsgHead.body_len);
         stMsgHead.seq = ntohl(stMsgHead.seq);
-        LOG4_TRACE("seq %u, len %u, pBuff->ReadableBytes() %u",stMsgHead.seq, stMsgHead.body_len,pBuff->ReadableBytes());
+        LOG4_TRACE("seq %u, len %u, pBuff->ReadableBytes() %zu", stMsgHead.seq, stMsgHead.body_len, pBuff->ReadableBytes());
         oMsgHead.set_msgbody_len(stMsgHead.body_len);
         oMsgHead.set_seq(stMsgHead.seq);
         oMsgHead.set_cmd(100001);//这是自己设定的，用于测试回调业务
@@ -83,7 +83,8 @@ E_CODEC_STATUS CodecCustom::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgB
             std::string strRawData;
 			strRawData.assign((const char*)pBuff->GetRawReadBuffer(), stMsgHead.body_len);
 			oMsgBody.set_body(strRawData);
-            LOG4_TRACE("pBuff->ReadableBytes()=%d, body_len()=%d, BodyContent=%s", pBuff->ReadableBytes(), stMsgHead.body_len, strRawData.c_str());
+            LOG4_TRACE("pBuff->ReadableBytes()=%zu, body_len()=%d, BodyContent=%s",
+                            pBuff->ReadableBytes(), stMsgHead.body_len, strRawData.c_str());
 			pBuff->SkipBytes(stMsgHead.body_len);
 			return(CODEC_STATUS_OK);
         }

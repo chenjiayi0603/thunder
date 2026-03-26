@@ -2,9 +2,7 @@
 # Hello WebSocket 接入冒烟（Docker Compose / 宿主机直连）
 #
 # 假定 WebSocket 节点已监听（与 deploy/Hello/conf/HelloWs.json 一致：access_codec=5，默认 127.0.0.1:27010）。
-# 注意：docker compose 的 hello 服务默认只执行 start.sh（HTTP Hello）；要测 WS 请在容器内额外执行:
-#   docker compose exec hello bash -lc 'cd /thunder/deploy/Hello && ./start_ws.sh'
-# 或在宿主机 deploy/Hello 下先 ./start_ws.sh（与 compose 同为 host 网络时端口一致）。
+# Docker Compose 提供独立服务 hello_ws（默认 ./start_ws.sh）；若仅起 hello 容器则需自行在容器内 ./start_ws.sh 或宿主机 deploy/Hello 下等价启动。
 #
 # 本脚本只在宿主机用 python3 发 WebSocket 二进制帧，不要求 Hello 可执行文件在宿主机。
 # 卷挂载 ../../:/thunder 时建议存在:
