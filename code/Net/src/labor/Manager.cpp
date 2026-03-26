@@ -1678,12 +1678,6 @@ void Manager::RefreshServer()
         LOG4_WARN("LoadConf() error, please check the config file.");
     }
 
-    if (GetLoaderConfigVersionData().IsRestartWorkerOnUpdateConfigChange())
-    {
-    	GetLoaderConfigVersionData().UpdateRestartWorkerOnUpdateConfigVersion();
-    	LOG4_INFO("restart_worker_on_update_config");
-    	RestartWorkers();
-    }
 }
 
 /**

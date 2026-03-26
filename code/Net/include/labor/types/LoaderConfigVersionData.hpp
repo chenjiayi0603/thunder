@@ -7,18 +7,18 @@
 #define SRC_LABOR_TYPES_LOADER_CONFIG_VERSION_DATA_HPP_
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <string>
 #include <sys/mman.h>
 #include "NetDefine.hpp"
 
-/** Manager/Loader/Worker 共用 MAP_SHARED；shm.seq_* 为跨进程事件序号，m_ack 为本进程已消费序号 */
+/** Manager/Loader/Worker 共用 MAP_SHARED；shm.seq_* 为跨进程事件序号，m_consumedSeq 为本进程已消费序号 */
 struct LoaderConfigVersionData
 {
     struct LoaderConfigVersionMM
     {
-        uint64 seq_config = 0;
-        uint64 seq_restart_workers = 0;
+        std::atomic<uint64_t> seq_config {0};
         char server_config_name[64] = {0};
         char server_config_body[16 * 1024] = {0};
     };
@@ -28,8 +28,7 @@ private:
     struct
     {
         uint64 config = 0;
-        uint64 restart_workers = 0;
-    } m_ack{};
+    } m_consumedSeq{};
 
 public:
     bool m_bLoaderProcess = false;
@@ -45,7 +44,7 @@ public:
         {
             m_pShm = static_cast<LoaderConfigVersionMM*>(mmap(
                 NULL, sizeof(LoaderConfigVersionMM), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0));
-            memset(m_pShm, 0, sizeof(*m_pShm));
+            new (m_pShm) LoaderConfigVersionMM();
         }
     }
 
@@ -68,14 +67,25 @@ public:
     }
 
     bool IsLoaderProcess() const { return m_bLoaderProcess; }
-    uint64 IncLoaderConfigVersion() { return m_pShm ? ++m_pShm->seq_config : 0; }
-    bool IsConfigVersionChange() const { return m_pShm && (m_pShm->seq_config > m_ack.config); }
+    uint64 IncLoaderConfigVersion()
+    {
+        if (!m_pShm)
+        {
+            return 0;
+        }
+        return static_cast<uint64>(m_pShm->seq_config.fetch_add(1, std::memory_order_release) + 1);
+    }
+    bool IsConfigVersionChange() const
+    {
+        return m_pShm
+                && (static_cast<uint64>(m_pShm->seq_config.load(std::memory_order_acquire)) > m_consumedSeq.config);
+    }
 
     void UpdateLoaderConfigVersion()
     {
         if (m_pShm)
         {
-            m_ack.config = m_pShm->seq_config;
+            m_consumedSeq.config = static_cast<uint64>(m_pShm->seq_config.load(std::memory_order_acquire));
         }
     }
 
@@ -106,26 +116,6 @@ public:
         return false;
     }
 
-    void IncRestartWorkerOnUpdateConfigVersion()
-    {
-        if (m_pShm)
-        {
-            ++m_pShm->seq_restart_workers;
-        }
-    }
-
-    void UpdateRestartWorkerOnUpdateConfigVersion()
-    {
-        if (m_pShm)
-        {
-            m_ack.restart_workers = m_pShm->seq_restart_workers;
-        }
-    }
-
-    bool IsRestartWorkerOnUpdateConfigChange() const
-    {
-        return m_pShm && (m_pShm->seq_restart_workers > m_ack.restart_workers);
-    }
 };
 
 #endif /* SRC_LABOR_TYPES_LOADER_CONFIG_VERSION_DATA_HPP_ */

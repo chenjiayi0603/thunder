@@ -42,23 +42,32 @@ Loader::Loader(const std::string& strWorkPath,const std::string& strConfFile,uti
 void Loader::GetConfig(util::CJsonObject& oJsonConf,bool boRestart)
 {
 	(void)boRestart;
-	if (!GetLoaderConfigVersionData().IsConfigVersionChange())
+	if (!net::GetConfig(oJsonConf, m_strConfFile))
+	{
+		SAFE_LOG4_WARN("%s read config file failed: %s", __FUNCTION__, m_strConfFile.c_str());
+		return;
+	}
+
+	if (m_oCurrentConf.ToString() == oJsonConf.ToString())
 	{
 		return;
 	}
+
+	// Apply locally first; only publish to shared memory after parsing/normal init succeeds.
+	if (!Init(oJsonConf))
+	{
+		SAFE_LOG4_ERROR("%s init with new config failed", __FUNCTION__);
+		return;
+	}
+
+	std::string configContent = oJsonConf.ToString();
+	GetLoaderConfigVersionData().SetServerConfigFile(m_strServerConfFileName, configContent);
+	uint64 ver = GetLoaderConfigVersionData().IncLoaderConfigVersion();
 	GetLoaderConfigVersionData().UpdateLoaderConfigVersion();
-	std::string configContent;
-	if (!GetLoaderConfigVersionData().GetServerConfigFile(configContent))
-	{
-		SAFE_LOG4_WARN("%s no config in shm", __FUNCTION__);
-		return;
-	}
-	if (!oJsonConf.Parse(configContent))
-	{
-		SAFE_LOG4_ERROR("%s parse shm config failed", __FUNCTION__);
-		return;
-	}
-	Init(oJsonConf);
+	SAFE_LOG4_INFO("%s publish config to shm, version=%llu, file=%s",
+			__FUNCTION__,
+			static_cast<unsigned long long>(ver),
+			m_strServerConfFileName.c_str());
 }
 
 void Loader::Run()
