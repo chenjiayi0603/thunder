@@ -489,7 +489,11 @@ bool Worker::SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 bool Worker::IoRead(tagIoWatcherData* pData, struct ev_io* watcher)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    if (watcher->fd == iManagerDataFd)
+    if (m_bWorkerReuseportAccept && watcher->fd == m_iC2SListenFd)
+    {
+        return(AcceptClientConn(watcher->fd));
+    }
+    else if (watcher->fd == iManagerDataFd)
     {
         return(FdTransfer());
     }
@@ -874,6 +878,28 @@ bool Worker::FdTransfer()
         }
     }
     return(false);
+}
+
+bool Worker::AcceptClientConn(int iFd)
+{
+    struct sockaddr_in stClientAddr;
+    socklen_t clientAddrSize = sizeof(stClientAddr);
+    int iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
+    if (iAcceptFd < 0)
+    {
+        LOG4_ERROR("accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+        return(false);
+    }
+    SetSocketAttr(iAcceptFd,false);//网关对外的连接不使用探测包
+    tagConnectionAttr* pConnAttr = CreateAcceptFdAttr(iAcceptFd, GetFdSequence(), m_eAccessCodec);
+    if (pConnAttr == nullptr)
+    {
+        LOG4_ERROR("CreateAcceptFdAttr failed for client fd %d", iAcceptFd);
+        close(iAcceptFd);
+        return(false);
+    }
+    snprintf(pConnAttr->szRemoteAddr, sizeof(pConnAttr->szRemoteAddr), "%s", inet_ntoa(stClientAddr.sin_addr));
+    return true;
 }
 
 bool Worker::IoWrite(tagIoWatcherData* pData, struct ev_io* watcher)
@@ -1740,6 +1766,25 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
 	}
 
     oJsonConf.Get("inner_port", m_iPortForServer);
+    int32 iCodec = util::CODEC_PB_INTERNAL;
+    if (oJsonConf.Get("access_codec", iCodec))
+    {
+        m_eAccessCodec = util::E_CODEC_TYPE(iCodec);
+    }
+    m_bWorkerReuseportAccept = true;
+    if (m_bWorkerReuseportAccept)
+    {
+        if (oJsonConf.Get("access_host", m_strHostForClient) && m_strHostForClient.size() == 0)
+        {
+            if (GetHostForClient().size() == 0)
+            {
+                std::cerr << "DomainToIP "<< m_pErrBuff <<" error!" << std::endl;
+                return false;
+            }
+        }
+        oJsonConf.Get("access_port", m_iPortForClient);
+        oJsonConf.Get("client_socket_backlog", m_iClientSocketBackLog);
+    }
 
     oJsonConf["permission"]["uin_permit"].Get("stat_interval", m_dMsgStatInterval);//只有Gate类型的才有的配置
     oJsonConf["permission"]["uin_permit"].Get("permit_num", m_iMsgPermitNum);
@@ -1824,8 +1869,71 @@ bool Worker::CreateEvents()
 		LOG4_WARN("CreateManagerFdAttr(iManagerDataFd) == nullptr");
 		return(false);
 	}
+    if (m_bWorkerReuseportAccept && !InitClientListener())
+    {
+        LOG4_ERROR("InitClientListener() failed in worker_reuseport mode.");
+        return false;
+    }
     InitPostToEventLoop();
     return(true);
+}
+
+bool Worker::InitClientListener()
+{
+    if (!IsAccess())
+    {
+        LOG4_WARN("%s() worker_reuseport enabled but access host/port invalid.", __FUNCTION__);
+        return true;
+    }
+    int iFd = -1;
+    struct sockaddr addr;
+    if (!HostPort2SockAddr(m_strHostForClient, m_iPortForClient, addr, iFd, true))
+    {
+        LOG4_ERROR("HostPort2SockAddr error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+        return false;
+    }
+#ifdef SO_REUSEPORT
+    int iOpt = 1;
+    if (setsockopt(iFd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
+    {
+        LOG4_ERROR("setsockopt SO_REUSEPORT error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+        close(iFd);
+        return false;
+    }
+#else
+    LOG4_ERROR("SO_REUSEPORT not supported by current build environment.");
+    close(iFd);
+    return false;
+#endif
+    if (bind(iFd, &addr, sizeof(addr)) < 0)
+    {
+        LOG4_ERROR("bind error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+        close(iFd);
+        return false;
+    }
+    if (listen(iFd, m_iClientSocketBackLog) < 0)
+    {
+        LOG4_ERROR("listen error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+        close(iFd);
+        return false;
+    }
+    m_iC2SListenFd = iFd;
+    tagConnectionAttr* pListenConn = CreateFdAttr(m_iC2SListenFd, GetFdSequence(), util::CODEC_PB_INTERNAL);
+    if (pListenConn == nullptr)
+    {
+        LOG4_ERROR("CreateFdAttr failed for worker listen fd %d", m_iC2SListenFd);
+        CloseSocket(m_iC2SListenFd);
+        return false;
+    }
+    if (!AddIoReadEvent(pListenConn))
+    {
+        LOG4_ERROR("AddIoReadEvent failed for worker listen fd %d", m_iC2SListenFd);
+        DestroyConnect(mapFdAttr.find(m_iC2SListenFd));
+        return false;
+    }
+    LOG4_INFO("%s() worker_%d listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d)",
+              __FUNCTION__, iWorkerIndex, m_iPortForClient, m_strHostForClient.c_str(), m_iClientSocketBackLog);
+    return true;
 }
 
 void Worker::AddCmd(Cmd* pCmd,int iCmd)

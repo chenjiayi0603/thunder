@@ -1035,30 +1035,7 @@ bool Manager::Init()
 
     if (m_strHostForClient.size() > 0 && m_iPortForClient > 0)
     {
-    	// 接入节点才需要监听客户端连接
-    	int iFd = -1;
-    	struct sockaddr addr;
-    	if (!HostPort2SockAddr(m_strHostForClient,m_iPortForClient,addr,iFd,true))
-    	{
-    		LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-			int iErrno = errno;
-			exit(iErrno);
-    	}
-    	m_iC2SListenFd = iFd;
-		if (bind(m_iC2SListenFd, &addr, sizeof(addr)) < 0)
-		{
-			LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-			CloseSocket(m_iC2SListenFd);
-			exit(errno);
-		}
-		if (listen(m_iC2SListenFd, m_iClientSocketBackLog) < 0)
-		{
-			LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-			CloseSocket(m_iC2SListenFd);
-			exit(errno);
-		}
-		LOG4_INFO("%s() listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d)",
-				__FUNCTION__,m_iPortForClient,m_strHostForClient.c_str(),m_iClientSocketBackLog);
+        LOG4_INFO("%s() C-scheme enabled, manager always skip client listen.", __FUNCTION__);
     }
     int iFd = -1;
 	struct sockaddr addr;

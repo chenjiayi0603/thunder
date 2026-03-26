@@ -69,6 +69,7 @@ public:
 	bool StepTimeout(Step* pStep, struct ev_timer* watcher);
 	bool SessionTimeout(Session* pSession, struct ev_timer* watcher);
 	bool FdTransfer();
+    bool AcceptClientConn(int iFd);
 	bool RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher);
 
 	/**
@@ -272,6 +273,7 @@ protected:
 	*/
     virtual bool Init(util::CJsonObject& oJsonConf)override;
     bool CreateEvents();
+    bool InitClientListener();
     void AddCmd(Cmd* pCmd,int iCmd);
     void PreloadCmd();
     void Destroy();
@@ -315,6 +317,9 @@ public:
     tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
+    int32 m_iC2SListenFd = -1;
+    util::E_CODEC_TYPE m_eAccessCodec = util::CODEC_PB_INTERNAL;
+    bool m_bWorkerReuseportAccept = false;
 };
 
 } /* namespace net */
