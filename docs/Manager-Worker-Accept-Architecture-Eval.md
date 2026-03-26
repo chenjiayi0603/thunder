@@ -160,16 +160,110 @@
 ## 9. C方案落地说明（当前代码）
 
 ### 9.1 配置要求
-- 当前代码已收敛为仅 C 方案，不再保留 manager 接受客户端连接路径。
-- 只需提供客户端监听相关配置：`access_host`、`access_port`、`client_socket_backlog`、`access_codec`。
+- 当前代码已收敛为仅 C 方案（数据面入口由 worker 监听/accept）。
+- 需要提供监听相关配置：
+  - 客户端侧：`access_host`、`access_port`、`client_socket_backlog`、`access_codec`
+  - 内网侧：`inner_host`、`inner_port`、`server_socket_backlog`
 
 ### 9.2 当前实现行为
-- `Manager` 永远跳过 C2S 监听，仅保留控制面与 S2S。
-- `Worker` 固定执行 C 方案：
+- `Manager` 不再承担 C2S/S2S 的数据面监听与 accept，保留控制面职责（进程管理、中心心跳/上报、配置控制）。
+- `Worker` 固定执行 C 方案（C2S + S2S）：
   - `socket + SO_REUSEPORT + bind + listen`
   - 监听 fd 可读后直接 `accept`
-  - 按 `access_codec` 初始化连接编解码
+  - C2S 按 `access_codec` 初始化连接编解码；S2S 使用内部编解码路径
 
 ### 9.3 注意事项
-- 本阶段只迁移 C2S 入口，S2S 保持原设计。
 - 若内核/构建环境不支持 `SO_REUSEPORT`，worker 会启动失败并记录错误日志。
+- `worker_index` 强制定向语义（由 manager fd 中继保证）已被弱化，详见第 11 节 FAQ。
+
+## 10. 第二阶段设计：S2S 迁移到 Worker（仅设计，未实施）
+
+### 10.1 目标
+- 将 S2S（内网 Server-to-Server）监听与 accept 从 `Manager` 迁移到 `Worker`。
+- 最终与 C2S 一致：数据面入口由 worker 处理，manager 仅保留控制面职责。
+
+### 10.2 现状与迁移锚点
+- 当前 S2S 监听在 `Manager`：`m_iS2SListenFd` + `bind/listen`。
+- 当前 S2S accept 在 `Manager::IoRead()` 分支，进入 `AcceptServerConn()`。
+- 当前部分 S2S 连接后续依赖 manager 的转发语义（如按 worker index 定向）。
+
+### 10.3 目标架构
+- 每个 worker 独立创建 S2S listener，并启用 `SO_REUSEPORT`。
+- 新的 S2S 连接直接落到某个 worker，由该 worker 持有并处理生命周期。
+- manager 不再持有 S2S 连接 fd，不再参与 S2S accept 热路径。
+
+### 10.4 关键决策（评审确认项）
+- S2S 是否与 C2S 同步采用 `SO_REUSEPORT`：建议是，统一模型。
+- 是否保留“指定 worker index”定向语义：建议逐步弱化，过渡到连接就地处理。
+- 节点标识粒度（`ip:port.workerIndex`）是否保持：建议保持，减少协议连带变更。
+
+### 10.5 分阶段实施
+- 阶段2.1（双栈过渡）
+  - 新增 worker S2S listener（部分流量灰度）。
+  - manager 老 S2S 路径暂时保留，确保可回退。
+- 阶段2.2（语义收敛）
+  - 将 manager 中 S2S 定向转发逻辑下沉或协议化。
+  - 清理 `m_mapSeq2WorkerIndex` 在 S2S 场景的依赖。
+- 阶段2.3（收敛下线）
+  - 下线 manager S2S 监听与 accept 路径。
+  - manager 保留控制面（进程管理、配置、命令广播、监控聚合）。
+
+### 10.6 风险与控制
+- 连接归属变化风险：先双栈灰度，按流量比例逐步切换。
+- 协议耦合风险：保留兼容字段一个版本窗口，先兼容后清理。
+- 排障复杂度上升：统一 connection-id，打通 manager/worker 关联日志。
+
+### 10.7 验收标准
+- S2S 新建连接不再进入 manager accept 路径。
+- S2S P99 建连时延不劣化，错误率不高于基线阈值。
+- 高连接场景下 manager CPU 明显下降。
+- worker 重启后 S2S 可自动恢复，且无全局抖动。
+
+### 10.8 当前实现状态（已执行）
+- 已执行 S2S 监听迁移：`Manager` 不再监听 S2S，`Worker` 通过 `SO_REUSEPORT` 监听并直接 accept S2S。
+- 语义调整已生效：不再保证 `worker_index` 定向转交，连接由“accept 到该连接的 worker”直接持有并处理。
+- 控制面保持不变：业务节点与中心节点心跳/上报仍由 `Manager` 处理。
+- 第二阶段已从“设计”进入“已落地实现”，本节作为设计与实现对照记录保留。
+
+## 11. FAQ：定向保证、粘性与一致性哈希
+
+### 11.1 `SO_REUSEPORT` 是否等于“必达指定 worker”？
+- 不是。`SO_REUSEPORT` 属于内核分流机制，提供的是“分流粘性倾向”，不是应用层强路由。
+- 常见行为是同连接元组更可能落到同一 worker，但不构成强保证。
+
+### 11.2 “同元组更可能落同一 worker”是不是稳定承诺？
+- 不是强承诺。以下变化都可能改变落点：
+  - 客户端重连导致源端口变化
+  - NAT 端口映射变化
+  - 进程重启、监听组成员变化
+  - 内核策略与队列状态变化
+
+### 11.3 `strIdentify(IP:port.worker_index)` 还能用吗？
+- 可以继续用，格式可保持不变，利于兼容已有接口、日志与路由键。
+- 但其 `worker_index` 语义从“强命中目标进程”退化为“逻辑标识/期望目标”，不再由底层传输层保证必达。
+
+### 11.4 一致性哈希路由层会不会受影响？
+- 若路由层要求“哈希到具体节点的具体进程（固定 worker_index）并强保证命中”，会受影响。
+- 原因：单靠 `SO_REUSEPORT` 只能做内核分流粘性，无法替代“按 index 强制定向中继”。
+
+### 11.5 长连接场景是否可认为“基本不受影响”？
+- 存活中的单条长连接在已建立后是稳定的（连接归属不会漂移）。
+- 但断开重连后不保证回到同一 `worker_index`，因此“跨重连固定进程”场景仍受影响。
+
+### 11.6 如需恢复“指定 worker 必达”，有哪些可选方案？
+- 方案A：恢复 manager 定向中继（最小改动，manager 重回数据面一跳）。
+- 方案B：实现 worker 间 fd 转交（保持去 manager 化，但实现复杂）。
+- 方案C：每 worker 独立端口（物理分片，运维复杂度上升）。
+- 结论：仅依赖 `SO_REUSEPORT` 不能提供“按 worker_index 必达”的强语义。
+
+### 11.7 内部节点 worker 重连场景结论
+- 若业务要求“内部节点的 worker 重连后必须回到原目标 worker”，则必须保留强制定向能力。
+- 这意味着 `worker_index`（目标进程语义）仍是必要字段，且需要中继/转交机制配合（manager 中继或 worker 间转交）。
+- 单独依赖 `SO_REUSEPORT` 只能提供粘性倾向，不能满足“重连回原 worker”的强保证。
+
+### 11.8 现阶段推荐落地形态
+- 在“必须保留 worker_index 必达”约束下，当前推荐形态为：
+  - C2S：由 worker 监听/accept（保留 C 方案收益）。
+  - S2S：由 manager 监听/accept，并按 index 中继转发（保留强制定向语义）。
+- 结论：第二阶段“S2S 监听完全下沉 worker”在未补齐强制定向机制前不应执行。
+- 未来若要继续 S2S 下沉，前提是先实现等效强保证机制（worker 间 fd 转交或其他等价路由能力）。

@@ -84,7 +84,6 @@ public:
     bool IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher);
-    bool FdTransfer(int iFd);
 	bool AcceptServerConn(int iFd);
 	bool RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher);
     bool ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct ev_timer* watcher);
@@ -192,8 +191,6 @@ private:
 
     util::E_CODEC_TYPE m_eCodec = util::CODEC_PB_INTERNAL;            ///< 接入端编解码器
     int32 m_iS2SListenFd = -1;                     ///< Server to Server监听文件描述符（Server与Server之间的连接较少，但每个Server的每个Worker均与其他Server的每个Worker相连）
-    int32 m_iC2SListenFd = -1;                     ///< Client to Server监听文件描述符（Client与Server之间的连接较多，但每个Client只需连接某个Server的某个Worker）
-
     ev_timer* m_pPeriodicTaskWatcher = nullptr;              ///< 周期任务定时器
 
     std::unordered_map<int32, tagWorkerAttr> m_mapWorker;       ///< 业务逻辑工作进程及进程属性，key为pid

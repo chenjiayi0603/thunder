@@ -230,72 +230,10 @@ bool Manager::IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     {
         return(AcceptServerConn(watcher->fd));
     }
-    else if (m_iC2SListenFd >= 0 && watcher->fd == m_iC2SListenFd)//网关对外的连接
-    {
-        return(FdTransfer(watcher->fd));
-    }
     else
     {
         return(RecvDataAndDispose(pData, watcher));
     }
-}
-
-bool Manager::FdTransfer(int iFd)
-{
-    //LOG4_TRACE("%s()", __FUNCTION__);
-    char szIpAddr[16] = {0};
-    struct sockaddr_in stClientAddr;
-    socklen_t clientAddrSize = sizeof(stClientAddr);
-    int iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
-    if (iAcceptFd < 0)
-    {
-        LOG4_ERROR("accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        return(false);
-    }
-    strncpy(szIpAddr, inet_ntoa(stClientAddr.sin_addr), 16);
-
-    SetSocketAttr(iAcceptFd,false);//网关对外的连接不使用探测包
-
-    auto iter = m_mapClientConnFrequency.find(stClientAddr.sin_addr.s_addr);
-    if (iter == m_mapClientConnFrequency.end())
-    {
-        m_mapClientConnFrequency.insert(std::make_pair(stClientAddr.sin_addr.s_addr, 1));
-        AddClientConnFrequencyTimeout(stClientAddr.sin_addr.s_addr, m_dAddrStatInterval);
-    }
-    else
-    {
-        iter->second++;
-        if (iter->second > (uint32)m_iAddrPermitNum)
-        {
-            LOG4_WARN("addrPermitNum error:client addr %d had been connected more than %u times in %f seconds, it's not permitted",
-                            stClientAddr.sin_addr.s_addr, m_iAddrPermitNum, m_dAddrStatInterval);
-            ::close(iAcceptFd);
-            return(false);
-        }
-    }
-
-    auto worker_pid_fd = GetMinLoadWorkerDataFd();
-    if (worker_pid_fd.second > 0)
-    {
-        LOG4_TRACE("send new fd %d to worker communication fd %d",iAcceptFd, worker_pid_fd.second);
-        int iCodec = m_eCodec;
-        int iErrno = send_fd_with_attr(worker_pid_fd.second, iAcceptFd, szIpAddr, 16, iCodec);
-        if (iErrno == 0)
-        {
-            AddWorkerLoad(worker_pid_fd.first);
-        }
-        else
-        {
-            LOG4_ERROR("send_fd_with_attr error %d: %s", iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
-        }
-        close(iAcceptFd);
-        return(true);
-    }
-    else
-    {
-    	LOG4_ERROR("GetMinLoadWorkerDataFd error");
-    }
-    return(false);
 }
 
 bool Manager::AcceptServerConn(int iFd)
@@ -1141,7 +1079,6 @@ void Manager::CreateLoader(bool boRestart)
 			StopPostToEventLoop();
 			ev_loop_destroy(m_loop);
 			CloseSocket(m_iS2SListenFd);
-			CloseSocket(m_iC2SListenFd);
 			Loader* pLoader = new Loader(m_strWorkPath,m_strConfFile,oCurrentConf,pLoaderConfigVersionMM);
 			pLoader->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
             pLoader->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
@@ -1202,7 +1139,6 @@ void Manager::CreateWorker()
             StopPostToEventLoop();
             ev_loop_destroy(m_loop);
             CloseSocket(m_iS2SListenFd);
-            CloseSocket(m_iC2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
             x_sock_set_block(iControlFds[1], 0);
@@ -1259,14 +1195,6 @@ bool Manager::CreateEvents()
     	return(false);
     }
 
-    if (m_iC2SListenFd >= 0)
-    {
-    	if (CreateReadFdAttr(m_iC2SListenFd, GetFdSequence()) == nullptr)
-		{
-    		LOG4_ERROR("%s() failed to CreateReadFdAttr for m_iC2SListenFd %d",__FUNCTION__,m_iC2SListenFd);
-			return(false);
-		}
-    }
     AddSignal(SIGCHLD,SignalCallback);
     //SIGINT
     AddSignal(SIGILL,SignalCallback);
@@ -1340,7 +1268,6 @@ bool Manager::RestartWorker(int iDeathPid)
             StopPostToEventLoop();
             ev_loop_destroy(m_loop);
             CloseSocket(m_iS2SListenFd);
-            CloseSocket(m_iC2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
             x_sock_set_block(iControlFds[1], 0);
