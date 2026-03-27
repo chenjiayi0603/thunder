@@ -47,6 +47,8 @@ services:
   redis:
     image: redis:7-alpine
     network_mode: host
+    volumes:
+      - ./data/redis:/data
     # maxmemory 须低于下方 deploy memory，避免 Redis 与 cgroup 双头限死或 OOM 行为难预期
     command:
       - redis-server
@@ -76,6 +78,8 @@ services:
   mysql:
     image: docker.1ms.run/library/mariadb:11.2
     network_mode: host
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
     environment:
       MARIADB_ROOT_PASSWORD: thunder
       MARIADB_DATABASE: thunder_test
