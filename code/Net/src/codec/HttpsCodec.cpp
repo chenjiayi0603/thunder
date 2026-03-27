@@ -179,6 +179,12 @@ E_CODEC_STATUS HttpsCodec::EncodeToConnection(tagConnectionAttr* pConn, const Ht
     return eEncStatus;
 }
 
+// 记录某个连接 fd 的 TLS 角色（服务端 or 客户端）：
+// m_mapConnRole[iFd] = bServerSide;
+// 作用是给后续 EnsureState() 创建 SSL 状态时用：
+// true：走 TLS_server_method()，并 SSL_set_accept_state()（被动握手）
+// false：走 TLS_client_method()，并 SSL_set_connect_state()（主动握手）
+// 决定该 fd 后面按“服务端握手”还是“客户端握手”来跑。
 void HttpsCodec::SetConnectionRole(int iFd, bool bServerSide)
 {
     m_mapConnRole[iFd] = bServerSide;

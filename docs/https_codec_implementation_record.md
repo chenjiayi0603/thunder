@@ -355,3 +355,17 @@ cmake --install build
 - 增加双向证书校验（mTLS）回归用例。
 - 将 HTTPS smoke 纳入统一 `test_all_docker_smoke.sh` 强制门禁。
 
+---
+
+## 13. WebSocket 编解码器差异记录（Json / Pb / PbApp）
+
+为避免在 HTTPS 改造过程中混淆 WebSocket 侧协议语义，这里补充三套 WebSocket codec 的差异结论：
+
+- 共同点：三者都继承 `ThunderCodec`，都先处理 HTTP 再升级到 WebSocket，然后按 WebSocket 帧收发。
+- `CodecWebSocketJson`：使用 `tagClientMsgHead`，业务体主要按 JSON 字符串处理（通常承载在 `MsgBody.body`）。
+- `CodecWebSocketPb`：同样使用 `tagClientMsgHead`，但业务体是 `MsgBody` 的 protobuf 序列化/反序列化。
+- `CodecWebSocketPbApp`：使用 `tagAppMsgHead`（`len/cmd/seq/version/reserve/status`），并结合 `reserve` 位和 `session_key` 走 App 侧 AES/RSA 约定。
+- 握手细节：Json/Pb 在初态握手上支持 GET/POST 路径；PbApp 通过 `DecodeHandShake` 单独处理，当前实现侧重 GET。
+
+详细对照见：`docs/websocket_codec_json_pb_pbapp.md`。
+

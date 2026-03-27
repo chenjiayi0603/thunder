@@ -21,15 +21,45 @@ DEPLOY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 HELLO_DIR="${DEPLOY_ROOT}/HelloHttps"
 
+# 依次定义所有支持的可选环境变量，并给出用途举例
+# - HELLO_HTTPS_HOST: 目标服务的主机地址，默认 127.0.0.1
+#   示例：HELLO_HTTPS_HOST=192.168.0.18 ./test_helloserver_https_smoke.sh
 HELLO_HTTPS_HOST="${HELLO_HTTPS_HOST:-127.0.0.1}"
+
+# - HELLO_HTTPS_PORT: 目标 HTTPS 端口，默认 27443
+#   示例：HELLO_HTTPS_PORT=28443 ./test_helloserver_https_smoke.sh
 HELLO_HTTPS_PORT="${HELLO_HTTPS_PORT:-27443}"
+
+# - HELLO_HTTPS_PATH: 请求路径，默认 /hello/hello
+#   示例：HELLO_HTTPS_PATH=/api/hello ./test_helloserver_https_smoke.sh
 HELLO_HTTPS_PATH="${HELLO_HTTPS_PATH:-/hello/hello}"
+
+# - CURL_MAXTIME_HELLO: curl 请求最大超时，默认 60 秒
+#   示例：CURL_MAXTIME_HELLO=5 ./test_helloserver_https_smoke.sh
 CURL_MAXTIME_HELLO="${CURL_MAXTIME_HELLO:-60}"
+
+# - PRE_CURL_SEC: 在发送 curl 请求前额外等待的秒数，默认 0
+#   示例：PRE_CURL_SEC=2 ./test_helloserver_https_smoke.sh
 PRE_CURL_SEC="${PRE_CURL_SEC:-0}"
+
+# - REQUIRE_PORTS: 是否要求端口已监听，置 1 时检测，默认 0
+#   示例：REQUIRE_PORTS=1 ./test_helloserver_https_smoke.sh
 REQUIRE_PORTS="${REQUIRE_PORTS:-0}"
+
+# - SKIP_PLUGIN_CHECK: 是否跳过插件检测，为 1 时跳过，默认 0
+#   示例：SKIP_PLUGIN_CHECK=1 ./test_helloserver_https_smoke.sh
 SKIP_PLUGIN_CHECK="${SKIP_PLUGIN_CHECK:-0}"
+
+# - START_HTTPS_NODE: 是否自动尝试 docker compose 启动节点，默认 1
+#   示例：START_HTTPS_NODE=0 ./test_helloserver_https_smoke.sh
 START_HTTPS_NODE="${START_HTTPS_NODE:-1}"
+
+# - GENERATE_CERT: 缺证书时是否自动生成，为 1 时生成，默认 1
+#   示例：GENERATE_CERT=0 ./test_helloserver_https_smoke.sh
 GENERATE_CERT="${GENERATE_CERT:-1}"
+
+# - INSECURE_TLS: 跳过证书校验（curl -k），为 1 时跳过，默认 0
+#   示例：INSECURE_TLS=1 ./test_helloserver_https_smoke.sh
 INSECURE_TLS="${INSECURE_TLS:-0}"
 
 PLUGIN_SO="${DEPLOY_ROOT}/HelloHttps/plugins/ModuleHello.so"
@@ -87,6 +117,14 @@ _https_post_check() {
     # 执行 HTTPS POST 请求，例如：
     # curl -k -sS -o /tmp/tmpfile -w "%{http_code}" --max-time 60 \
     #   -X POST "https://127.0.0.1:27007/hello/hello" -H 'Content-Type: application/json' -d '{"msg": "hi"}'
+
+    # -o /tmp/tmpfile 参数用于将响应内容保存到 tmpfile 文件中，便于后续检查或输出
+    # -w "%{http_code}" 参数用于获取 HTTP 响应状态码
+    # --max-time 60 参数用于设置请求超时时间
+    # -X POST 参数用于指定请求方法
+    # -H 'Content-Type: application/json' 参数用于设置请求头
+    # -d '{"msg": "hi"}' 参数用于设置请求体
+    # || true 参数用于忽略请求失败的情况
     code="$(
       _curl_smoke -k -sS -o "${tmp}" -w "%{http_code}" --max-time "${CURL_MAXTIME_HELLO}" \
         -X POST "${url}" -H 'Content-Type: application/json' -d "${payload}" || true
