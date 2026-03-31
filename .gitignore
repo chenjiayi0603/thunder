@@ -45,3 +45,4 @@ deploy/Hello/bin/HelloWs
 deploy/HelloHttp/bin/Hello
 deploy/HelloHttps/bin/Hello
 deploy/HelloWs/bin/Hello
+deploy/docker/data/
