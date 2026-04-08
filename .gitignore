@@ -46,3 +46,4 @@ deploy/HelloHttp/bin/Hello
 deploy/HelloHttps/bin/Hello
 deploy/HelloWs/bin/Hello
 deploy/docker/data/
+docs/center_vs_nacos_advantages.md

@@ -316,22 +316,7 @@ bool Worker::CheckShareMem()
 					{
 						LOG4_INFO("update log_level:(%s)",m_oCurrentConf("log_level").c_str());
 						int iLogLevel = log4cplus::INFO_LOG_LEVEL;
-						if (m_oCurrentConf.Get("log_level", iLogLevel))
-						{
-							switch (iLogLevel)
-							{
-								case log4cplus::TRACE_LOG_LEVEL:
-								case log4cplus::DEBUG_LOG_LEVEL:
-								case log4cplus::INFO_LOG_LEVEL:
-								case log4cplus::WARN_LOG_LEVEL:
-								case log4cplus::ERROR_LOG_LEVEL:
-								case log4cplus::FATAL_LOG_LEVEL:
-									break;
-								default:
-									iLogLevel = log4cplus::INFO_LOG_LEVEL;
-									break;
-							}
-						}
+						(void)ResolveLogLevelFromConf(m_oCurrentConf, iLogLevel);
 						ResetLogLevel(iLogLevel);
 					}
 				}

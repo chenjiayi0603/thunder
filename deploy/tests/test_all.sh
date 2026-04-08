@@ -7,6 +7,9 @@
 #   KEEP_DOCKER=1 ./deploy/tests/test_all.sh     # 测试完成后保留 docker 容器
 #   PYTEST_EXPR="integration and not perf" ./deploy/tests/test_all.sh    # 只运行 integration 且不包含 perf 的测试
 #
+# pytest 默认会捕获 stdout，会话 fixture 里长时间 cmake/docker 时终端会像「卡住」；
+# 此处使用 -v -s 以便即时看到用例名与 conftest 里的 [pytest integration] 阶段日志。
+#
 set -euo pipefail
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,7 +25,7 @@ command -v pytest >/dev/null 2>&1 || {
 
 cd "${PYTEST_DIR}"
 
-ARGS=( "-m" "${PYTEST_EXPR}" "--mode=${MODE}" )
+ARGS=( "-v" "-s" "-m" "${PYTEST_EXPR}" "--mode=${MODE}" )
 if [[ "${KEEP_DOCKER}" == "1" ]]; then
   ARGS+=( "--keep-docker" )
 fi

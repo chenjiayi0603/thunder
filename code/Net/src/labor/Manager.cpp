@@ -8,6 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <memory>
+#include <string>
 #include "protocol/oss_sys.pb.h"
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
@@ -20,6 +21,22 @@
 
 namespace net
 {
+namespace
+{
+void TrimCenterToken(std::string& s)
+{
+    size_t i = 0;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n'))
+    {
+        ++i;
+    }
+    s.erase(0, i);
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
+    {
+        s.pop_back();
+    }
+}
+} // namespace
 
 void Manager::SignalCallback(struct ev_loop* loop, struct ev_signal* watcher, int revents)
 {
@@ -945,22 +962,7 @@ bool Manager::LoadConf(bool & boChanged)
 		m_oCurrentConf["permission"]["addr_permit"].Get("stat_interval", m_dAddrStatInterval);
 		m_oCurrentConf["permission"]["addr_permit"].Get("permit_num", m_iAddrPermitNum);
 		m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
-		if (m_oCurrentConf.Get("log_level", m_iLogLevel))
-		{
-			switch (m_iLogLevel)
-			{
-				case log4cplus::TRACE_LOG_LEVEL:
-				case log4cplus::DEBUG_LOG_LEVEL:
-				case log4cplus::INFO_LOG_LEVEL:
-				case log4cplus::WARN_LOG_LEVEL:
-				case log4cplus::ERROR_LOG_LEVEL:
-				case log4cplus::FATAL_LOG_LEVEL:
-					break;
-				default:
-					m_iLogLevel = log4cplus::INFO_LOG_LEVEL;
-					break;
-			}
-		}
+		(void)ResolveLogLevelFromConf(m_oCurrentConf, m_iLogLevel);
 	}
     return(true);
 }
@@ -1000,15 +1002,57 @@ bool Manager::Init()
     }
     LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s) iServerSocketBackLog(%d)",
     		__FUNCTION__,nPid,m_iPortForServer,m_strHostForServer.c_str(),m_iServerSocketBackLog);
-    // 创建到Center的连接信息
-    for (int i = 0; i < m_oCurrentConf["center"].GetArraySize(); ++i)
+    // 创建到Center的连接信息（center 可为 JSON 数组或逗号分隔的 host:port 字符串）
+    auto insertCenterIdentify = [this](const std::string& strIdentify)
     {
-    	// CenterServer只有一个Worker
-        std::string strIdentify = m_oCurrentConf["center"][i]("host") + std::string(":") + m_oCurrentConf["center"][i]("port") + std::string(".0");
         tagMsgShell stMsgShell;
         LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %u)", strIdentify.c_str(),
                         stMsgShell.iFd, stMsgShell.ulSeq);
         m_mapCenterMsgShell.insert(std::make_pair(strIdentify, stMsgShell));
+    };
+    util::CJsonObject& oCenter = m_oCurrentConf["center"];
+    if (oCenter.IsArray() && oCenter.GetArraySize() > 0)
+    {
+        for (int i = 0; i < oCenter.GetArraySize(); ++i)
+        {
+            // CenterServer 只有一个 Worker
+            std::string strIdentify = oCenter[i]("host") + std::string(":") + oCenter[i]("port") + std::string(".0");
+            insertCenterIdentify(strIdentify);
+        }
+    }
+    else
+    {
+        std::string csv;
+        if (m_oCurrentConf.Get("center", csv))
+        {
+            size_t start = 0;
+            while (start < csv.size())
+            {
+                size_t comma = csv.find(',', start);
+                std::string token = (comma == std::string::npos) ? csv.substr(start) : csv.substr(start, comma - start);
+                start = (comma == std::string::npos) ? csv.size() : comma + 1;
+                TrimCenterToken(token);
+                if (token.empty())
+                {
+                    continue;
+                }
+                size_t colon = token.rfind(':');
+                if (colon == std::string::npos || colon + 1 >= token.size())
+                {
+                    LOG4_WARN("skip invalid center entry (expect host:port): %s", token.c_str());
+                    continue;
+                }
+                std::string host = token.substr(0, colon);
+                std::string port = token.substr(colon + 1);
+                TrimCenterToken(host);
+                TrimCenterToken(port);
+                if (host.empty() || port.empty())
+                {
+                    continue;
+                }
+                insertCenterIdentify(host + std::string(":") + port + std::string(".0"));
+            }
+        }
     }
 #ifdef WORKER_OVERDUE
     int iWorkerBeat = WORKER_OVERDUE > ((gc_iBeatInterval << 1) + 1) ? WORKER_OVERDUE:((gc_iBeatInterval << 1) + 1);

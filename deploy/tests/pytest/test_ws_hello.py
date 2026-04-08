@@ -6,15 +6,18 @@ import pytest
 from helpers.ws_client import RawWsClient
 
 
+# 集成测试和冒烟测试标记
 @pytest.mark.integration
 @pytest.mark.smoke
+
+# 参数化测试输入：payload（请求体）、seq（序列号）、needles（响应中需包含的子字符串列表）
 @pytest.mark.parametrize(
     ("payload", "seq", "needles"),
     [
-        ({"option": "Echo"}, 101, ['"code"', '"msg"']),
-        ({"option": "TestHelloPoolCpu"}, 102, ["TestHelloPoolCpu", "786432"]),
-        ({"option": "TestHelloPoolBlock"}, 103, ["TestHelloPoolBlock", '"slept_ms":80']),
-        ({"option": "NoSuchOption"}, 104, ['"code"']),
+        ({"option": "Echo"}, 101, ['"code"', '"msg"']),  # Echo 测试：需输出 code 和 msg 字段
+        ({"option": "TestHelloPoolCpu"}, 102, ["TestHelloPoolCpu", "786432"]),  # CPU 负载测试
+        ({"option": "TestHelloPoolBlock"}, 103, ["TestHelloPoolBlock", '"slept_ms":80']),  # Block 阻塞测试，约 80ms
+        ({"option": "NoSuchOption"}, 104, ['"code"']),  # 非法 option 测试
     ],
 )
 def test_ws_hello_smoke(payload: dict[str, str], seq: int, needles: list[str]) -> None:

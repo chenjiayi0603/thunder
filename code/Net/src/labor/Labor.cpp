@@ -8,6 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <memory>
+#include <cctype>
 #include "../NetDefine.hpp"
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
@@ -15,6 +16,7 @@
 #include "logger/CustomLogger.hpp"
 
 #include "util/IpUtil.hpp"
+#include "util/json/CJsonObject.hpp"
 
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
@@ -23,6 +25,111 @@ const net::Labor* GetCLabor() {return g_pLabor;}
 
 namespace net
 {
+namespace
+{
+void TrimAscii(std::string& s)
+{
+    size_t i = 0;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n'))
+    {
+        ++i;
+    }
+    s.erase(0, i);
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
+    {
+        s.pop_back();
+    }
+}
+
+void ToUpperAscii(std::string& s)
+{
+    for (char& c : s)
+    {
+        if (c >= 'a' && c <= 'z')
+        {
+            c = static_cast<char>(c - 'a' + 'A');
+        }
+    }
+}
+
+int32 SanitizeLogLevelInt(int32 v)
+{
+    switch (v)
+    {
+        case log4cplus::TRACE_LOG_LEVEL:
+        case log4cplus::DEBUG_LOG_LEVEL:
+        case log4cplus::INFO_LOG_LEVEL:
+        case log4cplus::WARN_LOG_LEVEL:
+        case log4cplus::ERROR_LOG_LEVEL:
+        case log4cplus::FATAL_LOG_LEVEL:
+            return v;
+        default:
+            return log4cplus::INFO_LOG_LEVEL;
+    }
+}
+
+bool BuiltinNameToLog4cplusLevel(const std::string& keyUpper, int32& out)
+{
+    if (keyUpper == "TRACE")
+    {
+        out = log4cplus::TRACE_LOG_LEVEL;
+        return true;
+    }
+    if (keyUpper == "DEBUG")
+    {
+        out = log4cplus::DEBUG_LOG_LEVEL;
+        return true;
+    }
+    if (keyUpper == "INFO")
+    {
+        out = log4cplus::INFO_LOG_LEVEL;
+        return true;
+    }
+    if (keyUpper == "WARN")
+    {
+        out = log4cplus::WARN_LOG_LEVEL;
+        return true;
+    }
+    if (keyUpper == "ERROR")
+    {
+        out = log4cplus::ERROR_LOG_LEVEL;
+        return true;
+    }
+    if (keyUpper == "FATAL")
+    {
+        out = log4cplus::FATAL_LOG_LEVEL;
+        return true;
+    }
+    return false;
+}
+} // namespace
+
+bool ResolveLogLevelFromConf(const util::CJsonObject& oJsonConf, int32& ioLogLevel)
+{
+    int32 v = 0;
+    if (oJsonConf.Get("log_level", v))
+    {
+        ioLogLevel = SanitizeLogLevelInt(v);
+        return true;
+    }
+    std::string s;
+    if (!oJsonConf.Get("log_level", s))
+    {
+        return false;
+    }
+    TrimAscii(s);
+    if (s.empty())
+    {
+        return false;
+    }
+    ToUpperAscii(s);
+    if (BuiltinNameToLog4cplusLevel(s, v))
+    {
+        ioLogLevel = v;
+        return true;
+    }
+    return false;
+}
 
 Labor::Labor()
 {
@@ -217,8 +324,8 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
 {
     if (m_bInitLogger)  // 已经被初始化过，只修改日志级别
     {
-        int32 iLogLevel = 0;
-        if (oJsonConf.Get("log_level", iLogLevel))
+        int32 iLogLevel = log4cplus::INFO_LOG_LEVEL;
+        if (ResolveLogLevelFromConf(oJsonConf, iLogLevel))
         {
         	m_oLogger.setLogLevel(iLogLevel);
         }
@@ -234,21 +341,7 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
         std::string strLogname = oJsonConf("log_path") + std::string("/") + getproctitle() + std::string(".log");
         std::string strParttern = "[%D,%d{%q}][%p] [%l] %m%n";
 
-		if (oJsonConf.Get("log_level", iLogLevel))
-		{
-			switch (iLogLevel)
-			{
-				case log4cplus::DEBUG_LOG_LEVEL:
-				case log4cplus::INFO_LOG_LEVEL:
-				case log4cplus::TRACE_LOG_LEVEL:
-				case log4cplus::WARN_LOG_LEVEL:
-				case log4cplus::ERROR_LOG_LEVEL:
-				case log4cplus::FATAL_LOG_LEVEL:
-					break;
-				default:
-					iLogLevel = log4cplus::INFO_LOG_LEVEL;
-			}
-		}
+		(void)ResolveLogLevelFromConf(oJsonConf, iLogLevel);
         oJsonConf.Get("max_log_file_size", iMaxLogFileSize);
         oJsonConf.Get("max_log_file_num", iMaxLogFileNum);
         log4cplus::initialize();

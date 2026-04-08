@@ -5,20 +5,7 @@
     "access_host": "127.0.0.1",
     "access_port": 26000,
     "access_codec": 3,
-    "center": [
-        {
-            "host": "127.0.0.1",
-            "port": "27000"
-        },
-        {
-            "host": "127.0.0.1",
-            "port": "27022"
-        },
-        {
-            "host": "127.0.0.1",
-            "port": "27032"
-        }
-    ],
+    "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
     "server_name": "Center_robot",
     "process_num": 1,
     "cpu_affinity": true,
@@ -28,15 +15,7 @@
     "max_log_file_size": 102400000,
     "io_timeout": 300.0,
     "step_timeout": 1.0,
-    "log_levels": {
-        "FATAL": 50000,
-        "ERROR": 40000,
-        "WARN": 30000,
-        "INFO": 20000,
-        "DEBUG": 10000,
-        "TRACE": 0
-    },
-    "log_level": 0,
+    "log_level": "TRACE",
     "refresh_interval": 20,
     "so": [
         {

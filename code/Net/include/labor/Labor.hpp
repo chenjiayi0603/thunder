@@ -45,6 +45,12 @@ void CoSleepTimerTrampoline(struct ev_loop*, struct ev_timer*, int);
 void PostToEventLoopAsyncCallback(struct ev_loop*, ev_async*, int);
 
 /**
+ * @brief 从节点配置解析 log_level：支持 JSON 数字或内置级别名（TRACE/DEBUG/INFO/WARN/ERROR/FATAL）。
+ * @return 若存在合法 log_level 则为 true 并写入 ioLogLevel；否则 false 且 ioLogLevel 不变。
+ */
+bool ResolveLogLevelFromConf(const util::CJsonObject& oJsonConf, int32& ioLogLevel);
+
+/**
  * @brief 框架层工作者抽象类
  * @note 框架层工作者抽象类，框架层工作者包括Manager和Worker
  * @note 旧版栈协程 `dispatcher/Coroutine` + `USE_COROUTINE` 已移除；业务协程请用 C++20 `Coroutine20`/`task` 体系。
