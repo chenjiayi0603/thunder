@@ -190,6 +190,8 @@ curl -k -H 'Content-Type: application/json' \
 
 ### 7.2 Python（requests）
 
+快速单次请求：
+
 ```python
 import requests
 
@@ -198,6 +200,21 @@ payload = {"option": "Echo"}
 r = requests.post(url, json=payload, verify="./deploy/HelloHttps/conf/certs/ca.crt", timeout=10)
 print(r.status_code, r.text)
 ```
+
+集成测试脚本（覆盖 Echo / TestHelloPoolCpu / TestHelloPoolBlock）：
+
+```bash
+python3 ./deploy/docker/test_helloserver_https_integration.py
+```
+
+可选环境变量：
+
+- `HELLO_HTTPS_HOST`（默认 `127.0.0.1`）
+- `HELLO_HTTPS_PORT`（默认 `27443`）
+- `HELLO_HTTPS_PATH`（默认 `/hello/hello`）
+- `HELLO_HTTPS_CA`（默认 `./deploy/HelloHttps/conf/certs/ca.crt`）
+- `HELLO_HTTPS_INSECURE=1`（仅调试，跳过证书校验）
+- `HELLO_HTTPS_TIMEOUT`（默认 `10`）
 
 ### 7.3 Go（net/http）
 
@@ -274,7 +291,25 @@ Docker 服务映射：
 ./deploy/docker/test_helloserver_smoke.sh
 ./deploy/docker/test_helloserver_ws_smoke.sh
 ./deploy/docker/test_helloserver_https_smoke.sh
+python3 ./deploy/docker/test_helloserver_https_integration.py
 ```
+
+统一入口（推荐）：
+
+```bash
+# 本地模式（默认）：自动拉起 docker compose 并执行 unit/integration/docker-smoke
+./deploy/docker/test_all_integration.sh --local
+
+# 外部模式：只连接现有环境，不做 compose up/down
+./deploy/docker/test_all_integration.sh --external --group integration
+```
+
+### 9.3 从 ctest+smoke 迁移到统一入口（分阶段）
+
+- 第 1 阶段（已可用）：保留现有 `ctest` 与各 `*smoke.sh`，新增 `test_all_integration.sh` 作为统一入口。
+- 第 2 阶段：CI 先接入 `--external --group unit`，保证无外部依赖的测试稳定。
+- 第 3 阶段：在具备 Docker Runner 的 CI 作业接入 `--local --group integration`，跑 ORM + HTTPS Python 集成。
+- 第 4 阶段：将 `--local --group docker-smoke` 纳入发布前门禁，与现有 smoke 脚本统一汇总结果。
 
 HTTPS smoke 常用环境变量：
 

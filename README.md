@@ -70,49 +70,32 @@ git submodule update --init --recursive \
 
 ## 一键联调与冒烟
 
-### Hello 节点 HTTP 用例
+### pytest 联调用例
 
-在 `deploy/` 下：
-
-```bash
-./tests/test_helloserver.sh
-```
-
-该脚本会启动 Hello 并验证 `POST /hello/hello` 的典型 JSON 用例（如 `Echo`、`TestHelloPoolCpu`、`TestHelloPoolBlock`）。
-
-### Interface 链路联调（Center -> Logic -> Interface）
-
-在 `deploy/` 下：
+在仓库根目录：
 
 ```bash
-./tests/test_interfaceserver.sh
+python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
 ```
 
-默认流程包含：
-
-- 启动 3 个 Center（Raft）
-- 启动 Logic 并等待注册
-- 启动 Interface
-- 执行 `GenKey -> VerifyKey` HTTP 冒烟
+覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路；`--mode=external` 可连接已有环境。
 
 ## 压测示例（wrk）
 
-仓库提供 `wrk` 脚本压测 Hello 接入：
+仓库提供 `pytest + wrk` 的性能用例：
 
 ```bash
-cd deploy
-./tests/test_helloserver_wrk.sh
+python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
 ```
 
 可覆盖参数示例：
 
 ```bash
-HELLO_HOST=127.0.0.1 HELLO_PORT=27006 HELLO_PATH=/hello/hello \
-  WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
-  ./tests/test_helloserver_wrk.sh
+WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
+  python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
 ```
 
-示例结果见 `deploy/tests/wrk_test_result.md`（当前样例约 `54k req/s`）。
+示例结果见 `deploy/tests/wrk_test_result.md`。
 
 ## 配置说明
 

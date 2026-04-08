@@ -127,29 +127,24 @@ cmake --build build --target InterfacePlugins -j1
 
 ---
 
-## 脚本（联调 / 压测，可选）
+## 测试（pytest，可选）
 
-需已 **`cmake --install`** 到 **`deploy/`**。在 **`deploy/`** 下执行；更多参数见各脚本文件头注释。
+需已 **`cmake --install`** 到 **`deploy/`**。
 
-**`test_helloserver.sh`** — 启动 Hello，并做一次极短 HTTP 冒烟。
-
-```bash
-cd deploy
-./tests/test_helloserver.sh
-```
-
-**`test_interfaceserver.sh`** — 按顺序拉起 Center / Logic / Interface，并做 Interface 联调冒烟。
+联调/冒烟（local 自动拉起 docker 栈）：
 
 ```bash
-bash deploy/tests/test_interfaceserver.sh
+python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
 ```
 
-**`test_helloserver_wrk.sh`** — wrk 压测 Hello（须先已启动 Hello）。样例输出见 **`deploy/tests/wrk_test_result.md`**。
+性能（wrk）：
 
 ```bash
-cd deploy
-./tests/test_helloserver_wrk.sh
+WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
+python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
 ```
+
+性能结果输出到 **`deploy/tests/wrk_test_result.md`**。
 
 ---
 

@@ -9,10 +9,7 @@
  ******************************************************************************/
 #ifndef CLIENT_STORAGEOPERATOR_HPP_
 #define CLIENT_STORAGEOPERATOR_HPP_
-#include <stdio.h>
-#include <string>
 #include "dataproxy.pb.h"
-#include "NetDefine.hpp"
 
 namespace net
 {

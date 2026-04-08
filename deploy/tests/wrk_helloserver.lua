@@ -1,6 +1,6 @@
 -- wrk 压测 Hello 模块 /hello/hello（ModuleHello）
 -- 服务端需解析 JSON body，故使用 POST + application/json
--- 用法见同目录 test_helloserver_wrk.sh
+-- 用法见 pytest 用例 deploy/tests/pytest/test_wrk_smoke.py
 
 wrk.method = "POST"
 wrk.body   = '{"option":"Echo"}'

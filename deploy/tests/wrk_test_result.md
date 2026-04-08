@@ -1,19 +1,27 @@
-# 在 deploy/ 下：./tests/test_helloserver_wrk.sh
+# wrk test result
 
-output:
+- mode: wrk
+- target: `http://127.0.0.1:27006/hello/hello`
+- args: `-t4 -c100 -d60s`
+- requests_per_sec: 78566.80
+- latency_avg: 1.27ms
+- transfer_per_sec: 9.74MB
 
-Running 10s test @ http://127.0.0.1:27006/hello/hello
+## raw output
+
+```text
+Running 1m test @ http://127.0.0.1:27006/hello/hello
   4 threads and 100 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.07ms    1.22ms  73.57ms   98.95%
-    Req/Sec    12.24k     1.32k   15.25k    98.27%
+    Latency     1.27ms  263.79us  39.26ms   91.18%
+    Req/Sec    19.75k     1.35k   23.84k    68.62%
   Latency Distribution
-     50%    2.01ms
-     75%    2.08ms
-     90%    2.17ms
-     99%    3.40ms
-  496249 requests in 9.16s, 54.42MB read
-  Socket errors: connect 0, read 0, write 0, timeout 100
-  Non-2xx or 3xx responses: 496249
-Requests/sec:  54192.73
-Transfer/sec:      5.94MB
+     50%    1.24ms
+     75%    1.34ms
+     90%    1.47ms
+     99%    2.29ms
+  4716695 requests in 1.00m, 584.76MB read
+Requests/sec:  78566.80
+Transfer/sec:      9.74MB
+
+```
