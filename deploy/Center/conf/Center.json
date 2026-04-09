@@ -78,6 +78,6 @@
         }
     ],
     "custom": {
-        "need_leadership": false
+        "need_leadership": true
     }
 }

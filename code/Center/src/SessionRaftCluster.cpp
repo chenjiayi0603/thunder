@@ -528,6 +528,7 @@ void SessionRaftCluster::RaftSendAppendEntriesToAll()
 void SessionRaftCluster::HandleRaftRequestVote(const std::string & /*remote_identify*/, const RaftRequestVote &req, RaftRequestVoteRsp *rsp)
 {
     const ev_tstamp now = GetLabor()->GetTimeStamp();
+    // 如果请求中的 term 小于本地 term，拒绝投票，并返回本地 term 和本地 node id alloc 游标提示
     if (req.term() < m_raftTerm)
     {
         rsp->set_term(m_raftTerm);
@@ -535,12 +536,15 @@ void SessionRaftCluster::HandleRaftRequestVote(const std::string & /*remote_iden
         rsp->set_voter_next_node_id_alloc_hint(static_cast<uint32_t>(m_uiNextNodeIdAlloc));
         return;
     }
+    // 如果请求中的 term 大于本地 term，则本节点切换为 Follower，并更新本地 term
     if (req.term() > m_raftTerm)
     {
         RaftBecomeFollower(req.term());
     }
+    // 返回当前（可能已更新）term
     rsp->set_term(m_raftTerm);
 
+    // 如果 term 相等且本节点还是 Leader，拒绝投票（不拆现任 Leader），并返回游标提示
     if (req.term() == m_raftTerm && m_raftRole == CenterRaftRole::Leader)
     {
         rsp->set_vote_granted(false);
@@ -548,17 +552,24 @@ void SessionRaftCluster::HandleRaftRequestVote(const std::string & /*remote_iden
         return;
     }
 
+    // 如果本轮未投票或者上次投票就是给本候选人，赞成投票，并延长 follower 选举超时时间
     if (m_raftVotedFor.empty() || m_raftVotedFor == req.candidate_id())
     {
+        // 赞成投票，将本地已投票记录设置为本候选人（为啥选本节点: 本轮未投票或已投给本候选人，因此当前可以授票）
         m_raftVotedFor = req.candidate_id();
+
         rsp->set_vote_granted(true);
+        // 延长 follower 选举超时时间，是因为本节点刚参与了投票，这说明它与集群的通信良好，不应过早发起新的选举造成不必要的分裂
         m_raftFollowerDeadline = now + kFollowerColdStartBase
             + (static_cast<ev_tstamp>(std::rand() % 1000) / 1000.0) * kFollowerColdStartRand;
+    
     }
     else
     {
+        // 否则，已经投给其他 candidate，拒绝投票
         rsp->set_vote_granted(false);
     }
+    // 返回本地节点的 node id alloc 游标提示
     rsp->set_voter_next_node_id_alloc_hint(static_cast<uint32_t>(m_uiNextNodeIdAlloc));
 }
 

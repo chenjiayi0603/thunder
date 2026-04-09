@@ -20,6 +20,9 @@ def _phase(msg: str) -> None:
     print(f"[pytest integration] {msg}", flush=True)
 
 
+# 等待 Center 端路由注册（即 LOGIC 和 INTERFACE 类型节点全部就绪），以避免测试时遇到 “no tagMsgShell match LOGIC” 错误。
+# 遍历一组可能的 admin 端口，尝试通过 /admin 接口分别检查 LOGIC 和 INTERFACE 两类节点均已注册。
+# 若所有 admin 端口均不可达，则进一步尝试通过业务链路上的 /Interface/gentoken 生成 token 检查服务完整性。
 def _wait_cluster_route_ready(timeout_s: float = 90.0) -> None:
     """
     等待 Center 侧路由注册完整（LOGIC + INTERFACE），避免业务用例首发时命中
@@ -36,23 +39,49 @@ def _wait_cluster_route_ready(timeout_s: float = 90.0) -> None:
             route_ready_by_admin = False
             for p in admin_ports:
                 try:
+                    # 构造 admin 接口 URL
                     url = f"http://127.0.0.1:{p}/admin"
+                    # 查询 LOGIC 节点
                     r_logic = s.post(url, json={"cmd": "show", "args": ["nodes", "LOGIC"]}, timeout=8)
+                    # 查询 INTERFACE 节点
                     r_if = s.post(url, json={"cmd": "show", "args": ["nodes", "INTERFACE"]}, timeout=8)
-                    if r_logic.status_code != 200 or r_if.status_code != 200:
-                        last_msg = f"admin {p} status logic={r_logic.status_code} interface={r_if.status_code}"
+                    # 查询 center 视图（GetRaftCenterJson: data=[{identify, leader, online}, ...]）
+                    r_center = s.post(url, json={"cmd": "show", "args": ["center"]}, timeout=8)
+                    # 检查 HTTP 状态码
+                    if (
+                        r_logic.status_code != 200 or
+                        r_if.status_code != 200 or
+                        r_center.status_code != 200
+                    ):
+                        last_msg = (
+                            f"admin {p} status logic={r_logic.status_code} "
+                            f"interface={r_if.status_code} center={r_center.status_code}"
+                        )
                         continue
+                    # 至少有一个 admin 可达
                     reachable_admin += 1
+                    # 解析返回的 JSON，获取节点数据
                     j_logic = r_logic.json()
                     j_if = r_if.json()
+                    j_center = r_center.json()
                     logic_nodes = j_logic.get("data") or []
                     interface_nodes = j_if.get("data") or []
-                    if logic_nodes and interface_nodes:
+                    center_data = j_center.get("data") or []
+                    leader_id = ""
+                    # 按当前 Center 实现：data=[{"identify":"...","leader":"yes|no","online":"yes"}...]
+                    for item in center_data:
+                        if isinstance(item, dict) and str(item.get("leader", "")).lower() == "yes":
+                            leader_id = str(item.get("identify") or "")
+                            if leader_id:
+                                break
+                    # LOGIC 和 INTERFACE 节点都已就绪且中心节点已选主
+                    if logic_nodes and interface_nodes and leader_id:
                         route_ready_by_admin = True
                         break
+                    # 记录节点数量情况和主节点情况，便于后续报错定位
                     last_msg = (
                         f"admin {p} route not ready: "
-                        f"LOGIC={len(logic_nodes)} INTERFACE={len(interface_nodes)}"
+                        f"LOGIC={len(logic_nodes)} INTERFACE={len(interface_nodes)} LEADER={'yes' if leader_id else 'no'}"
                     )
                 except Exception as e:  # noqa: BLE001
                     # 多 Center 场景下部分 admin 端口可能未开启，不应因单点不可达直接失败。
