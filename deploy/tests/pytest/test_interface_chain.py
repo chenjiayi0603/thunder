@@ -34,11 +34,10 @@ def test_interface_genkey_verifykey_chain(http_session: requests.Session) -> Non
         if token and key:
             break
         time.sleep(0.5)
-    # 在部分环境中 Logic 路由尚未就绪会返回 "logic step failed"；此处做兼容判定，避免把环境波动当代码错误。
-    if not (token and key):
-        assert isinstance(last, dict), last
-        assert str(last.get("msg", "")) in ("logic step failed", "success"), last
-        return
+    # 必须成功并拿到 token/key。
+    assert isinstance(last, dict), last
+    assert str(last.get("msg", "")) == "success", last
+    assert token and key, last
 
     verify = http_session.post(BASE_URL, json={"option": "VerifyKey", "token": token, "key": key}, timeout=60)
     assert verify.status_code == 200, verify.text

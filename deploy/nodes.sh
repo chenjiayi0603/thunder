@@ -2,9 +2,9 @@
 #
 # 统一部署脚本：启停、重启、清理
 # 用法（在 deploy 目录下）:
-#   ./nodes.sh start all | <节点名>     # 节点名：Interface、Logic、Hello、Center（与 SERVER_LIST 一致）；例：./nodes.sh start Interface
-#   ./nodes.sh stop all | all force | force | <节点名>   # all force：先各节点 stop.sh 再 pkill 兜底（netstat 杀不净时）
-#   ./nodes.sh restart all | reload | force | <节点名>   # 例：./nodes.sh restart Hello
+#   ./nodes.sh start all | <节点名>     # 节点名：Interface、Logic、Center（与 SERVER_LIST 一致）；例：./nodes.sh start Interface
+#   ./nodes.sh stop all | all force | force | <节点名>   # all force：先各节点 node stop，再 pkill 兜底（netstat 杀不净时）
+#   ./nodes.sh restart all | reload | force | <节点名>   # 例：./nodes.sh restart Logic
 #   ./nodes.sh restartforce all | <节点名>   # 强制重启：先 pkill 该节点进程再 start（stop 杀不掉时用）
 #   ./nodes.sh clean all | plugins | log | bin | core
 #   ./nodes.sh status | query              # 查节点：列出配置与运行中的 *_robot 进程
@@ -20,14 +20,13 @@ cd "${SERVER_HOME}"
 
 # ========== 配置（原 server_list.conf / server_dir.conf）==========
 # 启停顺序（与旧 server_list.conf 一致）
-SERVER_LIST=(Interface Logic Hello Center)
+SERVER_LIST=(Interface Logic Center)
 
 # 原 server_dir.conf：每行 nodetype plugin_path 第三列及以后为保留字段
 # 供 clean（plugins/log/bin）使用
 _server_dir_lines() {
   cat <<'EOF'
 Interface 	   	   /Interface/plugins/          			/plugins/Interface
-Hello 	   /Hello/plugins/          	    /plugins/Hello
 Center               /Center/plugins/          			/plugins/Center
 Logic               /Logic/plugins/          			/plugins/Logic
 EOF
@@ -47,16 +46,52 @@ _list_servers() {
   done
 }
 
+_node_start() {
+  local node="$1"
+  if [[ -x "${SERVER_HOME}/${node}/node.sh" ]]; then
+    "${SERVER_HOME}/${node}/node.sh" start all
+    return
+  fi
+  "${SERVER_HOME}/${node}/start.sh"
+}
+
+_node_stop() {
+  local node="$1"
+  if [[ -x "${SERVER_HOME}/${node}/node.sh" ]]; then
+    "${SERVER_HOME}/${node}/node.sh" stop all --yes
+    return
+  fi
+  "${SERVER_HOME}/${node}/stop.sh" "yes"
+}
+
+_node_restart() {
+  local node="$1"
+  if [[ -x "${SERVER_HOME}/${node}/node.sh" ]]; then
+    "${SERVER_HOME}/${node}/node.sh" restart all
+    return
+  fi
+  _stop_then_start "${node}"
+}
+
+_node_reload() {
+  local node="$1"
+  if [[ -x "${SERVER_HOME}/${node}/node.sh" ]]; then
+    "${SERVER_HOME}/${node}/node.sh" reload all
+    return
+  fi
+  "${SERVER_HOME}/${node}/restart.sh" "reload"
+}
+
 # 重启时 stop 后等待再 start，避免旧进程未退出导致 start 误判「已存在」而不拉起新进程
 _stop_then_start() {
   local node="$1"
   echo "=== restart ${node}: stop → wait → start ===" >&2
-  "${SERVER_HOME}/${node}/stop.sh" "yes"
+  _node_stop "${node}"
   sleep "${RESTART_WAIT_SEC:-2}"
-  "${SERVER_HOME}/${node}/start.sh"
+  _node_start "${node}"
 }
 
-# 强制杀某节点相关进程（不依赖 netstat；用于 stop.sh 无法匹配 PID 时）
+# 强制杀某节点相关进程（不依赖 netstat；用于 node stop 无法匹配 PID 时）
 _force_kill_node() {
   local node="$1"
   local bin_dir="${SERVER_HOME}/${node}/bin"
@@ -68,7 +103,6 @@ _force_kill_node() {
   done
   shopt -u nullglob
   case "$node" in
-    Hello) pkill -9 -f Hello_robot 2>/dev/null || true ;;
     Center) pkill -9 -f Center_robot 2>/dev/null || true ;;
     Logic) pkill -9 -f Logic_robot 2>/dev/null || true ;;
     Interface) pkill -9 -f Interface_robot 2>/dev/null || true ;;
@@ -96,7 +130,7 @@ Nodes: $(_list_servers | tr '\n' ' ')
 
 Examples:
   $(basename "$0") start all
-  $(basename "$0") restart Hello
+  $(basename "$0") restart Logic
   $(basename "$0") restartforce all
   $(basename "$0") clean log
   $(basename "$0") status
@@ -162,14 +196,14 @@ _cmd_start() {
   if [[ "$arg" == "all" ]]; then
     local s
     for s in "${SERVER_LIST[@]}"; do
-      "${SERVER_HOME}/${s}/start.sh"
+      _node_start "${s}"
     done
     return 0
   fi
   local s
   for s in "${SERVER_LIST[@]}"; do
     if [[ "$arg" == "$s" ]]; then
-      "${SERVER_HOME}/${s}/start.sh"
+      _node_start "${s}"
       echo "start ${s} ok"
       exit 0
     fi
@@ -190,10 +224,10 @@ _cmd_stop() {
   if [[ "$arg" == "all" ]]; then
     local s
     for s in "${SERVER_LIST[@]}"; do
-      "${SERVER_HOME}/${s}/stop.sh" "yes"
+      _node_stop "${s}"
     done
     if [[ "$arg2" == "force" ]]; then
-      echo "=== stop all force: 各节点 stop.sh 后再 pkill 兜底 ===" >&2
+      echo "=== stop all force: 各节点 node stop 后再 pkill 兜底 ===" >&2
       for s in "${SERVER_LIST[@]}"; do
         _force_kill_node "${s}"
       done
@@ -210,7 +244,7 @@ _cmd_stop() {
   local s
   for s in "${SERVER_LIST[@]}"; do
     if [[ "$arg" == "$s" ]]; then
-      "${SERVER_HOME}/${s}/stop.sh" "yes"
+      _node_stop "${s}"
       echo "stop ${s} ok"
       exit 0
     fi
@@ -232,7 +266,7 @@ _cmd_restart() {
   if [[ "$arg" == "reload" ]]; then
     local s
     for s in "${SERVER_LIST[@]}"; do
-      "${SERVER_HOME}/${s}/restart.sh" "reload"
+      _node_reload "${s}"
     done
     return 0
   fi
@@ -240,9 +274,9 @@ _cmd_restart() {
     bash "${BASH_SOURCE[0]}" stop force
     local s
     for s in "${SERVER_LIST[@]}"; do
-      "${SERVER_HOME}/${s}/stop.sh" "yes"
+      _node_stop "${s}"
       sleep "${RESTART_WAIT_SEC:-2}"
-      "${SERVER_HOME}/${s}/start.sh"
+      _node_start "${s}"
     done
     sleep 1
     echo "server list:"
@@ -287,7 +321,7 @@ _cmd_restartforce() {
       echo "=== restartforce ${s}: pkill → wait → start ===" >&2
       _force_kill_node "${s}"
       sleep "${RESTART_WAIT_SEC:-2}"
-      "${SERVER_HOME}/${s}/start.sh"
+      _node_start "${s}"
     done
     sleep 1
     echo "server list:"
@@ -300,7 +334,7 @@ _cmd_restartforce() {
       echo "=== restartforce ${s}: pkill → wait → start ===" >&2
       _force_kill_node "${s}"
       sleep "${RESTART_WAIT_SEC:-2}"
-      "${SERVER_HOME}/${s}/start.sh"
+      _node_start "${s}"
       echo "restartforce ${s} ok"
       exit 0
     fi

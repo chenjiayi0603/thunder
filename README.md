@@ -64,7 +64,7 @@ git submodule update --init --recursive \
 ```bash
 ./nodes.sh start all
 ./nodes.sh stop all
-./nodes.sh restart Hello
+./nodes.sh restart Logic
 ./nodes.sh status
 ```
 

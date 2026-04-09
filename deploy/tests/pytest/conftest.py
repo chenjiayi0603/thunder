@@ -6,6 +6,7 @@ pytest 会话级 fixture：本地模式下负责构建、安装、Docker 编排�
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,62 @@ from helpers.runtime import ensure_ports, require_ok, run_cmd
 def _phase(msg: str) -> None:
     """会话 setup 很长且无子进程输出时，避免误以为卡死（需配合 pytest -s 才实时落到终端）。"""
     print(f"[pytest integration] {msg}", flush=True)
+
+
+def _wait_cluster_route_ready(timeout_s: float = 90.0) -> None:
+    """
+    等待 Center 侧路由注册完整（LOGIC + INTERFACE），避免业务用例首发时命中
+    `no tagMsgShell match LOGIC` 的短窗口。
+    """
+    deadline = time.time() + timeout_s
+    last_msg = "cluster route not ready"
+    admin_ports = (26000, 26022, 26032)
+    genkey_url = "http://127.0.0.1:27008/Interface/gentoken"
+    with requests.Session() as s:
+        s.trust_env = False
+        while time.time() < deadline:
+            reachable_admin = 0
+            route_ready_by_admin = False
+            for p in admin_ports:
+                try:
+                    url = f"http://127.0.0.1:{p}/admin"
+                    r_logic = s.post(url, json={"cmd": "show", "args": ["nodes", "LOGIC"]}, timeout=8)
+                    r_if = s.post(url, json={"cmd": "show", "args": ["nodes", "INTERFACE"]}, timeout=8)
+                    if r_logic.status_code != 200 or r_if.status_code != 200:
+                        last_msg = f"admin {p} status logic={r_logic.status_code} interface={r_if.status_code}"
+                        continue
+                    reachable_admin += 1
+                    j_logic = r_logic.json()
+                    j_if = r_if.json()
+                    logic_nodes = j_logic.get("data") or []
+                    interface_nodes = j_if.get("data") or []
+                    if logic_nodes and interface_nodes:
+                        route_ready_by_admin = True
+                        break
+                    last_msg = (
+                        f"admin {p} route not ready: "
+                        f"LOGIC={len(logic_nodes)} INTERFACE={len(interface_nodes)}"
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # 多 Center 场景下部分 admin 端口可能未开启，不应因单点不可达直接失败。
+                    last_msg = f"admin {p} not reachable: {e}"
+            if route_ready_by_admin:
+                return
+            if reachable_admin == 0:
+                # 某些环境不开放 /admin，改以业务链路可用性作为“启动完整”判据。
+                try:
+                    r = s.post(genkey_url, json={"option": "GenKey"}, timeout=8)
+                    if r.status_code == 200:
+                        j = r.json()
+                        if j.get("token") and j.get("key") and str(j.get("msg", "")) == "success":
+                            return
+                        last_msg = f"genkey not ready: msg={j.get('msg')} code={j.get('code')}"
+                    else:
+                        last_msg = f"genkey http status={r.status_code}"
+                except Exception as e:  # noqa: BLE001
+                    last_msg = f"genkey check error: {e}"
+            time.sleep(1.0)
+    raise AssertionError(f"cluster route not ready within {timeout_s:.0f}s: {last_msg}")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -117,6 +174,8 @@ def service_readiness(mode: str, docker_stack: object) -> None:
     if mode == "local":
         _phase("等待 Redis/MySQL 6379 / 3306 就绪（每项最长约 120s）…")
         ensure_ports("127.0.0.1", [6379, 3306], timeout_s=120.0)
+        _phase("等待 Center 路由注册完成（LOGIC + INTERFACE）…")
+        _wait_cluster_route_ready(timeout_s=90.0)
     _phase("端口就绪，开始跑用例")
 
 

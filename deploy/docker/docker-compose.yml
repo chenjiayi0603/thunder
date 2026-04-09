@@ -12,7 +12,7 @@
 # 说明：
 # - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。
 # - 卷挂载仓库根 ../../ → /thunder，以便 deploy 与 code/3party 库路径与 start.sh 一致。
-# - Center 默认拉起 conf + conf2 + conf3 三实例（Raft）；健康检查等待 27000/27022/27032。
+# - 本地集成测试默认仅拉起单 Center（conf）；健康检查等待 27000。
 # - redis / mysql：供 Hello 模块 JSON option「TestHelloCoRedis」「TestHelloCoMysql」（默认 127.0.0.1:6379 / :3306，与 host 网络一致）。
 # - start.sh 拉起守护进程后脚本会结束，故用 tail -f /dev/null 保持容器运行；已开启 init: true 便于回收子进程。
 #
@@ -110,8 +110,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
-        ./start.sh
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
@@ -124,7 +124,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "ss -tln | grep -q ':27000 ' && ss -tln | grep -q ':27022 ' && ss -tln | grep -q ':27032 '",
+          "ss -tln | grep -q ':27000 '",
         ]
       interval: 3s
       timeout: 5s
@@ -142,8 +142,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
-        ./start.sh
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:
@@ -174,8 +174,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
-        ./start.sh
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:
@@ -200,8 +200,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
-        ./start.sh
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:
@@ -232,9 +232,9 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
+        chmod +x ./node.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
         ./scripts/gen_self_signed_https_cert.sh || true
-        ./start.sh
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:
@@ -263,8 +263,8 @@ services:
       - -c
       - |
         set -e
-        chmod +x ./start.sh ./stop.sh 2>/dev/null || true
-        ./start.sh
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:

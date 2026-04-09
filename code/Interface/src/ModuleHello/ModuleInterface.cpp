@@ -117,7 +117,15 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
             if (oJson.Get("code", code) && code == 0)
             {
                 httpCode = 200;
+                // 兼容历史逻辑返回仅含 token/key 的场景，统一补齐成功语义。
+                std::string msg;
+                if (!oJson.Get("msg", msg) || msg.empty())
+                {
+                    oJson.Add("msg", "success");
+                }
             }
+            step.ResponseToClient(httpCode, oJson.ToString());
+            co_return;
         }
         step.ResponseToClient(httpCode, logicBody);
         co_return;

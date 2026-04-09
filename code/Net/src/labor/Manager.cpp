@@ -330,9 +330,14 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
                                            conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
                                            
 								auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
-								if (center_iter != m_mapCenterMsgShell.end())
-								{//center发来的
-									bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody,pConn);// 非与center连接（其他类型节点发来的）
+								const bool bCenterCmd =
+									(oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER) ||
+									(oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER) ||
+									(oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT) ||
+									(oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT);
+								if (center_iter != m_mapCenterMsgShell.end() || bCenterCmd)
+								{// center发来的，或尚未建立identify但消息类型已明确为center链路
+									bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody,pConn);
 								}
 								else
 								{//其他节点（非中心）发来信息
@@ -2135,6 +2140,15 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 bool Manager::DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody,tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
+    if (oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER ||
+        oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER ||
+        oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT ||
+        oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT)
+    {
+        // 某些连接在identify尚未建立时会先收到Center链路消息，按Center通路处理，避免误判为transfer-fd。
+        return DisposeDataFromCenter(oInMsgHead, oInMsgBody, pConn);
+    }
+
     ConnectWorker oConnWorker;
     OrdinaryResponse oRes;
     LOG4_TRACE("oInMsgHead.cmd() = %u, seq() = %u", oInMsgHead.cmd(), oInMsgHead.seq());

@@ -63,5 +63,7 @@
             "version": 1
         }
     ],
-    "custom": {}
+    "custom": {
+        "need_leadership": false
+    }
 }

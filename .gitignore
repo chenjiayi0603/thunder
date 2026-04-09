@@ -39,9 +39,6 @@ deploy/HelloHttps/conf/certs/ca.crt
 deploy/HelloHttps/conf/certs/server.crt
 deploy/HelloHttps/conf/certs/server.key 
 deploy/HelloHttps/conf/certs/ca.key
-deploy/Hello/bin/Hello
-deploy/Hello/bin/HelloHttps
-deploy/Hello/bin/HelloWs
 deploy/HelloHttp/bin/Hello
 deploy/HelloHttps/bin/Hello
 deploy/HelloWs/bin/Hello

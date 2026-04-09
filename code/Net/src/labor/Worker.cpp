@@ -2047,7 +2047,7 @@ bool Worker::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMs
     auto shell_iter = mapMsgShell.find(strIdentify);
     if (shell_iter == mapMsgShell.end())
     {
-        AddMsgShell(strIdentify, stMsgShell);
+        mapMsgShell.insert(std::make_pair(strIdentify, stMsgShell));
     }
     else
     {
@@ -2059,13 +2059,13 @@ bool Worker::AddMsgShell(const std::string& strIdentify, const tagMsgShell& stMs
             {
                 LOG4_TRACE("%s() GetWorkerIdentify() != strIdentify. replace old stMsgShell(%d,%u) with new stMsgShell(%d,%u)",
                                 __FUNCTION__,shell_iter->second.iFd,shell_iter->second.ulSeq,stMsgShell.iFd,stMsgShell.ulSeq);
-                AddMsgShell(strIdentify, stMsgShell);
+                shell_iter->second = stMsgShell;
             }
             else
             {
                 LOG4_TRACE("%s() replace old stMsgShell(%d,%u) with new stMsgShell(%d,%u)",
                                 __FUNCTION__,shell_iter->second.iFd,shell_iter->second.ulSeq,stMsgShell.iFd,stMsgShell.ulSeq);
-                AddMsgShell(strIdentify, stMsgShell);
+                shell_iter->second = stMsgShell;
             }
         }
     }
@@ -2087,7 +2087,7 @@ void Worker::DelMsgShell(const std::string& strIdentify,const tagMsgShell& stMsg
             if(stMsgShell.iFd == shell_iter->second.iFd && stMsgShell.ulSeq == shell_iter->second.ulSeq)
             {
                 LOG4_TRACE("%s() strIdentify(%s) del map stMsgShell(%d,%u)",__FUNCTION__,strIdentify.c_str(),shell_iter->second.iFd,shell_iter->second.ulSeq);
-                DelMsgShell(strIdentify, stMsgShell);
+                mapMsgShell.erase(shell_iter);
             }
             else
             {
@@ -2099,7 +2099,7 @@ void Worker::DelMsgShell(const std::string& strIdentify,const tagMsgShell& stMsg
         {
             LOG4_TRACE("%s() strIdentify(%s) del map stMsgShell(%d,%u)",
                             __FUNCTION__,strIdentify.c_str(),shell_iter->second.iFd,shell_iter->second.ulSeq);
-            DelMsgShell(strIdentify, stMsgShell);
+            mapMsgShell.erase(shell_iter);
         }
     }
 // 连接虽然断开，但不应清除节点标识符，这样可以保证下次有数据发送时可以重新建立连接
