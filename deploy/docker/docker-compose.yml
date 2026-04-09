@@ -7,10 +7,7 @@
 #   docker compose up -d
 #   docker compose logs -f
 #   docker compose down
-#   ./test_all_docker_smoke.sh         # 总入口：dev_up_logs 起栈 → 上述三 smoke → compose down
-#   ./test_interfaceserver_smoke.sh    # 宿主机 HTTP 冒烟（GenKey/VerifyKey，无需本机 Interface 二进制）
-#   ./test_helloserver_smoke.sh        # 宿主机 HTTP 冒烟（Echo/HelloPool，默认无需本机 Hello 二进制）
-#   ./test_helloserver_ws_smoke.sh     # WebSocket 冒烟（compose 内 hello_ws 监听 27010，见 conf/HelloWs.json）
+#   ../tests/test_all.sh               # 统一 pytest 入口（integration/smoke）
 #
 # 说明：
 # - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。

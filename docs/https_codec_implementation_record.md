@@ -49,7 +49,7 @@
 - `deploy/HelloHttps/*`
   - 各自独立 `start.sh` / `stop.sh` / `conf` / `scripts` / `log` / `plugins`。
 - `deploy/HelloHttps/scripts/gen_self_signed_https_cert.sh`
-- `deploy/docker/test_helloserver_https_smoke.sh`
+- `deploy/tests/test_all.sh`（统一 pytest 集成/冒烟入口）
 
 ---
 
@@ -162,8 +162,8 @@ HTTPS 典型配置：`deploy/HelloHttps/conf/HelloHttps.json`
 
 与冒烟脚本联动：
 
-- `deploy/docker/test_helloserver_https_smoke.sh` 默认 `GENERATE_CERT=1`。
-- 当证书缺失时，HTTPS smoke 会自动调用 `deploy/HelloHttps/scripts/gen_self_signed_https_cert.sh` 生成证书后继续测试。
+- `deploy/tests/pytest` 中 HTTPS 用例默认使用 `deploy/HelloHttps/conf/certs/ca.crt` 进行证书校验。
+- 当证书缺失时，可先执行 `deploy/HelloHttps/scripts/gen_self_signed_https_cert.sh` 生成证书后再运行 pytest。
 
 ---
 
@@ -201,10 +201,10 @@ r = requests.post(url, json=payload, verify="./deploy/HelloHttps/conf/certs/ca.c
 print(r.status_code, r.text)
 ```
 
-集成测试脚本（覆盖 Echo / TestHelloPoolCpu / TestHelloPoolBlock）：
+集成测试（覆盖 Echo / TestHelloPoolCpu / TestHelloPoolBlock）：
 
 ```bash
-python3 ./deploy/docker/test_helloserver_https_integration.py
+./deploy/tests/test_all.sh
 ```
 
 可选环境变量：
@@ -285,31 +285,27 @@ Docker 服务映射：
 ./deploy/docker/dev_up_logs.sh restart
 ```
 
-### 9.2 三协议 smoke
+### 9.2 pytest 集成/冒烟入口
 
 ```bash
-./deploy/docker/test_helloserver_smoke.sh
-./deploy/docker/test_helloserver_ws_smoke.sh
-./deploy/docker/test_helloserver_https_smoke.sh
-python3 ./deploy/docker/test_helloserver_https_integration.py
+./deploy/tests/test_all.sh
 ```
 
-统一入口（推荐）：
+按模式运行（推荐）：
 
 ```bash
-# 本地模式（默认）：自动拉起 docker compose 并执行 unit/integration/docker-smoke
-./deploy/docker/test_all_integration.sh --local
+# 本地模式（默认）：自动拉起 docker compose 并执行 integration/smoke
+./deploy/tests/test_all.sh
 
 # 外部模式：只连接现有环境，不做 compose up/down
-./deploy/docker/test_all_integration.sh --external --group integration
+MODE=external ./deploy/tests/test_all.sh
 ```
 
-### 9.3 从 ctest+smoke 迁移到统一入口（分阶段）
+### 9.3 统一测试入口（当前）
 
-- 第 1 阶段（已可用）：保留现有 `ctest` 与各 `*smoke.sh`，新增 `test_all_integration.sh` 作为统一入口。
-- 第 2 阶段：CI 先接入 `--external --group unit`，保证无外部依赖的测试稳定。
-- 第 3 阶段：在具备 Docker Runner 的 CI 作业接入 `--local --group integration`，跑 ORM + HTTPS Python 集成。
-- 第 4 阶段：将 `--local --group docker-smoke` 纳入发布前门禁，与现有 smoke 脚本统一汇总结果。
+- 统一入口为 `deploy/tests/test_all.sh`。
+- 默认使用 `-m "integration or smoke"` 运行 pytest 用例。
+- 通过 `MODE=external` 可连接已存在环境运行，不触发 compose 生命周期管理。
 
 HTTPS smoke 常用环境变量：
 
@@ -388,7 +384,7 @@ cmake --install build
 
 - 支持 TLS 版本、密码套件白名单配置化。
 - 增加双向证书校验（mTLS）回归用例。
-- 将 HTTPS smoke 纳入统一 `test_all_docker_smoke.sh` 强制门禁。
+- 将 HTTPS 相关用例继续纳入 `deploy/tests/test_all.sh` 强制门禁。
 
 ---
 

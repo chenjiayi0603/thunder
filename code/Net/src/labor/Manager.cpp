@@ -326,8 +326,9 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
                             }
                             else
                             {
-                                LOG4_TRACE("strIdentify: %s, m_mapCenterMsgShell.size()=%zu",
-                                                conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
+                                LOG4_DEBUG("Received data from connection. strIdentify: %s. Number of center shells: %zu",
+                                           conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
+                                           
 								auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
 								if (center_iter != m_mapCenterMsgShell.end())
 								{//center发来的
@@ -335,13 +336,19 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
 								}
 								else
 								{//其他节点（非中心）发来信息
-									LOG4_TRACE("center_iter == m_mapCenterMsgShell.end()");
+									LOG4_TRACE("No matching center found for strIdentify: %s, proceeding with DisposeDataAndTransferFd. m_mapCenterMsgShell.size()=%zu",
+											    pConn->strIdentify.c_str(), m_mapCenterMsgShell.size());
+				
 									bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
 								}
                             }
+                            // 跳过已处理的消息头和消息体字节
                             pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
-                            pConn->pRecvBuff->Compact(32784);   // 超过32KB则重新分配内存
+                    
+                            // 如果缓冲区超过32KB，则重新分配内存以节省资源
+                            pConn->pRecvBuff->Compact(32784);   
                             pConn->pSendBuff->Compact(32784);
+                    
                             if (!bContinue)
                             {
                                 DestroyConnect(conn_iter);
@@ -397,6 +404,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     else
     {
     	tagConnectionAttr* pConn = attr_iter->second.get();
+        // 检查回调参数中的序列号和文件描述符是否与连接属性匹配
         if ((pData->ulSeq != pConn->ulSeq) || (pData->iFd != pConn->iFd))
         {
             LOG4_TRACE("callback seq %u or ifd(%d) not match the conn attr seq %u or ifd(%d)",
@@ -436,7 +444,6 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         else    // iWriteLen == 0 写缓冲区为空
         {
-        	//LOG4_TRACE("pData->iFd %d, watcher->fd %d, iter->second->pWaitForSendBuff->ReadableBytes()=%d",pData->iFd, watcher->fd, attr_iter->second->pWaitForSendBuff->ReadableBytes());
             if (pConn->pWaitForSendBuff->ReadableBytes() > 0)    // 存在等待发送的数据，说明本次写事件是connect之后的第一个写事件
             {
                 auto index_iter = m_mapSeq2WorkerIndex.find(pConn->ulSeq);
@@ -2216,7 +2223,8 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
     LOG4_TRACE("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
 	tagMsgShell stMsgShell(pConn->iFd,pConn->ulSeq);
     int iErrno = 0;
-    if (gc_uiCmdReq & oInMsgHead.cmd())    // 新请求，直接转发给Worker，并回复Center已收到请求
+    // 判断是否为新请求，若是则直接转发给Worker，并回复Center已收到请求
+    if (gc_uiCmdReq & oInMsgHead.cmd())
     {
 		uint32 uiCmd = gc_uiCmdBit & oInMsgHead.cmd();
 		auto cmd_iter = m_mapSysCmd.find(uiCmd);
@@ -2236,32 +2244,32 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
 				LOG4_TRACE("%s CMD_REQ_NODE_RESTART_WORKERS", __FUNCTION__);//重启工作者
 				return(true);
 			}
-            else if (CMD_REQ_SET_NODE_CUSTOM_CONFIG == oInMsgHead.cmd())
-            {
-                OrdinaryResponse oRes;
-                ConfigInfo oConfigInfo;
-                if (!oConfigInfo.ParseFromString(oInMsgBody.body()))
-                {
-                    oRes.set_err_no(1);
-                    oRes.set_err_msg("invalid ConfigInfo");
-                }
-                else if (!GetCustomConfigVersionData().SetCustomConfig(oConfigInfo.file_content()))
-                {
-                    oRes.set_err_no(2);
-                    oRes.set_err_msg("write custom shm failed");
-                }
-                else
-                {
-                    oRes.set_err_no(0);
-                    oRes.set_err_msg("OK");
-                    LOG4_INFO("%s() custom mirror updated, version=%llu, bytes=%zu",
-                              __FUNCTION__,
-                              static_cast<unsigned long long>(GetCustomConfigVersionData().GetCustomVersion()),
-                              oConfigInfo.file_content().size());
-                }
-                SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(), oRes.SerializeAsString());
-                return true;
-            }
+			else if (CMD_REQ_SET_NODE_CUSTOM_CONFIG == oInMsgHead.cmd())
+			{
+				OrdinaryResponse oRes;
+				ConfigInfo oConfigInfo;
+				if (!oConfigInfo.ParseFromString(oInMsgBody.body()))
+				{
+					oRes.set_err_no(1);
+					oRes.set_err_msg("invalid ConfigInfo");
+				}
+				else if (!GetCustomConfigVersionData().SetCustomConfig(oConfigInfo.file_content()))
+				{
+					oRes.set_err_no(2);
+					oRes.set_err_msg("write custom shm failed");
+				}
+				else
+				{
+					oRes.set_err_no(0);
+					oRes.set_err_msg("OK");
+					LOG4_INFO("%s() custom mirror updated, version=%llu, bytes=%zu",
+							__FUNCTION__,
+							static_cast<unsigned long long>(GetCustomConfigVersionData().GetCustomVersion()),
+							oConfigInfo.file_content().size());
+				}
+				SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(), oRes.SerializeAsString());
+				return true;
+			}
 			SendToWorker(oInMsgHead, oInMsgBody);
 			OrdinaryResponse oRes;
 			oRes.set_err_no(0);
