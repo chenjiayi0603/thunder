@@ -275,6 +275,20 @@ target_link_libraries(thunder_test_dispatcher_conhash PRIVATE GTest::gtest_main)
 set_target_properties(thunder_test_dispatcher_conhash PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_dispatcher_conhash DISCOVERY_MODE PRE_TEST)
 
+# ---- ShmRingQueue 共享内存队列 ----
+add_executable(thunder_test_shm_queue
+  labor/test_shm_queue.cpp
+)
+target_include_directories(thunder_test_shm_queue PRIVATE
+  "${THUNDER_NET}/include"
+  "${THUNDER_UTIL}/src"
+  "${THUNDER_3PARTY}/include"
+  "${THUNDER_3PARTY}/include/libev"
+)
+target_compile_features(thunder_test_shm_queue PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_shm_queue PRIVATE GTest::gtest_main Threads::Threads)
+gtest_discover_tests(thunder_test_shm_queue)
+
 # ---- E2E 容器烟雾测试 (需 THUNDER_E2E_ENABLED=1) ----
 add_executable(thunder_test_e2e_smoke
   e2e/test_e2e_smoke.cpp

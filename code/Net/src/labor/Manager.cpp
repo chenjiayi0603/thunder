@@ -13,6 +13,7 @@
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
+#include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
 #include "cmd/sys_cmd/CmdMgrBeat.hpp"
@@ -1090,6 +1091,24 @@ void Manager::Destroy()
     }
     m_mapClientConnFrequency.clear();
 
+    // 清理所有 Worker 的共享内存队列
+    for (auto& kv : m_mapWorker)
+    {
+        tagWorkerAttr& attr = kv.second;
+        if (attr.pMgrToWorkerQueue)
+        {
+            ShmRingQueue::Destroy(attr.pMgrToWorkerQueue, 128, 4096);
+            attr.pMgrToWorkerQueue = nullptr;
+        }
+        if (attr.pWorkerToMgrQueue)
+        {
+            ShmRingQueue::Destroy(attr.pWorkerToMgrQueue, 128, 4096);
+            attr.pWorkerToMgrQueue = nullptr;
+        }
+        ShmRingQueue::CloseEventFd(attr.iMgrToWorkerEventFd);
+        ShmRingQueue::CloseEventFd(attr.iWorkerToMgrEventFd);
+    }
+
     free(m_pPeriodicTaskWatcher); m_pPeriodicTaskWatcher = nullptr;
     if (m_loop != nullptr)
     {
@@ -1188,6 +1207,11 @@ void Manager::CreateWorker()
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
         }
 
+        ShmRingQueue* pMgrToWorker = ShmRingQueue::Create(128, 4096);
+        ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+        int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
+        int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
+
         int iPid = fork();
         if (iPid == 0)   // 子进程
         {
@@ -1196,9 +1220,11 @@ void Manager::CreateWorker()
             CloseSocket(m_iS2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
+            ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
             x_sock_set_block(iControlFds[1], 0);
             x_sock_set_block(iDataFds[1], 0);
-            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf);
+            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf,
+                                         pMgrToWorker, pWorkerToMgr, iMgrToWorkerEfd, iWorkerToMgrEfd);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
             pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
             pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
@@ -1211,12 +1237,17 @@ void Manager::CreateWorker()
         {
             close(iControlFds[1]);
             close(iDataFds[1]);
+            ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
             x_sock_set_block(iControlFds[0], 0);
             x_sock_set_block(iDataFds[0], 0);
             tagWorkerAttr stWorkerAttr;
             stWorkerAttr.iWorkerIndex = i;
             stWorkerAttr.iControlFd = iControlFds[0];
             stWorkerAttr.iDataFd = iDataFds[0];
+            stWorkerAttr.pMgrToWorkerQueue = pMgrToWorker;
+            stWorkerAttr.pWorkerToMgrQueue = pWorkerToMgr;
+            stWorkerAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
+            stWorkerAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
             m_mapWorker.insert(std::pair<int, tagWorkerAttr>(iPid, stWorkerAttr));
             m_mapWorkerFdPid.insert(std::make_pair(iControlFds[0], iPid));
             m_mapWorkerFdPid.insert(std::make_pair(iDataFds[0], iPid));
@@ -1300,6 +1331,20 @@ bool Manager::RestartWorker(int iDeathPid)
         }
         DestroyConnect(m_mapFdAttr.find(worker_iter->second.iControlFd));
         DestroyConnect(m_mapFdAttr.find(worker_iter->second.iDataFd));
+
+        // 销毁旧共享内存队列
+        tagWorkerAttr& oldAttr = worker_iter->second;
+        if (oldAttr.pMgrToWorkerQueue)
+        {
+            ShmRingQueue::Destroy(oldAttr.pMgrToWorkerQueue, 128, 4096);
+        }
+        if (oldAttr.pWorkerToMgrQueue)
+        {
+            ShmRingQueue::Destroy(oldAttr.pWorkerToMgrQueue, 128, 4096);
+        }
+        ShmRingQueue::CloseEventFd(oldAttr.iMgrToWorkerEventFd);
+        ShmRingQueue::CloseEventFd(oldAttr.iWorkerToMgrEventFd);
+
         m_mapWorker.erase(worker_iter);
 
 		LOG4_INFO("worker %d had been restarted %d times!", iWorkerIndex, m_mapWorkerRestartNum[iWorkerIndex]);
@@ -1314,6 +1359,13 @@ bool Manager::RestartWorker(int iDeathPid)
         {
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, errMsg, 1024));
         }
+
+        // 重建共享内存队列
+        ShmRingQueue* pMgrToWorker = ShmRingQueue::Create(128, 4096);
+        ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+        int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
+        int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
+
         LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
         RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
         CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1325,10 +1377,12 @@ bool Manager::RestartWorker(int iDeathPid)
             CloseSocket(m_iS2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
+            ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
             x_sock_set_block(iControlFds[1], 0);
             x_sock_set_block(iDataFds[1], 0);
             sleep(1);// 子进程重启避免过快重启导致快速触发错误
-            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf);
+            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf,
+                                         pMgrToWorker, pWorkerToMgr, iMgrToWorkerEfd, iWorkerToMgrEfd);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
             pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
             pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
@@ -1343,12 +1397,17 @@ bool Manager::RestartWorker(int iDeathPid)
             ev_loop_fork(m_loop);
             close(iControlFds[1]);
             close(iDataFds[1]);
+            ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
             x_sock_set_block(iControlFds[0], 0);
             x_sock_set_block(iDataFds[0], 0);
             tagWorkerAttr stWorkerAttr;
             stWorkerAttr.iWorkerIndex = iWorkerIndex;
             stWorkerAttr.iControlFd = iControlFds[0];
             stWorkerAttr.iDataFd = iDataFds[0];
+            stWorkerAttr.pMgrToWorkerQueue = pMgrToWorker;
+            stWorkerAttr.pWorkerToMgrQueue = pWorkerToMgr;
+            stWorkerAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
+            stWorkerAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
             LOG4_TRACE("m_mapWorker insert (iNewPid %d, worker_index %d)", iNewPid, iWorkerIndex);
             m_mapWorker.insert(std::make_pair(iNewPid, stWorkerAttr));
             m_mapWorkerFdPid.insert(std::make_pair(iControlFds[0], iNewPid));
@@ -1678,6 +1737,33 @@ bool Manager::CheckWorker()
     for (auto worker_iter:m_mapWorker)
     {
         LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime,m_iWorkerBeat);
+        // 消费 Worker→Manager 共享内存队列
+        tagWorkerAttr& attr = worker_iter.second;
+        if (attr.pWorkerToMgrQueue && attr.iWorkerToMgrEventFd >= 0)
+        {
+            // 先消费 eventfd 计数器
+            uint64_t ev;
+            while (read(attr.iWorkerToMgrEventFd, &ev, sizeof(ev)) > 0) {}
+            // 批量出队
+            uint32_t cmd, seq, body_len;
+            char body_buf[4096];
+            while (attr.pWorkerToMgrQueue->TryDequeue(cmd, seq, body_buf, body_len))
+            {
+                // 构造 MsgHead + MsgBody 并走现有处理流程
+                MsgHead oInMsgHead;
+                MsgBody oInMsgBody;
+                oInMsgHead.set_cmd(cmd);
+                oInMsgHead.set_seq(seq);
+                oInMsgHead.set_msgbody_len(body_len);
+                oInMsgBody.set_body(body_buf, body_len);
+                // 用 control fd 对应的连接属性模拟 worker 来源
+                auto conn_iter = m_mapFdAttr.find(attr.iControlFd);
+                if (conn_iter != m_mapFdAttr.end())
+                {
+                    DisposeDataFromWorker(oInMsgHead, oInMsgBody, conn_iter->second.get());
+                }
+            }
+        }
         if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
         {
             LOG4_INFO( "worker_%d pid %d is unresponsive, terminate it.", worker_iter.second.iWorkerIndex, worker_iter.first);
@@ -1902,13 +1988,30 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     for (const auto& worker_iter :m_mapWorker)
     {
-        auto worker_conn_iter = m_mapFdAttr.find(worker_iter.second.iControlFd);
+        const tagWorkerAttr& attr = worker_iter.second;
+        // 优先走共享内存队列
+        if (attr.pMgrToWorkerQueue && attr.iMgrToWorkerEventFd >= 0)
+        {
+            const std::string& body = oMsgBody.body();
+            if (attr.pMgrToWorkerQueue->TryEnqueue(
+                    oMsgHead.cmd(), oMsgHead.seq(),
+                    body.data(), static_cast<uint32_t>(body.size())))
+            {
+                ShmRingQueue::NotifyEventFd(attr.iMgrToWorkerEventFd);
+                LOG4_TRACE("shm send cmd %d seq %u to worker %d",
+                           oMsgHead.cmd(), oMsgHead.seq(), attr.iWorkerIndex);
+                continue;
+            }
+            LOG4_WARN("shm queue full for worker %d, fallback to socket", attr.iWorkerIndex);
+        }
+        // 降级走原有 socket
+        auto worker_conn_iter = m_mapFdAttr.find(attr.iControlFd);
         if (worker_conn_iter != m_mapFdAttr.end())
         {
-        	LOG4_TRACE("send cmd %d seq %u to worker %d", oMsgHead.cmd(), oMsgHead.seq(), worker_iter.second.iWorkerIndex);
+        	LOG4_TRACE("socket send cmd %d seq %u to worker %d", oMsgHead.cmd(), oMsgHead.seq(), attr.iWorkerIndex);
         	if (SendTo(worker_conn_iter->second.get(),oMsgHead,oMsgBody))
 			{
-        		LOG4_TRACE("send to worker %d success, cmd %d seq %u",worker_iter.second.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
+        		LOG4_TRACE("send to worker %d success, cmd %d seq %u",attr.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
 			}
         }
     }

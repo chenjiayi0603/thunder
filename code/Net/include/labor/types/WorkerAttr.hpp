@@ -10,6 +10,8 @@
 #include "libev/ev.h"
 #include "NetDefine.hpp"
 
+struct ShmRingQueue;
+
 struct tagWorkerAttr
 {
     int iWorkerIndex = 0;                   ///< 工作进程序号
@@ -23,6 +25,12 @@ struct tagWorkerAttr
     int32 iSendByte = 0;                    ///< 发送字节数
     int32 iClientNum = 0;                   ///< 客户端数量
     ev_tstamp dBeatTime = time(nullptr);    ///< 心跳时间
+
+    // 共享内存队列（Manager↔Worker 控制流）
+    ShmRingQueue* pMgrToWorkerQueue = nullptr;   ///< Manager → Worker 消息队列
+    ShmRingQueue* pWorkerToMgrQueue = nullptr;   ///< Worker → Manager 消息队列
+    int           iMgrToWorkerEventFd = -1;       ///< 通知 Worker 的 eventfd
+    int           iWorkerToMgrEventFd = -1;       ///< 通知 Manager 的 eventfd
 
     tagWorkerAttr() = default;
     tagWorkerAttr(const tagWorkerAttr&) = default;

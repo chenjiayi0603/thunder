@@ -20,6 +20,7 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "labor/Worker.hpp"
+#include "labor/types/ShmRingQueue.hpp"
 #include "labor/WorkerThreadPool.hpp"
 #include "thread/threadpool.h"
 #include <unordered_map>
@@ -159,6 +160,35 @@ void Worker::SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watch
     }
 }
 
+void Worker::ShmReadCallback(struct ev_loop* loop, struct ev_io* watcher, int revents)
+{
+    if (watcher->data != nullptr)
+    {
+        Worker* pWorker = static_cast<Worker*>(watcher->data);
+        // 消费 eventfd 计数器
+        uint64_t val;
+        while (read(watcher->fd, &val, sizeof(val)) > 0) {}
+        // 批量出队 Manager→Worker 消息
+        uint32_t cmd, seq, body_len;
+        char body_buf[4096];
+        while (pWorker->m_pMgrToWorkerQueue &&
+               pWorker->m_pMgrToWorkerQueue->TryDequeue(cmd, seq, body_buf, body_len))
+        {
+            MsgHead oInMsgHead, oOutMsgHead;
+            MsgBody oInMsgBody, oOutMsgBody;
+            oInMsgHead.set_cmd(cmd);
+            oInMsgHead.set_seq(seq);
+            oInMsgHead.set_msgbody_len(body_len);
+            oInMsgBody.set_body(body_buf, body_len);
+            auto conn_iter = pWorker->mapFdAttr.find(pWorker->iManagerControlFd);
+            if (conn_iter != pWorker->mapFdAttr.end())
+            {
+                pWorker->Dispose(conn_iter->second.get(), oInMsgHead, oInMsgBody, oOutMsgHead, oOutMsgBody);
+            }
+        }
+    }
+}
+
 void Worker::RedisConnectCallback(const redisAsyncContext *c, int status)
 {
     if (c->data != nullptr)
@@ -213,12 +243,18 @@ void Worker::RedisClusterCmdCallback(redisClusterAsyncContext *acc, void *reply,
     }
 }
 
-Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf)
+Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf,
+               ShmRingQueue* pMgrToWorker, ShmRingQueue* pWorkerToMgr,
+               int iMgrToWorkerEfd, int iWorkerToMgrEfd)
 {
 	m_strWorkPath = strWorkPath;
     iManagerControlFd = iControlFd;
     iManagerDataFd = iDataFd;
     iWorkerIndex = iWorkerIndex;
+    m_pMgrToWorkerQueue = pMgrToWorker;
+    m_pWorkerToMgrQueue = pWorkerToMgr;
+    m_iMgrToWorkerEfd   = iMgrToWorkerEfd;
+    m_iWorkerToMgrEfd   = iWorkerToMgrEfd;
     if (!Init(oJsonConf))
     {
         exit(-1);
@@ -462,6 +498,20 @@ bool Worker::CheckShareMem()
 bool Worker::SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // 优先走共享内存队列
+    if (m_pWorkerToMgrQueue && m_iWorkerToMgrEfd >= 0)
+    {
+        const std::string& body = oMsgBody.body();
+        if (m_pWorkerToMgrQueue->TryEnqueue(
+                oMsgHead.cmd(), oMsgHead.seq(),
+                body.data(), static_cast<uint32_t>(body.size())))
+        {
+            ShmRingQueue::NotifyEventFd(m_iWorkerToMgrEfd);
+            return true;
+        }
+        LOG4_WARN("shm queue full for SendToParent, fallback to socket");
+    }
+    // 降级走原有 socket
     auto iter = mapFdAttr.find(iManagerControlFd);
     if (iter != mapFdAttr.end())
     {
@@ -1871,6 +1921,16 @@ bool Worker::CreateEvents()
 
     AddPeriodicTaskEvent();
 
+    // 注册共享内存 eventfd 读事件（Manager→Worker 消息）
+    if (m_pMgrToWorkerQueue && m_iMgrToWorkerEfd >= 0)
+    {
+        m_pShmReadWatcher = new ev_io();
+        m_pShmReadWatcher->data = static_cast<void*>(this);
+        ev_io_init(m_pShmReadWatcher, ShmReadCallback, m_iMgrToWorkerEfd, EV_READ);
+        ev_io_start(m_loop, m_pShmReadWatcher);
+        LOG4_INFO("shm read watcher registered for worker %d, efd=%d", iWorkerIndex, m_iMgrToWorkerEfd);
+    }
+
     // 注册网络IO事件
     if (CreateManagerFdAttr(iManagerControlFd,GetFdSequence()) == nullptr)
     {
@@ -2002,6 +2062,20 @@ void Worker::RemoveFdAttrForShutdown(std::unordered_map<int32, std::unique_ptr<t
 void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // 清理共享内存队列事件与 eventfd
+    if (m_pShmReadWatcher)
+    {
+        if (m_loop)
+        {
+            ev_io_stop(m_loop, m_pShmReadWatcher);
+        }
+        delete m_pShmReadWatcher;
+        m_pShmReadWatcher = nullptr;
+    }
+    ShmRingQueue::CloseEventFd(m_iMgrToWorkerEfd);
+    ShmRingQueue::CloseEventFd(m_iWorkerToMgrEfd);
+    // 不在此处 Destroy shm 队列（内存由 Manager 管理，Worker 只是消费者）
+
     mapHttpAttr.clear();
     mapSysCmd.clear();
 

@@ -55,3 +55,5 @@ deploy/Center/plugins
 deploy/Logic/plugins
 deploy/Logic/bin/Logic
 code/3party/lib
+plan_shm_queue.md
+deploy/Logic/bin/Logic
