@@ -16,6 +16,8 @@
 namespace net
 {
 
+const uint32 Nodes::mc_uiAlive;
+
 Nodes::Nodes(int iHashAlgorithm, int iVirtualNodeNum)
     : m_iHashAlgorithm(iHashAlgorithm), m_iVirtualNodeNum(iVirtualNodeNum)
 {
@@ -182,9 +184,9 @@ void Nodes::AddNodeIdentify(const std::string& strNodeType, const std::string& s
             oMd5.CalculateDigest(szDigest, (const unsigned char*)szVirtualNodeIdentify, strlen(szVirtualNodeIdentify));
             for (int j = 0; j < iPointPerHash; ++j)
             {
-                uint32 k = ((uint32)(szDigest[3 + j * iPointPerHash] & 0xFF) << 24)
-                       | ((uint32)(szDigest[2 + j * iPointPerHash] & 0xFF) << 16)
-                       | ((uint32)(szDigest[1 + j * iPointPerHash] & 0xFF) << 8)
+                uint32 k = (static_cast<uint32>(szDigest[3 + j * iPointPerHash] & 0xFF) << 24)
+                       | (static_cast<uint32>(szDigest[2 + j * iPointPerHash] & 0xFF) << 16)
+                       | (static_cast<uint32>(szDigest[1 + j * iPointPerHash] & 0xFF) << 8)
                        | (szDigest[j * iPointPerHash] & 0xFF);
                 pNode->mapNode2Hash.begin()->second.push_back(k);
                 pNode->mapHash2Node.insert(std::make_pair(k, strNodeIdentify));
@@ -209,9 +211,9 @@ void Nodes::AddNodeIdentify(const std::string& strNodeType, const std::string& s
                 oMd5.CalculateDigest(szDigest, (const unsigned char*)szVirtualNodeIdentify, strlen(szVirtualNodeIdentify));
                 for (int j = 0; j < iPointPerHash; ++j)
                 {
-                    uint32 k = ((uint32)(szDigest[3 + j * iPointPerHash] & 0xFF) << 24)
-                           | ((uint32)(szDigest[2 + j * iPointPerHash] & 0xFF) << 16)
-                           | ((uint32)(szDigest[1 + j * iPointPerHash] & 0xFF) << 8)
+                    uint32 k = (static_cast<uint32>(szDigest[3 + j * iPointPerHash] & 0xFF) << 24)
+                           | (static_cast<uint32>(szDigest[2 + j * iPointPerHash] & 0xFF) << 16)
+                           | (static_cast<uint32>(szDigest[1 + j * iPointPerHash] & 0xFF) << 8)
                            | (szDigest[j * iPointPerHash] & 0xFF);
                     node_type_iter->second->mapNode2Hash.begin()->second.push_back(k);
                     node_type_iter->second->mapHash2Node.insert(std::make_pair(k, strNodeIdentify));

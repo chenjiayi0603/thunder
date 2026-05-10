@@ -45,13 +45,6 @@
 #define APP_VERSION 1
 #endif
 
-#ifndef SAFE_DELETE
-#define SAFE_DELETE(p) {if (p) {delete p;p = nullptr;}}
-#endif
-
-#ifndef SAFE_FREE
-#define SAFE_FREE(p) {if (p) {free(p);p = nullptr;}}
-#endif
 
 //如果是调试版本则定义_DEBUG，否则就注释掉
 #ifndef _DEBUG

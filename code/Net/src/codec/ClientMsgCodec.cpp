@@ -28,11 +28,11 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
     LOG4_TRACE("%s()", __FUNCTION__);
     tagClientMsgHead stClientMsgHead;
     stClientMsgHead.version = 1;        // version暂时无用
-    stClientMsgHead.encript = (unsigned char)(oMsgHead.cmd() >> 24);
-    stClientMsgHead.cmd = htons((unsigned short)(gc_uiCmdBit & oMsgHead.cmd()));
-    stClientMsgHead.body_len = htonl((unsigned int)oMsgHead.msgbody_len());
+    stClientMsgHead.encript = static_cast<unsigned char>(oMsgHead.cmd() >> 24);
+    stClientMsgHead.cmd = htons(static_cast<unsigned short>(gc_uiCmdBit & oMsgHead.cmd()));
+    stClientMsgHead.body_len = htonl(static_cast<unsigned int>(oMsgHead.msgbody_len()));
     stClientMsgHead.seq = htonl(oMsgHead.seq());
-    stClientMsgHead.checksum = 0;//发送出去的消息不需要校验 htons((unsigned short)stClientMsgHead.checksum);
+    stClientMsgHead.checksum = 0;//发送出去的消息不需要校验 htons(static_cast<unsigned short>(stClientMsgHead.checksum);
     if (oMsgBody.ByteSize() > 64000000) // pb 最大限制
     {
         LOG4_ERROR("oMsgBody.ByteSize() > 64000000");
@@ -119,7 +119,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
 
         if (strEncryptData.size() > 0)              // 加密后的数据包
         {
-            stClientMsgHead.body_len = htonl((unsigned int)strEncryptData.size());
+            stClientMsgHead.body_len = htonl(static_cast<unsigned int>(strEncryptData.size()));
             iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
             LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
             if (iWriteLen != iNeedWriteLen)
@@ -140,7 +140,7 @@ E_CODEC_STATUS ClientMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oM
         }
         else if (strCompressData.size() > 0)        // 压缩后的数据包
         {
-            stClientMsgHead.body_len = htonl((unsigned int)strCompressData.size());
+            stClientMsgHead.body_len = htonl(static_cast<unsigned int>(strCompressData.size()));
             iWriteLen = pBuff->Write(&stClientMsgHead, iNeedWriteLen);
             LOG4_TRACE("sizeof(stClientMsgHead) = %zu, iWriteLen = %d", sizeof(stClientMsgHead), iWriteLen);
             if (iWriteLen != iNeedWriteLen)
@@ -201,7 +201,7 @@ E_CODEC_STATUS ClientMsgCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, M
         LOG4_TRACE("cmd %u, seq %u, len %u, pBuff->ReadableBytes() %zu",
                         stClientMsgHead.cmd, stClientMsgHead.seq, stClientMsgHead.body_len,
                         pBuff->ReadableBytes());
-        oMsgHead.set_cmd(((unsigned int)stClientMsgHead.encript << 24) | stClientMsgHead.cmd);
+        oMsgHead.set_cmd(static_cast<unsigned int>(stClientMsgHead.encript << 24) | stClientMsgHead.cmd);
         oMsgHead.set_msgbody_len(stClientMsgHead.body_len);
         oMsgHead.set_seq(stClientMsgHead.seq);
         oMsgHead.set_checksum(stClientMsgHead.checksum);

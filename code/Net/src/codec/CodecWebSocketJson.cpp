@@ -30,7 +30,7 @@ int CodecWebSocketJson::OnUrl(http_parser *parser, const char *at, size_t len)
     {
         if (stUrl.field_set & (1 << UF_PATH))
         {
-            char *path = (char*) malloc(stUrl.field_data[UF_PATH].len);
+            char *path = static_cast<char*>(malloc(stUrl.field_data[UF_PATH].len));
             strncpy(path, at + stUrl.field_data[UF_PATH].off,
                             stUrl.field_data[UF_PATH].len);
             pHttpMsg->set_path(path, stUrl.field_data[UF_PATH].len);
@@ -244,11 +244,11 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
          * */
         {//payload数据
             stOutMsgHead.version = 1;        // version暂时无用
-            stOutMsgHead.encript = (unsigned char) (oMsgHead.cmd() >> 24);
-            stOutMsgHead.cmd = htons((unsigned short) (gc_uiCmdBit & oMsgHead.cmd()));
-            stOutMsgHead.body_len = 0;//htonl((unsigned int) strJsonBody.size());
+            stOutMsgHead.encript = static_cast<unsigned char>(oMsgHead.cmd() >> 24);
+            stOutMsgHead.cmd = htons(static_cast<unsigned short>(gc_uiCmdBit & oMsgHead.cmd()));
+            stOutMsgHead.body_len = 0;//htonl(static_cast<unsigned int>(strJsonBody.size()));
             stOutMsgHead.seq = htonl(oMsgHead.seq());
-            stOutMsgHead.checksum = 0;//发送出去的消息不需要校验码，htons((unsigned short)stOutMsgHead.checksum);
+            stOutMsgHead.checksum = 0;//发送出去的消息不需要校验码，htons(static_cast<unsigned short>(stOutMsgHead.checksum));
 
             if(strJsonMsg.size() > 0)
             {
@@ -293,27 +293,27 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
             {
                 stOutMsgHead.body_len = strEncryptData.size();
                 LOG4_TRACE("Encrypt:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
             }
             else if (strCompressData.size() > 0)        // 压缩后的数据包
             {
                 stOutMsgHead.body_len = strCompressData.size();
                 LOG4_TRACE("Compress:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
             }
             else    // 不需要压缩加密或无效的压缩或加密算法，打包原数据
             {
                 stOutMsgHead.body_len = strJsonMsg.size();
                 LOG4_TRACE("no Encrypt or Compress:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
                 //no Encrypt or Compress:body_len(587,1258422272)
             }
         }
         int payloadLen = sizeof(stOutMsgHead) + stOutMsgHead.body_len;
-        stOutMsgHead.body_len = htonl((unsigned int) stOutMsgHead.body_len);
+        stOutMsgHead.body_len = htonl(static_cast<unsigned int>(stOutMsgHead.body_len));
         if (payloadLen > 65535)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -326,7 +326,7 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
         }
         else if (payloadLen >= 126)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -339,7 +339,7 @@ E_CODEC_STATUS CodecWebSocketJson::Encode(const MsgHead& oMsgHead,
         }
         else //if (payloadLen < 126)
         {
-            ucSecondByte |= ((unsigned char)payloadLen) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(payloadLen) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -1115,28 +1115,26 @@ const std::string& CodecWebSocketJson::ToString(const HttpMsg& oHttpMsg)
 void CodecWebSocketJson::Base64Encode(const char* data,unsigned int datalen,std::string &strEncode)
 {
     int encodedMaxlen = Base64encode_len(datalen);
-    char *encoded = new char [encodedMaxlen];
-    int encodedlen = Base64encode(encoded,data,datalen);
-    strEncode.assign(encoded);//编码后的encoded是普通字符串(末尾增加0)
-    delete [] encoded;
+    std::vector<char> encoded(encodedMaxlen);
+    int encodedlen = Base64encode(encoded.data(),data,datalen);
+    strEncode.assign(encoded.data());//编码后的encoded是普通字符串(末尾增加0)
     LOG4_TRACE("Base64Encode data(%s,%d(bin length)),encoded(%s,%d(include added end 0),%d),"
                         "strEncode len(%zu)",
                         data,datalen,
-                        encoded,encodedlen,encodedMaxlen,
+                        encoded.data(),encodedlen,encodedMaxlen,
                         strEncode.length());//encodedlen长度包括添加的末尾字节0
 }
 
 void CodecWebSocketJson::Base64Decode(const char* encoded,unsigned int encodedlen,std::string &strDecode)
 {
     int decodedMaxlen = Base64decode_len(encoded);
-    char *decoded = new char [decodedMaxlen];
-    int decodedlen = Base64decode(decoded,encoded);//add 0 to the end
-    strDecode.assign(decoded,decodedlen);//decodedlen长度不包括Base64decode添加的末尾字节0
-    delete [] decoded;
+    std::vector<char> decoded(decodedMaxlen);
+    int decodedlen = Base64decode(decoded.data(),encoded);//add 0 to the end
+    strDecode.assign(decoded.data(),decodedlen);//decodedlen长度不包括Base64decode添加的末尾字节0
     LOG4_TRACE("Base64Decode encoded(%s,%d(not include added end 0)),decode(%s,%d(not include added end 0),%d),"
                     "strDecode len(%zu)",
                     encoded,encodedlen,
-                    decoded,decodedlen,decodedMaxlen,
+                    decoded.data(),decodedlen,decodedMaxlen,
                     strDecode.length());
 }
 
@@ -1272,7 +1270,7 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 }
                 pBuff->Read(&ullPayload, 8);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohll(ullPayload);
+                uiPayload = static_cast<uint32>(ntohll(ullPayload));
             }
             else if (WEBSOCKET_PAYLOAD_LEN_UINT16
                             == (WEBSOCKET_PAYLOAD_LEN & ucSecondByte)) //126 == ucSecondByte & 0x7F
@@ -1286,7 +1284,7 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
                 }
                 pBuff->Read(&unPayload, 2);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohs(unPayload);
+                uiPayload = static_cast<uint32>(ntohs(unPayload));
             }
             else
             {
@@ -1343,7 +1341,7 @@ E_CODEC_STATUS CodecWebSocketJson::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead
         LOG4_TRACE("after tranfer:cmd %u, seq %u, len %u, encript %u,pBuff->ReadableBytes() %zu,uiPayload(%u)",
                         stMsgHead.cmd, stMsgHead.seq, stMsgHead.body_len,stMsgHead.encript,
                         pBuff->ReadableBytes(),uiPayload);
-        oMsgHead.set_cmd(((unsigned int) stMsgHead.encript << 24)
+        oMsgHead.set_cmd(static_cast<unsigned int>(stMsgHead.encript << 24)
                                         | stMsgHead.cmd);
 //        oMsgHead.set_msgbody_len(stMsgHead.body_len);
         oMsgHead.set_seq(stMsgHead.seq);

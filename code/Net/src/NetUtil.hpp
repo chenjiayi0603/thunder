@@ -191,7 +191,7 @@ struct BUFF_RW
         {
             if (size < buffsize)//容量只会扩大
             {
-                m_pbuffer = (char*) ::realloc(m_pbuffer, buffsize);
+                m_pbuffer = static_cast<char*>(::realloc(m_pbuffer, buffsize));
                 size = buffsize;
             }
         }

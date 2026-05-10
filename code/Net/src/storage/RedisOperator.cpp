@@ -68,11 +68,11 @@ RedisOperator::~RedisOperator()
 {
     if (m_pRedisMemRequest != nullptr)
     {
-    	SAFE_DELETE(m_pRedisMemRequest);
+    	delete m_pRedisMemRequest; m_pRedisMemRequest = nullptr;
     }
     else
     {
-    	SAFE_DELETE(m_pRedisOperate);
+    	delete m_pRedisOperate; m_pRedisOperate = nullptr;
     }
 }
 

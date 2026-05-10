@@ -40,7 +40,7 @@ bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeo
 	if (!GetLabor()->RegisterCallback(pStep,dTimeout))
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-		SAFE_DELETE(pStep);
+		delete pStep; pStep = nullptr;
 		return(false);
 	}
 	pStep->Init(uiTimeOutMax,uiToRetry);

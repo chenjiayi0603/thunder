@@ -36,8 +36,8 @@ Step::~Step()
     {
         LOG4_TRACE("step %u destruct", GetSequence());
     }
-    SAFE_DELETE(m_pTimeoutWatcher);
-    SAFE_DELETE(m_data);
+    delete m_pTimeoutWatcher; m_pTimeoutWatcher = nullptr;
+    delete m_data; m_data = nullptr;
 }
 
 bool Step::RegisterCallback(Step* pStep, ev_tstamp dTimeout)

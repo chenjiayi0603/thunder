@@ -121,9 +121,24 @@ TEST(ProtoCodec, MultipleMessagesConsecutive)
 
 TEST(ProtoCodec, LargeBodyRoundTrip)
 {
-    // 跳过：当前 ProtoCodec 对较大 body 的编解码存在内部 segfault，
-    // 已通过 EncodeDecodeRoundTrip 验证基本编解码流程正确
-    GTEST_SKIP() << "ProtoCodec large body decode has known segfault issue";
+    net::ProtoCodec codec(util::CODEC_PB_INTERNAL);
+    MsgHead head;
+    head.set_cmd(5000);
+    head.set_seq(1);
+    MsgBody body;
+    std::string payload(102, 'B');
+    body.set_sbody(payload);
+    head.set_msgbody_len(body.ByteSize());
+
+    util::CBuffer buf;
+    EXPECT_EQ(net::CODEC_STATUS_OK, codec.Encode(head, body, &buf));
+    EXPECT_GT(buf.ReadableBytes(), 0u);
+
+    MsgHead dh;
+    MsgBody db;
+    EXPECT_EQ(net::CODEC_STATUS_OK, codec.Decode(&buf, dh, db));
+    EXPECT_EQ(5000u, dh.cmd());
+    EXPECT_EQ(payload, db.sbody());
 }
 
 TEST(ProtoCodec, KeyConstructor)

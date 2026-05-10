@@ -128,7 +128,7 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     LOG4_TRACE("%s()", __FUNCTION__);
     tagAppMsgHead stAppMsgHead;
     stAppMsgHead.version = APP_VERSION;        // version暂时无用
-    stAppMsgHead.cmd = htonl((unsigned int)(gc_uiCmdBit & oMsgHead.cmd()));
+    stAppMsgHead.cmd = htonl(static_cast<unsigned int>(gc_uiCmdBit & oMsgHead.cmd()));
     stAppMsgHead.seq = htonl(oMsgHead.seq());
     if (gc_uiCmdReserve & oMsgHead.cmd())
     {
@@ -151,9 +151,9 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     {
     	LOG4_TRACE("cmd %u, seq %u, body size %zu", oMsgHead.cmd(), oMsgHead.seq(), oMsgBody.body().size());
 #ifdef USE_HEAD_LEN
-    	stAppMsgHead.len = htonl((unsigned int)APP_HEAD_LEN);
+    	stAppMsgHead.len = htonl(static_cast<unsigned int>(APP_HEAD_LEN));
 #else
-    	stAppMsgHead.len = htonl((unsigned int)0);
+    	stAppMsgHead.len = htonl(static_cast<unsigned int>(0));
 #endif
         iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
         LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
@@ -188,9 +188,9 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
 			return(CODEC_STATUS_ERR);
 		}
 #ifdef USE_HEAD_LEN
-		stAppMsgHead.len = htonl((unsigned int)destData.size() + APP_HEAD_LEN);
+		stAppMsgHead.len = htonl(static_cast<unsigned int>(destData.size() + APP_HEAD_LEN));
 #else
-		stAppMsgHead.len = htonl((unsigned int)destData.size());
+		stAppMsgHead.len = htonl(static_cast<unsigned int>(destData.size()));
 #endif
 		iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
 		LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);
@@ -213,9 +213,9 @@ E_CODEC_STATUS AppMsgCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgB
     else
     { // 这里不压缩也不加密
 #ifdef USE_HEAD_LEN
-    	stAppMsgHead.len = htonl((unsigned int)oMsgSwitchBody.ByteSize() + APP_HEAD_LEN);
+    	stAppMsgHead.len = htonl(static_cast<unsigned int>(oMsgSwitchBody.ByteSize() + APP_HEAD_LEN));
 #else
-    	stAppMsgHead.len = htonl((unsigned int)oMsgSwitchBody.ByteSize());
+    	stAppMsgHead.len = htonl(static_cast<unsigned int>(oMsgSwitchBody.ByteSize()));
 #endif
     	iWriteLen = pBuff->Write(&stAppMsgHead, iNeedWriteLen);
         LOG4_TRACE("sizeof(stAppMsgHead) = %zu, iWriteLen = %d", sizeof(stAppMsgHead), iWriteLen);

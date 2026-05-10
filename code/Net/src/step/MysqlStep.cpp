@@ -177,7 +177,7 @@ bool MysqlStep::Launch(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 	if (!GetLabor()->RegisterCallback(pStep))//注册mysql访问任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-		SAFE_DELETE(pStep);
+		delete pStep; pStep = nullptr;
 		return(false);
 	}
 	pStep->SetStepDesc(std::string("MysqlStep:") + pStep->m_strLastCmd);

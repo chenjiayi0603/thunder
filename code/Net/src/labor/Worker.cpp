@@ -710,7 +710,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                             auto iter = oInHttpMsg.headers().find(std::string("Keep-Alive"));
                             if (iter != oInHttpMsg.headers().end())
                             {
-                            	pConn->dKeepAlive = strtoul(iter->second.c_str(), NULL, 10);
+                            	pConn->dKeepAlive = strtoul(iter->second.c_str(), nullptr, 10);
 								LOG4_TRACE("set dKeepAlive(%lf)",pConn->dKeepAlive);
 								AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
                             }
@@ -916,7 +916,7 @@ bool Worker::IoWrite(tagIoWatcherData* pData, struct ev_io* watcher)
             return(false);
         }
         int iErrno = 0;
-        int iNeedWriteLen = (int)attr_iter->second->pSendBuff->ReadableBytes();
+        int iNeedWriteLen = static_cast<int>(attr_iter->second->pSendBuff->ReadableBytes());
         int iWriteLen = pConn->pSendBuff->WriteFD(pData->iFd, iErrno);
         pConn->pSendBuff->Compact(8192);
         if (iWriteLen < 0)
@@ -1009,7 +1009,7 @@ bool Worker::IoTimeout(struct ev_timer* watcher, bool bCheckBeat)
     {
         LOG4_ERROR("pData is null in %s()", __FUNCTION__);
         DelEvent(watcher);
-        SAFE_DELETE(watcher);
+        delete watcher; watcher = nullptr;
         return(false);
     }
     auto iter =  mapFdAttr.find(pData->iFd);
@@ -1195,7 +1195,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 					const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
 					for(int i = 0;i < rawCmds.size() ;++i)
 					{
-						int status = redisAsyncCommand((redisAsyncContext*)c, RedisCmdCallback, NULL, rawCmds[i].c_str());
+						int status = redisAsyncCommand((redisAsyncContext*)c, RedisCmdCallback, nullptr, rawCmds[i].c_str());
 						if (status == REDIS_OK)
 						{
 							LOG4_TRACE("bulk:succeed in sending redis cmd(%s)", rawCmds[i].c_str());
@@ -1232,7 +1232,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 						argv[i] = c_iter->first.c_str();
 						arglen[i] = c_iter->first.size();
 					}
-					iCmdStatus = redisAsyncCommandArgv((redisAsyncContext*)c, RedisCmdCallback, NULL, args_size, argv, arglen);
+					iCmdStatus = redisAsyncCommandArgv((redisAsyncContext*)c, RedisCmdCallback, nullptr, args_size, argv, arglen);
 					if (iCmdStatus == REDIS_OK)
 					{
 						LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
@@ -1252,10 +1252,10 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
             for (auto step_iter = attr_iter->second->listWaitData.begin();
                             step_iter != attr_iter->second->listWaitData.end(); ++step_iter)
             {
-                step_iter->get()->Callback(c, status, NULL);
+                step_iter->get()->Callback(c, status, nullptr);
             }
             attr_iter->second->listWaitData.clear();
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             DelRedisContextAddr(c);
             mapRedisAttr.erase(attr_iter);
         }
@@ -1273,7 +1273,7 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
         {
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
-            step_iter->Callback(c, c->err, NULL);
+            step_iter->Callback(c, c->err, nullptr);
         }
         attr_iter->second->listData.clear();
 
@@ -1281,11 +1281,11 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
         {
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
-            step_iter->Callback(c, c->err, NULL);
+            step_iter->Callback(c, c->err, nullptr);
         }
         attr_iter->second->listWaitData.clear();
 
-        SAFE_DELETE(attr_iter->second);
+        delete attr_iter->second; attr_iter->second = nullptr;
         DelRedisContextAddr(c);
         mapRedisAttr.erase(attr_iter);
     }
@@ -1313,7 +1313,7 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
                 pRedisStep->Callback(c, c->err, (redisReply*)reply);
             }
             attr_iter->second->listData.clear();
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             DelRedisContextAddr(c);
             mapRedisAttr.erase(attr_iter);
         }
@@ -1362,7 +1362,7 @@ bool Worker::OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *reply,
             }
             attr_iter->second->listData.clear();
 
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             mapRedisClusterAttr.erase(attr_iter);
         }
         else
@@ -1521,7 +1521,7 @@ void Worker::DeleteCallback(Session* pSession)
         if (id_iter != name_iter->second.end())
         {
             LOG4_TRACE("delete session(session_id %s)", pSession->GetSessionId().c_str());
-            SAFE_DELETE(id_iter->second);
+            delete id_iter->second; id_iter->second = nullptr;
             name_iter->second.erase(id_iter);
         }
     }
@@ -1555,7 +1555,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     ev_timer_init (timeout_watcher, IoTimeoutCallback, 0.5 + ev_time() - ev_now(m_loop), 0.0);
     pData->ullSeq = pStep->GetSequence();
     pData->pWorker = this;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     ev_timer_start (m_loop, timeout_watcher);
     */
 
@@ -1575,7 +1575,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
 				for(int i = 0;i < rawCmds.size() ;++i)
 				{
-					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, NULL, rawCmds[i].c_str());
+					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, rawCmds[i].c_str());
 					if (status == REDIS_OK)
 					{
 						LOG4_TRACE("bulk:succeed in sending redis cmd(%s)", rawCmds[i].c_str());
@@ -1607,7 +1607,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 					argv[i] = c_iter->first.c_str();
 					arglen[i] = c_iter->first.size();
 				}
-				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, NULL, args_size, argv, arglen);
+				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, args_size, argv, arglen);
 				if (status == REDIS_OK)
 				{
 					LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
@@ -2353,12 +2353,12 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell)
         {
             int iErrno = 0;
             int iWriteLen = 0;
-            int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
+            int iNeedWriteLen = static_cast<int>(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
             iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 iter->second->pSendBuff->Compact(8192);
                 if (iWriteLen < 0)
@@ -2554,7 +2554,7 @@ bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pM
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
@@ -2578,7 +2578,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2596,7 +2596,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
@@ -2619,7 +2619,7 @@ bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::strin
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
@@ -2643,7 +2643,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2661,7 +2661,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
@@ -2684,7 +2684,7 @@ bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::strin
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
@@ -2708,7 +2708,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2726,7 +2726,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
@@ -2810,7 +2810,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
             {
                 ++iSendNum;
                 int iErrno = 0;
-                int iNeedWriteLen = (int)conn_iter->second->pSendBuff->ReadableBytes();
+                int iNeedWriteLen = static_cast<int>(conn_iter->second->pSendBuff->ReadableBytes());
                 LOG4_TRACE("try send cmd[%d] seq[%u] len %d to fd %d ip %s identify %s",
 					oMsgHead.cmd(), oMsgHead.seq(), iNeedWriteLen, stMsgShell.iFd,pConn->szRemoteAddr, pConn->strIdentify.c_str());
                 int iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
@@ -3232,7 +3232,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
                 }
                 LOG4_TRACE("fd[%d], seq[%u], pConn->pSendBuff %p", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff.get());
                 int iErrno = 0;
-                int iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 int iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 pConn->pSendBuff->Compact(8192);
                 if (iWriteLen < 0)
@@ -3567,9 +3567,9 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             cobj.errstr = acc->errstr;
             redisAsyncContext *c = &cobj;
             pRedisStep->AddCallBackCounter();
-            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, NULL))
+            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, nullptr))
             {
-            	SAFE_DELETE(pRedisStep);
+            	delete pRedisStep; pRedisStep = nullptr;
             }
         }
     }
@@ -3992,7 +3992,7 @@ bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::stri
 		if (!RegisterCallback(pStep,dTimeout))
 		{
 			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-			SAFE_DELETE(pStep);
+			delete pStep; pStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,pStep->GetSequence());
@@ -4026,7 +4026,7 @@ bool Worker::ExecStep(RedisStep* pRedisStep)
 		return(true);
 	}
 	LOG4_WARN("%s() pRedisStep",__FUNCTION__);
-	SAFE_DELETE(pRedisStep);
+	delete pRedisStep; pRedisStep = nullptr;
 	return false;
 }
 
@@ -4393,12 +4393,12 @@ bool Worker::AddPeriodicTaskEvent()
     LOG4_TRACE("%s()", __FUNCTION__);
     {
     	ev_timer* timeout_watcher = new ev_timer();
-		timeout_watcher->data = (void*)this;
+		timeout_watcher->data = static_cast<void*>(this);
 		AddEvent(NODE_BEAT,timeout_watcher,PeriodicTaskCallback);
     }
     {
     	ev_timer* timeout_watcher = new ev_timer();
-		timeout_watcher->data = (void*)this;
+		timeout_watcher->data = static_cast<void*>(this);
 		AddEvent(1.0,timeout_watcher,ShortPeriodicTaskCallback);
     }
     return(true);
@@ -4426,7 +4426,7 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 		pData->iFd = pConn->iFd;
 		pData->ulSeq = pConn->ulSeq;
 		pData->pWorker = this;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 		pConn->pIoWatcher = io_watcher;
 
 		AddEvent(EV_READ,io_watcher,IoCallback,pData->iFd);
@@ -4461,7 +4461,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pWorker = this;
 
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 		pConn->pIoWatcher = io_watcher;
 
 		AddEvent(EV_WRITE,io_watcher,IoCallback,pData->iFd);
@@ -4476,7 +4476,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-	if (NULL != pConn->pIoWatcher)
+	if (nullptr != pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)
 		{
@@ -4514,7 +4514,7 @@ bool Worker::AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, e
         pData->iFd = iFd;
         pData->ulSeq = ulSeq;
         pData->pWorker = this;
-        timeout_watcher->data = (void*)pData;
+        timeout_watcher->data = static_cast<void*>(pData);
         pConnAttr->pTimeWatcher = timeout_watcher;
         AddEvent(dTimeout,timeout_watcher,IoTimeoutCallback);
         return(true);

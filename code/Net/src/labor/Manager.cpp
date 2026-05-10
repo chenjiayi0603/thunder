@@ -419,7 +419,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         int iErrno = 0;
         int iWriteLen = 0;
-        int iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
         iWriteLen = pConn->pSendBuff->WriteFD(pData->iFd, iErrno);
         LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
         if (iWriteLen < 0)
@@ -591,12 +591,12 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
         {
             int iErrno = 0;
             int iWriteLen = 0;
-            int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
+            int iNeedWriteLen = static_cast<int>(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
             iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = iter->second->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 if (iWriteLen < 0)
                 {
@@ -675,7 +675,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
             LOG4_TRACE("iWriteLen = %d,oMsgBody size(%u)", iWriteLen,oMsgBody.ByteSize());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,
                                 stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
@@ -1090,7 +1090,7 @@ void Manager::Destroy()
     }
     m_mapClientConnFrequency.clear();
 
-    SAFE_FREE(m_pPeriodicTaskWatcher);
+    free(m_pPeriodicTaskWatcher); m_pPeriodicTaskWatcher = nullptr;
     if (m_loop != nullptr)
     {
         StopPostToEventLoop();
@@ -1389,7 +1389,7 @@ bool Manager::AddPeriodicTaskEvent()
         LOG4_ERROR("new timeout_watcher error!");
         return(false);
     }
-    m_pPeriodicTaskWatcher->data = (void*)this;
+    m_pPeriodicTaskWatcher->data = static_cast<void*>(this);
     AddEvent(NODE_BEAT,m_pPeriodicTaskWatcher,PeriodicTaskCallback);
     return(true);
 }
@@ -1417,7 +1417,7 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 		pConn->pIoWatcher = io_watcher;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 
 		AddEvent(EV_READ,io_watcher,IoCallback,pData->iFd);
 	}
@@ -1451,7 +1451,7 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 		pConn->pIoWatcher = io_watcher;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 
 		AddEvent(EV_WRITE,io_watcher,IoCallback,pData->iFd);
 	}
@@ -1494,7 +1494,7 @@ bool Manager::AddIoTimeout(int iFd, uint32 ulSeq, ev_tstamp dTimeout)
     pData->iFd = iFd;
     pData->ulSeq = ulSeq;
     pData->pManager = this;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     AddEvent(dTimeout,timeout_watcher, IoTimeoutCallback);
     return(true);
 }
@@ -1517,7 +1517,7 @@ bool Manager::AddClientConnFrequencyTimeout(in_addr_t iAddr, ev_tstamp dTimeout)
     }
     pData->pManager = this;
     pData->iAddr = iAddr;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     AddEvent(dTimeout,timeout_watcher,ClientConnFrequencyTimeoutCallback);
     return(true);
 }
@@ -2066,7 +2066,7 @@ void Manager::DeleteCallback(Session* pSession)
         if (id_iter != name_iter->second.end())
         {
             LOG4_TRACE("delete session(session_id %s)", pSession->GetSessionId().c_str());
-            SAFE_DELETE(id_iter->second);
+            delete id_iter->second; id_iter->second = nullptr;
             name_iter->second.erase(id_iter);
         }
     }
@@ -2213,7 +2213,7 @@ void Manager::UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeRe
             if (m_strRaftLeaderCenterKey != leader)
             {
                 LOG4_INFO("%s cache raft leader center %s (err=%u raft_term=%llu)", __FUNCTION__, leader.c_str(), err,
-                          (unsigned long long)oNodeReportRsp.raft_term());
+                          static_cast<unsigned long long>(oNodeReportRsp.raft_term()));
             }
             m_strRaftLeaderCenterKey = leader;
         }

@@ -99,7 +99,7 @@ bool Loader::AddPeriodicTaskEvent()
 {
 	SAFE_LOG4_INFO("%s()", __FUNCTION__);
     ev_timer* timeout_watcher = new ev_timer();
-    timeout_watcher->data = (void*)this;
+    timeout_watcher->data = static_cast<void*>(this);
     AddEvent(1.0,timeout_watcher,PeriodicTaskCallback);//NODE_BEAT
     return(true);
 }

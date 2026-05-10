@@ -238,3 +238,51 @@ thunder_link_thirdparty_shared(thunder_test_storage_mem)
 target_link_libraries(thunder_test_storage_mem PRIVATE GTest::gtest_main)
 set_target_properties(thunder_test_storage_mem PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_storage_mem DISCOVERY_MODE PRE_TEST)
+
+# ---- HttpCodec 编解码 E2E ----
+add_executable(thunder_test_codec_http
+  codec/test_codec_http.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_codec_http PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_codec_http)
+thunder_link_thirdparty_shared(thunder_test_codec_http)
+target_link_libraries(thunder_test_codec_http PRIVATE GTest::gtest_main)
+set_target_properties(thunder_test_codec_http PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_codec_http DISCOVERY_MODE PRE_TEST)
+
+# ---- ClientMsgCodec 编解码 E2E ----
+add_executable(thunder_test_codec_client
+  codec/test_codec_client.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_codec_client PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_codec_client)
+thunder_link_thirdparty_shared(thunder_test_codec_client)
+target_link_libraries(thunder_test_codec_client PRIVATE GTest::gtest_main)
+set_target_properties(thunder_test_codec_client PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_codec_client DISCOVERY_MODE PRE_TEST)
+
+# ---- ConHash 一致性哈希 ----
+add_executable(thunder_test_dispatcher_conhash
+  dispatcher/test_conhash.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_dispatcher_conhash PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_dispatcher_conhash)
+thunder_link_thirdparty_shared(thunder_test_dispatcher_conhash)
+target_link_libraries(thunder_test_dispatcher_conhash PRIVATE GTest::gtest_main)
+set_target_properties(thunder_test_dispatcher_conhash PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_dispatcher_conhash DISCOVERY_MODE PRE_TEST)
+
+# ---- E2E 容器烟雾测试 (需 THUNDER_E2E_ENABLED=1) ----
+add_executable(thunder_test_e2e_smoke
+  e2e/test_e2e_smoke.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_e2e_smoke PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_e2e_smoke)
+thunder_link_thirdparty_shared(thunder_test_e2e_smoke)
+target_link_libraries(thunder_test_e2e_smoke PRIVATE GTest::gtest_main curl)
+set_target_properties(thunder_test_e2e_smoke PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_e2e_smoke DISCOVERY_MODE PRE_TEST)

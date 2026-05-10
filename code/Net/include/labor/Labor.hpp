@@ -700,9 +700,9 @@ protected:
 	void DelEvent(WATCH* watcher,DATA *pData)
 	{
 		DelEvent(watcher);
-		SAFE_DELETE(pData);
+		delete pData; pData = nullptr;
 		watcher->data = nullptr;
-		SAFE_DELETE(watcher);
+		delete watcher; watcher = nullptr;
 	}
 protected:
 	bool IsAccess()const {return (m_strHostForClient.size() > 0 && m_iPortForClient > 0);}

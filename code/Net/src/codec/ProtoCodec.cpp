@@ -92,7 +92,7 @@ E_CODEC_STATUS ProtoCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBo
 {
     LOG4_TRACE("%s() pBuff->ReadableBytes()=%zu, pBuff->GetReadIndex()=%zu",
                     __FUNCTION__, pBuff->ReadableBytes(), pBuff->GetReadIndex());
-    if ((int)(pBuff->ReadableBytes()) >= gc_uiMsgHeadSize)
+    if (static_cast<int>(pBuff->ReadableBytes()) >= gc_uiMsgHeadSize)
     {
     	oMsgHead.Clear();
         bool bResult = oMsgHead.ParseFromArray(pBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);

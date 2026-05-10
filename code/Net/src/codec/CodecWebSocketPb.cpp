@@ -30,7 +30,7 @@ int CodecWebSocketPb::OnUrl(http_parser *parser, const char *at, size_t len)
     {
         if (stUrl.field_set & (1 << UF_PATH))
         {
-            char *path = (char*) malloc(stUrl.field_data[UF_PATH].len);
+            char *path = static_cast<char*>(malloc(stUrl.field_data[UF_PATH].len));
             strncpy(path, at + stUrl.field_data[UF_PATH].off,
                             stUrl.field_data[UF_PATH].len);
             pHttpMsg->set_path(path, stUrl.field_data[UF_PATH].len);
@@ -235,11 +235,11 @@ E_CODEC_STATUS CodecWebSocketPb::Encode(const MsgHead& oMsgHead,
         const std::string& strPbBody = oSwitchMsgBody.SerializeAsString();//原始数据
         {//payload数据
             stOutMsgHead.version = 1;        // version暂时无用
-            stOutMsgHead.encript = (unsigned char) (oMsgHead.cmd() >> 24);
-            stOutMsgHead.cmd = htons((unsigned short) (gc_uiCmdBit & oMsgHead.cmd()));
+            stOutMsgHead.encript = static_cast<unsigned char>(oMsgHead.cmd() >> 24);
+            stOutMsgHead.cmd = htons(static_cast<unsigned short>(gc_uiCmdBit & oMsgHead.cmd()));
             stOutMsgHead.body_len = 0;
             stOutMsgHead.seq = htonl(oMsgHead.seq());
-            stOutMsgHead.checksum = 0;//发送出去的消息不需要校验码，htons((unsigned short)stOutMsgHead.checksum);
+            stOutMsgHead.checksum = 0;//发送出去的消息不需要校验码，htons(static_cast<unsigned short>(stOutMsgHead.checksum));
 
             if (gc_uiZipBit & oMsgHead.cmd())   //压缩（zip）
             {
@@ -281,27 +281,27 @@ E_CODEC_STATUS CodecWebSocketPb::Encode(const MsgHead& oMsgHead,
             {
                 stOutMsgHead.body_len = strEncryptData.size();
                 LOG4_TRACE("Encrypt:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
             }
             else if (strCompressData.size() > 0)        // 压缩后的数据包
             {
                 stOutMsgHead.body_len = strCompressData.size();
                 LOG4_TRACE("Compress:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
             }
             else    // 不需要压缩加密或无效的压缩或加密算法，打包原数据
             {
                 stOutMsgHead.body_len = strPbBody.size();
                 LOG4_TRACE("no Encrypt or Compress:body_len(%u,%u)",
-                        stOutMsgHead.body_len,htonl((unsigned int) stOutMsgHead.body_len));
+                        stOutMsgHead.body_len,htonl(static_cast<unsigned int>(stOutMsgHead.body_len)));
                 //no Encrypt or Compress:body_len(587,1258422272)
             }
         }
         int payloadLen = sizeof(stOutMsgHead) + stOutMsgHead.body_len;
-        stOutMsgHead.body_len = htonl((unsigned int) stOutMsgHead.body_len);
+        stOutMsgHead.body_len = htonl(static_cast<unsigned int>(stOutMsgHead.body_len));
         if (payloadLen > 65535)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -314,7 +314,7 @@ E_CODEC_STATUS CodecWebSocketPb::Encode(const MsgHead& oMsgHead,
         }
         else if (payloadLen >= 126)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -327,7 +327,7 @@ E_CODEC_STATUS CodecWebSocketPb::Encode(const MsgHead& oMsgHead,
         }
         else //if (payloadLen < 126)
         {
-            ucSecondByte |= ((unsigned char)payloadLen) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(payloadLen) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -1233,7 +1233,7 @@ E_CODEC_STATUS CodecWebSocketPb::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, 
                 }
                 pBuff->Read(&ullPayload, 8);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohll(ullPayload);
+                uiPayload = static_cast<uint32>(ntohll(ullPayload));
             }
             else if (WEBSOCKET_PAYLOAD_LEN_UINT16
                             == (WEBSOCKET_PAYLOAD_LEN & ucSecondByte)) //126 == ucSecondByte & 0x7F
@@ -1247,7 +1247,7 @@ E_CODEC_STATUS CodecWebSocketPb::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, 
                 }
                 pBuff->Read(&unPayload, 2);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohs(unPayload);
+                uiPayload = static_cast<uint32>(ntohs(unPayload));
             }
             else
             {
@@ -1304,7 +1304,7 @@ E_CODEC_STATUS CodecWebSocketPb::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, 
         LOG4_TRACE("after tranfer:cmd %u, seq %u, len %u, encript %u,pBuff->ReadableBytes() %zu,uiPayload(%u)",
                         stMsgHead.cmd, stMsgHead.seq, stMsgHead.body_len,stMsgHead.encript,
                         pBuff->ReadableBytes(),uiPayload);
-        oMsgHead.set_cmd(((unsigned int) stMsgHead.encript << 24)
+        oMsgHead.set_cmd(static_cast<unsigned int>(stMsgHead.encript << 24)
                                         | stMsgHead.cmd);
 //        oMsgHead.set_msgbody_len(stMsgHead.body_len);
         oMsgHead.set_seq(stMsgHead.seq);

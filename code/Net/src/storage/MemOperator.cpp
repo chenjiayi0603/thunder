@@ -29,7 +29,7 @@ MemOperator::MemOperator(
 
 MemOperator::~MemOperator()
 {
-	SAFE_DELETE(m_pMemRequest);
+	delete m_pMemRequest; m_pMemRequest = nullptr;
 }
 
 DataMem::MemOperate* MemOperator::MakeMemOperate()
