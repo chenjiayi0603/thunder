@@ -53,6 +53,11 @@ docs/                # 架构设计文档
 cmake/               # CMake 模块与构建说明
 ```
 
+## ⚠️ 构建限制（强制）
+- **所有 cmake --build 命令必须使用 `-j1`**，严禁使用 `-j$(nproc)` 或多线程编译
+- 原因：本机磁盘 IO 是瓶颈，多线程编译会导致系统卡死
+- 违例：`cmake --build build`、`cmake --build build -j4`、`cmake --build build --parallel` 等均禁止
+
 ## 开发规范
 - **语言**：用中文回复和注释
 - **C++**：遵循 `.clang-format`（项目根目录），C++20 标准

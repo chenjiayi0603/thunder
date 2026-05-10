@@ -166,7 +166,7 @@ net::E_CMD_STATUS SessionRaftCluster::Timeout()
     {
         if (m_bIsLeader)
         {
-            LOG4_INFO("%s() WorkerIdentify(%s) IsRaftLeader(%d)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str(), m_bIsLeader ? 1 : 0);
+            LOG4_INFO("%s() WorkerIdentify(%s) IsRaftLeader(1)", __FUNCTION__, GetLabor()->GetWorkerIdentify().c_str());
             RaftSendAppendEntriesToAll();
         }
         m_uiLastSendCenterBeat = m_uiServerTime;
@@ -205,13 +205,8 @@ void SessionRaftCluster::InitElection(const util::CJsonObject &oCenter)
         m_raftClusterPeers.push_back(self);
     }
     std::sort(m_raftClusterPeers.begin(), m_raftClusterPeers.end());
-    for (const auto &id : m_raftClusterPeers)
-    {
-        if (id != self)
-        {
-            m_raftRemotePeers.push_back(id);
-        }
-    }
+    std::copy_if(m_raftClusterPeers.begin(), m_raftClusterPeers.end(), std::back_inserter(m_raftRemotePeers),
+                 [&self](const std::string& id) { return id != self; });
     m_raftMajority = m_raftClusterPeers.empty() ? 1u : (m_raftClusterPeers.size() / 2 + 1);
     m_raftSingleNode = (m_raftClusterPeers.size() == 1u && m_raftClusterPeers[0] == self);
 

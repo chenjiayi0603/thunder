@@ -275,8 +275,6 @@ bool Manager::AcceptServerConn(int iFd)
 bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 {
     LOG4_TRACE("fd %d, seq %u", pData->iFd, pData->ulSeq);
-    int iErrno = 0;
-    int iReadLen = 0;
     auto conn_iter = m_mapFdAttr.find(pData->iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
@@ -284,6 +282,8 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
     }
     else
     {
+        int iErrno = 0;
+        int iReadLen = 0;
     	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pData->ulSeq != pConn->ulSeq)
         {
@@ -1172,7 +1172,6 @@ void Manager::CreateLoader(bool boRestart)
 void Manager::CreateWorker()
 {
     LOG4_TRACE("%s", __FUNCTION__);
-    int iPid = 0;
     LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
     RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
     CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1189,7 +1188,7 @@ void Manager::CreateWorker()
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
         }
 
-        iPid = fork();
+        int iPid = fork();
         if (iPid == 0)   // 子进程
         {
             StopPostToEventLoop();
@@ -1282,11 +1281,11 @@ void Manager::PreloadCmd()
 bool Manager::RestartWorker(int iDeathPid)
 {
     LOG4_TRACE("%s(%d)", __FUNCTION__, iDeathPid);
-    int iNewPid = 0;
-    char errMsg[1024] = {0};
     auto worker_iter = m_mapWorker.find(iDeathPid);
     if (worker_iter != m_mapWorker.end())
     {
+        int iNewPid = 0;
+        char errMsg[1024] = {0};
         LOG4_TRACE("restart worker %d, close control fd %d and data fd %d first.",worker_iter->second.iWorkerIndex, worker_iter->second.iControlFd, worker_iter->second.iDataFd);
         int iWorkerIndex = worker_iter->second.iWorkerIndex;
         auto fd_iter = m_mapWorkerFdPid.find(worker_iter->second.iControlFd);
@@ -1466,7 +1465,6 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s", __FUNCTION__);
-    ev_io* io_watcher = nullptr;
 	if (pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)

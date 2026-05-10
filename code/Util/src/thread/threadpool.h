@@ -6,9 +6,9 @@
 #include <queue>
 #include <atomic>
 #include <future>
-//#include <condition_variable>
-//#include <thread>
-//#include <functional>
+#include <condition_variable>
+#include <thread>
+#include <functional>
 #include <stdexcept>
 
 namespace std
@@ -55,8 +55,8 @@ public:
 			throw runtime_error("commit on ThreadPool is stopped.");
 
 		using RetType = decltype(f(args...)); // typename std::result_of<F(Args...)>::type, 函数 f 的返回值类型
-		auto task = make_shared<packaged_task<RetType()>>(
-			bind(forward<F>(f), forward<Args>(args)...)
+		auto task = std::make_shared<std::packaged_task<RetType()>>(
+			std::bind(std::forward<F>(f), std::forward<Args>(args)...)
 		); // 把函数入口及参数,打包(绑定)
 		future<RetType> future = task->get_future();
 		{    // 添加任务到队列

@@ -44,3 +44,14 @@ deploy/HelloHttps/bin/Hello
 deploy/HelloWs/bin/Hello
 deploy/docker/data/
 docs/center_vs_nacos_advantages.md
+claude-cli/
+code/3party/
+code/3party/lib
+code/3party/lib
+deploy/Center/plugins
+deploy/Logic/plugins
+deploy/Logic/bin/Logic
+deploy/Center/plugins
+deploy/Logic/plugins
+deploy/Logic/bin/Logic
+code/3party/lib
