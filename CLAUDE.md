@@ -275,6 +275,7 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 - ⚠️ 移除手写 UringIoBackend（Step 9 独立 PR）— 待 asio_uring 在 native Linux 验证后执行
 - ⚠️ native Linux 性能验证 — 当前所有 benchmark 在 WSL2 上运行，性能数据有噪声
 - ✅ asio_uring 大包测试已覆盖 4KB + 64KB，三档横向对比完成。64KB 场景 io_uring 延迟碾压 epoll（c100: -86%, 2.32ms vs 16.78ms），Stdev 为 ev 的 1/50
+- ⚠️ asio_uring S2S 端到端（Interface→Logic GenKey）基础连通已验证：io_uring fd 在 Interface/Logic Worker 均正常初始化，S2S 连接（→Center）经 io_uring 建立成功。完整 GenKey 链路因集群路由配置问题未跑通（与 io_backend 无关）
 
 ---
 
