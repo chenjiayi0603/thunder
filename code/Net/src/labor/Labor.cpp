@@ -21,6 +21,9 @@
 #ifdef THUNDER_IO_URING
 #include "UringIoBackend.hpp"
 #endif
+#ifdef THUNDER_IO_ASIO_URING
+#include "AsioUringIoBackend.hpp"
+#endif
 
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
@@ -456,7 +459,24 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
     std::string strBackend;
     oJsonConf.Get("io_backend", strBackend);
 
-    if (strBackend == "uring")
+    if (strBackend == "asio_uring")
+    {
+#ifdef THUNDER_IO_ASIO_URING
+        AsioUringIoBackend* pBackend = new AsioUringIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: asio_uring initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: asio_uring init failed, falling back to uring");
+#else
+        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to uring");
+#endif
+    }
+
+    if (strBackend == "uring" || strBackend == "asio_uring")
     {
 #ifdef THUNDER_IO_URING
         UringIoBackend* pBackend = new UringIoBackend();

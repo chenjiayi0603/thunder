@@ -52,7 +52,7 @@ parse_result() {
 }
 
 # Test backends
-BACKENDS=("ev" "uring")
+BACKENDS=("ev" "uring" "asio_uring")
 SUMMARY="$RESULTS/summary.csv"
 echo "backend,protocol,connections,rps,latency_ms" > "$SUMMARY"
 
@@ -64,14 +64,21 @@ for BACKEND in "${BACKENDS[@]}"; do
     echo "  Building..."
     BUILD_DIR="$THUNDER_ROOT/build_${BACKEND}"
     if [[ "$BACKEND" == "uring" ]]; then
-        (cd "$BUILD_DIR" && cmake --build . -j$(nproc) 2>/dev/null) || {
+        (cd "$BUILD_DIR" && cmake --build . -j1 2>/dev/null) || {
             mkdir -p "$BUILD_DIR"
             cd "$BUILD_DIR"
             cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_URING=ON >/dev/null 2>&1
-            cmake --build . -j$(nproc) >/dev/null 2>&1
+            cmake --build . -j1 >/dev/null 2>&1
+        }
+    elif [[ "$BACKEND" == "asio_uring" ]]; then
+        (cd "$BUILD_DIR" && cmake --build . -j1 2>/dev/null) || {
+            mkdir -p "$BUILD_DIR"
+            cd "$BUILD_DIR"
+            cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_ASIO_URING=ON >/dev/null 2>&1
+            cmake --build . -j1 >/dev/null 2>&1
         }
     else
-        (cd "$BUILD_DIR" && cmake --build . -j$(nproc) 2>/dev/null) || true
+        (cd "$BUILD_DIR" && cmake --build . -j1 2>/dev/null) || true
     fi
     
     # Configure

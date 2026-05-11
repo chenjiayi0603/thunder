@@ -5,6 +5,7 @@
 # 若 fetch 失败：子模块目录内 git fetch origin <下方 branch 列>
 #
 # 库                 短SHA   版本/分支说明（git describe）              branch（=.gitmodules，与 HEAD gitlink 同提交）
+# asio               bd500f0 asio-1-38-0-18-gbd500f0a0（standalone）   bd500f0a018db9a845ebaaed5c0318343ae9f497
 # c-ares             2870f6b v1.31.0-327-g2870f6b1                    2870f6b14723b3bb77a365f4745abcbd74c2ffad
 # cryptopp           b524266 CRYPTOPP_8_9_0-23-gb5242667               b5242667a24e3db8e4600e77b2e502ef204e5280
 # curl               2b3438d curl-8_19_0-26-g2b3438d486                2b3438d486982b5b22c001ab2c601837e83b4787
@@ -51,3 +52,7 @@
 	path = code/3party/log4cplus
 	url = https://github.com/log4cplus/log4cplus.git
 	branch = 505a61e814ece740ce6a116d72f2091a37f472a6
+[submodule "code/3party/asio"]
+	path = code/3party/asio
+	url = https://github.com/chriskohlhoff/asio.git
+	branch = bd500f0a018db9a845ebaaed5c0318343ae9f497

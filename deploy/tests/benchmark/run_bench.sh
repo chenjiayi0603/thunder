@@ -154,10 +154,12 @@ for BACKEND in "${BACKENDS[@]}"; do
     cd "$BUILD_DIR"
     if [[ "$BACKEND" == "uring" ]]; then
         cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_URING=ON > /dev/null 2>&1
+    elif [[ "$BACKEND" == "asio_uring" ]]; then
+        cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_ASIO_URING=ON > /dev/null 2>&1
     else
         cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null 2>&1
     fi
-    cmake --build . -j$(nproc) > /dev/null 2>&1
+    cmake --build . -j1 > /dev/null 2>&1
     echo "  Build complete."
     
     # Configure for this backend

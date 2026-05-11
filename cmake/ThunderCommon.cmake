@@ -45,6 +45,7 @@ function(thunder_target_include_net _target)
     "${THUNDER_3PARTY}/include/mongoc"
     "${THUNDER_3PARTY}/include/bson"
     "${THUNDER_3PARTY}/include/libev"
+    "${THUNDER_3PARTY}/asio/asio/include"
   )
 endfunction()
 
@@ -153,7 +154,7 @@ function(thunder_link_thirdparty_shared _target)
     rt
   )
 
-  if(THUNDER_IO_URING)
+  if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
     target_link_libraries(${_target} PRIVATE uring)
   endif()
 

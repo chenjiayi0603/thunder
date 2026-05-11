@@ -1,12 +1,12 @@
 {
     "node_type": "HELLO",
     "access_host": "127.0.0.1",
-    "access_port": 27006,
-    "access_codec": 3,
+    "access_port": 27443,
+    "access_codec": 11,
     "inner_host": "127.0.0.1",
-    "inner_port": 27007,
+    "inner_port": 27444,
     "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
-    "server_name": "Hello_robot",
+    "server_name": "Hello_https_robot",
     "process_num": 1,
     "worker_capacity": 1000000,
     "config_path": "conf/",
@@ -27,6 +27,20 @@
     "step_timeout": 5.0,
     "log_level": "DEBUG",
     "load_so_interval": 60.0,
+    "custom": {
+        "https": {
+            "server": {
+                "cert_file": "conf/certs/server.crt",
+                "key_file": "conf/certs/server.key",
+                "ca_file": "conf/certs/ca.crt",
+                "verify_client": false
+            },
+            "client": {
+                "ca_file": "conf/certs/ca.crt",
+                "verify_peer": true
+            }
+        }
+    },
     "so": [],
     "module": [
         {
