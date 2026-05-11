@@ -61,6 +61,60 @@ libev 主循环:
 
 ---
 
+## Test Methodology
+
+### wrk 脚本
+
+三档 payload 的 wrk Lua 脚本位于 `deploy/tests/benchmark/`：
+
+| 脚本 | Payload | 用途 |
+|------|---------|------|
+| `wrk_small.lua` | 37B JSON | 小包（控制通道型流量） |
+| `wrk_4k.lua` | 4KB JSON | 大包（典型业务流量） |
+| `wrk_64k.lua` | 64KB JSON | 超包（极限吞吐测试） |
+
+所有脚本统一 POST `/hello/hello`，Content-Type `application/json`。
+
+### 手动测试命令
+
+```bash
+# 1. 修改 backend 配置
+python3 -c "
+import json
+with open('deploy/HelloHttp/conf/Hello.json') as f:
+    cfg = json.load(f)
+cfg['io_backend'] = 'asio_uring'   # ev | uring | asio_uring
+with open('deploy/HelloHttp/conf/Hello.json','w') as f:
+    json.dump(cfg, f, indent=4)
+"
+
+# 2. 启动 HelloHttp
+cd deploy/HelloHttp && ./node.sh restart
+
+# 3. 运行单个 benchmark
+wrk -t4 -c100 -d15s -s deploy/tests/benchmark/wrk_64k.lua \
+    http://127.0.0.1:27006/hello/hello
+
+wrk -t4 -c500 -d30s -s deploy/tests/benchmark/wrk_small.lua \
+    http://127.0.0.1:27006/hello/hello
+```
+
+### 自动化脚本
+
+```bash
+# 三档横向对比（顺序运行 ev, uring, asio_uring）
+cd deploy/tests/benchmark
+./run_bench.sh --backends ev,uring,asio_uring
+
+# 快速冒烟
+./run_quick_bench.sh --backend asio_uring
+```
+
+> **注意**: `run_bench.sh` 需要每个 backend 独立编译目录 (`build_ev/`, `build_uring/`, `build_asio_uring/`)。
+> 当前推荐手动切配置单进程测试（避免 WSL2 连续测试负载累积, 见下方说明）。
+
+---
+
 ## Test Environment
 
 | Item | Value |
