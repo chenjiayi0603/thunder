@@ -68,6 +68,7 @@ cmake/               # CMake 模块与构建说明
 - **Proto 变更**：改了 `coor.proto` 后执行 `cmake --build build --target thunder_proto_gen -j1`
 
 ## 关键架构决策
+- **IoBackend 抽象**：支持三档运行时切换 — `ev`（epoll）/ `uring`（liburing 手写）/ `asio_uring`（standalone Asio io_uring，主线程直驱）
 - 基于事件驱动的异步网络模型（libev），支持高并发连接处理
 - 多进程 Worker 架构（Manager/Loader/Worker），插件动态加载（`Cmd*.so`、`Module*.so`）
 - Center 集群 Raft 选主，主从语义下的注册/上报流程
@@ -224,6 +225,56 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 - 改完代码不跑编译就提交
 - 只验证改动功能，不验证相关功能
 - 修改接口后不同步更新 Proto 和所有节点
+
+## 当前功能状态
+
+### 网络 I/O
+- ✅ libev epoll 后端（`EvIoBackend`）— 默认后端，GET c100 167k RPS
+- ✅ liburing 手写后端（`UringIoBackend`）— ev_io(ring_fd) 驱动，待 asio_uring 验证后移除
+- ✅ standalone Asio io_uring 后端（`AsioUringIoBackend`）— 主线程直驱，大包优于 ev
+- ✅ IoBackend 抽象接口 — 运行时按 `"io_backend"` 配置三档切换
+- ✅ S2S 跨节点 TCP 接入 IoBackend — accept 后的连接走异步 I/O
+- ✅ 协程 StepCo20 与 IoBackend 解耦 — 通过 `IoCompletionCallback` 回调衔接
+
+### AsioUringIoBackend 并发模型
+- ✅ 主线程直驱（当前）— io_context 跑在 libev 主线程，零锁零线程跳
+- ✅ ev_prepare + ev_check + ev_io(ring_fd) 三路驱动 io_context.poll()
+- ✅ 独立线程+ev_async 桥接（历史）— 第一版实现，跨线程开销已消除
+
+### 集群与路由
+- ✅ Center 集群 Raft 选主
+- ✅ 节点注册/上报/断连检测
+- ✅ 共享内存路由镜像（Manager 写 → Worker 增量感知）
+- ✅ 配置通过 shm 同步到 Worker
+
+### 协议与编解码
+- ✅ HTTP/1.1 编解码
+- ✅ HTTPS（OpenSSL）
+- ✅ WebSocket（JSON + Protobuf）
+- ✅ 内部二进制协议（ProtoCodec / ThunderCodec）
+- ✅ 自定义协议（CODEC_PRIVATE / CODEC_APP）
+
+### 模块与插件
+- ✅ 插件动态加载（`Cmd*.so` / `Module*.so`）
+- ✅ Hello 示例模块（HTTP Echo）
+- ✅ Admin 管理后台（Center Web 管理页）
+
+### 测试与压测
+- ✅ pytest 集成/冒烟测试（`deploy/tests/pytest`）
+- ✅ wrk 三档横向压测（`deploy/tests/benchmark/run_bench.sh`）
+- ✅ GET / POST 小包/大包对比压测
+- ✅ Benchmark 结果文档化（`results/final_summary.csv` + `asio_uring_benchmark.md`）
+
+### 存储
+- ✅ MariaDB（mariadb-connector-c）
+- ✅ MongoDB（mongo-c-driver）
+- ✅ Redis（hiredis-vip）
+- ✅ Protobuf 序列化（`coor.proto`）
+
+### 待办
+- ⚠️ 移除手写 UringIoBackend（Step 9 独立 PR）— 待 asio_uring 在 native Linux 验证后执行
+- ⚠️ native Linux 性能验证 — 当前所有 benchmark 在 WSL2 上运行，性能数据有噪声
+- ⚠️ asio_uring 大包测试仅覆盖 4KB，更大包（64KB+）待测
 
 ---
 
