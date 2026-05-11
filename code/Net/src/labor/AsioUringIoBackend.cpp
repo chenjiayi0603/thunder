@@ -1,11 +1,17 @@
 /*******************************************************************************
  * Project:  Net
  * @file     AsioUringIoBackend.cpp
+ * @brief    Single-threaded: io_context runs on libev main loop via
+ *           ev_prepare/ev_check hooks + ev_io ring_fd wakeup.
  ******************************************************************************/
 #ifdef THUNDER_IO_ASIO_URING
 
 #include "AsioUringIoBackend.hpp"
 #include "util/CBuffer.hpp"
+#include <cstdio>
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace net
 {
@@ -17,6 +23,27 @@ AsioUringIoBackend::~AsioUringIoBackend()
     Destroy();
 }
 
+int AsioUringIoBackend::FindIoUringRingFd()
+{
+    DIR* dir = opendir("/proc/self/fd");
+    if (!dir) return -1;
+    int found = -1;
+    struct dirent* e;
+    while ((e = readdir(dir)) != nullptr)
+    {
+        char src[64], dst[256];
+        snprintf(src, sizeof(src), "/proc/self/fd/%s", e->d_name);
+        ssize_t n = ::readlink(src, dst, sizeof(dst) - 1);
+        if (n > 0 && strncmp(dst, "anon_inode:[io_uring]", 21) == 0)
+        {
+            found = atoi(e->d_name);
+            break;
+        }
+    }
+    closedir(dir);
+    return found;
+}
+
 bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callback, void* user_data)
 {
     m_loop     = loop;
@@ -24,220 +51,173 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
     m_userData = user_data;
     m_workGuard.emplace(m_ioCtx.get_executor());
 
-    ev_async_init(&m_asyncWatcher, &OnAsyncWake);
-    m_asyncWatcher.data = this;
-    ev_async_start(loop, &m_asyncWatcher);
-    m_asyncStarted = true;
+    /* Trigger lazy io_uring_service initialization */
+    int pfd[2] = {-1, -1};
+    if (::pipe2(pfd, O_NONBLOCK | O_CLOEXEC) == 0)
+    {
+        {
+            asio::posix::stream_descriptor tmp(m_ioCtx, pfd[0]);
+            (void)tmp.release();
+        }
+        ::close(pfd[0]);
+        ::close(pfd[1]);
+        (void)m_ioCtx.poll();
+    }
 
-    m_ioThread = std::thread([this]() { IoThreadFunc(); });
+    /* Register ring_fd with libev so epoll_wait wakes when CQEs arrive */
+    m_ringFd = FindIoUringRingFd();
+    if (m_ringFd >= 0)
+    {
+        ev_io_init(&m_ringWatcher, &OnRingReady, m_ringFd, EV_READ);
+        m_ringWatcher.data = this;
+        ev_io_start(loop, &m_ringWatcher);
+    }
+
+    /* ev_prepare: drain CQEs before libev blocks in epoll_wait
+     * ev_check:   drain CQEs that arrived during the epoll_wait window */
+    ev_prepare_init(&m_prepare, &OnPrepare);
+    m_prepare.data = this;
+    ev_prepare_start(loop, &m_prepare);
+
+    ev_check_init(&m_check, &OnCheck);
+    m_check.data = this;
+    ev_check_start(loop, &m_check);
+
     return true;
 }
 
 void AsioUringIoBackend::Destroy()
 {
-    if (m_asyncStarted && m_loop)
+    if (!m_loop) return;
+
+    if (m_ringFd >= 0) ev_io_stop(m_loop, &m_ringWatcher);
+    ev_prepare_stop(m_loop, &m_prepare);
+    ev_check_stop(m_loop, &m_check);
+
+    for (auto& [fd, sp] : m_fds)
     {
-        ev_async_stop(m_loop, &m_asyncWatcher);
-        m_asyncStarted = false;
+        asio::error_code ec;
+        sp->cancelled = true;
+        sp->sock.cancel(ec);
+        (void)sp->sock.release();
     }
+    m_fds.clear();
 
-    // 通知 io_context 线程取消所有挂起操作
-    asio::post(m_ioCtx, [this]() {
-        for (auto& kv : m_fds)
-        {
-            asio::error_code ec;
-            kv.second->cancelled = true;
-            kv.second->sock.cancel(ec);
-            (void)kv.second->sock.release();
-        }
-        m_fds.clear();
-    });
-
-    // 允许 io_context.run() 自然退出
     m_workGuard.reset();
-    if (m_ioThread.joinable())
-    {
-        m_ioThread.join();
-    }
+    (void)m_ioCtx.poll();
     m_ioCtx.stop();
 
-    m_loop     = nullptr;
-    m_callback = nullptr;
-    m_userData = nullptr;
-}
-
-void AsioUringIoBackend::IoThreadFunc()
-{
-    m_ioCtx.run();
+    m_loop      = nullptr;
+    m_callback  = nullptr;
+    m_userData  = nullptr;
 }
 
 std::shared_ptr<AsioUringIoBackend::FdState>& AsioUringIoBackend::EnsureFdState(int fd)
 {
     auto it = m_fds.find(fd);
-    if (it != m_fds.end())
-    {
-        return it->second;
-    }
+    if (it != m_fds.end()) return it->second;
     auto sp = std::make_shared<FdState>(m_ioCtx, fd);
     auto [ins, _] = m_fds.emplace(fd, std::move(sp));
     return ins->second;
 }
 
-void AsioUringIoBackend::PushCompletion(int fd, uint32_t seq, IoOp op, int result)
-{
-    {
-        std::lock_guard<std::mutex> lk(m_queueMtx);
-        m_pendingQueue.push_back({fd, seq, op, result});
-    }
-    // CAS：仅当尚无待处理信号时才发送一次 ev_async_send，避免每个完成事件都写 eventfd
-    bool expected = false;
-    if (m_loop && m_asyncPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-    {
-        ev_async_send(m_loop, &m_asyncWatcher);
-    }
-}
-
 bool AsioUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
 {
-    if (!buf || !m_callback)
-    {
-        return false;
-    }
+    if (!buf || !m_callback) return false;
+    auto& sp = EnsureFdState(fd);
+    if (sp->readPending) return true;
+    sp->readPending = true;
+
     buf->EnsureWritableBytes(8192);
     char*  dst = const_cast<char*>(buf->GetRawWriteBuffer());
     size_t cap = buf->WriteableBytes();
 
-    asio::post(m_ioCtx, [this, fd, buf, seq, dst, cap]() {
-        auto& sp = EnsureFdState(fd);
-        if (sp->readPending)
+    std::weak_ptr<FdState> wp = sp;
+    sp->sock.async_read_some(
+        asio::buffer(dst, cap),
+        [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
         {
-            return;
-        }
-        sp->readPending = true;
-
-        std::weak_ptr<FdState> wp = sp;
-        sp->sock.async_read_some(
-            asio::buffer(dst, cap),
-            [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
+            auto live = wp.lock();
+            if (!live || live->cancelled) return;
+            live->readPending = false;
+            if (ec)
             {
-                auto live = wp.lock();
-                if (!live || live->cancelled)
-                {
-                    return;
-                }
-                live->readPending = false;
-                if (ec)
-                {
-                    if (ec == asio::error::operation_aborted)
-                    {
-                        return;
-                    }
-                    PushCompletion(fd, seq, IoOp::Read, -ec.value());
-                    return;
-                }
-                if (n == 0)
-                {
-                    PushCompletion(fd, seq, IoOp::Read, 0);
-                    return;
-                }
-                buf->AdvanceWriteIndex(static_cast<int>(n));
-                PushCompletion(fd, seq, IoOp::Read, static_cast<int>(n));
-            });
-    });
+                if (ec != asio::error::operation_aborted)
+                    m_callback(fd, seq, IoOp::Read, -ec.value(), m_userData);
+                return;
+            }
+            if (n == 0) { m_callback(fd, seq, IoOp::Read, 0, m_userData); return; }
+            buf->AdvanceWriteIndex(static_cast<int>(n));
+            m_callback(fd, seq, IoOp::Read, static_cast<int>(n), m_userData);
+        });
     return true;
 }
 
 bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
 {
-    if (!buf || !m_callback)
-    {
-        return false;
-    }
+    if (!buf || !m_callback) return false;
     int readable = static_cast<int>(buf->ReadableBytes());
     if (readable <= 0)
     {
         m_callback(fd, seq, IoOp::Write, 0, m_userData);
         return true;
     }
+    auto& sp = EnsureFdState(fd);
+    if (sp->writePending) return true;
+    sp->writePending = true;
 
     const char* src = buf->GetRawReadBuffer();
 
-    asio::post(m_ioCtx, [this, fd, buf, seq, src, readable]() {
-        auto& sp = EnsureFdState(fd);
-        if (sp->writePending)
+    std::weak_ptr<FdState> wp = sp;
+    sp->sock.async_write_some(
+        asio::buffer(src, readable),
+        [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
         {
-            return;
-        }
-        sp->writePending = true;
-
-        std::weak_ptr<FdState> wp = sp;
-        sp->sock.async_write_some(
-            asio::buffer(src, readable),
-            [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
+            auto live = wp.lock();
+            if (!live || live->cancelled) return;
+            live->writePending = false;
+            if (ec)
             {
-                auto live = wp.lock();
-                if (!live || live->cancelled)
-                {
-                    return;
-                }
-                live->writePending = false;
-                if (ec)
-                {
-                    if (ec == asio::error::operation_aborted)
-                    {
-                        return;
-                    }
-                    PushCompletion(fd, seq, IoOp::Write, -ec.value());
-                    return;
-                }
-                buf->AdvanceReadIndex(static_cast<int>(n));
-                PushCompletion(fd, seq, IoOp::Write, static_cast<int>(n));
-            });
-    });
+                if (ec != asio::error::operation_aborted)
+                    m_callback(fd, seq, IoOp::Write, -ec.value(), m_userData);
+                return;
+            }
+            buf->AdvanceReadIndex(static_cast<int>(n));
+            m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
+        });
     return true;
 }
 
 void AsioUringIoBackend::CancelFd(int fd)
 {
-    asio::post(m_ioCtx, [this, fd]() {
-        auto it = m_fds.find(fd);
-        if (it == m_fds.end())
-        {
-            return;
-        }
-        asio::error_code ec;
-        it->second->cancelled = true;
-        it->second->sock.cancel(ec);
-        (void)it->second->sock.release();
-        m_fds.erase(it);
-    });
+    auto it = m_fds.find(fd);
+    if (it == m_fds.end()) return;
+    asio::error_code ec;
+    it->second->cancelled = true;
+    it->second->sock.cancel(ec);
+    (void)it->second->sock.release();
+    m_fds.erase(it);
 }
 
 bool AsioUringIoBackend::HasPending(int fd) const
 {
-    // io_context 线程独占 m_fds；SubmitRead/Write 内有 readPending/writePending 幂等保护。
-    // 返回 false 让调用方总是尝试重新提交，内部保证幂等。
     (void)fd;
     return false;
 }
 
-void AsioUringIoBackend::OnAsyncWake(struct ev_loop* /*loop*/, ev_async* w, int /*revents*/)
+void AsioUringIoBackend::OnPrepare(struct ev_loop*, ev_prepare* w, int)
 {
-    auto* self = static_cast<AsioUringIoBackend*>(w->data);
+    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
+}
 
-    // 先清标记再取队列：确保 PushCompletion 在 swap 之后加入的事件能再次触发信号
-    self->m_asyncPending.store(false, std::memory_order_release);
+void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
+{
+    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
+}
 
-    std::vector<CompletionEvent> batch;
-    {
-        std::lock_guard<std::mutex> lk(self->m_queueMtx);
-        batch.swap(self->m_pendingQueue);
-    }
-
-    for (auto& evt : batch)
-    {
-        self->m_callback(evt.fd, evt.seq, evt.op, evt.result, self->m_userData);
-    }
+void AsioUringIoBackend::OnRingReady(struct ev_loop*, ev_io* w, int)
+{
+    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
 }
 
 } /* namespace net */

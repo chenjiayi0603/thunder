@@ -1,9 +1,9 @@
 /*******************************************************************************
  * Project:  Net
  * @file     AsioUringIoBackend.hpp
- * @brief    standalone Asio io_uring backend (internal)
- * @note     io_context 跑在独立线程；完成事件通过 ev_async 回调 marshal 到 libev
- *           主循环，彻底消除 1ms 轮询抖动。
+ * @brief    standalone Asio io_uring backend（单线程，主循环直驱）
+ * @note     io_context 跑在 libev 主循环线程，由 ev_prepare/ev_check/ev_io(ring_fd)
+ *           三路驱动 io_context.poll()，彻底消除线程跳开销。
  ******************************************************************************/
 #ifndef ASIOURINGIOBACKEND_HPP_
 #define ASIOURINGIOBACKEND_HPP_
@@ -14,13 +14,9 @@
 #include "libev/ev.h"
 #include <asio.hpp>
 #include <asio/posix/stream_descriptor.hpp>
-#include <atomic>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <thread>
 #include <unordered_map>
-#include <vector>
 
 namespace util { class CBuffer; }
 
@@ -42,7 +38,7 @@ public:
     bool HasPending(int fd) const override;
 
 private:
-    // 仅在 io_context 线程访问
+    // 仅在 libev 主线程访问（单线程，无锁）
     struct FdState
     {
         asio::posix::stream_descriptor sock;
@@ -52,43 +48,29 @@ private:
         explicit FdState(asio::io_context& io, int fd) : sock(io, fd) {}
     };
 
-    struct CompletionEvent
-    {
-        int      fd;
-        uint32_t seq;
-        IoOp     op;
-        int      result;
-    };
-
-    // 仅在 io_context 线程调用
     std::shared_ptr<FdState>& EnsureFdState(int fd);
-    void PushCompletion(int fd, uint32_t seq, IoOp op, int result);
 
-    // ev_async 回调（libev 主循环线程）
-    static void OnAsyncWake(struct ev_loop* loop, ev_async* w, int revents);
+    // libev 回调（全部在主线程，直接 poll io_context）
+    static void OnPrepare(struct ev_loop*, ev_prepare* w, int);
+    static void OnCheck(struct ev_loop*, ev_check* w, int);
+    static void OnRingReady(struct ev_loop*, ev_io* w, int);
 
-    // io_context 线程入口
-    void IoThreadFunc();
+    static int FindIoUringRingFd();
 
     asio::io_context m_ioCtx{1};
     std::optional<asio::executor_work_guard<asio::io_context::executor_type>> m_workGuard;
-    std::thread      m_ioThread;
 
-    // 仅 io_context 线程访问
+    // 仅主线程访问
     std::unordered_map<int, std::shared_ptr<FdState>> m_fds;
 
-    // 跨线程完成队列
-    mutable std::mutex           m_queueMtx;
-    std::vector<CompletionEvent> m_pendingQueue;
-    // 用 atomic 标记去重 ev_async_send：队列从空→非空只触发一次 eventfd write
-    std::atomic<bool>            m_asyncPending{false};
+    struct ev_loop* m_loop      = nullptr;
+    IoCompletionCallback m_callback = nullptr;
+    void*           m_userData  = nullptr;
 
-    struct ev_loop*      m_loop      = nullptr;
-    IoCompletionCallback m_callback  = nullptr;
-    void*                m_userData  = nullptr;
-
-    ev_async m_asyncWatcher{};
-    bool     m_asyncStarted = false;
+    ev_prepare m_prepare{};
+    ev_check   m_check{};
+    ev_io      m_ringWatcher{};
+    int        m_ringFd = -1;
 };
 
 } /* namespace net */
