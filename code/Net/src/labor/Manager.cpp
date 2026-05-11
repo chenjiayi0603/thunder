@@ -195,6 +195,15 @@ Manager::Manager(const std::string& strConfFile)
     PreloadCmd();
 
     CreateWorker();
+
+    // IoBackend must be initialized after m_loop is created (by CreateEvents)
+    // AND after worker forks — otherwise the io_uring ring_fd is inherited
+    // by child processes, corrupting the IPC channel.
+    if (!InitIoBackend(m_oCurrentConf, &Manager::OnIoComplete))
+    {
+        LOG4_WARN("InitIoBackend failed, using legacy ev_io path");
+    }
+
     ReportToCenter();
 
 }
@@ -503,6 +512,240 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
     }
     return(true);
+}
+
+void Manager::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data)
+{
+    Manager* pManager = static_cast<Manager*>(user_data);
+    auto conn_iter = pManager->m_mapFdAttr.find(fd);
+    if (conn_iter == pManager->m_mapFdAttr.end())
+    {
+        return;
+    }
+    tagConnectionAttr* pConn = conn_iter->second.get();
+    if (seq != pConn->ulSeq)
+    {
+        return;
+    }
+
+    if (op == IoOp::Read)
+    {
+        pManager->HandleIoReadComplete(pConn, result);
+    }
+    else
+    {
+        pManager->HandleIoWriteComplete(pConn, result);
+    }
+}
+
+bool Manager::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto conn_iter = m_mapFdAttr.find(iFd);
+    if (conn_iter == m_mapFdAttr.end() || conn_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result <= 0)
+    {
+        if (result < 0)
+        {
+            int iErrno = -result;
+            if (EAGAIN == iErrno || EINTR == iErrno)
+            {
+                // For IoBackend: io_uring CQE with EAGAIN on non-blocking socket —
+                // we must explicitly re-submit (unlike ev where the watcher retriggers).
+                // Fall through to end-of-function re-submit.
+            }
+            else
+            {
+                LOG4_TRACE("IoBackend recv from fd %d error %d", iFd, iErrno);
+                DestroyConnect(conn_iter);
+                return false;
+            }
+        }
+        else
+        {
+            LOG4_TRACE("IoBackend fd %d closed by peer", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    // 分派缓冲区中的完整消息
+    while (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize)
+    {
+        MsgHead oInMsgHead;
+        bool bResult = oInMsgHead.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
+        if (bResult)
+        {
+            MsgBody oInMsgBody;
+            if (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize + oInMsgHead.msgbody_len())
+            {
+                if (0 == oInMsgHead.msgbody_len())
+                {
+                    bResult = true;
+                }
+                else
+                {
+                    bResult = oInMsgBody.ParseFromArray(
+                        pConn->pRecvBuff->GetRawReadBuffer() + gc_uiMsgHeadSize,
+                        oInMsgHead.msgbody_len());
+                }
+                if (bResult)
+                {
+                    pConn->dActiveTime = ev_now(m_loop);
+                    bool bContinue = false;
+                    auto worker_fd_iter = m_mapWorkerFdPid.find(iFd);
+                    if (worker_fd_iter != m_mapWorkerFdPid.end())
+                    {
+                        bContinue = DisposeDataFromWorker(oInMsgHead, oInMsgBody, pConn);
+                    }
+                    else
+                    {
+                        auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
+                        const bool bCenterCmd =
+                            (oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER) ||
+                            (oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER) ||
+                            (oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT) ||
+                            (oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT);
+                        if (center_iter != m_mapCenterMsgShell.end() || bCenterCmd)
+                        {
+                            bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody, pConn);
+                        }
+                        else
+                        {
+                            bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
+                        }
+                    }
+                    pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
+                    pConn->pRecvBuff->Compact(32784);
+                    pConn->pSendBuff->Compact(32784);
+
+                    if (!bContinue)
+                    {
+                        DestroyConnect(conn_iter);
+                        return false;
+                    }
+                }
+                else
+                {
+                    LOG4_ERROR("oInMsgBody.ParseFromArray() failed from fd %d, close it!", iFd);
+                    DestroyConnect(conn_iter);
+                    return false;
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+        else
+        {
+            LOG4_ERROR("oInMsgHead.ParseFromArray() failed from fd %d, close it!", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    // 重新提交读（使用 HasPending 避免与写路径的 SubmitRead 重复）
+    if (m_pIoBackend)
+    {
+        auto recheck = m_mapFdAttr.find(iFd);
+        if (recheck != m_mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+            && !m_pIoBackend->HasPending(iFd))
+        {
+            pConn->pRecvBuff->Compact(8192);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+        }
+    }
+
+    return true;
+}
+
+bool Manager::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = m_mapFdAttr.find(iFd);
+    if (attr_iter == m_mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result < 0)
+    {
+        int iErrno = -result;
+        if (EAGAIN == iErrno)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+            return true;
+        }
+        else
+        {
+            LOG4_ERROR("IoBackend send to fd %d error %d", iFd, iErrno);
+            DestroyConnect(attr_iter);
+            return false;
+        }
+    }
+    else if (result > 0)
+    {
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+        if (iNeedWriteLen > 0)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+        }
+        else
+        {
+            // IoBackend: 写完成，CancelFd 清理该 fd 上可能残留的读/写操作，
+            // 但不再重新提交读（读由 HandleIoReadComplete 统一负责）。
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->CancelFd(iFd);
+            }
+        }
+    }
+    else
+    {
+        if (pConn->pWaitForSendBuff->ReadableBytes() > 0)
+        {
+            auto index_iter = m_mapSeq2WorkerIndex.find(ulSeq);
+            if (index_iter != m_mapSeq2WorkerIndex.end())
+            {
+                tagMsgShell stMsgShell(iFd, ulSeq);
+                auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
+                if (center_iter == m_mapCenterMsgShell.end())
+                {
+                    m_mapCenterMsgShell.insert(std::make_pair(pConn->strIdentify, stMsgShell));
+                }
+                else
+                {
+                    center_iter->second = stMsgShell;
+                }
+                ConnectWorker oConnWorker;
+                oConnWorker.set_worker_index(index_iter->second);
+                m_mapSeq2WorkerIndex.erase(index_iter);
+                SendTo(stMsgShell, CMD_REQ_CONNECT_TO_WORKER, GetSequence(), oConnWorker.SerializeAsString());
+            }
+        }
+    }
+    return true;
 }
 
 bool Manager::IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher)
@@ -984,6 +1227,7 @@ bool Manager::Init()
 {
 	nPid = getpid();
     InitLogger(m_oCurrentConf);
+    // InitIoBackend moved after CreateEvents (requires m_loop)
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
 
     if (m_strHostForClient.size() > 0 && m_iPortForClient > 0)
@@ -1456,6 +1700,15 @@ bool Manager::AddPeriodicTaskEvent()
 bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
+    // IoBackend 路径：普通连接 fd 走异步 I/O，特殊 fd 保留原有 ev_io 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -1490,6 +1743,14 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
+    // IoBackend 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -1524,6 +1785,15 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s", __FUNCTION__);
+    // IoBackend 路径：仅停止写。读由 HandleIoReadComplete 统一负责重新提交。
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
+        return true;
+    }
+
+    // 原有 ev_io 路径
 	if (pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)
@@ -1657,8 +1927,8 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
     {
         return(false);
     }
-    LOG4_TRACE("%s() iter->second->pIoWatcher = 0x%p, fd %d, data 0x%p", __FUNCTION__,
-                    iter->second->pIoWatcher, iter->second->pIoWatcher->fd, iter->second->pIoWatcher->data);
+    LOG4_TRACE("%s() iter->second->pIoWatcher = 0x%p, fd %d", __FUNCTION__,
+                    iter->second->pIoWatcher, iter->second->iFd);
     auto center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
     if (center_iter != m_mapCenterMsgShell.end())
     {
@@ -1670,7 +1940,15 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
         center_iter->second.iFd = 0;
         center_iter->second.ulSeq = 0;
     }
-    DelEvent(iter->second->pIoWatcher,(tagManagerIoWatcherData*)iter->second->pIoWatcher->data);
+    // Cancel IoBackend operations before cleaning ev_io watchers
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->CancelFd(iter->second->iFd);
+    }
+    if (iter->second->pIoWatcher)
+    {
+        DelEvent(iter->second->pIoWatcher, (tagManagerIoWatcherData*)iter->second->pIoWatcher->data);
+    }
     close(iter->first);
     m_mapFdAttr.erase(iter);
     return(true);
@@ -1997,7 +2275,9 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
                     oMsgHead.cmd(), oMsgHead.seq(),
                     body.data(), static_cast<uint32_t>(body.size())))
             {
+                // 通知worker，有数据到共享内存队列了
                 ShmRingQueue::NotifyEventFd(attr.iMgrToWorkerEventFd);
+        
                 LOG4_TRACE("shm send cmd %d seq %u to worker %d",
                            oMsgHead.cmd(), oMsgHead.seq(), attr.iWorkerIndex);
                 continue;

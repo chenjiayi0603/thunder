@@ -57,3 +57,11 @@ deploy/Logic/bin/Logic
 code/3party/lib
 plan_shm_queue.md
 deploy/Logic/bin/Logic
+build_no_uring/
+build_orig/
+build_uring/
+CMakeFiles/
+*.cmake
+Makefile
+deploy/Logic/bin/Logic
+deploy/Logic/bin/Logic

@@ -17,6 +17,10 @@
 
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
+#include "EvIoBackend.hpp"
+#ifdef THUNDER_IO_URING
+#include "UringIoBackend.hpp"
+#endif
 
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
@@ -437,6 +441,49 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 		}
 		return(true);
 	}
+}
+
+bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallback callback)
+{
+    // 先清理旧后端
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->Destroy();
+        delete m_pIoBackend;
+        m_pIoBackend = nullptr;
+    }
+
+    std::string strBackend;
+    oJsonConf.Get("io_backend", strBackend);
+
+    if (strBackend == "uring")
+    {
+#ifdef THUNDER_IO_URING
+        UringIoBackend* pBackend = new UringIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: io_uring initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: io_uring init failed, falling back to ev");
+#else
+        LOG4_WARN("IoBackend: io_uring requested but THUNDER_IO_URING not compiled, falling back to ev");
+#endif
+    }
+
+    // 默认使用 ev 后端
+    EvIoBackend* pBackend = new EvIoBackend();
+    if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+    {
+        m_pIoBackend = pBackend;
+        LOG4_INFO("IoBackend: ev initialized successfully");
+        return true;
+    }
+    delete pBackend;
+    LOG4_ERROR("IoBackend: failed to initialize any backend");
+    return false;
 }
 
 void Labor::SkipNonsenseLetters(std::string& word)

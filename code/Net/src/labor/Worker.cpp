@@ -264,6 +264,13 @@ Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int 
         exit(-2);
     }
 
+    // IoBackend must be initialized after m_loop is created (by CreateEvents)
+    if (!InitIoBackend(oJsonConf, &Worker::OnIoComplete))
+    {
+        // Non-fatal: falls back to legacy ev_io path
+        LOG4_WARN("InitIoBackend failed, using legacy ev_io path");
+    }
+
     PreloadCmd();
     LoadSo(oJsonConf["so"]);
     LoadModule(oJsonConf["module"]);
@@ -1048,6 +1055,382 @@ bool Worker::IoError(tagIoWatcherData* pData, struct ev_io* watcher)
         DestroyConnect(iter);
         return(true);
     }
+}
+
+void Worker::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data)
+{
+    Worker* pWorker = static_cast<Worker*>(user_data);
+    auto conn_iter = pWorker->mapFdAttr.find(fd);
+    if (conn_iter == pWorker->mapFdAttr.end())
+    {
+        return;
+    }
+    tagConnectionAttr* pConn = conn_iter->second.get();
+    if (seq != pConn->ulSeq)
+    {
+        return;
+    }
+
+    if (op == IoOp::Read)
+    {
+        pWorker->HandleIoReadComplete(pConn, result);
+    }
+    else
+    {
+        pWorker->HandleIoWriteComplete(pConn, result);
+    }
+}
+
+bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto conn_iter = mapFdAttr.find(iFd);
+    if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result <= 0)
+    {
+        if (result < 0)
+        {
+            int iErrno = -result;
+            if (EAGAIN == iErrno || EINTR == iErrno)
+            {
+                // For IoBackend: io_uring CQE with EAGAIN on non-blocking socket —
+                // we must explicitly re-submit (unlike ev where the watcher retriggers).
+                // Re-submit at the end of this function.
+                // (fall through to end-of-function re-submit)
+            }
+            else
+            {
+                LOG4_TRACE("IoBackend recv from fd %d error %d", iFd, iErrno);
+                DestroyConnect(conn_iter);
+                return false;
+            }
+        }
+        else
+        {
+            LOG4_TRACE("IoBackend fd %d closed by peer", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    iRecvByte += result;
+
+    MsgHead oInMsgHead, oOutMsgHead;
+    MsgBody oInMsgBody, oOutMsgBody;
+    auto codec_iter = mapCodec.find(pConn->eCodecType);
+    if (codec_iter == mapCodec.end())
+    {
+        LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
+        DestroyConnect(conn_iter);
+        return false;
+    }
+    ThunderCodec* pCodec = codec_iter->second.get();
+
+    while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
+            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+    {
+        oInMsgHead.Clear();
+        oInMsgBody.Clear();
+
+        E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
+        // HTTPS TLS 握手要求同步双向 I/O：SSL_do_handshake 产生的响应数据
+        // 必须立即写出，否则下一轮 Read/WantRead 循环会被异步 SubmitWrite 中断。
+        if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+        {
+            int iErrno = 0;
+            pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+            pConn->pSendBuff->Compact(8192);
+        }
+
+        if (CODEC_STATUS_OK == eCodecStatus)
+        {
+            pConn->ulMsgNumUnitTime++;
+            pConn->ulMsgNum++;
+            ++iRecvNum;
+            pConn->dActiveTime = GetTimeStamp();
+            bool bDisposeResult = false;
+
+            if (oInMsgHead.cmd() > 0)
+            {
+                if (util::CODEC_APP == pConn->eCodecType && IsAccess())
+                {
+                    if (!pConn->IsVerify() && pConn->ulMsgNum > 1)
+                    {
+                        LOG4_WARN("invalid request, please login first!");
+                        DestroyConnect(conn_iter);
+                        return false;
+                    }
+                }
+
+                if (m_dMsgStatInterval > 0.0 && (gc_uiCmdReq & oInMsgHead.cmd())
+                        && (util::CODEC_APP == pConn->eCodecType || util::CODEC_WEBSOCKET_EX_PB_APP == pConn->eCodecType))
+                {
+                    if (pConn->dActiveTime > (pConn->dUnitLimitLastTime + m_dMsgStatInterval))
+                    {
+                        pConn->ulMsgNumUnitTime = 1;
+                        pConn->mapCmdsUnitMsgCounter.clear();
+                        pConn->dUnitLimitLastTime = pConn->dActiveTime;
+                    }
+                    pConn->mapCmdsUnitMsgCounter[oInMsgHead.cmd()]++;
+                    if (m_iMsgPermitNum > 0 && pConn->ulMsgNumUnitTime > m_iMsgPermitNum)
+                    {
+                        LOG4_WARN("%s() ulMsgNumUnitTime(%u) > m_iMsgPermitNum(%d)!", __FUNCTION__, pConn->ulMsgNumUnitTime, m_iMsgPermitNum);
+                        return false;
+                    }
+                }
+
+                bDisposeResult = Dispose(pConn, oInMsgHead, oInMsgBody, oOutMsgHead, oOutMsgBody);
+                auto dispose_conn_iter = mapFdAttr.find(iFd);
+                if (dispose_conn_iter == mapFdAttr.end() || ulSeq != dispose_conn_iter->second->ulSeq)
+                {
+                    return true;
+                }
+                if (oOutMsgHead.ByteSize() > 0)
+                {
+                    eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutMsgHead, oOutMsgBody, pConn->pSendBuff.get());
+                    if (CODEC_STATUS_OK == eCodecStatus)
+                    {
+                        if (m_pIoBackend)
+                        {
+                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                        }
+                        else
+                        {
+                            int iErrno = 0;
+                            pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+                            pConn->pSendBuff->Compact(8192);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (pConn->IsVerify())
+                {
+                    oInMsgBody.set_additional(pConn->pClientData->GetRawReadBuffer(), pConn->pClientData->ReadableBytes());
+                    oInMsgHead.set_msgbody_len(oInMsgBody.ByteSize());
+                }
+
+                HttpMsg oInHttpMsg, oOutHttpMsg;
+                if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
+                {
+                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                    {
+                        pConn->dKeepAlive = 10;
+                    }
+                    auto hdr_iter = oInHttpMsg.headers().find(std::string("Keep-Alive"));
+                    if (hdr_iter != oInHttpMsg.headers().end())
+                    {
+                        pConn->dKeepAlive = strtoul(hdr_iter->second.c_str(), nullptr, 10);
+                        AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                    }
+                    else
+                    {
+                        auto conn_hdr_iter = oInHttpMsg.headers().find(std::string("Connection"));
+                        if (conn_hdr_iter != oInHttpMsg.headers().end())
+                        {
+                            if (std::string("keep-alive") == conn_hdr_iter->second)
+                            {
+                                pConn->dKeepAlive = 65.0;
+                                AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, 65.0);
+                            }
+                            else if (std::string("close") == conn_hdr_iter->second && HTTP_RESPONSE == oInHttpMsg.type())
+                            {
+                                pConn->dKeepAlive = -1;
+                                DestroyConnect(conn_iter);
+                            }
+                            else
+                            {
+                                AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                            }
+                        }
+                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                                        && pConn->dKeepAlive > 0)
+                        {
+                            AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                        }
+                    }
+
+                    bDisposeResult = Dispose(pConn, oInHttpMsg, oOutHttpMsg);
+                    auto dispose_conn_iter = mapFdAttr.find(iFd);
+                    if (dispose_conn_iter == mapFdAttr.end() || ulSeq != dispose_conn_iter->second->ulSeq)
+                    {
+                        return true;
+                    }
+
+                    if (pConn->dKeepAlive < 0)
+                    {
+                        if (HTTP_RESPONSE == oInHttpMsg.type())
+                        {
+                            DestroyConnect(conn_iter);
+                        }
+                        else
+                        {
+                            ((HttpCodec*)pCodec)->AddHttpHeader("Connection", "close");
+                        }
+                    }
+                    if (oOutHttpMsg.ByteSize() > 0)
+                    {
+                        eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutHttpMsg, pConn->pSendBuff.get());
+                        if (CODEC_STATUS_OK == eCodecStatus)
+                        {
+                            if (m_pIoBackend)
+                            {
+                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                            }
+                            else
+                            {
+                                int iErrno = 0;
+                                pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+                                pConn->pSendBuff->Compact(8192);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    LOG4_ERROR("oInHttpMsg.ParseFromString() error!");
+                }
+            }
+            if (!bDisposeResult)
+            {
+                break;
+            }
+        }
+        else if (CODEC_STATUS_ERR == eCodecStatus)
+        {
+            LOG4_TRACE("CODEC_STATUS_ERR DestroyConnect iFd(%d)", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    // IoBackend: always re-submit read for keep-alive, but check HasPending
+    // to avoid double-submission (the write path may have already submitted via
+    // RemoveIoWriteEvent/HandleIoWriteComplete).
+    if (m_pIoBackend)
+    {
+        auto recheck = mapFdAttr.find(iFd);
+        if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+            && !m_pIoBackend->HasPending(iFd))
+        {
+            pConn->pRecvBuff->Compact(8192);
+            pConn->pRecvBuff->EnsureWritableBytes(8192);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+        }
+    }
+
+    return true;
+}
+
+bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = mapFdAttr.find(iFd);
+    if (attr_iter == mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result < 0)
+    {
+        int iErrno = -result;
+        if (EAGAIN == iErrno)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+            return true;
+        }
+        else
+        {
+            LOG4_ERROR("IoBackend send to fd %d error %d", iFd, iErrno);
+            DestroyConnect(attr_iter);
+            return false;
+        }
+    }
+    else if (result > 0)
+    {
+        iSendByte += result;
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+        if (iNeedWriteLen > 0)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+        }
+        else
+        {
+            // IoBackend: 写完成，CancelFd 清理该 fd 上可能残留的读/写操作，
+            // 但不再重新提交读（读由 HandleIoReadComplete 统一负责）。
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->CancelFd(iFd);
+            }
+        }
+    }
+    else
+    {
+        if (pConn->pWaitForSendBuff->ReadableBytes() > 0)
+        {
+            tagMsgShell stMsgShell(iFd, ulSeq);
+            auto index_iter = mapSeq2WorkerIndex.find(ulSeq);
+            if (index_iter != mapSeq2WorkerIndex.end())
+            {
+                AddInnerFd(stMsgShell);
+                if (util::CODEC_PB_INTERNAL == pConn->eCodecType)
+                {
+                    CmdConnectWorker::Start(stMsgShell, index_iter->second);
+                }
+                else
+                {
+                    SendTo(stMsgShell);
+                }
+                mapSeq2WorkerIndex.erase(index_iter);
+                if (m_pIoBackend)
+                {
+                    m_pIoBackend->CancelFd(iFd);
+                    auto recheck = mapFdAttr.find(iFd);
+                    if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq)
+                    {
+                        pConn->pRecvBuff->Compact(8192);
+                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+                    }
+                }
+            }
+            else
+            {
+                SendTo(stMsgShell);
+            }
+        }
+    }
+    return true;
+}
+
+void Worker::DispatchMessagesAfterRead(
+    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator& conn_iter)
+{
+    (void)conn_iter;
 }
 
 bool Worker::IoTimeout(struct ev_timer* watcher, bool bCheckBeat)
@@ -1852,8 +2235,10 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
         InitThunderWorkerThreadPool(static_cast<unsigned short>(iPoolThreads));
     }
 
+    m_bInitLogger = false;    // fork 后强制重建 Logger（避免继承 Manager 的 log4cplus 状态）
     InitLogger(oJsonConf);
     InitDataLogger(oJsonConf);
+    // InitIoBackend moved after CreateEvents (requires m_loop)
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
     LOG4_INFO("NetWorker build marker: DelEvent-before-close, stack_http_parser, http_init_log_trim, fix-coro-self-destroy (%s %s)",
               __DATE__, __TIME__);
@@ -4481,6 +4866,17 @@ bool Worker::AddPeriodicTaskEvent()
 bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // IoBackend 路径：普通连接 fd 走异步 I/O，特殊 fd 保留原有 ev_io 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -4515,6 +4911,16 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // IoBackend 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -4550,6 +4956,18 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // IoBackend 路径：仅停止写。读由 HandleIoReadComplete 负责重新提交，
+    // 避免 RemoveIoWriteEvent 与 HandleIoReadComplete 重复提交读操作。
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
+        return true;
+    }
+
+    // 原有 ev_io 路径
 	if (nullptr != pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)
@@ -4810,6 +5228,11 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     if (bMsgShellNotice)
     {
         MsgShellNotice(pConn);
+    }
+    // Stop IoBackend async operations before cleaning libev watchers
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
     }
     // Stop libev watchers before close(): if the fd is reused immediately, pending/old watchers corrupt the loop (Manager does DelEvent before close).
     if (pConn->pIoWatcher != nullptr)

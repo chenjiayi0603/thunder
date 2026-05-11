@@ -139,6 +139,15 @@ protected:
     bool AddIoTimeout(int iFd, uint32 ulSeq, ev_tstamp dTimeout = 1.0);
     bool AddClientConnFrequencyTimeout(in_addr_t iAddr, ev_tstamp dTimeout = 60.0);
     /**
+     * @brief IoBackend I/O 完成回调（静态）
+     */
+    static void OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data);
+    /**
+     * @brief IoBackend 读/写完成处理
+     */
+    bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
+    bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /**
 	 * @brief 连接创建与销毁
 	 */
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq);

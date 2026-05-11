@@ -292,6 +292,20 @@ protected:
     bool RemoveIoWriteEvent(tagConnectionAttr* pConn);
     bool AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, ev_tstamp dTimeout = 1.0);
     /**
+     * @brief IoBackend I/O 完成回调（静态）
+     */
+    static void OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data);
+    /**
+     * @brief IoBackend 读/写完成处理
+     */
+    bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
+    bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /**
+     * @brief 读完成后继续调度消息，并在有部分写时重新提交写
+     */
+    void DispatchMessagesAfterRead(
+        std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator& conn_iter);
+    /**
    	* @brief 创建连接
    	*/
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType = util::CODEC_PB_INTERNAL);
