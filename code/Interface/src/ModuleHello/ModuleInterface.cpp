@@ -110,13 +110,11 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
     {
         const std::string& logicBody = logicBodySnap.body();
         util::CJsonObject oJson;
-        int httpCode = 400;
         if (oJson.Parse(logicBody))
         {
             int code = 1;
             if (oJson.Get("code", code) && code == 0)
             {
-                httpCode = 200;
                 // 兼容历史逻辑返回仅含 token/key 的场景，统一补齐成功语义。
                 std::string msg;
                 if (!oJson.Get("msg", msg) || msg.empty())
@@ -124,10 +122,11 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
                     oJson.Add("msg", "success");
                 }
             }
-            step.ResponseToClient(httpCode, oJson.ToString());
+            // 统一返回 200，业务错误码在 JSON body 中表达（VerifyKey 错误 token 等）
+            step.ResponseToClient(200, oJson.ToString());
             co_return;
         }
-        step.ResponseToClient(httpCode, logicBody);
+        step.ResponseToClient(200, logicBody);
         co_return;
     }
 

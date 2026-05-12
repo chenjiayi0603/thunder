@@ -27,6 +27,8 @@ echo "==> 生成 CA 证书"
 openssl genrsa -out "${CA_KEY}" 2048 >/dev/null 2>&1
 openssl req -x509 -new -nodes -key "${CA_KEY}" -sha256 -days 3650 \
   -subj "/C=CN/ST=ZJ/L=HZ/O=Thunder/CN=Thunder-Dev-CA" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
   -out "${CA_CRT}" >/dev/null 2>&1
 
 echo "==> 生成服务端证书"
@@ -37,7 +39,7 @@ openssl req -new -key "${SERVER_KEY}" \
 
 openssl x509 -req -in "${SERVER_CSR}" -CA "${CA_CRT}" -CAkey "${CA_KEY}" \
   -CAcreateserial -out "${SERVER_CRT}" -days 3650 -sha256 \
-  -extfile <(printf "subjectAltName=IP:127.0.0.1,DNS:localhost\n") >/dev/null 2>&1
+  -extfile <(printf "subjectAltName=IP:127.0.0.1,DNS:localhost\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n") >/dev/null 2>&1
 
 rm -f "${SERVER_CSR}" "${CERT_DIR}/ca.srl"
 chmod 600 "${CA_KEY}" "${SERVER_KEY}"

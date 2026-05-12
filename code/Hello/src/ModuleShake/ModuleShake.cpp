@@ -109,19 +109,17 @@ std::string ModuleShake::GenerateKey(const std::string &key)//https://blog.csdn.
 {
     //sha-1
     std::string text = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-//    unsigned char digest[20] = {0};
-//    CryptoPP::SHA1((const unsigned char*)tmp.c_str(), tmp.length(), digest);
-//    //base64 encode
-//    char szToBase64[128] = {0};
-//    Base64encode(szToBase64, (const char*)digest, 20);
-//    return std::string(szToBase64);
-	std::string hash;
-	CryptoPP::SHA1 sha1;
-	CryptoPP::HashFilter hashfilter(sha1);
-	hashfilter.Attach(new CryptoPP::HexEncoder(new CryptoPP::StringSink(hash), false));
-	hashfilter.Put(reinterpret_cast<const unsigned char*>(text.c_str()), text.length());
-	hashfilter.MessageEnd();
-	return hash;
+    std::string sha1_digest;
+    CryptoPP::SHA1 sha1;
+    CryptoPP::HashFilter hashfilter(sha1, new CryptoPP::StringSink(sha1_digest));
+    hashfilter.Put(reinterpret_cast<const unsigned char*>(text.c_str()), text.length());
+    hashfilter.MessageEnd();
+    //base64 encode (RFC 6455 requires base64 not hex)
+    std::string encoded;
+    CryptoPP::Base64Encoder encoder(new CryptoPP::StringSink(encoded), false);
+    encoder.Put(reinterpret_cast<const unsigned char*>(sha1_digest.data()), sha1_digest.size());
+    encoder.MessageEnd();
+    return encoded;
 }
 
 const std::string& ModuleShake::ToString(const HttpMsg& oHttpMsg)
@@ -182,7 +180,7 @@ bool ModuleShake::ParseWebsocketHandshake(HttpMsg oInHttpMsg,ws_req_t &ws_req)
     Sec-WebSocket-Protocol: chat, superchat
     Sec-WebSocket-Version: 13
     * */
-    for (auto iter = oInHttpMsg.headers().end(); iter != oInHttpMsg.headers().end(); ++iter)
+    for (auto iter = oInHttpMsg.headers().begin(); iter != oInHttpMsg.headers().end(); ++iter)
     {
         if (std::string("Connection") == iter->first)
         {
