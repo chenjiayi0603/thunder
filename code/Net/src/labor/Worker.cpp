@@ -3809,9 +3809,27 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 	}
 
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
 	if (iPort == 0)
 	{
@@ -4057,9 +4075,27 @@ bool Worker::AutoConnect(const std::string& strIdentify)
         return(false);
     }
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
     if (iPort == 0)
     {
@@ -4956,14 +4992,22 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    // IoBackend 路径：仅停止写。读由 HandleIoReadComplete 负责重新提交，
-    // 避免 RemoveIoWriteEvent 与 HandleIoReadComplete 重复提交读操作。
+    // IoBackend 路径：CancelFd 会移除 fd 上所有事件（包括 EV_READ）。
+    // HandleIoReadComplete 末尾会重新提交读，但 SendTo 也可能在其它上下文
+    // （如 IoTimeout 心跳、CmdGetToken 响应等）同步写完后调用本函数——此时
+    // 必须自行补交读，否则 fd 将永久丢失读监听。
     if (m_pIoBackend
         && pConn->iFd != m_iC2SListenFd
         && pConn->iFd != iManagerDataFd
         && pConn->iFd != iManagerControlFd)
     {
         m_pIoBackend->CancelFd(pConn->iFd);
+        // 补交读，避免 CancelFd 后 fd 不再被监听。
+        // 若本调用位于 HandleIoReadComplete 内部，其末尾的 SubmitRead
+        // 会因 HasPending==true 而跳过，不会重复提交。
+        pConn->pRecvBuff->Compact(8192);
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
         return true;
     }
 

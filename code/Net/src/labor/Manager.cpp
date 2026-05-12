@@ -1014,9 +1014,27 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 		return(false);
 	}
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
     if (iPort == 0)
 	{
@@ -1785,11 +1803,17 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s", __FUNCTION__);
-    // IoBackend 路径：仅停止写。读由 HandleIoReadComplete 统一负责重新提交。
+    // IoBackend 路径：CancelFd 会移除 fd 上所有事件（包括 EV_READ）。
+    // Manager::SendTo 可能在非 HandleIoReadComplete 上下文中同步写完后调用本函数，
+    // 此时必须补交读，否则 fd 将永久丢失读监听。
     if (m_pIoBackend
         && pConn->iFd != m_iS2SListenFd)
     {
         m_pIoBackend->CancelFd(pConn->iFd);
+        // 补交读，避免 CancelFd 后 fd 不再被监听。
+        pConn->pRecvBuff->Compact(8192);
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
         return true;
     }
 
