@@ -65,3 +65,15 @@ CMakeFiles/
 Makefile
 deploy/Logic/bin/Logic
 deploy/Logic/bin/Logic
+deploy/Logic/bin/Logic
+header_source_switch.py
+libssl-dev_3.5.5-1ubuntu3_amd64.deb
+zlib1g-dev_1%3a1.3.dfsg+really1.3.1-1ubuntu3_amd64.deb
+code/3party/c-ares
+code/3party/cryptopp
+code/3party/curl
+code/3party/libev
+code/3party/log4cplus
+code/3party/mariadb-connector-c
+code/3party/mongo-c-driver
+deploy/Logic/bin/Logic
