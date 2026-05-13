@@ -136,7 +136,7 @@ def docker_stack(mode: str, pytestconfig: pytest.Config) -> None:
         return
 
     _phase("会话 setup：开始（本地模式会先全量构建 + docker compose，可能数分钟且无子进程输出）…")
-    repo = Path(__file__).resolve().parents[3]
+    repo = Path(__file__).resolve().parents[2]
     dd = repo / "deploy" / "docker"
     # 关闭 BuildKit：部分环境 buildx/缓存异常时更稳定（与仓库 docker 脚本保持一致）
     compose_env = {
@@ -214,7 +214,7 @@ def https_verify() -> str | bool:
     """HTTPS 用例校验服务端证书：有 ca.crt 则走 verify=路径，否则关闭校验（仅测试环境）。"""
     from pathlib import Path
 
-    cert = Path(__file__).resolve().parents[2] / "HelloHttps" / "conf" / "certs" / "ca.crt"
+    cert = Path(__file__).resolve().parents[2] / "deploy" / "HelloHttps" / "conf" / "certs" / "ca.crt"
     return str(cert) if cert.exists() else False
 
 

@@ -49,7 +49,7 @@
 - `deploy/HelloHttps/*`
   - 各自独立 `start.sh` / `stop.sh` / `conf` / `scripts` / `log` / `plugins`。
 - `deploy/HelloHttps/scripts/gen_self_signed_https_cert.sh`
-- `deploy/tests/test_all.sh`（统一 pytest 集成/冒烟入口）
+- `tests/run_all.sh e2e`（统一 pytest 集成/冒烟入口）
 
 ---
 
@@ -204,7 +204,7 @@ print(r.status_code, r.text)
 集成测试（覆盖 Echo / TestHelloPoolCpu / TestHelloPoolBlock）：
 
 ```bash
-./deploy/tests/test_all.sh
+./tests/run_all.sh e2e
 ```
 
 可选环境变量：
@@ -288,22 +288,22 @@ Docker 服务映射：
 ### 9.2 pytest 集成/冒烟入口
 
 ```bash
-./deploy/tests/test_all.sh
+./tests/run_all.sh e2e
 ```
 
 按模式运行（推荐）：
 
 ```bash
 # 本地模式（默认）：自动拉起 docker compose 并执行 integration/smoke
-./deploy/tests/test_all.sh
+./tests/run_all.sh e2e
 
 # 外部模式：只连接现有环境，不做 compose up/down
-MODE=external ./deploy/tests/test_all.sh
+MODE=external ./tests/run_all.sh e2e
 ```
 
 ### 9.3 统一测试入口（当前）
 
-- 统一入口为 `deploy/tests/test_all.sh`。
+- 统一入口为 `tests/run_all.sh e2e`。
 - 默认使用 `-m "integration or smoke"` 运行 pytest 用例。
 - 通过 `MODE=external` 可连接已存在环境运行，不触发 compose 生命周期管理。
 
@@ -384,7 +384,7 @@ cmake --install build
 
 - 支持 TLS 版本、密码套件白名单配置化。
 - 增加双向证书校验（mTLS）回归用例。
-- 将 HTTPS 相关用例继续纳入 `deploy/tests/test_all.sh` 强制门禁。
+- 将 HTTPS 相关用例继续纳入 `tests/run_all.sh e2e` 强制门禁。
 
 ---
 

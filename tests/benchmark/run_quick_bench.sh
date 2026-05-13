@@ -2,7 +2,7 @@
 # Quick Thunder benchmark: ev vs uring for HTTP/HTTPS
 set -euo pipefail
 
-THUNDER_ROOT="/home/administrator/thunder"
+THUNDER_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DEPLOY="$THUNDER_ROOT/deploy"
 RESULTS="$DEPLOY/tests/benchmark/results"
 mkdir -p "$RESULTS"

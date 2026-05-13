@@ -127,24 +127,61 @@ cmake --build build --target InterfacePlugins -j1
 
 ---
 
-## 测试（pytest，可选）
+## 测试
 
-需已 **`cmake --install`** 到 **`deploy/`**。
+测试脚本统一在 **`tests/`** 目录，提供一键入口。
 
-联调/冒烟（local 自动拉起 docker 栈）：
-
-```bash
-python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
-```
-
-性能（wrk）：
+### 一键测试
 
 ```bash
-WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
-python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
+# 全部测试 (单元 → E2E)
+./tests/run_all.sh
+
+# 仅单元测试 (零外部依赖, 14 秒)
+./tests/run_all.sh unit
+
+# 仅端到端测试 (需 Docker)
+./tests/run_all.sh e2e
+
+# external 模式 (二进制在本地运行)
+MODE=external ./tests/run_all.sh e2e
+
+# 构建 + 测试
+./tests/run_all.sh build
+
+# 快速模式 (跳过 E2E)
+./tests/run_all.sh fast
 ```
 
-性能结果输出到 **`deploy/tests/wrk_test_result.md`**。
+或使用更细粒度的 `build_and_test.sh`：
+
+```bash
+./tests/build_and_test.sh              # 构建 + 全部测试
+./tests/build_and_test.sh build        # 仅构建
+./tests/build_and_test.sh test         # 仅测试 (单元 + E2E)
+./tests/build_and_test.sh fast         # 构建 + 单元测试
+```
+
+### 单元测试 (纯 Python, 零外部依赖)
+
+```bash
+cd tests && python3 -m pytest unit/ -v
+# 5 模块 64 用例, ~14 秒完成
+```
+
+### E2E 集成测试 (需 Docker 栈)
+
+```bash
+cd tests && python3 -m pytest e2e/ -v -s -m "integration or smoke" --mode=local
+```
+
+### 性能基准测试 (需 wrk)
+
+```bash
+./tests/benchmark/run_quick_bench.sh
+```
+
+详细性能数据见 `docs/performance_benchmark_2026-05-13.md`。
 
 ---
 
@@ -154,7 +191,7 @@ python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
 ( cd deploy && ./nodes.sh restart all )
 ```
 
-启停见 **`deploy/deploy.md`**。端口检查：`lsof -Pni4 | grep LISTEN`。示例：`curl "http://127.0.0.1:27008/Interface/gentoken"`（按本机配置改 IP/端口）。
+启停见 **`deploy/deploy.md`**。端口检查：`ss -tlnp | grep 127.0.0.1`。示例：`curl -s -X POST "http://127.0.0.1:27008/Interface/gentoken" -H "Content-Type: application/json" -d '{"option":"GenKey"}'`。
 
 
 ## Center 管理页（统一 /admin）

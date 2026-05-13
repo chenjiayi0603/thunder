@@ -15,7 +15,7 @@ Thunder 是一个基于 C++20 的分布式异步集群服务框架，提供 Cent
 - **加密**：cryptopp
 - **内存**：jemalloc（可选）
 - **集群**：Raft 选主 + 共享内存路由镜像
-- **测试**：pytest（联调/冒烟/性能）+ wrk 压测
+- **测试**：pytest（unit 64 + e2e 25 = 89 cases）+ wrk 压测
 - **部署**：Docker + shell 脚本（`nodes.sh`）
 - **入口文档**：`INSTALL.md`（快速开始）、`README.md`
 
@@ -40,15 +40,20 @@ code/
   Util/              # 工具库（日志、DBI/ORM、线程、curl、算法、Unix 工具）
   3party/            # 第三方子模块（libev/cryptopp/curl/hiredis-vip/log4cplus/
                     #   mariadb-connector-c/mongo-c-driver/protobuf/c-ares）
-  test/              # 单元测试（center/coroutine/interface/orm/step）
-deploy/              # 安装产物、节点配置、启停脚本（nodes.sh）、测试脚本
+  test/              # C++ 单元测试（center/coroutine/interface/orm/step）
+deploy/              # 安装产物、节点配置、启停脚本（nodes.sh）
   Center/            # Center 部署配置
   HelloHttp/         # HTTP 示例节点
   HelloWs/           # WebSocket 示例节点
   HelloHttps/        # HTTPS 示例节点
   Interface/         # Interface 节点
   Logic/             # Logic 节点
-  tests/             # pytest 测试（integration/smoke/perf）
+tests/               # Python 测试（一键入口: run_all.sh）
+  unit/              # 单元测试（64 cases, 零外部依赖）
+  e2e/               # 端到端集成测试（25 cases, 需 Docker）
+  benchmark/         # 性能基准测试（wrk + curl）
+  build_and_test.sh  # 构建+测试脚本
+  run_all.sh         # 一键全部测试
 docs/                # 架构设计文档
 cmake/               # CMake 模块与构建说明
 ```
@@ -83,7 +88,7 @@ cmake/               # CMake 模块与构建说明
 - Protobuf 只用 `code/3party/protobuf/build` 里的 protoc/libprotobuf，勿与系统旧版混用
 - 构建默认 `-j1` 减轻磁盘 IO 压力（本机 IO 足够可改 `-j$(nproc)`）
 - 默认安装前缀为 `deploy/`
-- 联调测试优先用 pytest（`deploy/tests/pytest`），覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路
+- 联调测试优先用 pytest（`tests/`），覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路
 
 ## 常见操作
 
@@ -110,15 +115,21 @@ cmake --build build --target InterfacePlugins -j1
 ( cd deploy && ./nodes.sh restart all )
 ( cd deploy && ./nodes.sh status )
 
-# 联调/冒烟
-python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
+# 一键全部测试 (单元 + E2E)
+./tests/run_all.sh
 
-# 性能
-WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
-  python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
+# 仅单元测试 (14s, 零外部依赖)
+./tests/run_all.sh unit
 
-# Center 管理页
-# http://172.24.177.85:26000/admin
+# 仅 E2E 集成测试 (需 Docker)
+./tests/run_all.sh e2e
+MODE=external ./tests/run_all.sh e2e
+
+# 构建 + 全部测试
+./tests/build_and_test.sh
+
+# 性能基准测试 (需 wrk)
+./tests/benchmark/run_quick_bench.sh
 ```
 
 ### 改完代码后必须验证
@@ -210,7 +221,8 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 1. `cmake --build build -j1` — 编译检查（必须通过）
 2. `cmake --install build` — 安装到 deploy/
 3. `( cd deploy && ./nodes.sh restart all )` — 重启节点
-4. `python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local` — 联调冒烟测试
+4. `./tests/run_all.sh unit` — 单元测试 (14s)
+5. `./tests/run_all.sh e2e` — E2E 冒烟测试 (需 Docker)
 
 #### 改 Proto 后：
 1. `cmake --build build --target thunder_proto_gen -j1` — 重新生成 .pb.cc/.pb.h
@@ -260,10 +272,13 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 - ✅ Admin 管理后台（Center Web 管理页）
 
 ### 测试与压测
-- ✅ pytest 集成/冒烟测试（`deploy/tests/pytest`）
-- ✅ wrk 三档横向压测（`deploy/tests/benchmark/run_bench.sh`）
-- ✅ GET / POST 小包/大包对比压测
-- ✅ Benchmark 结果文档化（`results/final_summary.csv` + `asio_uring_benchmark.md`）
+- ✅ pytest 单元测试 64 cases — `tests/unit/`（零外部依赖, 14s）
+- ✅ pytest E2E 集成/冒烟测试 25 cases — `tests/e2e/`（需 Docker）
+- ✅ 一键测试入口 `tests/run_all.sh`（unit → e2e → bench 分层）
+- ✅ wrk 三档横向压测（`tests/benchmark/run_bench.sh`）
+- ✅ GET / POST 小包/大包/64KB 超包对比压测
+- ✅ Benchmark 结果文档化（`results/final_summary.csv` + `performance_benchmark_2026-05-13.md`）
+- ✅ 综合测试报告 `docs/test_and_quality_report_2026-05-13.md` (89 tests 全部通过)
 
 ### 存储
 - ✅ MariaDB（mariadb-connector-c）

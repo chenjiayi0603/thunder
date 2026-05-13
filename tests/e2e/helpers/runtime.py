@@ -9,7 +9,7 @@ from typing import Iterable
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[3]
 
 
 def docker_dir() -> Path:

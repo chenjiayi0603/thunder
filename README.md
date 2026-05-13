@@ -68,34 +68,23 @@ git submodule update --init --recursive \
 ./nodes.sh status
 ```
 
-## 一键联调与冒烟
-
-### pytest 联调用例
-
-在仓库根目录：
+## 一键测试
 
 ```bash
-python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
+./tests/run_all.sh          # 全部 (单元 + E2E)
+./tests/run_all.sh unit     # 仅单元测试 (14s, 零外部依赖)
+./tests/run_all.sh e2e      # 仅 E2E 集成测试 (需 Docker)
 ```
 
-覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路；`--mode=external` 可连接已有环境。
+覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路。`MODE=external` 可连接已有环境。
 
-## 压测示例（wrk）
-
-仓库提供 `pytest + wrk` 的性能用例：
+## 性能基准（wrk）
 
 ```bash
-python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
+./tests/benchmark/run_quick_bench.sh
 ```
 
-可覆盖参数示例：
-
-```bash
-WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
-  python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
-```
-
-示例结果见 `deploy/tests/wrk_test_result.md`。
+详细结果见 `docs/performance_benchmark_2026-05-13.md`。
 
 ## 配置说明
 
