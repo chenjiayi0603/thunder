@@ -329,6 +329,24 @@ P2 (中期):   registered buffers 预研 + POC  本文档
 P3 (远期):   SEND_ZC 正式实施              等待业务需求触发
 ```
 
+#### 各阶段目的概述
+
+```
+P1 → 建立信心: 当前 asio_uring 只在 HelloHttp 一个节点跑通过。
+     全节点覆盖 E2E 测试，确认没有隐藏的边界 bug。
+     跑通了才能放心用，跑出 bug 就修。不涉及新功能开发。
+
+P2 → 降低风险: CBuffer 动态 realloc 与 registered buffer 固定地址天然冲突。
+     在独立分支上做 POC 验证方案可行性，结论写文档，不合入主分支。
+     将来真要上 SEND_ZC 时，方案现成、风险已知，不用从零摸索。
+
+P3 → 消除拷贝: 终局目标。前提是 P1(全节点稳定) + P2(方案已验证) + 业务需求。
+     数据从用户态直接 DMA 到网卡，内核零拷贝。
+     三个条件缺一个都不做。
+```
+
+---
+
 #### P0 — asio_uring 主线程直驱 ✅ 已实现
 
 当前已完成。IoBackend 三档可运行时切换（ev / uring / asio_uring），`AsioUringIoBackend` 通过 ev_prepare + ev_io(ring_fd) + ev_check 三路驱动，零锁零线程跳，64KB 大包延迟相对 ev 降低 86%。
