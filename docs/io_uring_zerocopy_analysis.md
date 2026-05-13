@@ -163,14 +163,75 @@ sock.async_write_some(registered[0], handler);  // ASIO 内部用 IORING_OP_SEND
 
 **关键发现**: 对于 Thunder 的典型业务场景（HTTP API, WebSocket 消息, RPC），业务逻辑延迟（编解码、DB、协程调度）占比 >99%，网络拷贝仅占 <1%。ZeroCopy 的收益在这种情况下**不显著**。
 
-### 4.2 真正有收益的场景
+### 4.2 真正有收益的场景：Proxy 模式 与 大包流式传输
 
-ZeroCopy 适合以下**极端场景**：
-- 大文件传输（>1MB payload，例如 CDN 回源、视频流）
-- 高吞吐代理转发（body 不解包直接透传）
-- 频繁的 buffer 复用（连接池 + 固定大小 buffer）
+ZeroCopy 的核心价值不在常规 API 场景，而在以下两种**数据面密集型**模式。
 
-Thunder 当前缺失这些场景的**关键支撑**：没有 proxy/relay 模式，没有大文件流式传输模块。
+#### (1) Proxy / 反向代理模式
+
+Thunder 当前是「服务端模式」— 接收请求 → **解包** → 业务逻辑 → **打包** → 返回。body 必须完整解析。
+
+Proxy 模式则是「透传模式」— body **不解包、不处理**，原样从一个 socket 转发到另一个 socket：
+
+```
+当前 Thunder (服务端模式):
+  Client ──→ [JSON 解析] ──→ 业务逻辑 ──→ [JSON 构造] ──→ Client
+               ↑ memcpy 一次                  ↑ memcpy 一次
+               (开销 < 1% 总延迟)
+
+Proxy 模式 (透传):
+  Client ──→ [不解包] ──→ 后端服务 ──→ [不解包] ──→ Client
+               ↑ 透传 body                     ↑ 透传 body
+               (body 越大，拷贝占比越高)
+```
+
+**为什么 Proxy 模式需要 ZeroCopy**：
+
+```
+假设一个 100MB 的文件通过 Thunder 反向代理转发：
+
+当前做法 (每块 64KB):
+  100MB ÷ 64KB = 1600 次 send
+  每次 send: memcpy(buf → skb) ≈ 8μs
+  纯拷贝开销: 1600 × 8μs ≈ 12.8ms
+  这 12.8ms 是纯 CPU 浪费 — 数据本身不需要任何处理
+
+ZeroCopy 做法:
+  注册 100MB 固定 buffer
+  1 次 IORING_OP_SEND_ZC → 内核直接 DMA 到网卡
+  纯拷贝开销: 0
+```
+
+典型代理层产品（NGINX, Envoy, HAProxy）的核心优化之一就是尽可能减少 body 拷贝。
+
+#### (2) 大包流式传输
+
+类似文件下载、视频流推送、日志批量导出等场景。当前 Thunder 的 Echo 只有 20B body，`CBuffer` 一次性装下没问题。但如果服务端需要下发 100MB 的文件：
+
+```
+当前做法:
+  CBuffer 装不下 100MB
+  → 分块 read → 每块 memcpy 到 CBuffer → send (再 memcpy 到 skb)
+  → 100MB 文件 = 至少 2 次全量 memcpy = 200MB 内存搬运
+
+ZeroCopy 做法:
+  注册 100MB 固定 buffer
+  → splice/sendfile 从磁盘直接到 buffer
+  → IORING_OP_SEND_ZC 从 buffer 直接到网卡
+  → 零 CPU 拷贝
+```
+
+#### 两种模式 vs 当前 Thunder
+
+| 模式 | 当前 Thunder? | body 是否解包 | ZeroCopy 收益 |
+|------|:---:|:---:|---|
+| 服务端模式 (解包→处理→打包) | ✅ 现在是 | 是 | <1%（业务逻辑占主导） |
+| **Proxy/反向代理** (不解包透传) | ❌ 没有 | **否** | **10-30%**（body 不走 CPU） |
+| **大包流式传输** (文件/视频下发) | ❌ 没有 | **否** | **5-10%**（省去大数据拷贝） |
+
+**一句话**: 如果 Thunder 未来要当反向代理用（类似 NGINX 那样透传流量），或者内置文件服务下发大文件，ZeroCopy 就很值得。当前纯业务逻辑的 JSON API 场景下，收益太小不值得改。
+
+Thunder 当前缺失这些场景的**关键支撑**：没有 proxy/relay 透传模式，没有大文件流式传输模块 — 这些是实现 ZeroCopy 价值的前提。
 
 ---
 
@@ -243,21 +304,21 @@ Thunder 中 `CBuffer` 绑定在 `tagConnectionAttr` 上（`pRecvBuff`/`pSendBuff
 
 | 理由 | 说明 |
 |------|------|
-| **收益不显著** | 典型业务中网络拷贝占比 <1%，ZeroCopy 节省的 0.5-1.5% 不可感知 |
+| **收益不显著** | 当前服务端模式下，网络拷贝占延迟 <1%；需 Proxy 透传或大包流式才有 10-30% 收益 |
 | **CBuffer 改动大** | 需要新增固定缓冲区模式，至少改动 3 个模块 |
 | **优先做更有价值的事** | io_uring 大包场景已通过 asio_uring 获得 86% 延迟降低 |
 | **内核要求** | SEND_ZC 需要 6.0+，当前环境满足但需确认生产环境 |
 
 ### 7.2 实施前提
 
-当 Thunder 出现以下**任意 2 个**信号时，可启动：
+当 Thunder 出现以下**任意 2 个**信号时，可启动（详见 4.2 节）：
 
 | # | 信号 | 现状 |
 |---|------|------|
-| 1 | 出现 >1MB 的大包流式传输需求 | ❌ 无 |
-| 2 | 出现 proxy/relay 模式 (body 不解包转发) | ❌ 无 |
-| 3 | 单连接吞吐 >1Gbps (拷贝成为瓶颈) | ❌ 单片 160k RPS × 20B = 3.2 MB/s |
-| 4 | 已有 registered buffers 基础代码 | ❌ ASIO 测试代码在 3party 中已有 |
+| 1 | 出现 **Proxy/反向代理** 模式 (body 不解包，透传转发) | ❌ 无 |
+| 2 | 出现 **>1MB 大包流式传输** (文件下发、视频流、日志导出) | ❌ 无 |
+| 3 | 单连接吞吐 >1Gbps (拷贝成为瓶颈) | ❌ 当前 ~3.2 MB/s |
+| 4 | 已有 registered buffers 基础代码 | ⚠️ ASIO 3party 中有测试代码，Thunder 自身无 |
 
 ### 7.3 推荐时机
 
