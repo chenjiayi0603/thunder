@@ -135,7 +135,7 @@ ExternalProject_Add(ep_hiredis_vip
   PREFIX "${EP_BUILD_ROOT}/hiredis-vip"
   SOURCE_DIR "${THUNDER_3PARTY}/hiredis-vip"
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E true
-  BUILD_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j1
+  BUILD_COMMAND ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ${CMAKE_MAKE_PROGRAM} -j1 "CFLAGS=-Wno-implicit-function-declaration"
   INSTALL_COMMAND
     ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
     ${CMAKE_MAKE_PROGRAM} install "PREFIX=${EP_STAGE}"
@@ -230,6 +230,7 @@ ExternalProject_Add(ep_protobuf
     -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON
     "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
     "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+    "-DFetchContent_SOURCE_DIR_absl=${THUNDER_3PARTY}/protobuf/build/_deps/absl-src"
   BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )

@@ -36,11 +36,11 @@ MongoOperator::~MongoOperator()
 {
     if (m_pDbMemRequest != nullptr)
     {
-    	SAFE_DELETE(m_pDbMemRequest);
+    	delete m_pDbMemRequest; m_pDbMemRequest = nullptr;
     }
     else
     {
-    	SAFE_DELETE(m_pMongoOperate);
+    	delete m_pMongoOperate; m_pMongoOperate = nullptr;
     }
 }
 

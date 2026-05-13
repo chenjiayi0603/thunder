@@ -102,7 +102,7 @@ template <typename T> T* MakeSession(const std::string& strSessionId, const std:
 	else
 	{
 		LOG4_ERROR( "register pSession error!");
-		SAFE_DELETE(pSession);
+		delete pSession; pSession = nullptr;
 	}
 	return (nullptr);
 }
@@ -134,7 +134,7 @@ template <typename T> T* MakeSession(uint64 uiSessionId, const std::string& strS
 	else
 	{
 		LOG4_ERROR( "register pSession error!");
-		SAFE_DELETE(pSession);
+		delete pSession; pSession = nullptr;
 	}
 	return (nullptr);
 }

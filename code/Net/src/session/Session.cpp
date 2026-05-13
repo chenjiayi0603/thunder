@@ -27,7 +27,7 @@ Session::Session(const std::string& strSessionId, ev_tstamp dSessionTimeout, con
 
 Session::~Session()
 {
-	SAFE_DELETE(m_pTimeoutWatcher)
+	delete m_pTimeoutWatcher; m_pTimeoutWatcher = nullptr;
 }
 
 } /* namespace net */

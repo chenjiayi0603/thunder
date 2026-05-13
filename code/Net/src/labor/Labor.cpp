@@ -17,6 +17,13 @@
 
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
+#include "EvIoBackend.hpp"
+#ifdef THUNDER_IO_URING
+#include "UringIoBackend.hpp"
+#endif
+#ifdef THUNDER_IO_ASIO_URING
+#include "AsioUringIoBackend.hpp"
+#endif
 
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
@@ -138,7 +145,7 @@ Labor::Labor()
 
 Labor::~Labor()
 {
-	SAFE_DELETE(m_pCatClientConnent);
+	delete m_pCatClientConnent; m_pCatClientConnent = nullptr;
 }
 
 void  Labor::SetSocketAttr(int iFd,bool boNeedKeepInterval)
@@ -149,27 +156,27 @@ void  Labor::SetSocketAttr(int iFd,bool boNeedKeepInterval)
 	int iKeepInterval = 5;// 探测发包间隔为5秒
 	int iKeepCount = 3; // 尝试探测的次数.如果第1次探测包就收到响应了,则后2次的不再发
 	int iTcpNoDelay = 1;
-	if (setsockopt(iFd, SOL_SOCKET, SO_KEEPALIVE, (void*)&iKeepAlive, sizeof(iKeepAlive)) < 0)
+	if (setsockopt(iFd, SOL_SOCKET, SO_KEEPALIVE, static_cast<const void*>(&iKeepAlive), sizeof(iKeepAlive)) < 0)
 	{
 		LOG4_WARN("fail to set SO_KEEPALIVE");
 	}
 	if (boNeedKeepInterval)
 	{
-		if (setsockopt(iFd, SOL_TCP, TCP_KEEPIDLE, (void*) &iKeepIdle, sizeof(iKeepIdle)) < 0)
+		if (setsockopt(iFd, SOL_TCP, TCP_KEEPIDLE, static_cast<const void*>(&iKeepIdle), sizeof(iKeepIdle)) < 0)
 		{
 			LOG4_WARN("fail to set SO_KEEPIDLE");
 		}
-		if (setsockopt(iFd, SOL_TCP, TCP_KEEPINTVL, (void *)&iKeepInterval, sizeof(iKeepInterval)) < 0)
+		if (setsockopt(iFd, SOL_TCP, TCP_KEEPINTVL, static_cast<const void*>(&iKeepInterval), sizeof(iKeepInterval)) < 0)
 		{
 			LOG4_WARN("fail to set SO_KEEPINTVL");
 		}
-		if (setsockopt(iFd, SOL_TCP, TCP_KEEPCNT, (void*)&iKeepCount, sizeof (iKeepCount)) < 0)
+		if (setsockopt(iFd, SOL_TCP, TCP_KEEPCNT, static_cast<const void*>(&iKeepCount), sizeof (iKeepCount)) < 0)
 		{
 			LOG4_WARN("fail to set SO_KEEPALIVE");
 		}
 	}
 #ifndef ENABLE_NAGLE
-	if (setsockopt(iFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
+	if (setsockopt(iFd, IPPROTO_TCP, TCP_NODELAY, static_cast<const void*>(&iTcpNoDelay), sizeof(iTcpNoDelay)) < 0)
 	{
 		LOG4_WARN("fail to set TCP_NODELAY");
 	}
@@ -266,7 +273,7 @@ bool Labor::HostPort2SockAddr(const std::string& strHost, int iPort,struct socka
 		LOG4_WARN("fail to set SO_REUSEADDR");
 	}
 #ifndef ENABLE_NAGLE
-	if (setsockopt(iFd, IPPROTO_TCP, TCP_NODELAY, (void*)&iTcpNoDelay, sizeof(iTcpNoDelay)) < 0)
+	if (setsockopt(iFd, IPPROTO_TCP, TCP_NODELAY, static_cast<const void*>(&iTcpNoDelay), sizeof(iTcpNoDelay)) < 0)
 	{
 		LOG4_WARN("fail to set TCP_NODELAY");
 	}
@@ -439,6 +446,66 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 	}
 }
 
+bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallback callback)
+{
+    // 先清理旧后端
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->Destroy();
+        delete m_pIoBackend;
+        m_pIoBackend = nullptr;
+    }
+
+    std::string strBackend;
+    oJsonConf.Get("io_backend", strBackend);
+
+    if (strBackend == "asio_uring")
+    {
+#ifdef THUNDER_IO_ASIO_URING
+        AsioUringIoBackend* pBackend = new AsioUringIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: asio_uring initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: asio_uring init failed, falling back to uring");
+#else
+        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to uring");
+#endif
+    }
+
+    if (strBackend == "uring" || strBackend == "asio_uring")
+    {
+#ifdef THUNDER_IO_URING
+        UringIoBackend* pBackend = new UringIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: io_uring initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: io_uring init failed, falling back to ev");
+#else
+        LOG4_WARN("IoBackend: io_uring requested but THUNDER_IO_URING not compiled, falling back to ev");
+#endif
+    }
+
+    // 默认使用 ev 后端
+    EvIoBackend* pBackend = new EvIoBackend();
+    if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+    {
+        m_pIoBackend = pBackend;
+        LOG4_INFO("IoBackend: ev initialized successfully");
+        return true;
+    }
+    delete pBackend;
+    LOG4_ERROR("IoBackend: failed to initialize any backend");
+    return false;
+}
+
 void Labor::SkipNonsenseLetters(std::string& word)
 {
 	m_IgnoreChars.SkipNonsenseLetters(word);
@@ -536,7 +603,7 @@ void Labor::DelEvent(ev_timer* timer_watcher)
 void Labor::AddSignal(int iSignum,signal_callback callback)
 {
 	ev_signal* watcher = new ev_signal();
-	watcher->data = (void*)this;
+	watcher->data = static_cast<void*>(this);
 	AddEvent(watcher,callback,iSignum);
 }
 
@@ -552,7 +619,7 @@ void Labor::AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback)
 		pStep->SetTimeout(dTimeout);
 	}
 	pStep->m_pTimeoutWatcher = pTimeoutWatcher;
-	pTimeoutWatcher->data = (void*)pStep;
+	pTimeoutWatcher->data = static_cast<void*>(pStep);
 	AddEvent(pStep->GetTimeout(),pTimeoutWatcher, callback);
 }
 
@@ -562,7 +629,7 @@ void Labor::AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callb
 	{
 		ev_timer* pTimeoutWatcher = new ev_timer();
 		pSession->m_pTimeoutWatcher = pTimeoutWatcher;
-		pTimeoutWatcher->data = (void*)pSession;
+		pTimeoutWatcher->data = static_cast<void*>(pSession);
 		AddEvent(pSession->GetTimeout(),pTimeoutWatcher, callback);
 	}
 	else

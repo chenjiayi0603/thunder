@@ -13,6 +13,7 @@
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
+#include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
 #include "cmd/sys_cmd/CmdMgrBeat.hpp"
@@ -194,6 +195,15 @@ Manager::Manager(const std::string& strConfFile)
     PreloadCmd();
 
     CreateWorker();
+
+    // IoBackend must be initialized after m_loop is created (by CreateEvents)
+    // AND after worker forks — otherwise the io_uring ring_fd is inherited
+    // by child processes, corrupting the IPC channel.
+    if (!InitIoBackend(m_oCurrentConf, &Manager::OnIoComplete))
+    {
+        LOG4_WARN("InitIoBackend failed, using legacy ev_io path");
+    }
+
     ReportToCenter();
 
 }
@@ -275,8 +285,6 @@ bool Manager::AcceptServerConn(int iFd)
 bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher)
 {
     LOG4_TRACE("fd %d, seq %u", pData->iFd, pData->ulSeq);
-    int iErrno = 0;
-    int iReadLen = 0;
     auto conn_iter = m_mapFdAttr.find(pData->iFd);
     if (conn_iter == m_mapFdAttr.end())
     {
@@ -284,6 +292,8 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
     }
     else
     {
+        int iErrno = 0;
+        int iReadLen = 0;
     	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pData->ulSeq != pConn->ulSeq)
         {
@@ -419,7 +429,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
         int iErrno = 0;
         int iWriteLen = 0;
-        int iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
         iWriteLen = pConn->pSendBuff->WriteFD(pData->iFd, iErrno);
         LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,pData->iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
         if (iWriteLen < 0)
@@ -502,6 +512,240 @@ bool Manager::IoError(tagManagerIoWatcherData* pData, struct ev_io* watcher)
         }
     }
     return(true);
+}
+
+void Manager::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data)
+{
+    Manager* pManager = static_cast<Manager*>(user_data);
+    auto conn_iter = pManager->m_mapFdAttr.find(fd);
+    if (conn_iter == pManager->m_mapFdAttr.end())
+    {
+        return;
+    }
+    tagConnectionAttr* pConn = conn_iter->second.get();
+    if (seq != pConn->ulSeq)
+    {
+        return;
+    }
+
+    if (op == IoOp::Read)
+    {
+        pManager->HandleIoReadComplete(pConn, result);
+    }
+    else
+    {
+        pManager->HandleIoWriteComplete(pConn, result);
+    }
+}
+
+bool Manager::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto conn_iter = m_mapFdAttr.find(iFd);
+    if (conn_iter == m_mapFdAttr.end() || conn_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result <= 0)
+    {
+        if (result < 0)
+        {
+            int iErrno = -result;
+            if (EAGAIN == iErrno || EINTR == iErrno)
+            {
+                // For IoBackend: io_uring CQE with EAGAIN on non-blocking socket —
+                // we must explicitly re-submit (unlike ev where the watcher retriggers).
+                // Fall through to end-of-function re-submit.
+            }
+            else
+            {
+                LOG4_TRACE("IoBackend recv from fd %d error %d", iFd, iErrno);
+                DestroyConnect(conn_iter);
+                return false;
+            }
+        }
+        else
+        {
+            LOG4_TRACE("IoBackend fd %d closed by peer", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    // 分派缓冲区中的完整消息
+    while (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize)
+    {
+        MsgHead oInMsgHead;
+        bool bResult = oInMsgHead.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize);
+        if (bResult)
+        {
+            MsgBody oInMsgBody;
+            if (pConn->pRecvBuff->ReadableBytes() >= gc_uiMsgHeadSize + oInMsgHead.msgbody_len())
+            {
+                if (0 == oInMsgHead.msgbody_len())
+                {
+                    bResult = true;
+                }
+                else
+                {
+                    bResult = oInMsgBody.ParseFromArray(
+                        pConn->pRecvBuff->GetRawReadBuffer() + gc_uiMsgHeadSize,
+                        oInMsgHead.msgbody_len());
+                }
+                if (bResult)
+                {
+                    pConn->dActiveTime = ev_now(m_loop);
+                    bool bContinue = false;
+                    auto worker_fd_iter = m_mapWorkerFdPid.find(iFd);
+                    if (worker_fd_iter != m_mapWorkerFdPid.end())
+                    {
+                        bContinue = DisposeDataFromWorker(oInMsgHead, oInMsgBody, pConn);
+                    }
+                    else
+                    {
+                        auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
+                        const bool bCenterCmd =
+                            (oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER) ||
+                            (oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER) ||
+                            (oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT) ||
+                            (oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT);
+                        if (center_iter != m_mapCenterMsgShell.end() || bCenterCmd)
+                        {
+                            bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody, pConn);
+                        }
+                        else
+                        {
+                            bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
+                        }
+                    }
+                    pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
+                    pConn->pRecvBuff->Compact(32784);
+                    pConn->pSendBuff->Compact(32784);
+
+                    if (!bContinue)
+                    {
+                        DestroyConnect(conn_iter);
+                        return false;
+                    }
+                }
+                else
+                {
+                    LOG4_ERROR("oInMsgBody.ParseFromArray() failed from fd %d, close it!", iFd);
+                    DestroyConnect(conn_iter);
+                    return false;
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+        else
+        {
+            LOG4_ERROR("oInMsgHead.ParseFromArray() failed from fd %d, close it!", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    // 重新提交读（使用 HasPending 避免与写路径的 SubmitRead 重复）
+    if (m_pIoBackend)
+    {
+        auto recheck = m_mapFdAttr.find(iFd);
+        if (recheck != m_mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+            && !m_pIoBackend->HasPending(iFd))
+        {
+            pConn->pRecvBuff->Compact(8192);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+        }
+    }
+
+    return true;
+}
+
+bool Manager::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = m_mapFdAttr.find(iFd);
+    if (attr_iter == m_mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result < 0)
+    {
+        int iErrno = -result;
+        if (EAGAIN == iErrno)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+            return true;
+        }
+        else
+        {
+            LOG4_ERROR("IoBackend send to fd %d error %d", iFd, iErrno);
+            DestroyConnect(attr_iter);
+            return false;
+        }
+    }
+    else if (result > 0)
+    {
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+        if (iNeedWriteLen > 0)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+        }
+        else
+        {
+            // IoBackend: 写完成，CancelFd 清理该 fd 上可能残留的读/写操作，
+            // 但不再重新提交读（读由 HandleIoReadComplete 统一负责）。
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->CancelFd(iFd);
+            }
+        }
+    }
+    else
+    {
+        if (pConn->pWaitForSendBuff->ReadableBytes() > 0)
+        {
+            auto index_iter = m_mapSeq2WorkerIndex.find(ulSeq);
+            if (index_iter != m_mapSeq2WorkerIndex.end())
+            {
+                tagMsgShell stMsgShell(iFd, ulSeq);
+                auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
+                if (center_iter == m_mapCenterMsgShell.end())
+                {
+                    m_mapCenterMsgShell.insert(std::make_pair(pConn->strIdentify, stMsgShell));
+                }
+                else
+                {
+                    center_iter->second = stMsgShell;
+                }
+                ConnectWorker oConnWorker;
+                oConnWorker.set_worker_index(index_iter->second);
+                m_mapSeq2WorkerIndex.erase(index_iter);
+                SendTo(stMsgShell, CMD_REQ_CONNECT_TO_WORKER, GetSequence(), oConnWorker.SerializeAsString());
+            }
+        }
+    }
+    return true;
 }
 
 bool Manager::IoTimeout(tagManagerIoWatcherData* pData, struct ev_timer* watcher)
@@ -591,12 +835,12 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell)
         {
             int iErrno = 0;
             int iWriteLen = 0;
-            int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
+            int iNeedWriteLen = static_cast<int>(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
             iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = iter->second->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 if (iWriteLen < 0)
                 {
@@ -675,7 +919,7 @@ bool Manager::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, con
             LOG4_TRACE("iWriteLen = %d,oMsgBody size(%u)", iWriteLen,oMsgBody.ByteSize());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 LOG4_TRACE("iWriteLen = %d, send to fd %d error %d: %s", iWriteLen,
                                 stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
@@ -770,9 +1014,27 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 		return(false);
 	}
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
     if (iPort == 0)
 	{
@@ -983,6 +1245,7 @@ bool Manager::Init()
 {
 	nPid = getpid();
     InitLogger(m_oCurrentConf);
+    // InitIoBackend moved after CreateEvents (requires m_loop)
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
 
     if (m_strHostForClient.size() > 0 && m_iPortForClient > 0)
@@ -1090,7 +1353,25 @@ void Manager::Destroy()
     }
     m_mapClientConnFrequency.clear();
 
-    SAFE_FREE(m_pPeriodicTaskWatcher);
+    // 清理所有 Worker 的共享内存队列
+    for (auto& kv : m_mapWorker)
+    {
+        tagWorkerAttr& attr = kv.second;
+        if (attr.pMgrToWorkerQueue)
+        {
+            ShmRingQueue::Destroy(attr.pMgrToWorkerQueue, 128, 4096);
+            attr.pMgrToWorkerQueue = nullptr;
+        }
+        if (attr.pWorkerToMgrQueue)
+        {
+            ShmRingQueue::Destroy(attr.pWorkerToMgrQueue, 128, 4096);
+            attr.pWorkerToMgrQueue = nullptr;
+        }
+        ShmRingQueue::CloseEventFd(attr.iMgrToWorkerEventFd);
+        ShmRingQueue::CloseEventFd(attr.iWorkerToMgrEventFd);
+    }
+
+    free(m_pPeriodicTaskWatcher); m_pPeriodicTaskWatcher = nullptr;
     if (m_loop != nullptr)
     {
         StopPostToEventLoop();
@@ -1172,7 +1453,6 @@ void Manager::CreateLoader(bool boRestart)
 void Manager::CreateWorker()
 {
     LOG4_TRACE("%s", __FUNCTION__);
-    int iPid = 0;
     LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
     RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
     CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1189,7 +1469,12 @@ void Manager::CreateWorker()
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
         }
 
-        iPid = fork();
+        ShmRingQueue* pMgrToWorker = ShmRingQueue::Create(128, 4096);
+        ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+        int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
+        int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
+
+        int iPid = fork();
         if (iPid == 0)   // 子进程
         {
             StopPostToEventLoop();
@@ -1197,9 +1482,11 @@ void Manager::CreateWorker()
             CloseSocket(m_iS2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
+            ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
             x_sock_set_block(iControlFds[1], 0);
             x_sock_set_block(iDataFds[1], 0);
-            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf);
+            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], i, m_oCurrentConf,
+                                         pMgrToWorker, pWorkerToMgr, iMgrToWorkerEfd, iWorkerToMgrEfd);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
             pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
             pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
@@ -1212,12 +1499,17 @@ void Manager::CreateWorker()
         {
             close(iControlFds[1]);
             close(iDataFds[1]);
+            ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
             x_sock_set_block(iControlFds[0], 0);
             x_sock_set_block(iDataFds[0], 0);
             tagWorkerAttr stWorkerAttr;
             stWorkerAttr.iWorkerIndex = i;
             stWorkerAttr.iControlFd = iControlFds[0];
             stWorkerAttr.iDataFd = iDataFds[0];
+            stWorkerAttr.pMgrToWorkerQueue = pMgrToWorker;
+            stWorkerAttr.pWorkerToMgrQueue = pWorkerToMgr;
+            stWorkerAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
+            stWorkerAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
             m_mapWorker.insert(std::pair<int, tagWorkerAttr>(iPid, stWorkerAttr));
             m_mapWorkerFdPid.insert(std::make_pair(iControlFds[0], iPid));
             m_mapWorkerFdPid.insert(std::make_pair(iDataFds[0], iPid));
@@ -1282,11 +1574,11 @@ void Manager::PreloadCmd()
 bool Manager::RestartWorker(int iDeathPid)
 {
     LOG4_TRACE("%s(%d)", __FUNCTION__, iDeathPid);
-    int iNewPid = 0;
-    char errMsg[1024] = {0};
     auto worker_iter = m_mapWorker.find(iDeathPid);
     if (worker_iter != m_mapWorker.end())
     {
+        int iNewPid = 0;
+        char errMsg[1024] = {0};
         LOG4_TRACE("restart worker %d, close control fd %d and data fd %d first.",worker_iter->second.iWorkerIndex, worker_iter->second.iControlFd, worker_iter->second.iDataFd);
         int iWorkerIndex = worker_iter->second.iWorkerIndex;
         auto fd_iter = m_mapWorkerFdPid.find(worker_iter->second.iControlFd);
@@ -1301,6 +1593,20 @@ bool Manager::RestartWorker(int iDeathPid)
         }
         DestroyConnect(m_mapFdAttr.find(worker_iter->second.iControlFd));
         DestroyConnect(m_mapFdAttr.find(worker_iter->second.iDataFd));
+
+        // 销毁旧共享内存队列
+        tagWorkerAttr& oldAttr = worker_iter->second;
+        if (oldAttr.pMgrToWorkerQueue)
+        {
+            ShmRingQueue::Destroy(oldAttr.pMgrToWorkerQueue, 128, 4096);
+        }
+        if (oldAttr.pWorkerToMgrQueue)
+        {
+            ShmRingQueue::Destroy(oldAttr.pWorkerToMgrQueue, 128, 4096);
+        }
+        ShmRingQueue::CloseEventFd(oldAttr.iMgrToWorkerEventFd);
+        ShmRingQueue::CloseEventFd(oldAttr.iWorkerToMgrEventFd);
+
         m_mapWorker.erase(worker_iter);
 
 		LOG4_INFO("worker %d had been restarted %d times!", iWorkerIndex, m_mapWorkerRestartNum[iWorkerIndex]);
@@ -1315,6 +1621,13 @@ bool Manager::RestartWorker(int iDeathPid)
         {
             LOG4_ERROR("error %d: %s", errno, strerror_r(errno, errMsg, 1024));
         }
+
+        // 重建共享内存队列
+        ShmRingQueue* pMgrToWorker = ShmRingQueue::Create(128, 4096);
+        ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+        int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
+        int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
+
         LoaderConfigVersionData::LoaderConfigVersionMM *pLoaderConfigVersionMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
         RouteNoticeVersionData::RouteNoticeVersionMM *pRouteNoticeVersionMM = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
         CustomConfigVersionData::CustomConfigVersionMM *pCustomConfigVersionMM = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1326,10 +1639,12 @@ bool Manager::RestartWorker(int iDeathPid)
             CloseSocket(m_iS2SListenFd);
             close(iControlFds[0]);
             close(iDataFds[0]);
+            ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
             x_sock_set_block(iControlFds[1], 0);
             x_sock_set_block(iDataFds[1], 0);
             sleep(1);// 子进程重启避免过快重启导致快速触发错误
-            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf);
+            Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf,
+                                         pMgrToWorker, pWorkerToMgr, iMgrToWorkerEfd, iWorkerToMgrEfd);
             pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderConfigVersionMM);
             pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteNoticeVersionMM);
             pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustomConfigVersionMM);
@@ -1344,12 +1659,17 @@ bool Manager::RestartWorker(int iDeathPid)
             ev_loop_fork(m_loop);
             close(iControlFds[1]);
             close(iDataFds[1]);
+            ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
             x_sock_set_block(iControlFds[0], 0);
             x_sock_set_block(iDataFds[0], 0);
             tagWorkerAttr stWorkerAttr;
             stWorkerAttr.iWorkerIndex = iWorkerIndex;
             stWorkerAttr.iControlFd = iControlFds[0];
             stWorkerAttr.iDataFd = iDataFds[0];
+            stWorkerAttr.pMgrToWorkerQueue = pMgrToWorker;
+            stWorkerAttr.pWorkerToMgrQueue = pWorkerToMgr;
+            stWorkerAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
+            stWorkerAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
             LOG4_TRACE("m_mapWorker insert (iNewPid %d, worker_index %d)", iNewPid, iWorkerIndex);
             m_mapWorker.insert(std::make_pair(iNewPid, stWorkerAttr));
             m_mapWorkerFdPid.insert(std::make_pair(iControlFds[0], iNewPid));
@@ -1390,7 +1710,7 @@ bool Manager::AddPeriodicTaskEvent()
         LOG4_ERROR("new timeout_watcher error!");
         return(false);
     }
-    m_pPeriodicTaskWatcher->data = (void*)this;
+    m_pPeriodicTaskWatcher->data = static_cast<void*>(this);
     AddEvent(NODE_BEAT,m_pPeriodicTaskWatcher,PeriodicTaskCallback);
     return(true);
 }
@@ -1398,6 +1718,15 @@ bool Manager::AddPeriodicTaskEvent()
 bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
+    // IoBackend 路径：普通连接 fd 走异步 I/O，特殊 fd 保留原有 ev_io 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -1418,7 +1747,7 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 		pConn->pIoWatcher = io_watcher;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 
 		AddEvent(EV_READ,io_watcher,IoCallback,pData->iFd);
 	}
@@ -1432,6 +1761,14 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
 bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(fd %d)", __FUNCTION__, pConn->iFd);
+    // IoBackend 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -1452,7 +1789,7 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pManager = this;
 		pConn->pIoWatcher = io_watcher;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 
 		AddEvent(EV_WRITE,io_watcher,IoCallback,pData->iFd);
 	}
@@ -1466,7 +1803,21 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s", __FUNCTION__);
-    ev_io* io_watcher = nullptr;
+    // IoBackend 路径：CancelFd 会移除 fd 上所有事件（包括 EV_READ）。
+    // Manager::SendTo 可能在非 HandleIoReadComplete 上下文中同步写完后调用本函数，
+    // 此时必须补交读，否则 fd 将永久丢失读监听。
+    if (m_pIoBackend
+        && pConn->iFd != m_iS2SListenFd)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
+        // 补交读，避免 CancelFd 后 fd 不再被监听。
+        pConn->pRecvBuff->Compact(8192);
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        return true;
+    }
+
+    // 原有 ev_io 路径
 	if (pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)
@@ -1496,7 +1847,7 @@ bool Manager::AddIoTimeout(int iFd, uint32 ulSeq, ev_tstamp dTimeout)
     pData->iFd = iFd;
     pData->ulSeq = ulSeq;
     pData->pManager = this;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     AddEvent(dTimeout,timeout_watcher, IoTimeoutCallback);
     return(true);
 }
@@ -1519,7 +1870,7 @@ bool Manager::AddClientConnFrequencyTimeout(in_addr_t iAddr, ev_tstamp dTimeout)
     }
     pData->pManager = this;
     pData->iAddr = iAddr;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     AddEvent(dTimeout,timeout_watcher,ClientConnFrequencyTimeoutCallback);
     return(true);
 }
@@ -1600,8 +1951,8 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
     {
         return(false);
     }
-    LOG4_TRACE("%s() iter->second->pIoWatcher = 0x%p, fd %d, data 0x%p", __FUNCTION__,
-                    iter->second->pIoWatcher, iter->second->pIoWatcher->fd, iter->second->pIoWatcher->data);
+    LOG4_TRACE("%s() iter->second->pIoWatcher = 0x%p, fd %d", __FUNCTION__,
+                    iter->second->pIoWatcher, iter->second->iFd);
     auto center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
     if (center_iter != m_mapCenterMsgShell.end())
     {
@@ -1613,7 +1964,15 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
         center_iter->second.iFd = 0;
         center_iter->second.ulSeq = 0;
     }
-    DelEvent(iter->second->pIoWatcher,(tagManagerIoWatcherData*)iter->second->pIoWatcher->data);
+    // Cancel IoBackend operations before cleaning ev_io watchers
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->CancelFd(iter->second->iFd);
+    }
+    if (iter->second->pIoWatcher)
+    {
+        DelEvent(iter->second->pIoWatcher, (tagManagerIoWatcherData*)iter->second->pIoWatcher->data);
+    }
     close(iter->first);
     m_mapFdAttr.erase(iter);
     return(true);
@@ -1680,6 +2039,33 @@ bool Manager::CheckWorker()
     for (auto worker_iter:m_mapWorker)
     {
         LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime,m_iWorkerBeat);
+        // 消费 Worker→Manager 共享内存队列
+        tagWorkerAttr& attr = worker_iter.second;
+        if (attr.pWorkerToMgrQueue && attr.iWorkerToMgrEventFd >= 0)
+        {
+            // 先消费 eventfd 计数器
+            uint64_t ev;
+            while (read(attr.iWorkerToMgrEventFd, &ev, sizeof(ev)) > 0) {}
+            // 批量出队
+            uint32_t cmd, seq, body_len;
+            char body_buf[4096];
+            while (attr.pWorkerToMgrQueue->TryDequeue(cmd, seq, body_buf, body_len))
+            {
+                // 构造 MsgHead + MsgBody 并走现有处理流程
+                MsgHead oInMsgHead;
+                MsgBody oInMsgBody;
+                oInMsgHead.set_cmd(cmd);
+                oInMsgHead.set_seq(seq);
+                oInMsgHead.set_msgbody_len(body_len);
+                oInMsgBody.set_body(body_buf, body_len);
+                // 用 control fd 对应的连接属性模拟 worker 来源
+                auto conn_iter = m_mapFdAttr.find(attr.iControlFd);
+                if (conn_iter != m_mapFdAttr.end())
+                {
+                    DisposeDataFromWorker(oInMsgHead, oInMsgBody, conn_iter->second.get());
+                }
+            }
+        }
         if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
         {
             LOG4_INFO( "worker_%d pid %d is unresponsive, terminate it.", worker_iter.second.iWorkerIndex, worker_iter.first);
@@ -1904,13 +2290,32 @@ bool Manager::SendToWorker(const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     for (const auto& worker_iter :m_mapWorker)
     {
-        auto worker_conn_iter = m_mapFdAttr.find(worker_iter.second.iControlFd);
+        const tagWorkerAttr& attr = worker_iter.second;
+        // 优先走共享内存队列
+        if (attr.pMgrToWorkerQueue && attr.iMgrToWorkerEventFd >= 0)
+        {
+            const std::string& body = oMsgBody.body();
+            if (attr.pMgrToWorkerQueue->TryEnqueue(
+                    oMsgHead.cmd(), oMsgHead.seq(),
+                    body.data(), static_cast<uint32_t>(body.size())))
+            {
+                // 通知worker，有数据到共享内存队列了
+                ShmRingQueue::NotifyEventFd(attr.iMgrToWorkerEventFd);
+        
+                LOG4_TRACE("shm send cmd %d seq %u to worker %d",
+                           oMsgHead.cmd(), oMsgHead.seq(), attr.iWorkerIndex);
+                continue;
+            }
+            LOG4_WARN("shm queue full for worker %d, fallback to socket", attr.iWorkerIndex);
+        }
+        // 降级走原有 socket
+        auto worker_conn_iter = m_mapFdAttr.find(attr.iControlFd);
         if (worker_conn_iter != m_mapFdAttr.end())
         {
-        	LOG4_TRACE("send cmd %d seq %u to worker %d", oMsgHead.cmd(), oMsgHead.seq(), worker_iter.second.iWorkerIndex);
+        	LOG4_TRACE("socket send cmd %d seq %u to worker %d", oMsgHead.cmd(), oMsgHead.seq(), attr.iWorkerIndex);
         	if (SendTo(worker_conn_iter->second.get(),oMsgHead,oMsgBody))
 			{
-        		LOG4_TRACE("send to worker %d success, cmd %d seq %u",worker_iter.second.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
+        		LOG4_TRACE("send to worker %d success, cmd %d seq %u",attr.iWorkerIndex, oMsgHead.cmd(), oMsgHead.seq());
 			}
         }
     }
@@ -2068,7 +2473,7 @@ void Manager::DeleteCallback(Session* pSession)
         if (id_iter != name_iter->second.end())
         {
             LOG4_TRACE("delete session(session_id %s)", pSession->GetSessionId().c_str());
-            SAFE_DELETE(id_iter->second);
+            delete id_iter->second; id_iter->second = nullptr;
             name_iter->second.erase(id_iter);
         }
     }
@@ -2215,7 +2620,7 @@ void Manager::UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeRe
             if (m_strRaftLeaderCenterKey != leader)
             {
                 LOG4_INFO("%s cache raft leader center %s (err=%u raft_term=%llu)", __FUNCTION__, leader.c_str(), err,
-                          (unsigned long long)oNodeReportRsp.raft_term());
+                          static_cast<unsigned long long>(oNodeReportRsp.raft_term()));
             }
             m_strRaftLeaderCenterKey = leader;
         }

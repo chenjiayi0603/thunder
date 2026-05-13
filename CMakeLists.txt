@@ -27,6 +27,16 @@ option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface/Center 节点 .so 插�
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
 # 第三方库超级构建（code/3party/CMakeLists.txt），默认仅注册目标，不随主工程 all 一起编；见 target thirdparty_deploy
 option(THUNDER_INCLUDE_3PARTY "包含第三方库 CMake 目标（thunder_3party_all、thirdparty_deploy）" ON)
+option(THUNDER_IO_URING "启用 io_uring I/O 后端" OFF)
+option(THUNDER_IO_ASIO_URING "启用 standalone Asio io_uring I/O 后端" ON)
+
+if(THUNDER_IO_URING)
+  add_compile_definitions(THUNDER_IO_URING)
+endif()
+
+if(THUNDER_IO_ASIO_URING)
+  add_compile_definitions(THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
+endif()
 
 find_package(Threads REQUIRED)
 

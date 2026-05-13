@@ -20,6 +20,7 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "labor/Worker.hpp"
+#include "labor/types/ShmRingQueue.hpp"
 #include "labor/WorkerThreadPool.hpp"
 #include "thread/threadpool.h"
 #include <unordered_map>
@@ -159,6 +160,35 @@ void Worker::SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watch
     }
 }
 
+void Worker::ShmReadCallback(struct ev_loop* loop, struct ev_io* watcher, int revents)
+{
+    if (watcher->data != nullptr)
+    {
+        Worker* pWorker = static_cast<Worker*>(watcher->data);
+        // 消费 eventfd 计数器
+        uint64_t val;
+        while (read(watcher->fd, &val, sizeof(val)) > 0) {}
+        // 批量出队 Manager→Worker 消息
+        uint32_t cmd, seq, body_len;
+        char body_buf[4096];
+        while (pWorker->m_pMgrToWorkerQueue &&
+               pWorker->m_pMgrToWorkerQueue->TryDequeue(cmd, seq, body_buf, body_len))
+        {
+            MsgHead oInMsgHead, oOutMsgHead;
+            MsgBody oInMsgBody, oOutMsgBody;
+            oInMsgHead.set_cmd(cmd);
+            oInMsgHead.set_seq(seq);
+            oInMsgHead.set_msgbody_len(body_len);
+            oInMsgBody.set_body(body_buf, body_len);
+            auto conn_iter = pWorker->mapFdAttr.find(pWorker->iManagerControlFd);
+            if (conn_iter != pWorker->mapFdAttr.end())
+            {
+                pWorker->Dispose(conn_iter->second.get(), oInMsgHead, oInMsgBody, oOutMsgHead, oOutMsgBody);
+            }
+        }
+    }
+}
+
 void Worker::RedisConnectCallback(const redisAsyncContext *c, int status)
 {
     if (c->data != nullptr)
@@ -213,12 +243,18 @@ void Worker::RedisClusterCmdCallback(redisClusterAsyncContext *acc, void *reply,
     }
 }
 
-Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf)
+Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf,
+               ShmRingQueue* pMgrToWorker, ShmRingQueue* pWorkerToMgr,
+               int iMgrToWorkerEfd, int iWorkerToMgrEfd)
 {
 	m_strWorkPath = strWorkPath;
     iManagerControlFd = iControlFd;
     iManagerDataFd = iDataFd;
     iWorkerIndex = iWorkerIndex;
+    m_pMgrToWorkerQueue = pMgrToWorker;
+    m_pWorkerToMgrQueue = pWorkerToMgr;
+    m_iMgrToWorkerEfd   = iMgrToWorkerEfd;
+    m_iWorkerToMgrEfd   = iWorkerToMgrEfd;
     if (!Init(oJsonConf))
     {
         exit(-1);
@@ -226,6 +262,13 @@ Worker::Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int 
     if (!CreateEvents())
     {
         exit(-2);
+    }
+
+    // IoBackend must be initialized after m_loop is created (by CreateEvents)
+    if (!InitIoBackend(oJsonConf, &Worker::OnIoComplete))
+    {
+        // Non-fatal: falls back to legacy ev_io path
+        LOG4_WARN("InitIoBackend failed, using legacy ev_io path");
     }
 
     PreloadCmd();
@@ -462,6 +505,20 @@ bool Worker::CheckShareMem()
 bool Worker::SendToParent(const MsgHead& oMsgHead,const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // 优先走共享内存队列
+    if (m_pWorkerToMgrQueue && m_iWorkerToMgrEfd >= 0)
+    {
+        const std::string& body = oMsgBody.body();
+        if (m_pWorkerToMgrQueue->TryEnqueue(
+                oMsgHead.cmd(), oMsgHead.seq(),
+                body.data(), static_cast<uint32_t>(body.size())))
+        {
+            ShmRingQueue::NotifyEventFd(m_iWorkerToMgrEfd);
+            return true;
+        }
+        LOG4_WARN("shm queue full for SendToParent, fallback to socket");
+    }
+    // 降级走原有 socket
     auto iter = mapFdAttr.find(iManagerControlFd);
     if (iter != mapFdAttr.end())
     {
@@ -710,7 +767,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                             auto iter = oInHttpMsg.headers().find(std::string("Keep-Alive"));
                             if (iter != oInHttpMsg.headers().end())
                             {
-                            	pConn->dKeepAlive = strtoul(iter->second.c_str(), NULL, 10);
+                            	pConn->dKeepAlive = strtoul(iter->second.c_str(), nullptr, 10);
 								LOG4_TRACE("set dKeepAlive(%lf)",pConn->dKeepAlive);
 								AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
                             }
@@ -916,7 +973,7 @@ bool Worker::IoWrite(tagIoWatcherData* pData, struct ev_io* watcher)
             return(false);
         }
         int iErrno = 0;
-        int iNeedWriteLen = (int)attr_iter->second->pSendBuff->ReadableBytes();
+        int iNeedWriteLen = static_cast<int>(attr_iter->second->pSendBuff->ReadableBytes());
         int iWriteLen = pConn->pSendBuff->WriteFD(pData->iFd, iErrno);
         pConn->pSendBuff->Compact(8192);
         if (iWriteLen < 0)
@@ -1000,6 +1057,382 @@ bool Worker::IoError(tagIoWatcherData* pData, struct ev_io* watcher)
     }
 }
 
+void Worker::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data)
+{
+    Worker* pWorker = static_cast<Worker*>(user_data);
+    auto conn_iter = pWorker->mapFdAttr.find(fd);
+    if (conn_iter == pWorker->mapFdAttr.end())
+    {
+        return;
+    }
+    tagConnectionAttr* pConn = conn_iter->second.get();
+    if (seq != pConn->ulSeq)
+    {
+        return;
+    }
+
+    if (op == IoOp::Read)
+    {
+        pWorker->HandleIoReadComplete(pConn, result);
+    }
+    else
+    {
+        pWorker->HandleIoWriteComplete(pConn, result);
+    }
+}
+
+bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto conn_iter = mapFdAttr.find(iFd);
+    if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result <= 0)
+    {
+        if (result < 0)
+        {
+            int iErrno = -result;
+            if (EAGAIN == iErrno || EINTR == iErrno)
+            {
+                // For IoBackend: io_uring CQE with EAGAIN on non-blocking socket —
+                // we must explicitly re-submit (unlike ev where the watcher retriggers).
+                // Re-submit at the end of this function.
+                // (fall through to end-of-function re-submit)
+            }
+            else
+            {
+                LOG4_TRACE("IoBackend recv from fd %d error %d", iFd, iErrno);
+                DestroyConnect(conn_iter);
+                return false;
+            }
+        }
+        else
+        {
+            LOG4_TRACE("IoBackend fd %d closed by peer", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+    }
+
+    iRecvByte += result;
+
+    MsgHead oInMsgHead, oOutMsgHead;
+    MsgBody oInMsgBody, oOutMsgBody;
+    auto codec_iter = mapCodec.find(pConn->eCodecType);
+    if (codec_iter == mapCodec.end())
+    {
+        LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
+        DestroyConnect(conn_iter);
+        return false;
+    }
+    ThunderCodec* pCodec = codec_iter->second.get();
+
+    while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
+            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+    {
+        oInMsgHead.Clear();
+        oInMsgBody.Clear();
+
+        E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
+        // HTTPS TLS 握手要求同步双向 I/O：SSL_do_handshake 产生的响应数据
+        // 必须立即写出，否则下一轮 Read/WantRead 循环会被异步 SubmitWrite 中断。
+        if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+        {
+            int iErrno = 0;
+            pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+            pConn->pSendBuff->Compact(8192);
+        }
+
+        if (CODEC_STATUS_OK == eCodecStatus)
+        {
+            pConn->ulMsgNumUnitTime++;
+            pConn->ulMsgNum++;
+            ++iRecvNum;
+            pConn->dActiveTime = GetTimeStamp();
+            bool bDisposeResult = false;
+
+            if (oInMsgHead.cmd() > 0)
+            {
+                if (util::CODEC_APP == pConn->eCodecType && IsAccess())
+                {
+                    if (!pConn->IsVerify() && pConn->ulMsgNum > 1)
+                    {
+                        LOG4_WARN("invalid request, please login first!");
+                        DestroyConnect(conn_iter);
+                        return false;
+                    }
+                }
+
+                if (m_dMsgStatInterval > 0.0 && (gc_uiCmdReq & oInMsgHead.cmd())
+                        && (util::CODEC_APP == pConn->eCodecType || util::CODEC_WEBSOCKET_EX_PB_APP == pConn->eCodecType))
+                {
+                    if (pConn->dActiveTime > (pConn->dUnitLimitLastTime + m_dMsgStatInterval))
+                    {
+                        pConn->ulMsgNumUnitTime = 1;
+                        pConn->mapCmdsUnitMsgCounter.clear();
+                        pConn->dUnitLimitLastTime = pConn->dActiveTime;
+                    }
+                    pConn->mapCmdsUnitMsgCounter[oInMsgHead.cmd()]++;
+                    if (m_iMsgPermitNum > 0 && pConn->ulMsgNumUnitTime > m_iMsgPermitNum)
+                    {
+                        LOG4_WARN("%s() ulMsgNumUnitTime(%u) > m_iMsgPermitNum(%d)!", __FUNCTION__, pConn->ulMsgNumUnitTime, m_iMsgPermitNum);
+                        return false;
+                    }
+                }
+
+                bDisposeResult = Dispose(pConn, oInMsgHead, oInMsgBody, oOutMsgHead, oOutMsgBody);
+                auto dispose_conn_iter = mapFdAttr.find(iFd);
+                if (dispose_conn_iter == mapFdAttr.end() || ulSeq != dispose_conn_iter->second->ulSeq)
+                {
+                    return true;
+                }
+                if (oOutMsgHead.ByteSize() > 0)
+                {
+                    eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutMsgHead, oOutMsgBody, pConn->pSendBuff.get());
+                    if (CODEC_STATUS_OK == eCodecStatus)
+                    {
+                        if (m_pIoBackend)
+                        {
+                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                        }
+                        else
+                        {
+                            int iErrno = 0;
+                            pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+                            pConn->pSendBuff->Compact(8192);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (pConn->IsVerify())
+                {
+                    oInMsgBody.set_additional(pConn->pClientData->GetRawReadBuffer(), pConn->pClientData->ReadableBytes());
+                    oInMsgHead.set_msgbody_len(oInMsgBody.ByteSize());
+                }
+
+                HttpMsg oInHttpMsg, oOutHttpMsg;
+                if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
+                {
+                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                    {
+                        pConn->dKeepAlive = 10;
+                    }
+                    auto hdr_iter = oInHttpMsg.headers().find(std::string("Keep-Alive"));
+                    if (hdr_iter != oInHttpMsg.headers().end())
+                    {
+                        pConn->dKeepAlive = strtoul(hdr_iter->second.c_str(), nullptr, 10);
+                        AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                    }
+                    else
+                    {
+                        auto conn_hdr_iter = oInHttpMsg.headers().find(std::string("Connection"));
+                        if (conn_hdr_iter != oInHttpMsg.headers().end())
+                        {
+                            if (std::string("keep-alive") == conn_hdr_iter->second)
+                            {
+                                pConn->dKeepAlive = 65.0;
+                                AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, 65.0);
+                            }
+                            else if (std::string("close") == conn_hdr_iter->second && HTTP_RESPONSE == oInHttpMsg.type())
+                            {
+                                pConn->dKeepAlive = -1;
+                                DestroyConnect(conn_iter);
+                            }
+                            else
+                            {
+                                AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                            }
+                        }
+                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                                        && pConn->dKeepAlive > 0)
+                        {
+                            AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
+                        }
+                    }
+
+                    bDisposeResult = Dispose(pConn, oInHttpMsg, oOutHttpMsg);
+                    auto dispose_conn_iter = mapFdAttr.find(iFd);
+                    if (dispose_conn_iter == mapFdAttr.end() || ulSeq != dispose_conn_iter->second->ulSeq)
+                    {
+                        return true;
+                    }
+
+                    if (pConn->dKeepAlive < 0)
+                    {
+                        if (HTTP_RESPONSE == oInHttpMsg.type())
+                        {
+                            DestroyConnect(conn_iter);
+                        }
+                        else
+                        {
+                            ((HttpCodec*)pCodec)->AddHttpHeader("Connection", "close");
+                        }
+                    }
+                    if (oOutHttpMsg.ByteSize() > 0)
+                    {
+                        eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oOutHttpMsg, pConn->pSendBuff.get());
+                        if (CODEC_STATUS_OK == eCodecStatus)
+                        {
+                            if (m_pIoBackend)
+                            {
+                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                            }
+                            else
+                            {
+                                int iErrno = 0;
+                                pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+                                pConn->pSendBuff->Compact(8192);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    LOG4_ERROR("oInHttpMsg.ParseFromString() error!");
+                }
+            }
+            if (!bDisposeResult)
+            {
+                break;
+            }
+        }
+        else if (CODEC_STATUS_ERR == eCodecStatus)
+        {
+            LOG4_TRACE("CODEC_STATUS_ERR DestroyConnect iFd(%d)", iFd);
+            DestroyConnect(conn_iter);
+            return false;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    // IoBackend: always re-submit read for keep-alive, but check HasPending
+    // to avoid double-submission (the write path may have already submitted via
+    // RemoveIoWriteEvent/HandleIoWriteComplete).
+    if (m_pIoBackend)
+    {
+        auto recheck = mapFdAttr.find(iFd);
+        if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+            && !m_pIoBackend->HasPending(iFd))
+        {
+            pConn->pRecvBuff->Compact(8192);
+            pConn->pRecvBuff->EnsureWritableBytes(8192);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+        }
+    }
+
+    return true;
+}
+
+bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = mapFdAttr.find(iFd);
+    if (attr_iter == mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+
+    if (result < 0)
+    {
+        int iErrno = -result;
+        if (EAGAIN == iErrno)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+            return true;
+        }
+        else
+        {
+            LOG4_ERROR("IoBackend send to fd %d error %d", iFd, iErrno);
+            DestroyConnect(attr_iter);
+            return false;
+        }
+    }
+    else if (result > 0)
+    {
+        iSendByte += result;
+        int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+        if (iNeedWriteLen > 0)
+        {
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+            }
+        }
+        else
+        {
+            // IoBackend: 写完成，CancelFd 清理该 fd 上可能残留的读/写操作，
+            // 但不再重新提交读（读由 HandleIoReadComplete 统一负责）。
+            if (m_pIoBackend)
+            {
+                m_pIoBackend->CancelFd(iFd);
+            }
+        }
+    }
+    else
+    {
+        if (pConn->pWaitForSendBuff->ReadableBytes() > 0)
+        {
+            tagMsgShell stMsgShell(iFd, ulSeq);
+            auto index_iter = mapSeq2WorkerIndex.find(ulSeq);
+            if (index_iter != mapSeq2WorkerIndex.end())
+            {
+                AddInnerFd(stMsgShell);
+                if (util::CODEC_PB_INTERNAL == pConn->eCodecType)
+                {
+                    CmdConnectWorker::Start(stMsgShell, index_iter->second);
+                }
+                else
+                {
+                    SendTo(stMsgShell);
+                }
+                mapSeq2WorkerIndex.erase(index_iter);
+                if (m_pIoBackend)
+                {
+                    m_pIoBackend->CancelFd(iFd);
+                    auto recheck = mapFdAttr.find(iFd);
+                    if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq)
+                    {
+                        pConn->pRecvBuff->Compact(8192);
+                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+                    }
+                }
+            }
+            else
+            {
+                SendTo(stMsgShell);
+            }
+        }
+    }
+    return true;
+}
+
+void Worker::DispatchMessagesAfterRead(
+    std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator& conn_iter)
+{
+    (void)conn_iter;
+}
+
 bool Worker::IoTimeout(struct ev_timer* watcher, bool bCheckBeat)
 {
     LOG4_TRACE("%s()",__FUNCTION__);
@@ -1009,7 +1442,7 @@ bool Worker::IoTimeout(struct ev_timer* watcher, bool bCheckBeat)
     {
         LOG4_ERROR("pData is null in %s()", __FUNCTION__);
         DelEvent(watcher);
-        SAFE_DELETE(watcher);
+        delete watcher; watcher = nullptr;
         return(false);
     }
     auto iter =  mapFdAttr.find(pData->iFd);
@@ -1195,7 +1628,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 					const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
 					for(int i = 0;i < rawCmds.size() ;++i)
 					{
-						int status = redisAsyncCommand((redisAsyncContext*)c, RedisCmdCallback, NULL, rawCmds[i].c_str());
+						int status = redisAsyncCommand((redisAsyncContext*)c, RedisCmdCallback, nullptr, rawCmds[i].c_str());
 						if (status == REDIS_OK)
 						{
 							LOG4_TRACE("bulk:succeed in sending redis cmd(%s)", rawCmds[i].c_str());
@@ -1232,7 +1665,7 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
 						argv[i] = c_iter->first.c_str();
 						arglen[i] = c_iter->first.size();
 					}
-					iCmdStatus = redisAsyncCommandArgv((redisAsyncContext*)c, RedisCmdCallback, NULL, args_size, argv, arglen);
+					iCmdStatus = redisAsyncCommandArgv((redisAsyncContext*)c, RedisCmdCallback, nullptr, args_size, argv, arglen);
 					if (iCmdStatus == REDIS_OK)
 					{
 						LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
@@ -1252,10 +1685,10 @@ bool Worker::OnRedisConnect(const redisAsyncContext *c, int status)
             for (auto step_iter = attr_iter->second->listWaitData.begin();
                             step_iter != attr_iter->second->listWaitData.end(); ++step_iter)
             {
-                step_iter->get()->Callback(c, status, NULL);
+                step_iter->get()->Callback(c, status, nullptr);
             }
             attr_iter->second->listWaitData.clear();
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             DelRedisContextAddr(c);
             mapRedisAttr.erase(attr_iter);
         }
@@ -1273,7 +1706,7 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
         {
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
-            step_iter->Callback(c, c->err, NULL);
+            step_iter->Callback(c, c->err, nullptr);
         }
         attr_iter->second->listData.clear();
 
@@ -1281,11 +1714,11 @@ bool Worker::OnRedisDisconnect(const redisAsyncContext *c, int status)
         {
             LOG4_ERROR("OnRedisDisconnect callback error %d of redis cmd: %s",
                             c->err, step_iter->GetRedisCmd()->ToString().c_str());
-            step_iter->Callback(c, c->err, NULL);
+            step_iter->Callback(c, c->err, nullptr);
         }
         attr_iter->second->listWaitData.clear();
 
-        SAFE_DELETE(attr_iter->second);
+        delete attr_iter->second; attr_iter->second = nullptr;
         DelRedisContextAddr(c);
         mapRedisAttr.erase(attr_iter);
     }
@@ -1313,7 +1746,7 @@ bool Worker::OnRedisCmdResult(redisAsyncContext *c, void *reply, void *privdata)
                 pRedisStep->Callback(c, c->err, (redisReply*)reply);
             }
             attr_iter->second->listData.clear();
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             DelRedisContextAddr(c);
             mapRedisAttr.erase(attr_iter);
         }
@@ -1362,7 +1795,7 @@ bool Worker::OnRedisClusterCmdResult(redisClusterAsyncContext *acc, void *reply,
             }
             attr_iter->second->listData.clear();
 
-            SAFE_DELETE(attr_iter->second);
+            delete attr_iter->second; attr_iter->second = nullptr;
             mapRedisClusterAttr.erase(attr_iter);
         }
         else
@@ -1521,7 +1954,7 @@ void Worker::DeleteCallback(Session* pSession)
         if (id_iter != name_iter->second.end())
         {
             LOG4_TRACE("delete session(session_id %s)", pSession->GetSessionId().c_str());
-            SAFE_DELETE(id_iter->second);
+            delete id_iter->second; id_iter->second = nullptr;
             name_iter->second.erase(id_iter);
         }
     }
@@ -1555,7 +1988,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     ev_timer_init (timeout_watcher, IoTimeoutCallback, 0.5 + ev_time() - ev_now(m_loop), 0.0);
     pData->ullSeq = pStep->GetSequence();
     pData->pWorker = this;
-    timeout_watcher->data = (void*)pData;
+    timeout_watcher->data = static_cast<void*>(pData);
     ev_timer_start (m_loop, timeout_watcher);
     */
 
@@ -1575,7 +2008,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
 				for(int i = 0;i < rawCmds.size() ;++i)
 				{
-					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, NULL, rawCmds[i].c_str());
+					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, rawCmds[i].c_str());
 					if (status == REDIS_OK)
 					{
 						LOG4_TRACE("bulk:succeed in sending redis cmd(%s)", rawCmds[i].c_str());
@@ -1607,7 +2040,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 					argv[i] = c_iter->first.c_str();
 					arglen[i] = c_iter->first.size();
 				}
-				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, NULL, args_size, argv, arglen);
+				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, args_size, argv, arglen);
 				if (status == REDIS_OK)
 				{
 					LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
@@ -1802,8 +2235,10 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
         InitThunderWorkerThreadPool(static_cast<unsigned short>(iPoolThreads));
     }
 
+    m_bInitLogger = false;    // fork 后强制重建 Logger（避免继承 Manager 的 log4cplus 状态）
     InitLogger(oJsonConf);
     InitDataLogger(oJsonConf);
+    // InitIoBackend moved after CreateEvents (requires m_loop)
     LOG4_INFO("%s program begin, and work path %s. pid(%d)", m_strServerName.c_str(), m_strWorkPath.c_str(),nPid);
     LOG4_INFO("NetWorker build marker: DelEvent-before-close, stack_http_parser, http_init_log_trim, fix-coro-self-destroy (%s %s)",
               __DATE__, __TIME__);
@@ -1870,6 +2305,16 @@ bool Worker::CreateEvents()
 	AddSignal(SIGTERM,TerminatedCallback);
 
     AddPeriodicTaskEvent();
+
+    // 注册共享内存 eventfd 读事件（Manager→Worker 消息）
+    if (m_pMgrToWorkerQueue && m_iMgrToWorkerEfd >= 0)
+    {
+        m_pShmReadWatcher = new ev_io();
+        m_pShmReadWatcher->data = static_cast<void*>(this);
+        ev_io_init(m_pShmReadWatcher, ShmReadCallback, m_iMgrToWorkerEfd, EV_READ);
+        ev_io_start(m_loop, m_pShmReadWatcher);
+        LOG4_INFO("shm read watcher registered for worker %d, efd=%d", iWorkerIndex, m_iMgrToWorkerEfd);
+    }
 
     // 注册网络IO事件
     if (CreateManagerFdAttr(iManagerControlFd,GetFdSequence()) == nullptr)
@@ -2002,6 +2447,20 @@ void Worker::RemoveFdAttrForShutdown(std::unordered_map<int32, std::unique_ptr<t
 void Worker::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // 清理共享内存队列事件与 eventfd
+    if (m_pShmReadWatcher)
+    {
+        if (m_loop)
+        {
+            ev_io_stop(m_loop, m_pShmReadWatcher);
+        }
+        delete m_pShmReadWatcher;
+        m_pShmReadWatcher = nullptr;
+    }
+    ShmRingQueue::CloseEventFd(m_iMgrToWorkerEfd);
+    ShmRingQueue::CloseEventFd(m_iWorkerToMgrEfd);
+    // 不在此处 Destroy shm 队列（内存由 Manager 管理，Worker 只是消费者）
+
     mapHttpAttr.clear();
     mapSysCmd.clear();
 
@@ -2353,12 +2812,12 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell)
         {
             int iErrno = 0;
             int iWriteLen = 0;
-            int iNeedWriteLen = (int)(pConn->pWaitForSendBuff->ReadableBytes());
+            int iNeedWriteLen = static_cast<int>(pConn->pWaitForSendBuff->ReadableBytes());
             int iWriteIdx = pConn->pSendBuff->GetWriteIndex();
             iWriteLen = pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
             if (iWriteLen == iNeedWriteLen)
             {
-                iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 iter->second->pSendBuff->Compact(8192);
                 if (iWriteLen < 0)
@@ -2554,7 +3013,7 @@ bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pM
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
@@ -2578,7 +3037,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2596,7 +3055,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
@@ -2619,7 +3078,7 @@ bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::strin
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
@@ -2643,7 +3102,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2661,7 +3120,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
@@ -2684,7 +3143,7 @@ bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::strin
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
@@ -2708,7 +3167,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 		if (!RegisterCallback(pUpperStep))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			SAFE_DELETE(pUpperStep);
+			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -2726,7 +3185,7 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
     if (!RegisterCallback(pStep))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        SAFE_DELETE(pStep);
+        delete pStep; pStep = nullptr;
         return(false);
     }
     pStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
@@ -2810,7 +3269,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const MsgHead& oMsgHead, cons
             {
                 ++iSendNum;
                 int iErrno = 0;
-                int iNeedWriteLen = (int)conn_iter->second->pSendBuff->ReadableBytes();
+                int iNeedWriteLen = static_cast<int>(conn_iter->second->pSendBuff->ReadableBytes());
                 LOG4_TRACE("try send cmd[%d] seq[%u] len %d to fd %d ip %s identify %s",
 					oMsgHead.cmd(), oMsgHead.seq(), iNeedWriteLen, stMsgShell.iFd,pConn->szRemoteAddr, pConn->strIdentify.c_str());
                 int iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
@@ -3232,7 +3691,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
                 }
                 LOG4_TRACE("fd[%d], seq[%u], pConn->pSendBuff %p", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff.get());
                 int iErrno = 0;
-                int iNeedWriteLen = (int)pConn->pSendBuff->ReadableBytes();
+                int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
                 int iWriteLen = pConn->pSendBuff->WriteFD(stMsgShell.iFd, iErrno);
                 pConn->pSendBuff->Compact(8192);
                 if (iWriteLen < 0)
@@ -3350,9 +3809,27 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 	}
 
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
 	if (iPort == 0)
 	{
@@ -3567,9 +4044,9 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             cobj.errstr = acc->errstr;
             redisAsyncContext *c = &cobj;
             pRedisStep->AddCallBackCounter();
-            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, NULL))
+            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, nullptr))
             {
-            	SAFE_DELETE(pRedisStep);
+            	delete pRedisStep; pRedisStep = nullptr;
             }
         }
     }
@@ -3598,9 +4075,27 @@ bool Worker::AutoConnect(const std::string& strIdentify)
         return(false);
     }
     int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
+    // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
+    if (iPosPortWorkerIndexSeparator == std::string::npos
+        || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)
+    {
+        iPosPortWorkerIndexSeparator = std::string::npos;
+    }
     std::string strHost = strIdentify.substr(0, iPosIpPortSeparator);
-    std::string strPort = strIdentify.substr(iPosIpPortSeparator + 1, iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
-    std::string strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    std::string strPort;
+    std::string strWorkerIndex;
+    if (iPosPortWorkerIndexSeparator != std::string::npos)
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1,
+                                     iPosPortWorkerIndexSeparator - (iPosIpPortSeparator + 1));
+        strWorkerIndex = strIdentify.substr(iPosPortWorkerIndexSeparator + 1, std::string::npos);
+    }
+    else
+    {
+        strPort = strIdentify.substr(iPosIpPortSeparator + 1, std::string::npos);
+        strWorkerIndex = "0";
+    }
     int iPort = atoi(strPort.c_str());
     if (iPort == 0)
     {
@@ -3992,7 +4487,7 @@ bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::stri
 		if (!RegisterCallback(pStep,dTimeout))
 		{
 			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-			SAFE_DELETE(pStep);
+			delete pStep; pStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,pStep->GetSequence());
@@ -4026,7 +4521,7 @@ bool Worker::ExecStep(RedisStep* pRedisStep)
 		return(true);
 	}
 	LOG4_WARN("%s() pRedisStep",__FUNCTION__);
-	SAFE_DELETE(pRedisStep);
+	delete pRedisStep; pRedisStep = nullptr;
 	return false;
 }
 
@@ -4393,12 +4888,12 @@ bool Worker::AddPeriodicTaskEvent()
     LOG4_TRACE("%s()", __FUNCTION__);
     {
     	ev_timer* timeout_watcher = new ev_timer();
-		timeout_watcher->data = (void*)this;
+		timeout_watcher->data = static_cast<void*>(this);
 		AddEvent(NODE_BEAT,timeout_watcher,PeriodicTaskCallback);
     }
     {
     	ev_timer* timeout_watcher = new ev_timer();
-		timeout_watcher->data = (void*)this;
+		timeout_watcher->data = static_cast<void*>(this);
 		AddEvent(1.0,timeout_watcher,ShortPeriodicTaskCallback);
     }
     return(true);
@@ -4407,6 +4902,17 @@ bool Worker::AddPeriodicTaskEvent()
 bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // IoBackend 路径：普通连接 fd 走异步 I/O，特殊 fd 保留原有 ev_io 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -4426,7 +4932,7 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 		pData->iFd = pConn->iFd;
 		pData->ulSeq = pConn->ulSeq;
 		pData->pWorker = this;
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 		pConn->pIoWatcher = io_watcher;
 
 		AddEvent(EV_READ,io_watcher,IoCallback,pData->iFd);
@@ -4441,6 +4947,16 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
 bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // IoBackend 路径
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+    }
+
+    // 原有 ev_io 路径
     ev_io* io_watcher = nullptr;
 	if (nullptr == pConn->pIoWatcher)
 	{
@@ -4461,7 +4977,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 		pData->ulSeq = pConn->ulSeq;
 		pData->pWorker = this;
 
-		io_watcher->data = (void*)pData;
+		io_watcher->data = static_cast<void*>(pData);
 		pConn->pIoWatcher = io_watcher;
 
 		AddEvent(EV_WRITE,io_watcher,IoCallback,pData->iFd);
@@ -4476,7 +4992,27 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
 bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-	if (NULL != pConn->pIoWatcher)
+    // IoBackend 路径：CancelFd 会移除 fd 上所有事件（包括 EV_READ）。
+    // HandleIoReadComplete 末尾会重新提交读，但 SendTo 也可能在其它上下文
+    // （如 IoTimeout 心跳、CmdGetToken 响应等）同步写完后调用本函数——此时
+    // 必须自行补交读，否则 fd 将永久丢失读监听。
+    if (m_pIoBackend
+        && pConn->iFd != m_iC2SListenFd
+        && pConn->iFd != iManagerDataFd
+        && pConn->iFd != iManagerControlFd)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
+        // 补交读，避免 CancelFd 后 fd 不再被监听。
+        // 若本调用位于 HandleIoReadComplete 内部，其末尾的 SubmitRead
+        // 会因 HasPending==true 而跳过，不会重复提交。
+        pConn->pRecvBuff->Compact(8192);
+        pConn->pRecvBuff->EnsureWritableBytes(8192);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        return true;
+    }
+
+    // 原有 ev_io 路径
+	if (nullptr != pConn->pIoWatcher)
 	{
 		if (pConn->pIoWatcher->events & EV_WRITE)
 		{
@@ -4514,7 +5050,7 @@ bool Worker::AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, e
         pData->iFd = iFd;
         pData->ulSeq = ulSeq;
         pData->pWorker = this;
-        timeout_watcher->data = (void*)pData;
+        timeout_watcher->data = static_cast<void*>(pData);
         pConnAttr->pTimeWatcher = timeout_watcher;
         AddEvent(dTimeout,timeout_watcher,IoTimeoutCallback);
         return(true);
@@ -4736,6 +5272,11 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     if (bMsgShellNotice)
     {
         MsgShellNotice(pConn);
+    }
+    // Stop IoBackend async operations before cleaning libev watchers
+    if (m_pIoBackend)
+    {
+        m_pIoBackend->CancelFd(pConn->iFd);
     }
     // Stop libev watchers before close(): if the fd is reused immediately, pending/old watchers corrupt the loop (Manager does DelEvent before close).
     if (pConn->pIoWatcher != nullptr)

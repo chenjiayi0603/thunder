@@ -22,6 +22,7 @@
 #include "labor/types/RouteNoticeVersionData.hpp"
 #include "labor/types/CustomConfigVersionData.hpp"
 #include "storage/dataproxy.pb.h"
+#include "labor/IoBackend.hpp"
 namespace netcustomcat {
 	class CatClientConnent;
 }
@@ -663,6 +664,7 @@ protected:
 	void DrainPostToEventLoopQueue();
 	bool InitLogger(const util::CJsonObject& oJsonConf);
 	bool InitDataLogger(const util::CJsonObject& oJsonConf);
+	bool InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallback callback);
 
 	//socket
 	void  SetSocketAttr(int iFd,bool boNeedKeepInterval = true);
@@ -700,9 +702,9 @@ protected:
 	void DelEvent(WATCH* watcher,DATA *pData)
 	{
 		DelEvent(watcher);
-		SAFE_DELETE(pData);
+		delete pData; pData = nullptr;
 		watcher->data = nullptr;
-		SAFE_DELETE(watcher);
+		delete watcher; watcher = nullptr;
 	}
 protected:
 	bool IsAccess()const {return (m_strHostForClient.size() > 0 && m_iPortForClient > 0);}
@@ -755,6 +757,7 @@ protected:
 	uint32 m_ulFdSequence = 0;
 	uint32 m_uiNodeId = 0;                      ///< 节点ID（由center分配）
 	char m_pErrBuff[gc_iErrBuffLen];
+	IoBackend* m_pIoBackend = nullptr;                   ///< I/O 后端（ev / uring）
 	bool m_bInitLogger = false;
 	bool m_bDataInitLogger = false;
 	log4cplus::Logger m_oLogger;

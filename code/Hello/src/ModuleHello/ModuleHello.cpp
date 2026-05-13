@@ -198,7 +198,22 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	obj.Get("option",strOption);
 	if ("Echo" == strOption)
 	{
-		Response(stMsgShell,oInHttpMsg,0);
+		int32_t size = 0;
+		obj.Get("size", size);
+		if (size > 0 && size <= 1048576)
+		{
+			util::CJsonObject oRsp;
+			oRsp.Add("code", 0);
+			oRsp.Add("msg", "ok");
+			oRsp.Add("size", size);
+			std::string data(static_cast<size_t>(size), 'X');
+			oRsp.Add("data", data);
+			GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString());
+		}
+		else
+		{
+			Response(stMsgShell, oInHttpMsg, 0);
+		}
 	}
 	else if ("TestHttpRequestCo" == strOption)
 	{

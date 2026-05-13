@@ -26,7 +26,7 @@ RedisStep::RedisStep(const tagMsgShell& stReqMsgShell, const MsgHead& oReqMsgHea
 
 RedisStep::~RedisStep()
 {
-	SAFE_DELETE(m_pRedisCmd);
+	delete m_pRedisCmd; m_pRedisCmd = nullptr;
 }
 
 } /* namespace net */

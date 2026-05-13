@@ -72,7 +72,7 @@ E_CODEC_STATUS HttpCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Msg
 
 E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff,MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    LOG4_TRACE("%s() readable=%u", __FUNCTION__, pBuff ? (unsigned)pBuff->ReadableBytes() : 0u);
+    LOG4_TRACE("%s() readable=%u", __FUNCTION__, pBuff ? static_cast<unsigned>(pBuff->ReadableBytes()) : 0u);
     if (pBuff->ReadableBytes() == 0)
     {
         LOG4_TRACE("no data...");

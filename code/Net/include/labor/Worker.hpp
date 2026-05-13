@@ -20,6 +20,8 @@
 #include "step/StepNode.hpp"
 #include "step/MysqlStep.hpp"
 
+struct ShmRingQueue;
+
 namespace net
 {
 
@@ -41,7 +43,9 @@ class Worker : public Labor, private WorkerRuntimeContext
 {
 public:
 	Worker() = default;
-    Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf);
+    Worker(const std::string& strWorkPath, int iControlFd, int iDataFd, int iWorkerIndex, util::CJsonObject& oJsonConf,
+           ShmRingQueue* pMgrToWorker = nullptr, ShmRingQueue* pWorkerToMgr = nullptr,
+           int iMgrToWorkerEfd = -1, int iWorkerToMgrEfd = -1);
     ~Worker();
     void Run();
     /**
@@ -57,6 +61,7 @@ public:
 	static void ShortPeriodicTaskCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
 	static void StepTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
 	static void SessionTimeoutCallback(struct ev_loop* loop, struct ev_timer* watcher, int revents);
+	static void ShmReadCallback(struct ev_loop* loop, struct ev_io* watcher, int revents);
 
 	/**
 	* @brief 异步回调函数具体实现
@@ -287,6 +292,20 @@ protected:
     bool RemoveIoWriteEvent(tagConnectionAttr* pConn);
     bool AddIoTimeout(int iFd, uint32 ulSeq, tagConnectionAttr* pConnAttr, ev_tstamp dTimeout = 1.0);
     /**
+     * @brief IoBackend I/O 完成回调（静态）
+     */
+    static void OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_data);
+    /**
+     * @brief IoBackend 读/写完成处理
+     */
+    bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
+    bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /**
+     * @brief 读完成后继续调度消息，并在有部分写时重新提交写
+     */
+    void DispatchMessagesAfterRead(
+        std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator& conn_iter);
+    /**
    	* @brief 创建连接
    	*/
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYPE eCodecType = util::CODEC_PB_INTERNAL);
@@ -323,6 +342,13 @@ private:
     int32 m_iC2SListenFd = -1;
     util::E_CODEC_TYPE m_eAccessCodec = util::CODEC_PB_INTERNAL;
     bool m_bWorkerReuseportAccept = false;
+
+    // 共享内存队列
+    ShmRingQueue* m_pMgrToWorkerQueue = nullptr;    ///< Manager → Worker
+    ShmRingQueue* m_pWorkerToMgrQueue = nullptr;    ///< Worker → Manager
+    int m_iMgrToWorkerEfd = -1;                      ///< 通知 Worker
+    int m_iWorkerToMgrEfd = -1;                      ///< 通知 Manager
+    ev_io* m_pShmReadWatcher = nullptr;              ///< libev watcher for shm eventfd
 };
 
 } /* namespace net */

@@ -36,11 +36,11 @@ DbOperator::~DbOperator()
 {
     if (m_pDbMemRequest != nullptr)
     {
-    	SAFE_DELETE(m_pDbMemRequest);
+    	delete m_pDbMemRequest; m_pDbMemRequest = nullptr;
     }
     else
     {
-    	SAFE_DELETE(m_pDbOperate);
+    	delete m_pDbOperate; m_pDbOperate = nullptr;
     }
 }
 

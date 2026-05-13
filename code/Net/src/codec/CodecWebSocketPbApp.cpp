@@ -115,7 +115,7 @@ int CodecWebSocketPbApp::OnUrl(http_parser *parser, const char *at, size_t len)
     {
         if (stUrl.field_set & (1 << UF_PATH))
         {
-            char *path = (char*) malloc(stUrl.field_data[UF_PATH].len);
+            char *path = static_cast<char*>(malloc(stUrl.field_data[UF_PATH].len));
             strncpy(path, at + stUrl.field_data[UF_PATH].off,
                             stUrl.field_data[UF_PATH].len);
             pHttpMsg->set_path(path, stUrl.field_data[UF_PATH].len);
@@ -321,7 +321,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
 		tagAppMsgHead stAppMsgHead;
 		{//消息头处理 //payload数据
 			stAppMsgHead.version = APP_VERSION;        // version暂时无用
-			stAppMsgHead.cmd = htonl((unsigned int)(gc_uiCmdBit & oMsgHead.cmd()));
+			stAppMsgHead.cmd = htonl(static_cast<unsigned int>(gc_uiCmdBit & oMsgHead.cmd()));
 			stAppMsgHead.seq = htonl(oMsgHead.seq());
 			if (gc_uiCmdReserve & oMsgHead.cmd())
 			{
@@ -355,24 +355,24 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
 			}
 			payloadLen = strCompressData.size() + APP_HEAD_LEN;
 	#ifdef USE_HEAD_LEN
-			stAppMsgHead.len = htonl((unsigned int)strCompressData.size() + APP_HEAD_LEN);
+			stAppMsgHead.len = htonl(static_cast<unsigned int>(strCompressData.size() + APP_HEAD_LEN));
 	#else
-			stAppMsgHead.len = htonl((unsigned int)strCompressData.size());
+			stAppMsgHead.len = htonl(static_cast<unsigned int>(strCompressData.size()));
 	#endif
 		}
 		else
 		{ // 这里不压缩也不加密
 			payloadLen = strPbBody.size() + APP_HEAD_LEN;
 	#ifdef USE_HEAD_LEN
-			stAppMsgHead.len = htonl((unsigned int)strPbBody.size() + APP_HEAD_LEN);
+			stAppMsgHead.len = htonl(static_cast<unsigned int>(strPbBody.size() + APP_HEAD_LEN));
 	#else
-			stAppMsgHead.len = htonl((unsigned int)strPbBody.size());
+			stAppMsgHead.len = htonl(static_cast<unsigned int>(strPbBody.size()));
 	#endif
 		}
 
         if (payloadLen > 65535)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT64) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -385,7 +385,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
         }
         else if (payloadLen >= 126)
         {
-            ucSecondByte |= ((unsigned char)WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(WEBSOCKET_PAYLOAD_LEN_UINT16) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -398,7 +398,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Encode(const MsgHead& oMsgHead,const MsgBody
         }
         else //if (payloadLen < 126)
         {
-            ucSecondByte |= ((unsigned char)payloadLen) & 0xFF;
+            ucSecondByte |= static_cast<unsigned char>(payloadLen) & 0xFF;
             iWriteLen = pBuff->Write(&ucFirstByte, 1);
             iHadWriteLen += iWriteLen;
             iWriteLen = pBuff->Write(&ucSecondByte, 1);
@@ -1247,7 +1247,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
                 }
                 pBuff->Read(&ullPayload, 8);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohll(ullPayload);
+                uiPayload = static_cast<uint32>(ntohll(ullPayload));
             }
             else if (WEBSOCKET_PAYLOAD_LEN_UINT16
                             == (WEBSOCKET_PAYLOAD_LEN & ucSecondByte)) //126 == ucSecondByte & 0x7F
@@ -1261,7 +1261,7 @@ E_CODEC_STATUS CodecWebSocketPbApp::Decode(util::CBuffer* pBuff,MsgHead& oMsgHea
                 }
                 pBuff->Read(&unPayload, 2);
                 pBuff->Read(&szMaskKey, 4);
-                uiPayload = (uint32) ntohs(unPayload);
+                uiPayload = static_cast<uint32>(ntohs(unPayload));
             }
             else
             {

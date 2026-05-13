@@ -132,6 +132,7 @@ def docker_stack(mode: str, pytestconfig: pytest.Config) -> None:
     # ---------- 步骤 1：external 模式跳过 Docker，由外部环境自备服务 ----------
     if mode == "external":
         _phase("mode=external：跳过 cmake / docker compose（请自行保证服务已起）")
+        yield
         return
 
     _phase("会话 setup：开始（本地模式会先全量构建 + docker compose，可能数分钟且无子进程输出）…")

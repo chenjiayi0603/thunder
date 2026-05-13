@@ -45,13 +45,6 @@
 #define APP_VERSION 1
 #endif
 
-#ifndef SAFE_DELETE
-#define SAFE_DELETE(p) {if (p) {delete p;p = nullptr;}}
-#endif
-
-#ifndef SAFE_FREE
-#define SAFE_FREE(p) {if (p) {free(p);p = nullptr;}}
-#endif
 
 // 如果是调试版本则定义 _DEBUG，否则就注释掉。
 // 单元测试等无 Labor 场景：目标可定义 THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG，避免自动 #define _DEBUG，
