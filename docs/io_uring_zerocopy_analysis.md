@@ -320,15 +320,157 @@ Thunder 中 `CBuffer` 绑定在 `tagConnectionAttr` 上（`pRecvBuff`/`pSendBuff
 | 3 | 单连接吞吐 >1Gbps (拷贝成为瓶颈) | ❌ 当前 ~3.2 MB/s |
 | 4 | 已有 registered buffers 基础代码 | ⚠️ ASIO 3party 中有测试代码，Thunder 自身无 |
 
-### 7.3 推荐时机
+### 7.3 推荐路线
 
 ```
-优先级:
-  P0 (当前):   asio_uring 主线程直驱         ✅ 已实现
-  P1 (近期):   多业务节点 io_uring 覆盖测试   建议
-  P2 (中期):   registered buffers 预研 + POC 本文档
-  P3 (远期):   SEND_ZC 正式实施             等待业务需求触发
+P0 (当前):   asio_uring 主线程直驱          ✅ 已实现
+P1 (近期):   多业务节点 io_uring 覆盖测试    建议
+P2 (中期):   registered buffers 预研 + POC  本文档
+P3 (远期):   SEND_ZC 正式实施              等待业务需求触发
 ```
+
+#### P0 — asio_uring 主线程直驱 ✅ 已实现
+
+当前已完成。IoBackend 三档可运行时切换（ev / uring / asio_uring），`AsioUringIoBackend` 通过 ev_prepare + ev_io(ring_fd) + ev_check 三路驱动，零锁零线程跳，64KB 大包延迟相对 ev 降低 86%。
+
+**已完成的工作**:
+- `IoBackend` 抽象接口 (`code/Net/include/labor/IoBackend.hpp`)
+- `AsioUringIoBackend` 主线程直驱实现
+- `Labor.cpp` 中三档后端运行时选择 (`io_backend` 配置项)
+- `RemoveIoWriteEvent` 的 CancelFd + SubmitRead 修复
+- wrk 三档横向压测 + 性能文档
+
+**当前局限**: 仅在 HelloHttp 节点验证过。其他节点（Interface, Logic, HelloWs, HelloHttps）理论上共享同一套 `Labor` 初始化逻辑，但未逐节点回归测试。
+
+---
+
+#### P1 — 多业务节点 io_uring 覆盖测试
+
+**目标**: 确保 asio_uring 在**所有节点类型**下正常工作，而不是只在 HelloHttp 一种场景下跑通。
+
+**为什么需要**:
+- 不同节点的网络 IO 模式不同：
+  - `HelloHttp` — 纯 HTTP C2S（客户端→服务端）
+  - `Interface` — C2S HTTP + 协程 S2S（服务端→Center→Logic）
+  - `Logic` — 纯 S2S（接收 Interface/Center 的内部协议）
+  - `HelloWs` — WebSocket 长连接（IO 模式与短连接 HTTP 不同）
+  - `HelloHttps` — TLS 加密流量（OpenSSL BIO 与 io_uring 的交互）
+- io_uring 的 `SubmitWrite` 在 `UringIoBackend` 中用的是同步回退（`::send()`），说明写路径在 io_uring 下有特殊处理逻辑。AsioUringIoBackend 虽然用 `async_write_some` 实现了异步写，但不同节点对写的依赖模式（短 burst vs 长流）需要逐一验证。
+- S2S 连接（Manager→Center, Worker→Center）的生命周期管理（频繁创建/销毁连接）对 io_uring fd 注册/注销是压力测试。
+
+**具体要做的事**:
+
+```
+1. 逐节点切换 io_backend = "asio_uring"
+    ├── HelloHttp     ✅ 已验证
+    ├── HelloHttps    ⚠️ 待测 (TLS + io_uring)
+    ├── HelloWs       ⚠️ 待测 (WebSocket 长连接)
+    ├── Interface     ⚠️ 待测 (协程 S2S + HTTP C2S)
+    └── Logic         ⚠️ 待测 (纯 S2S 内部协议)
+
+2. 每个节点运行 E2E 测试套件
+    ./tests/run_all.sh e2e    # 25 cases
+
+3. 记录各节点 asio_uring vs ev 的性能差异
+    - 写个脚本统一采集 RPS/延迟
+
+4. 修复发现的问题
+    - 预期: 可能有 fd 泄漏、CQE 未收割等边界 bug
+```
+
+**预计工作量**: 1-2 天，主要是跑测试 + 修边界 bug，不需要大量新代码。
+
+---
+
+#### P2 — registered buffers 预研 + POC
+
+**目标**: 不改生产代码，在独立分支上用 ASIO 的 `registered_buffer` 接口做一个最小验证，确认方案在 Thunder 的 CBuffer 模型下可行。
+
+**为什么是「预研」而不是「实施」**:
+- CBuffer 是动态缓冲区（`EnsureWritableBytes` 会 `realloc`），与 registered buffers 的「固定地址」要求冲突
+- 需要找到最小改动方案，让 CBuffer 在 asio_uring 后端下切换到固定模式
+- 需要验证 `io_uring_register_buffers` 的性能开销（注册本身是一次性的，但每个连接的 buffer 大小不同）
+
+**POC 要验证的**:
+
+```
+1. 单个连接的 CBuffer 固定化改造成本
+   方案 A: CBuffer 新增 FixedMode (禁用 realloc)
+   方案 B: 新增独立的 FixedBufferPool (连接从池中取)
+
+2. ASIO registered_buffer 在 Thunder 的集成路径
+   asio::register_buffers(ctx, buffer) → 获取 buffer_id
+   sock.async_write_some(registered_buffer, handler)
+
+3. 性能对比 (wrk)
+   当前 asio_uring vs asio_uring + registered_buffers (无 SEND_ZC)
+   → 验证注册本身是否有额外开销
+
+4. 生命周期安全验证
+   buffer 在 SubmitWrite 期间被 Compact/释放 → 是否 crash
+```
+
+**不做的**:
+- 不改 CBuffer 的 public 接口（只在内部新增可选模式）
+- 不开启 SEND_ZC（那是 P3 的事）
+- 不合入 dev 分支（只做分支验证）
+
+**预计工作量**: 2-3 天，产出 POC 分支 + 验证报告。
+
+---
+
+#### P3 — SEND_ZC 正式实施
+
+**目标**: 在 P1 覆盖测试通过 + P2 POC 验证可行 + 业务需求触发的前提下，正式实现 io_uring 零拷贝发送。
+
+**触发条件**（三选二）:
+1. 出现 Proxy/反向代理透传模式
+2. 出现 >1MB 大包流式传输需求
+3. 单连接吞吐 >1Gbps 成为瓶颈
+
+**此时 P2 的 POC 成果直接应用**:
+- CBuffer 固定模式方案已验证 → 直接合入
+- registered buffers 集成路径已跑通 → 改 SubmitWrite 即可
+- 生命周期安全问题已澄清 → 有现成的防护策略
+
+**正式实施改动**:
+```cpp
+// AsioUringIoBackend::SubmitWrite 改动示意
+bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
+{
+    // ... 现有检查 ...
+
+    if (m_useZeroCopy && buf->IsRegistered()) {
+        // P3 新增: 零拷贝路径
+        auto reg_buf = buf->GetRegisteredBuffer();
+        sp->sock.async_write_some(reg_buf, [...] {
+            buf->AdvanceReadIndex(n);  // 同上
+            m_callback(fd, seq, IoOp::Write, n, m_userData);
+        });
+    } else {
+        // 现有路径: asio::buffer(ptr, len)
+        sp->sock.async_write_some(asio::buffer(src, readable), [...]{...});
+    }
+}
+```
+
+**预计工作量**: 1-2 天（基于 POC 的成果，改动量很小）。
+
+---
+
+### 7.4 路线图总览
+
+```
+现在 ──→ P1(近期) ──→ P2(中期) ──→ P3(远期,有条件)
+ │           │            │              │
+ │  asio_uring│  全节点覆盖 │  POC 验证    │  正式实施
+ │  主线程直驱│  回归测试  │  Buffer固定  │  SEND_ZC
+ │  ✅ 已实现 │  1-2天     │  2-3天       │  1-2天
+ │           │            │              │
+ └─ 零风险 ──┘ 低风险 ────┘ 无风险 ──────┘ 业务触发
+```
+
+**关键原则**: 每步独立验证，不阻塞主分支。P2 POC 不合并，P3 等业务需求触发才执行。
 
 ---
 
@@ -341,7 +483,9 @@ Thunder 中 `CBuffer` 绑定在 `tagConnectionAttr` 上（`pRecvBuff`/`pSendBuff
 | 技术上可行吗？ | **是** — ASIO 已内置支持，CBuffer 改造约 500 行 |
 | 收益有多大？ | 典型场景 <1%，极端大包场景 ~5-10% |
 | 推荐立即做吗？ | **不推荐** — 业务逻辑延迟占主导，优先聚焦 asio_uring 稳定性和覆盖率 |
-| 最务实的下一步？ | asio_uring 后端覆盖更多节点，积累生产数据后再决策 |
+| 最务实的下一步？ | **P1**: asio_uring 覆盖全部节点 (Interface/Logic/Ws/Https)，积累生产数据 |
+| 多久能上 ZeroCopy？ | P1(1-2d) → P2(2-3d) → P3(1-2d)，业务触发后总工期约 1 周 |
+| 最大风险？ | CBuffer realloc 与 registered buffer 固定地址的冲突（P2 POC 重点验证） |
 
 ---
 
