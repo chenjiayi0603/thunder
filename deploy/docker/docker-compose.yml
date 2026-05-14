@@ -30,6 +30,8 @@ x-thunder-node: &thunder-node
     dockerfile: Dockerfile
   init: true # PID1 用 init，便于回收子进程（start.sh 拉起守护进程后 tail 常驻）
   network_mode: host # 与 conf 里 127.0.0.1 端口一致，监听在宿主机而非 bridge
+  security_opt:
+    - seccomp:unconfined # 允许 io_uring 等高级 syscall (asio_uring 后端需要)
   volumes:
     - ../../:/thunder:rw # 仓库根挂载，与宿主机 deploy、code/3party、编译产物路径一致
 
@@ -39,6 +41,9 @@ x-thunder-ulimits: &thunder-ulimits
     nofile:
       soft: 65535
       hard: 65535
+    memlock:
+      soft: 67108864
+      hard: 67108864
 
 services:
   redis:

@@ -9,9 +9,35 @@
 #include "AsioUringIoBackend.hpp"
 #include "util/CBuffer.hpp"
 #include <cstdio>
+#include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdarg.h>
+#include <cstring>
+
+namespace {
+FILE* g_diag_fp = nullptr;
+__thread char g_diag_tmp[512];
+void diag_log(const char* fmt, ...) {
+    if (!g_diag_fp) {
+        g_diag_fp = fopen("/tmp/asio_uring_diag.log", "a");
+    }
+    if (g_diag_fp) {
+        time_t now = time(nullptr);
+        struct tm tm_buf;
+        localtime_r(&now, &tm_buf);
+        int off = snprintf(g_diag_tmp, sizeof(g_diag_tmp),
+                          "[%02d:%02d:%02d] ", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(g_diag_tmp + off, sizeof(g_diag_tmp) - off, fmt, ap);
+        va_end(ap);
+        fputs(g_diag_tmp, g_diag_fp);
+        fflush(g_diag_fp);
+    }
+}
+}
 
 namespace net
 {
@@ -66,6 +92,7 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
 
     /* Register ring_fd with libev so epoll_wait wakes when CQEs arrive */
     m_ringFd = FindIoUringRingFd();
+    diag_log("[IODIAG AsioUring Init ring_fd=%d\n", m_ringFd);
     if (m_ringFd >= 0)
     {
         ev_io_init(&m_ringWatcher, &OnRingReady, m_ringFd, EV_READ);
@@ -123,14 +150,22 @@ std::shared_ptr<AsioUringIoBackend::FdState>& AsioUringIoBackend::EnsureFdState(
 
 bool AsioUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
 {
-    if (!buf || !m_callback) return false;
+    if (!buf || !m_callback) {
+        diag_log("[IODIAG AsioUring SubmitRead fd=%d FAIL buf=%p callback=%p\n", fd, (void*)buf, (void*)m_callback);
+        return false;
+    }
     auto& sp = EnsureFdState(fd);
-    if (sp->readPending) return true;
+    if (sp->readPending) {
+        diag_log("[IODIAG AsioUring SubmitRead fd=%d SKIP (readPending)\n", fd);
+        return true;
+    }
     sp->readPending = true;
 
     buf->EnsureWritableBytes(8192);
     char*  dst = const_cast<char*>(buf->GetRawWriteBuffer());
     size_t cap = buf->WriteableBytes();
+
+    diag_log("[IODIAG AsioUring SubmitRead fd=%d seq=%u buf_cap=%zu\n", fd, seq, cap);
 
     std::weak_ptr<FdState> wp = sp;
     sp->sock.async_read_some(
@@ -138,18 +173,26 @@ bool AsioUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
         [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
         {
             auto live = wp.lock();
-            if (!live || live->cancelled) return;
+            if (!live || live->cancelled) {
+                diag_log("[IODIAG AsioUring ReadComplete fd=%d seq=%u DROPPED live=%d cancelled=%d\n",
+                        fd, seq, (live!=nullptr), (live ? live->cancelled : -1));
+                return;
+            }
             live->readPending = false;
             if (ec)
             {
+                diag_log("[IODIAG AsioUring ReadComplete fd=%d seq=%u ERROR ec=%d msg=%s\n",
+                        fd, seq, ec.value(), ec.message().c_str());
                 if (ec != asio::error::operation_aborted)
                     m_callback(fd, seq, IoOp::Read, -ec.value(), m_userData);
                 return;
             }
+            diag_log("[IODIAG AsioUring ReadComplete fd=%d seq=%u n=%zu\n", fd, seq, n);
             if (n == 0) { m_callback(fd, seq, IoOp::Read, 0, m_userData); return; }
             buf->AdvanceWriteIndex(static_cast<int>(n));
             m_callback(fd, seq, IoOp::Read, static_cast<int>(n), m_userData);
         });
+    m_ioCtx.poll();  // 立即提交 SQE 给内核
     return true;
 }
 
@@ -185,6 +228,7 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
             buf->AdvanceReadIndex(static_cast<int>(n));
             m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
         });
+    m_ioCtx.poll();  // 立即提交 SQE 给内核
     return true;
 }
 
@@ -192,32 +236,38 @@ void AsioUringIoBackend::CancelFd(int fd)
 {
     auto it = m_fds.find(fd);
     if (it == m_fds.end()) return;
-    asio::error_code ec;
     it->second->cancelled = true;
-    it->second->sock.cancel(ec);
+    // Do NOT call sock.cancel() — it submits an async IORING_OP_ASYNC_CANCEL
+    // that races with subsequent SubmitRead/SubmitWrite on the same fd.
     (void)it->second->sock.release();
     m_fds.erase(it);
 }
 
 bool AsioUringIoBackend::HasPending(int fd) const
 {
-    (void)fd;
-    return false;
+    auto it = m_fds.find(fd);
+    return it != m_fds.end() && (it->second->readPending || it->second->writePending);
 }
 
 void AsioUringIoBackend::OnPrepare(struct ev_loop*, ev_prepare* w, int)
 {
-    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
+    auto* be = static_cast<AsioUringIoBackend*>(w->data);
+    auto n = be->m_ioCtx.poll();
+    if (n > 0) diag_log("[IODIAG AsioUring OnPrepare poll=%zu\n", n);
 }
 
 void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
 {
-    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
+    auto* be = static_cast<AsioUringIoBackend*>(w->data);
+    auto n = be->m_ioCtx.poll();
+    if (n > 0) diag_log("[IODIAG AsioUring OnCheck poll=%zu\n", n);
 }
 
 void AsioUringIoBackend::OnRingReady(struct ev_loop*, ev_io* w, int)
 {
-    (void)static_cast<AsioUringIoBackend*>(w->data)->m_ioCtx.poll();
+    auto* be = static_cast<AsioUringIoBackend*>(w->data);
+    auto n = be->m_ioCtx.poll();
+    diag_log("[IODIAG AsioUring OnRingReady ring_fd=%d poll=%zu\n", be->m_ringFd, n);
 }
 
 } /* namespace net */

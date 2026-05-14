@@ -59,8 +59,19 @@ def _send_ws_binary_masked(sock: socket.socket, payload: bytes) -> None:
     sock.sendall(header + key + masked)
 
 
+def _recv_exactly(sock: socket.socket, n: int) -> bytes:
+    """从 socket 读取恰好 n 字节（处理 TCP 流式分段）。"""
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
 def _recv_ws_frame(sock: socket.socket) -> tuple[int, bytes]:
-    hdr = sock.recv(2)
+    hdr = _recv_exactly(sock, 2)
     if len(hdr) < 2:
         raise AssertionError("websocket frame header too short")
     b0, b1 = hdr[0], hdr[1]
@@ -68,10 +79,18 @@ def _recv_ws_frame(sock: socket.socket) -> tuple[int, bytes]:
     masked = (b1 & 0x80) != 0
     ln = b1 & 0x7F
     if ln == 126:
-        ln = int.from_bytes(sock.recv(2), "big")
+        ext = _recv_exactly(sock, 2)
+        if len(ext) < 2:
+            raise AssertionError("websocket extended length (126) too short")
+        ln = int.from_bytes(ext, "big")
     elif ln == 127:
-        ln = int.from_bytes(sock.recv(8), "big")
-    mask = sock.recv(4) if masked else b""
+        ext = _recv_exactly(sock, 8)
+        if len(ext) < 8:
+            raise AssertionError("websocket extended length (127) too short")
+        ln = int.from_bytes(ext, "big")
+    mask = _recv_exactly(sock, 4) if masked else b""
+    if masked and len(mask) < 4:
+        raise AssertionError("websocket mask too short")
     body = bytearray()
     while len(body) < ln:
         chunk = sock.recv(ln - len(body))
