@@ -56,6 +56,7 @@ private:
     static void OnRingReady(struct ev_loop*, ev_io* w, int);
 
     static int FindIoUringRingFd();
+    void UpdateRingWatcher();  // 5.A: 按需启停 ring_fd 监听
 
     asio::io_context m_ioCtx{1};
     std::optional<asio::executor_work_guard<asio::io_context::executor_type>> m_workGuard;
@@ -71,6 +72,7 @@ private:
     ev_check   m_check{};
     ev_io      m_ringWatcher{};
     int        m_ringFd = -1;
+    bool       m_ringWatcherActive = false;  // 5.A: ring_fd 按需启停状态
 };
 
 } /* namespace net */

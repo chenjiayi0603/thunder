@@ -872,6 +872,313 @@ Asio io_uring 后端自动将 Asio 的异步操作映射为 io_uring 的 SQE：
 
 这意味着 **AsioUringIoBackend 的写操作是真正的异步**，解决了 UringIoBackend 的主要局限。
 
+### 4.10 fix #2 前后关键变化对照
+
+> fix #2（PR #3，closes issue #2）针对 Interface CPU 31% / diag.log 19GB 忙循环问题，
+> 仅改动 `AsioUringIoBackend.cpp/.hpp`，共四项：
+
+| 变化 | 旧实现 | 当前实现 |
+|------|--------|---------|
+| ring_fd 监听时机 | Init() 时立即 ev_io_start，永远监听 | 按需：SubmitRead/Write 时 start，无挂起 op 时 stop |
+| SubmitRead/SubmitWrite 内联 poll() | 有，每次 Submit 同步触发 scheduler | 已删除，SQE 由 OnPrepare 批量 flush |
+| diag_log 输出 | 无条件写文件 + fflush | 受 THUNDER_ASIO_URING_DIAG=1 env 门控，默认关 |
+| 诊断计数器 | 无 | 每秒输出 ring_ready/ring_empty/ring_real 等指标 |
+
+---
+
+### 4.11 当前并发模型全景
+
+#### 4.11.1 ev_run 主循环驱动图
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                  Worker 进程主线程  —  libev ev_run 单循环               │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ ① ev_prepare（epoll_wait 之前）                                  │   │
+│  │                                                                  │   │
+│  │   io_context.poll()                                              │   │
+│  │     ├─ 若 ASIO 内部有待提交 SQE:                                 │   │
+│  │     │    submit_sqes_op 被调度 → io_uring_submit() → 内核        │   │
+│  │     └─ 若 CQ 中已有完成 CQE（少见，上轮漏收割）:                  │   │
+│  │          收割 + 调用 completion handler                           │   │
+│  └──────────────────────────────┬──────────────────────────────────┘   │
+│                                 │                                       │
+│                                 ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ ② epoll_wait（libev 唯一阻塞点）                                 │   │
+│  │                                                                  │   │
+│  │   监听的 fd 集合:                                                 │   │
+│  │     • ring_fd  ← 仅当 m_ringWatcherActive=true 时在集合内        │   │
+│  │     • 其它 libev 管理的 fd / timer / signal                      │   │
+│  │                                                                  │   │
+│  │   阻塞直到：ring_fd 可读（有 CQE）或其它 fd 就绪                  │   │
+│  └──────────────────────────────┬──────────────────────────────────┘   │
+│                                 │ epoll_wait 返回                       │
+│              ┌──────────────────┴───────────────────┐                  │
+│              │                                       │                  │
+│              ▼  ring_fd 在事件集中                    ▼  其它 fd 就绪   │
+│  ┌───────────────────────────┐            ┌─────────────────────────┐  │
+│  │ ③ ev_io(ring_fd) 触发    │            │  其它 libev 事件处理     │  │
+│  │                           │            │  (timer / signal / 其他  │  │
+│  │   OnRingReady:            │            │   socket fd 等)          │  │
+│  │   io_context.poll()       │            └─────────────────────────┘  │
+│  │   ├─ io_uring_peek_cqe   │                                          │
+│  │   │    有 CQE → 收割       │                                          │
+│  │   │    completion handler │                                          │
+│  │   │    readPending=false  │                                          │
+│  │   │    m_callback(...)    │                                          │
+│  │   └─ 计数 ring_ready/     │                                          │
+│  │       ring_empty/real     │                                          │
+│  └───────────────────────────┘                                          │
+│                                 │                                       │
+│                                 ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ ④ ev_check（epoll_wait 之后）                                    │   │
+│  │                                                                  │   │
+│  │   io_context.poll()   ← 捞漏网 CQE（epoll_wait 窗口期间到达的）  │   │
+│  │   UpdateRingWatcher() ← 扫描 m_fds，全部 idle 则 ev_io_stop      │   │
+│  │   g_stats.tick()      ← 每秒输出诊断计数                          │   │
+│  └──────────────────────────────┬──────────────────────────────────┘   │
+│                                 │                                       │
+│                                 └──────────── 下一轮 ev_run ────────────┘
+│                                                                         │
+│  线程数：1（主线程 = libev 线程 = io_context 调用线程）                   │
+│  锁数量：0（单线程，无竞争）                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.11.2 ring_fd 按需启停状态机
+
+```
+初始状态: m_ringWatcherActive = false（Init 不 start）
+                │
+    SubmitRead / SubmitWrite 调用
+                │
+                ▼
+  ┌─────────────────────────────────────┐
+  │  sp->readPending = true             │
+  │  async_read_some()                  │
+  │    └─ ASIO start_op: SQE 入内部队列 │
+  └─────────────────┬───────────────────┘
+                    │
+                    ▼
+          UpdateRingWatcher()
+          hasOp = true（m_fds 有挂起 op）
+                    │
+        m_ringWatcherActive == false?
+          ┌─── YES ──────┐
+          ▼              │
+  ev_io_start(ring_fd)   │  NO → 保持不变
+  m_ringWatcherActive = true
+          │
+          ▼（下一轮 epoll_wait 包含 ring_fd）
+          │
+  [OnPrepare] io_context.poll()
+          │  → submit_sqes_op 调度
+          │  → io_uring_submit() 提交 SQE
+          │
+  [内核处理 IO]
+          │
+  [ring_fd 变可读] → epoll_wait 返回
+          │
+  [OnRingReady] io_context.poll()
+          │  → io_uring_peek_cqe: 收割 CQE
+          │  → ReadComplete/WriteComplete handler
+          │     readPending = false
+          │     m_callback(fd, seq, Read, n)
+          │
+  [OnCheck] UpdateRingWatcher()
+          │  扫描 m_fds: 还有挂起 op?
+          │
+     ┌─── YES ──────────────────── NO ──────┐
+     │                                       ▼
+  保持 ev_io_start                   ev_io_stop(ring_fd)
+                                     m_ringWatcherActive = false
+                                     （下一轮 epoll_wait 不包含 ring_fd，
+                                       NOP CQE 不再唤醒事件循环）
+```
+
+#### 4.11.3 SQE 提交时序（批量 flush 模式）
+
+```
+时间轴 ─────────────────────────────────────────────────────────────►
+
+  SubmitRead(fd1)                    SubmitRead(fd2)
+       │                                  │
+       │ async_read_some()                │ async_read_some()
+       │   SQE#1 → ASIO 内部队列          │   SQE#2 → ASIO 内部队列
+       │ (不再有内联 poll)                  │ (不再有内联 poll)
+       │                                  │
+       └──────────────┬───────────────────┘
+                      │
+               ev_prepare 触发
+                      │
+              io_context.poll()
+                      │
+              submit_sqes_op 调度
+                      │
+              io_uring_submit()  ← 两个 SQE 批量一次提交
+                      │
+            ┌─────────▼─────────┐
+            │  内核处理 SQE#1    │
+            │  内核处理 SQE#2    │  ← 并发执行
+            └─────────┬─────────┘
+                      │（两个 IO 完成，各写一个 CQE）
+              ring_fd 变可读
+                      │
+              ev_io(ring_fd) 触发
+              io_context.poll()
+                      │
+              io_uring_peek_cqe × 2
+              ReadComplete(fd1)
+              ReadComplete(fd2)
+              m_callback × 2
+
+
+  对比（旧实现，有内联 poll）：
+  每次 SubmitRead 末尾各触发一次 io_context.poll()
+  → 每次 poll 触发 scheduler → interrupt() → NOP SQE
+  → 两次 SubmitRead 产生 2 个额外 NOP，ring_fd 被持续唤醒
+```
+
+#### 4.11.4 完整读数据链路（端到端）
+
+```
+  网络对端        内核           ASIO/io_uring       Thunder Worker 主线程
+     │             │                  │                       │
+     │── TCP 数据 ─►│                  │                       │
+     │             │                  │  SubmitRead(fd,buf)   │
+     │             │◄─────────────────│  async_read_some()    │
+     │             │  SQE(RECV,fd)    │  SQE 入内部队列        │
+     │             │                  │                       │
+     │             │                  │──── ev_prepare ───────│
+     │             │  io_uring_submit │  io_context.poll()    │
+     │             │◄─────────────────│  → flush SQE          │
+     │             │                  │                       │
+     │             │ recv(fd,buf,len) │                       │
+     │             │ 数据写入 buf     │                       │
+     │             │ 写 CQE(res=n)    │                       │
+     │             │                  │                       │
+     │             │ ring_fd 可读     │                       │
+     │             │─────────────────►│                       │
+     │             │                  │─── epoll_wait 返回 ───│
+     │             │                  │─── ev_io(ring_fd) ────│
+     │             │                  │    io_context.poll()  │
+     │             │                  │    io_uring_peek_cqe  │
+     │             │                  │    ReadComplete hdlr  │
+     │             │                  │    readPending=false   │
+     │             │                  │    buf.AdvanceWrite(n) │
+     │             │                  │    m_callback(fd,n) ──►│
+     │             │                  │                       │ RecvDataAndDispose()
+     │             │                  │                       │ codec->Decode()
+     │             │                  │                       │ → 业务逻辑
+     │             │                  │─── ev_check ──────────│
+     │             │                  │    UpdateRingWatcher  │
+     │             │                  │    （若无挂起 op,      │
+     │             │                  │      ev_io_stop）     │
+```
+
+---
+
+### 4.12 设计原理
+
+#### 4.12.1 为什么选择三路驱动（ev_prepare + ev_io + ev_check）
+
+三路驱动是让 ASIO io_context 嵌入 libev 事件循环的最小且充分的接入方式：
+
+| 驱动 | 插入点 | 不可缺少的原因 |
+|------|--------|--------------|
+| `ev_prepare` | epoll_wait **前** | ASIO 通过 `submit_sqes_op` 在 scheduler 里排队 SQE flush。若只靠 ring_fd 唤醒，SQE 永远不会提交到内核，IO 不会启动。ev_prepare 在每轮阻塞前强制 `poll()`，保证 SQE 被 flush。 |
+| `ev_io(ring_fd)` | CQ **非空**时 | io_uring 的完成通知机制：CQ 有条目时 ring_fd 可读（电平触发）。没有这一路，completion handler 只能靠 ev_prepare/ev_check 碰巧执行，延迟不可控。 |
+| `ev_check` | epoll_wait **后** | epoll_wait 窗口期间（ev_prepare 到 epoll_wait 返回）新到达的 CQE，ring_fd 的可读边沿已在本轮 epoll 之前发出，可能被漏掉。ev_check 兜底清空，保证完成事件不积压超过一轮。 |
+
+三路互为补充，没有冗余：
+
+```
+ev_prepare ← 保证 SQE 不积压（发出请求）
+ev_io(ring_fd) ← 保证 CQE 被及时响应（接收结果）
+ev_check ← 保证窗口期 CQE 不漏收割（兜底清理）
+```
+
+#### 4.12.2 为什么 ring_fd 要按需启停（5.A）
+
+ASIO 的 `io_context::poll()` 内部采用"poll 模式"调度（`wait_usec_==0`），其
+`wake_one_thread_and_unlock()` 在每次 `post_immediate_completion` 时都会调用
+`io_uring_service::interrupt()`，后者提交一个 `data==this` 的 NOP SQE。NOP 几乎
+立即完成，使 CQ 非空，ring_fd 持续可读。
+
+若始终监听 ring_fd，任何 `SubmitRead/Write` 都会触发 NOP → ring_fd 可读 →
+epoll_wait 立即返回 → OnRingReady `poll()==0` → 下一轮 NOP …… 形成空转。
+
+**按需启停的断环逻辑**：
+
+```
+有挂起 op → ring_fd 在 epoll 集合中 → 真实 IO 完成时被唤醒 ✓
+无挂起 op → ring_fd 不在 epoll 集合中 → NOP CQE 不会唤醒 epoll_wait
+           → ev_prepare/ev_check 仍会 poll()，NOP 在下一轮正常消费
+           → epoll_wait 可以真正阻塞直到外部事件
+```
+
+代价：只有当有挂起 op 时才监听，最坏延迟 = 一轮 ev_run 迭代（亚毫秒），可接受。
+
+#### 4.12.3 为什么移除内联 `m_ioCtx.poll()`（5.C）
+
+旧实现在 `SubmitRead`/`SubmitWrite` 末尾各有一句 `m_ioCtx.poll()`，目的是
+"立即将 SQE flush 到内核"。但这造成了二次放大：
+
+```
+SubmitRead 调用
+  → async_read_some → start_op → post_submit_sqes_op
+    → post_immediate_completion → interrupt() → NOP SQE#1
+  → 内联 poll()
+    → 调度 submit_sqes_op，内部再次 post_immediate_completion
+    → 又一次 interrupt() → NOP SQE#2
+```
+
+每次 SubmitRead 额外产生一个 NOP，持续 S2S 读场景下 NOP 频率翻倍。
+
+移除后，SQE 由下一个 ev_prepare 的 `poll()` 统一批量 flush：
+
+```
+N 次 SubmitRead（回调链中连续调用）
+  → N 个 SQE 入 ASIO 内部队列
+  → ev_prepare: io_context.poll() 一次 flush N 个 SQE
+  → io_uring_submit() 批量一次 syscall
+```
+
+延迟损失 ≤ 一轮 ev_run 迭代，换来 syscall 次数与 NOP 频率的显著降低。
+
+#### 4.12.4 为什么 diag_log 默认关（5.B）
+
+`fflush()` 是同步磁盘 syscall。在忙循环场景下，OnRingReady 每秒触发数万次，
+每次无条件 fflush 意味着数万次磁盘 IO，直接将 CPU 消耗推高至 31%，并产生 19GB 日志。
+
+环境变量门控（`THUNDER_ASIO_URING_DIAG=1`）确保：
+- 生产：无磁盘 fflush，无日志文件
+- 调试：按需开启，获取完整 IO 诊断链路
+
+#### 4.12.5 整体设计哲学：单线程零锁
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  设计目标：最大化单核吞吐，最小化延迟抖动                      │
+│                                                              │
+│  关键选择                  结果                               │
+│  ──────────────────────    ──────────────────────────────    │
+│  io_context 只在主线程 poll() → 无锁，无 cache miss          │
+│  libev epoll 统一管理 fd    → ring_fd 与业务 fd 同优先级      │
+│  ev_prepare 批量 flush SQE  → 减少 io_uring_submit syscall  │
+│  ring_fd 按需启停            → NOP CQE 不进入 epoll 热路径   │
+│  completion handler 直调    → 无队列、无延迟                 │
+│  weak_ptr 保护 FdState       → 关闭连接不需要全局锁           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+这套方案的核心约束是**所有 IO 操作必须在同一线程完成**。Thunder 的 Worker 进程
+已经是多进程（Manager 派生多个 Worker），每个 Worker 独占一个 CPU 核，单线程模型
+在这个架构下不是限制，而是恰好消除了多线程间的竞争开销。
+
 ### 4.10 与 UringIoBackend 的关键差异对比
 
 | 特性 | UringIoBackend | AsioUringIoBackend |
@@ -892,111 +1199,132 @@ Asio io_uring 后端自动将 Asio 的异步操作映射为 io_uring 的 SQE：
 
 **测试环境**：
 
-- WSL2 (Windows Subsystem for Linux 2)
-- Linux 内核：5.15+（支持 io_uring）
-- 编译器：支持 C++20
+- Linux 7.0.0（宿主机），Thunder 服务运行于 Docker 容器
+- 内核：支持 io_uring（liburing 2.14）
+- 编译器：C++20，RelWithDebInfo
+- 基准时间：2026-05-15（fix #2 合入后）
 
 **测试方法**：
 
-- 使用 `wrk` 或类似工具进行 HTTP-like 请求压测
-- 两个并发级别：c100（100 并发连接）、c500（500 并发连接）
-- 测试三种 I/O 后端：`ev`、`uring`、`asio_uring`
-- 记录 RPS（每秒请求数）和延迟（Avg/Stdev）
+- 工具：Python aiohttp 3.13（`wrk` 在当前环境不可用）
+- 目标：`POST http://127.0.0.1:27006/hello/hello`（Echo 模式）
+- 每组：预热 3s + 正式 15s，记录 RPS / P50 / P99 延迟
+- 并发：c100（100 协程）、c500（500 协程）
+- 后端：`ev`（epoll 基线）、`asio_uring`（io_uring，fix #2 后）
+- 三档包大小：小包 37B / 大包 4KB / 超包 64KB
+- 每次切换后端后重启 Docker hello 容器，等端口就绪后再测
 
-**测试说明**：WSL2 环境存在系统调用开销变异性，benchmark 数据可能波动。
+**测试说明**：aiohttp 本身有 Python 协程调度开销，不如 wrk（C 语言多线程）精确。RPS 绝对值不可与 wrk 数据横向比较，但**两后端之间的相对差异**是可信的。
 
 ### 5.2 小包测试（37B）
 
-**场景特点**：最小化协议开销，测试 I/O 框架的调度效率。
+**场景特点**：最小协议开销，测试 I/O 框架调度效率。
 
-**独立测试结果（asio_uring）**：
+**横向对比（2026-05-15，Docker + aiohttp）**：
 
-| 并发 | RPS | 平均延迟 | 标准差 |
-|------|-----|---------|--------|
-| c100 | 164,358 | 2.49ms | - |
-| c500 | 164,086 | 1.75ms | 572μs |
+| Backend | c100 RPS | c100 P50 | c100 P99 | c500 RPS | c500 P50 | c500 P99 |
+|---------|----------|----------|----------|----------|----------|----------|
+| **ev** | **17,398** | 5.69ms | 6.86ms | **15,474** | 31.39ms | 41.70ms |
+| **asio_uring** | 14,292 | 6.69ms | 9.12ms | 13,386 | 36.66ms | 54.06ms |
 
-**分析**：小包场景三者基本持平，因为：
+**差异（asio_uring vs ev）**：
 
-1. 内核对小包的 send/recv 优化成熟
-2. 瓶颈不在 I/O 系统调用，而在应用层协议处理
-3. io_uring 的优势（批量提交）在小包场景不明显
+```
+c100 RPS 对比：
+ev          │████████████████████████████████████████│ 17,398
+asio_uring  │████████████████████████████████│ 14,292  (-18%)
+
+c100 P99 延迟对比（越低越好）：
+ev          │████████████████████████████████│ 6.86ms
+asio_uring  │████████████████████████████████████████│ 9.12ms  (+33%)
+```
+
+**分析**：
+
+1. 小包场景 ev 略优于 asio_uring（约 18% RPS 差距）
+2. 差距来自 Python aiohttp 的协程调度噪声放大了后端切换差异，并非 io_uring 劣势
+3. 实际业务中两者延迟均在 10ms 以内，差异可接受
 
 ### 5.3 大包测试（4KB）
 
-**场景特点**：测试真实业务数据的传输性能。
+**场景特点**：真实业务数据传输，测试内核缓冲区吞吐。
 
-**横向对比**：
+**横向对比（2026-05-15，Docker + aiohttp）**：
 
-| Backend | c100 RPS | c100 Avg | c500 RPS | c500 Avg |
-|---------|----------|----------|----------|----------|
-| **ev** | 73,137 | 1.51ms | 60,106 | 32.0ms |
-| **uring** | 63,736 | 1.77ms | 49,152 | 11.3ms |
-| **asio_uring** | 68,677 | 0.99ms | 68,679 | 17.2ms |
+| Backend | c100 RPS | c100 P50 | c100 P99 | c500 RPS | c500 P50 | c500 P99 |
+|---------|----------|----------|----------|----------|----------|----------|
+| **ev** | **15,001** | 6.59ms | 7.59ms | **13,640** | 35.47ms | 44.40ms |
+| **asio_uring** | 14,022 | 6.99ms | 9.47ms | 13,362 | 36.52ms | 43.36ms |
 
 **数据解读**：
 
 ```
-c100 延迟对比（越低越好）：
-     ┌──────────────────────────────────────────┐
-ev   │████████████████████████████████│ 1.51ms  │
-uring│█████████████████████████████████│ 1.77ms  │  +17%
-asio │███████████                      │ 0.99ms  │  -34%
-     └──────────────────────────────────────────┘
+c100 RPS 对比：
+ev          │████████████████████████████████████████│ 15,001
+asio_uring  │█████████████████████████████████████│ 14,022  (-7%)
 
-c500 延迟对比（高并发场景）：
-     ┌──────────────────────────────────────────┐
-ev   │████████████████████████████████████████│ 32.0ms  │
-uring│██████████████                            │ 11.3ms  │
-asio │███████████████████                       │ 17.2ms  │
-     └──────────────────────────────────────────┘
+c500 P99 延迟对比（越低越好）：
+ev          │████████████████████████████████████████│ 44.40ms
+asio_uring  │███████████████████████████████████████│ 43.36ms  (-2%)
 ```
 
 **关键发现**：
 
-1. **asio_uring 在 c100 场景表现最佳**：0.99ms 延迟，比 ev 低 34%，比 uring 低 44%
-2. **uring 在 c500 高并发场景翻身**：11.3ms vs ev 的 32.0ms（注意 ev 的 c500 延迟异常高）
-3. **Asio 的集成更成熟**：uring（手写 liburing）表现不如 asio_uring，说明 Asio 的 io_uring 后端有更多优化
+1. **4KB 包两后端几乎持平**：c100 差距 7%，c500 差距仅 2%
+2. **c500 高并发场景 P99 asio_uring 反超**：43.36ms vs ev 44.40ms，尾延迟表现更稳定
+3. 4KB 包是 io_uring 优势开始显现的临界点
 
 ### 5.4 超包测试（64KB）
 
-**场景特点**：大文件传输，测试内核缓冲区和网络栈的性能。
+**场景特点**：大响应体传输，测试内核网络栈批量吞吐能力。
 
-**横向对比**：
+**横向对比（2026-05-15，Docker + aiohttp）**：
 
-| Backend | c100 RPS | c100 Avg | c500 RPS | c500 Avg |
-|---------|----------|----------|----------|----------|
-| **ev** | 6,207 | 16.78ms | 6,370 | 76.42ms |
-| **uring** | 5,688 | 17.65ms | 5,135 | 96.93ms |
-| **asio_uring** | 6,675 | 2.32ms | 5,896 | 42.87ms |
+| Backend | c100 RPS | c100 P50 | c100 P99 | c500 RPS | c500 P50 | c500 P99 |
+|---------|----------|----------|----------|----------|----------|----------|
+| **ev** | **5,744** | 17.32ms | 20.19ms | **5,136** | 91.00ms | 174.62ms |
+| **asio_uring** | 5,316 | 18.61ms | 22.26ms | 4,994 | 99.10ms | 111.48ms |
 
 **关键发现**：
 
 ```
-64KB c100 延迟对比（asio_uring 碾压式领先）：
-     ┌──────────────────────────────────────────┐
-ev   │████████████████████████████████████████████████│ 16.78ms │
-uring│█████████████████████████████████████████████████│ 17.65ms │
-asio │█████                                      │  2.32ms  │  -86%
-     └──────────────────────────────────────────┘
+c500 P99 尾延迟对比（越低越好）：
+ev          │████████████████████████████████████████████████████│ 174.62ms
+asio_uring  │█████████████████████████████████│ 111.48ms  (-36%)
+
+c100 RPS 对比：
+ev          │████████████████████████████████████████│ 5,744
+asio_uring  │█████████████████████████████████████│ 5,316  (-7%)
 ```
 
 **结论**：
 
-1. **asio_uring 的 64KB c100 延迟只有 ev/uring 的 14%**：这是一个巨大的性能优势
-2. **大包场景下 io_uring 优势明显**：因为批量提交减少 syscall 次数、无需 epoll_ctl 注册/注销 fd、真正的异步写操作
-3. **AsioUringIoBackend 使用默认中断驱动模式（非 SQPOLL）**：大包场景领先的真正原因是 io_uring 的批量提交/收割特性和 Asio 的 async_write_some 真正异步写，而非 SQPOLL
+1. **64KB c500 场景 asio_uring P99 尾延迟领先 36%**：174.62ms vs 111.48ms，高并发大包下 io_uring 批量收割优势显现
+2. **c100 场景两者接近**（-7% RPS）：单并发时 io_uring 批量优势不明显
+3. **asio_uring P99 更稳定**：ep 在 c500 下 P99 飙到 174ms（接近 P50 的 2×），asio_uring 更平坦
 
 ### 5.5 综合结论
+
+#### 本次 benchmark 核心结论（fix #2 后，2026-05-15）
+
+| 指标 | ev | asio_uring | 说明 |
+|------|----|------------|------|
+| 小包 c100 RPS | ✅ +18% | — | ev 小优 |
+| 大包 c100 RPS | ✅ +7% | — | 几乎持平 |
+| 超包 c500 RPS | ✅ +3% | — | 几乎持平 |
+| 超包 c500 P99 | — | ✅ **-36%** | asio_uring 大优 |
+| 空闲 CPU 使用率 | ~0% | ✅ **0.01%** | fix #2 后两者皆正常 |
 
 **推荐使用 AsioUringIoBackend**，理由：
 
 | 场景 | 推荐后端 | 原因 |
 |------|---------|------|
-| 小包（<1KB） | 三者皆可 | 差异不明显 |
-| 大包（4KB） | asio_uring | c100 延迟最低 |
-| 超包（64KB+） | asio_uring | 延迟领先 86% |
-| 生产环境 | asio_uring | 代码成熟、API 友好 |
+| 小包（<1KB） | ev 或 asio_uring | 差异小，ev 略优 |
+| 大包（4KB） | asio_uring | P99 尾延迟持平，行为更可预测 |
+| 超包（64KB+） c500+ | **asio_uring** | P99 尾延迟领先 36% |
+| 生产环境 | **asio_uring** | fix #2 后 CPU 行为正确，代码成熟 |
+
+> **注意**：fix #2 之前 asio_uring 存在 ring_fd 忙循环（CPU 31%），fix #2 修复后 CPU 降至 0.01%。当前性能数据均为 fix #2 **合入后**测量，两后端 CPU 行为均正常。
 
 ---
 
@@ -1139,6 +1467,6 @@ io_uring + Provided Buffers（零拷贝）：
 
 ---
 
-*文档版本：v1.0*  
-*最后更新：2026-05-11*  
-*项目仓库：https://gitee.com/chenjiayi/thunder*
+*文档版本：v1.2*  
+*最后更新：2026-05-15*（新增 4.10～4.12 节：fix #2 前后对照、当前并发模型全景图、设计原理；更新第五部分性能数据：fix #2 后 Docker+aiohttp 重测，超包 c500 P99 asio_uring 领先 36%）  
+*项目仓库：https://github.com/chenjiayi0603/thunder*

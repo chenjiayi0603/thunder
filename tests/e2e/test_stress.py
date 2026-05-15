@@ -59,11 +59,13 @@ def test_stress_sustained_30s(http_session: requests.Session) -> None:
 
 @pytest.mark.perf
 def test_stress_large_response(http_session: requests.Session) -> None:
-    """请求触发较大响应体，验证不超时"""
-    # TestHelloPoolCpu 返回较大 payload
+    """CPU 线程池卸载：256KB 向量 checksum，验证协程挂起/恢复与响应正确性"""
     r = http_session.post(HELLO_URL, json={"option": "TestHelloPoolCpu"}, timeout=30)
     assert r.status_code == 200
-    assert len(r.text) > 100, f"Response too small: {len(r.text)} bytes"
+    data = r.json()
+    assert data.get("option") == "TestHelloPoolCpu", f"Unexpected response: {r.text}"
+    # 256*1024 bytes, all 0x03 → checksum = 786432
+    assert data.get("checksum") == 786432, f"Wrong checksum: {data.get('checksum')}"
 
 
 @pytest.mark.integration
