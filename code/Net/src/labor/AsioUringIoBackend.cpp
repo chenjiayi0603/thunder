@@ -9,8 +9,10 @@
 #include "AsioUringIoBackend.hpp"
 #include "util/CBuffer.hpp"
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <dirent.h>
+#include <exception>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
@@ -120,6 +122,65 @@ void AsioUringIoBackend::UpdateRingWatcher()
     }
 }
 
+// A1: 注册缓冲池 — env 门控（THUNDER_ASIO_URING_FIXEDBUF=1），默认关，不回归生产默认。
+// 仅写路径使用：写完成后归还槽；本质是 send_zc 的注册池+槽生命周期地基。
+bool AsioUringIoBackend::InitFixedBuffers()
+{
+    const char* en = ::getenv("THUNDER_ASIO_URING_FIXEDBUF");
+    if (!en || en[0] != '1') { m_fixedBufEnabled = false; return false; }
+
+    if (const char* s = ::getenv("THUNDER_ASIO_URING_FIXEDBUF_SLOTS"))
+    { long v = ::atol(s); if (v > 0 && v <= 65536) m_slotCount = static_cast<size_t>(v); }
+    if (const char* s = ::getenv("THUNDER_ASIO_URING_FIXEDBUF_SLOTSIZE"))
+    { long v = ::atol(s); if (v >= 4096 && v <= (16 << 20)) m_slotSize = static_cast<size_t>(v); }
+
+    size_t total = m_slotCount * m_slotSize;
+    m_slotMem = std::make_unique<char[]>(total);
+
+    std::vector<asio::mutable_buffer> seq;
+    seq.reserve(m_slotCount);
+    for (size_t i = 0; i < m_slotCount; ++i)
+        seq.emplace_back(m_slotMem.get() + i * m_slotSize, m_slotSize);
+
+    try
+    {
+        m_bufReg = std::make_unique<
+            asio::buffer_registration<std::vector<asio::mutable_buffer>>>(
+                m_ioCtx.get_executor(), seq);
+    }
+    catch (const std::exception& e)
+    {
+        diag_log("[IODIAG AsioUring FixedBuf register FAILED: %s\n", e.what());
+        m_bufReg.reset();
+        m_slotMem.reset();
+        m_fixedBufEnabled = false;
+        return false;
+    }
+
+    m_freeSlots.clear();
+    m_freeSlots.reserve(m_slotCount);
+    for (int i = static_cast<int>(m_slotCount) - 1; i >= 0; --i)
+        m_freeSlots.push_back(i);
+    m_fixedBufEnabled = true;
+    diag_log("[IODIAG AsioUring FixedBuf enabled slots=%zu size=%zu total=%zuMB\n",
+             m_slotCount, m_slotSize, total >> 20);
+    return true;
+}
+
+int AsioUringIoBackend::BorrowSlot()
+{
+    if (!m_fixedBufEnabled || m_freeSlots.empty()) return -1;
+    int idx = m_freeSlots.back();
+    m_freeSlots.pop_back();
+    return idx;
+}
+
+void AsioUringIoBackend::ReturnSlot(int idx)
+{
+    if (idx >= 0 && idx < static_cast<int>(m_slotCount))
+        m_freeSlots.push_back(idx);
+}
+
 bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callback, void* user_data)
 {
     m_loop     = loop;
@@ -139,6 +200,9 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
         ::close(pfd[1]);
         (void)m_ioCtx.poll();
     }
+
+    /* A1: io_uring_service 已惰性初始化，此处注册固定缓冲池（env 门控） */
+    InitFixedBuffers();
 
     /* 初始化 ring_fd watcher，但 5.A: 不立即 start，等 SubmitRead/SubmitWrite 时按需启动 */
     m_ringFd = FindIoUringRingFd();
@@ -178,6 +242,12 @@ void AsioUringIoBackend::Destroy()
         (void)sp->sock.release();
     }
     m_fds.clear();
+
+    // A1: 先注销注册池（RAII 调 unregister_buffers），再拆 io_context
+    m_bufReg.reset();
+    m_slotMem.reset();
+    m_freeSlots.clear();
+    m_fixedBufEnabled = false;
 
     m_workGuard.reset();
     (void)m_ioCtx.poll();
@@ -261,23 +331,58 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
 
     const char* src = buf->GetRawReadBuffer();
 
+    // A1: 满足「池启用 && 有空槽 && payload≤槽」走注册缓冲（命中 prep_write_fixed）。
+    // 否则回退既有非注册路径（即今天的行为，零风险）。
+    int slot = -1;
+    if (m_fixedBufEnabled && static_cast<size_t>(readable) <= m_slotSize)
+        slot = BorrowSlot();
+
     std::weak_ptr<FdState> wp = sp;
-    sp->sock.async_write_some(
-        asio::buffer(src, readable),
-        [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
-        {
-            auto live = wp.lock();
-            if (!live || live->cancelled) return;
-            live->writePending = false;
-            if (ec)
+
+    if (slot >= 0)
+    {
+        std::memcpy(m_slotMem.get() + static_cast<size_t>(slot) * m_slotSize,
+                    src, static_cast<size_t>(readable));
+        sp->sock.async_write_some(
+            asio::buffer((*m_bufReg)[static_cast<std::size_t>(slot)],
+                         static_cast<std::size_t>(readable)),
+            [this, wp, fd, seq, buf, slot](const asio::error_code& ec, std::size_t n)
             {
-                if (ec != asio::error::operation_aborted)
-                    m_callback(fd, seq, IoOp::Write, -ec.value(), m_userData);
-                return;
-            }
-            buf->AdvanceReadIndex(static_cast<int>(n));
-            m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
-        });
+                // 普通写：CQE 到达时内核已消费缓冲，任何分支都先归还槽防泄漏。
+                // （send_zc 接入后此处改为 NOTIF CQE 才归还）
+                ReturnSlot(slot);
+                auto live = wp.lock();
+                if (!live || live->cancelled) return;
+                live->writePending = false;
+                if (ec)
+                {
+                    if (ec != asio::error::operation_aborted)
+                        m_callback(fd, seq, IoOp::Write, -ec.value(), m_userData);
+                    return;
+                }
+                buf->AdvanceReadIndex(static_cast<int>(n));
+                m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
+            });
+    }
+    else
+    {
+        sp->sock.async_write_some(
+            asio::buffer(src, readable),
+            [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
+            {
+                auto live = wp.lock();
+                if (!live || live->cancelled) return;
+                live->writePending = false;
+                if (ec)
+                {
+                    if (ec != asio::error::operation_aborted)
+                        m_callback(fd, seq, IoOp::Write, -ec.value(), m_userData);
+                    return;
+                }
+                buf->AdvanceReadIndex(static_cast<int>(n));
+                m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
+            });
+    }
     // 5.C: 移除再入 m_ioCtx.poll()，SQE 由下一个 OnPrepare 统一批量 flush
     UpdateRingWatcher();  // 5.A: 有挂起写 op，确保 ring_fd 监听已启动
     return true;
