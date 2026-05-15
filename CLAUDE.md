@@ -298,7 +298,7 @@ rm -rf /tmp/e2e-* /tmp/stress-* 2>/dev/null
 - ✅ 主线程直驱 — io_context 跑在 libev 主线程，零锁零线程跳
 - ✅ ev_prepare + ev_check + ev_io(ring_fd) 三路驱动 `io_context.poll()`
 - ✅ 大包测试已覆盖 4KB + 64KB，三档横向对比完成
-- ⚠️ S2S 端到端 (Interface→Logic GenKey) ENOTCONN 竞态修复中
+- ✅ S2S 端到端 (Interface→Logic GenKey) ENOTCONN 竞态已修复（commit 3e6939a）
 
 ### 集群与路由
 
