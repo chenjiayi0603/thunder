@@ -90,7 +90,7 @@ cmake --build build -j1
 ( cd deploy && ./nodes.sh restart all )
 ( cd deploy && ./nodes.sh status )
 
-# 一键全部测试 (单元 + E2E)
+# 全部测试 (单元 + E2E)
 ./tests/run_all.sh
 
 # 仅单元测试 (14s, 零外部依赖)
@@ -101,10 +101,16 @@ cmake --build build -j1
 MODE=external ./tests/run_all.sh e2e
 
 # 构建 + 全部测试
-./tests/build_and_test.sh
+./tests/run_all.sh build+test
+
+# 仅构建（不跑测试）
+./tests/run_all.sh build
+
+# 清理构建产物
+./tests/run_all.sh clean
 
 # 性能基准测试 (需 wrk)
-./tests/benchmark/run_quick_bench.sh
+./tests/run_all.sh bench
 ```
 
 ### 改完代码后必须验证
