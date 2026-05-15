@@ -3877,6 +3877,19 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 	tagMsgShell stMsgShell(iFd,ulSeq);
 	AddMsgShell(strIdentify, stMsgShell);
 	connect(iFd, &addr, sizeof(addr));
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
 	return(true);
 }
 
@@ -3924,6 +3937,19 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		return(false);
 	}
 	connect(stMsgShell.iFd, &addr, sizeof(addr));
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConnAttr))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConnAttr))");
+		DestroyConnect(mapFdAttr.find(stMsgShell.iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConnAttr))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConnAttr))");
+		DestroyConnect(mapFdAttr.find(stMsgShell.iFd));
+		return(false);
+	}
 	if (pStep != nullptr)
 	{
 		mapHttpAttr[stMsgShell.iFd].push_back(pStep->GetSequence());
@@ -4126,6 +4152,19 @@ bool Worker::AutoConnect(const std::string& strIdentify)
 	tagMsgShell stMsgShell(iFd,ulSeq);
 	AddMsgShell(strIdentify, stMsgShell);
 	connect(iFd, &addr, sizeof(addr));
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
 	return(true);
 }
 
@@ -5101,18 +5140,22 @@ tagConnectionAttr* Worker::CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(nullptr);
 	}
-	if (!AddIoReadEvent(pConn))
+	if (!m_pIoBackend)  // EV mode: register watchers before connect (harmless for epoll)
 	{
-		LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
+		if (!AddIoReadEvent(pConn))
+		{
+			LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
+		if (!AddIoWriteEvent(pConn))
+		{
+			LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
 	}
-	if (!AddIoWriteEvent(pConn))
-	{
-		LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
-	}
+	// io_uring mode: IO events deferred to caller (after connect())
 	return pConn;
 }
 
@@ -5197,18 +5240,22 @@ tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::str
 	}
 	pConnAttr->dKeepAlive = 10;
 	LOG4_TRACE("set dKeepAlive(%lf)",pConnAttr->dKeepAlive);
-	if (!AddIoReadEvent(pConnAttr))
+	if (!m_pIoBackend)  // EV mode: register watchers before connect (harmless for epoll)
 	{
-		LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
+		if (!AddIoReadEvent(pConnAttr))
+		{
+			LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
+		if (!AddIoWriteEvent(pConnAttr))
+		{
+			LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
 	}
-	if (!AddIoWriteEvent(pConnAttr))
-	{
-		LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
-	}
+	// io_uring mode: IO events deferred to caller (after connect())
     if (eCodecType == util::CODEC_HTTPS)
     {
         auto codec_iter = mapCodec.find(util::CODEC_HTTPS);

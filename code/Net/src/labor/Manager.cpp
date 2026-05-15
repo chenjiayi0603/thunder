@@ -1069,18 +1069,6 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
 			DestroyConnect(m_mapFdAttr.find(iFd));
 			return(false);
         }
-        if (!AddIoReadEvent(pConn))
-		{
-			LOG4_ERROR("AddIoReadEvent error");
-			DestroyConnect(m_mapFdAttr.find(iFd));
-			return(false);
-		}
-		if (!AddIoWriteEvent(pConn))
-		{
-			LOG4_ERROR("AddIoWriteEvent error");
-			DestroyConnect(m_mapFdAttr.find(iFd));
-			return(false);
-		}
 		pConn->pWaitForSendBuff->Write(oMsgHead.SerializeAsString().c_str(), oMsgHead.ByteSize());
 		LOG4_TRACE("%s(),write oMsgHead size(%u)", __FUNCTION__,oMsgHead.ByteSize());
 		pConn->pWaitForSendBuff->Write(oMsgBody.SerializeAsString().c_str(), oMsgBody.ByteSize());
@@ -1101,6 +1089,19 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
             DestroyConnect(m_mapFdAttr.find(iFd));
             return false;
         }
+        // Submit IO events AFTER connect() to avoid ENOTCONN on asio_uring
+        if (!AddIoReadEvent(pConn))
+		{
+			LOG4_ERROR("AddIoReadEvent error");
+			DestroyConnect(m_mapFdAttr.find(iFd));
+			return(false);
+		}
+		if (!AddIoWriteEvent(pConn))
+		{
+			LOG4_ERROR("AddIoWriteEvent error");
+			DestroyConnect(m_mapFdAttr.find(iFd));
+			return(false);
+		}
 		return(true);
     }
     else    // 没有足够资源分配给新连接，直接close掉

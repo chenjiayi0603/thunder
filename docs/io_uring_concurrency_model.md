@@ -700,3 +700,959 @@ io_context.poll() 被调用 (无论来自哪个路径)
 1. 协程 (`StepCo20`) 将长任务拆分为多个步骤，通过 `co_await` 让出执行权
 2. 多进程架构 (`process_num: N`) 利用多核，每个进程内保持单线程简单性
 3. Worker 的 `io_timeout` 定时器和心跳检测确保连接不会被长期阻塞
+
+
+
+## 附录 C：三种后端 SubmitRead/SubmitWrite 完整流程序列图
+
+### C.1 EvIoBackend — 读路径
+
+```
+Worker::AddIoReadEvent(fd, pConn)
+  │
+  ▼
+EvIoBackend::SubmitRead(fd, buf, seq)
+  │
+  ├─ m_mapFdData.find(fd)
+  │   ├─ 不存在 → new WatcherData + new ev_io → 插入 map
+  │   └─ 存在   → 复用已有 WatcherData
+  │
+  ├─ pData->pReadBuf = buf
+  ├─ pData->ulSeq = seq
+  ├─ ev_io_set(watcher, fd, watcher->events | EV_READ)   ← 仅设置事件标志
+  └─ ev_io_start(loop, watcher)                          ← 仅确保已注册
+  │
+  │  ★ 注意: 至此未发生任何 read() 系统调用！
+  │     ev_io_set/start 只修改 libev 内部状态和 epoll_ctl
+  │     真正的 read() 要等 epoll_wait 返回后才执行
+  │
+  ▼ 返回 true ────────────────────► 调用者继续执行
+  │
+  ... 时间流逝，其他代码运行 ...
+  │
+  ▼ [libev 事件循环下一轮]
+ev_run() 迭代:
+  │
+  ├─ ev_prepare 回调 (如有)
+  ├─ epoll_wait(epoll_fd, timeout)           ← 系统调用: epoll_wait
+  │   │
+  │   │  ★ fd 上有数据到达 → epoll 检测到 EPOLLIN → 返回此 fd
+  │   │  ★ 如果 fd 未连接: epoll 不会返回此 fd
+  │   │    (无 EPOLLIN/EPOLLOUT 就绪) → 不会触发回调 → 无 ENOTCONN
+  │   │
+  │   └─ 返回: events[] = { ..., {fd, EPOLLIN}, ... }
+  │
+  ├─ ev_check 回调 (如有)
+  │
+  └─ EV_INVOKE_PENDING ─── 按优先级执行所有待处理回调:
+      │
+      ├─ ev_check watchers
+      ├─ ev_io watchers:
+      │   └─ IoEventCallback(watcher, EV_READ)
+      │       │
+      │       ├─ pData->pReadBuf->ReadFD(fd, iErrno)    ← 系统调用: read(fd,buf,len)
+      │       │   └─ 返回: n 字节 (成功) 或 -1 (错误)
+      │       │
+      │       ├─ result = (n >= 0) ? n : -iErrno
+      │       └─ m_callback(fd, seq, IoOp::Read, result, user_data)
+      │           │
+      │           └─ Worker::OnIoComplete
+      │               └─ Worker::HandleIoReadComplete(pConn, result)
+      │                   ├─ result > 0:  解码 + 分发消息
+      │                   ├─ result == 0: 对端关闭 → DestroyConnect
+      │                   └─ result < 0:  errno 判断
+      │                       ├─ EAGAIN:  重新 SubmitRead
+      │                       └─ 其他:    DestroyConnect
+      │
+      └─ ev_timer / ev_idle watchers
+```
+
+**特点**: 读操作的发起 (`ev_io_set`) 和实际执行 (`ReadFD`) **完全解耦**，中间至少隔一个 `epoll_wait` 周期。fd 未连接时 epoll 不通知 → 无 ENOTCONN。
+
+### C.2 AsioUringIoBackend — 读路径（含 poll() 同步完成）
+
+```
+Worker::AddIoReadEvent(fd, pConn)
+  │
+  ▼
+AsioUringIoBackend::SubmitRead(fd, buf, seq)
+  │
+  ├─ EnsureFdState(fd)
+  │   └─ new FdState(m_ioCtx, fd)  → new asio::posix::stream_descriptor(fd)
+  │       └─ 内部: 向 ASIO io_uring_service 注册此 fd
+  │
+  ├─ sp->readPending = true                ← 防重入标志
+  ├─ buf->EnsureWritableBytes(8192)
+  │
+  ├─ sp->sock.async_read_some(buffer, callback)
+  │   │
+  │   │  ASIO 内部:
+  │   │  ├─ io_uring_service::start_op(sock, read_op)
+  │   │  │   ├─ 分配 SQE → io_uring_prep_recv(sqe, fd, buf, len)
+  │   │  │   ├─ io_uring_sqe_set_data(sqe, op_ptr)
+  │   │  │   └─ ★ SQE 写入 SQ 共享内存，但未调用 io_uring_enter() ★
+  │   │  │      提交被延迟到下一次 io_context::poll()
+  │   │  │
+  │   └─ 返回 (未阻塞)
+  │
+  ├─ m_ioCtx.poll()                        ← ★ 立即 poll()
+  │   │
+  │   │  poll() → scheduler::poll() → do_one():
+  │   │  ├─ 步骤 1: io_uring_enter(ring_fd, to_submit, 0, flags)
+  │   │  │   └─ ★ 提交之前 async_read_some 写入的 SQE 给内核 ★
+  │   │  │
+  │   │  └─ 步骤 2: 收割 CQE (如果有已完成的)
+  │   │      │
+  │   │      ├─ 场景 A: fd 已连接 + 数据已在内核缓冲区
+  │   │      │   → CQE {res=128} (同步完成)
+  │   │      │   → 回调 lambda: AdvanceWriteIndex, m_callback(fd, seq, Read, 128)
+  │   │      │
+  │   │      ├─ 场景 B: fd 未连接 → ENOTCONN  ← ★★★ Bug ★★★
+  │   │      │   → io_uring_enter 提交 SQE (recv on unconnected socket)
+  │   │      │   → 内核立即返回 CQE {res=-107} (ENOTCONN)
+  │   │      │   → 回调 lambda: ec.value()==107 → m_callback(fd, seq, Read, -107)
+  │   │      │   → Worker::HandleIoReadComplete(result=-107):
+  │   │      │       errno=107, 非 EAGAIN/EINTR → DestroyConnect(conn_iter)
+  │   │      │       → 从 mapFdAttr 移除 fd、close(fd)
+  │   │      │       → ★ 但 SubmitRead 仍然 return true ★
+  │   │      │       → 调用者不知情，继续操作已关闭的 fd
+  │   │      │
+  │   │      └─ 场景 C: fd 已连接但无数据
+  │   │          → io_uring_enter 提交 SQE 成功
+  │   │          → CQE 尚未就绪 → poll() 返回 0
+  │   │
+  │   └─ 返回已收割的 CQE 数量
+  │
+  └─ return true ─────────────────────► 调用者继续执行
+  │
+  │  ★ 关键差异: poll() 可能同步完成回调！
+  │     回调在 SubmitRead 返回前执行 (仍在同一调用栈)
+  │     HandleIoReadComplete → DestroyConnect 销毁 fd
+  │     但调用者看到的返回值仍是 true
+  │
+  ... 如果 fd 未被 ENOTCONN 销毁，后续异步完成 ...
+  │
+  ▼ [libev 事件循环]
+ev_run() 迭代:
+  │
+  ├─ ev_prepare → OnPrepare → io_context.poll()
+  │   └─ 收割新的 CQE → 触发异步回调
+  │
+  ├─ epoll_wait(epoll_fd, timeout)
+  │   │
+  │   │  ring_fd 随 CQE 到达变为可读
+  │   │  如无 CQE 则等待超时或其他 fd
+  │   │
+  │   └─ 返回
+  │
+  ├─ ev_check → OnCheck → io_context.poll()
+  │   └─ 收割阻塞期间到达的 CQE
+  │
+  └─ ev_io(ring_fd) → OnRingReady → io_context.poll()
+      └─ 收割处理其他事件期间到达的 CQE
+```
+
+**特点**: `async_read_some` 只是队列化 SQE，真正的内核提交在 `poll()` 中。`poll()` 可能**同步完成**回调 → 如果 fd 未连接，ENOTCONN 在 SubmitRead 调用栈内触发 DestroyConnect。
+
+### C.3 UringIoBackend — 读路径 (异步 ENOTCONN)
+
+```
+Worker::AddIoReadEvent(fd, pConn)
+  │
+  ▼
+UringIoBackend::SubmitRead(fd, buf, seq)
+  │
+  ├─ io_uring_get_sqe(&ring)                 ← 从 SQ 获取空闲 SQE
+  │   └─ 队列满时返回 NULL → SubmitRead 失败
+  │
+  ├─ buf->EnsureWritableBytes(8192)
+  │
+  ├─ io_uring_prep_recv(sqe, fd, buf, len, 0)  ← 填充 SQE
+  ├─ io_uring_sqe_set_data(sqe, user_data)     ← 绑定 user_data
+  │
+  ├─ m_mapPending[user_data] = PendingOp{fd, seq, Read, buf}
+  │
+  ├─ io_uring_submit(&ring)                  ← ★ 立即提交 SQE (系统调用)
+  │   │
+  │   │  ★ 关键差异: 与 AsioUringIoBackend 不同，
+  │   │    SQE 在此立即通过 io_uring_enter 提交给内核
+  │   │    没有延迟到后续 poll()
+  │   │
+  │   └─ 返回已提交的 SQE 数量
+  │
+  └─ return true ─────────────────────► 调用者继续执行
+  │
+  │  ★ 此时 SQE 已在内核中，但 CQE 尚未到达
+  │    SubmitRead 返回时回调不会被触发 — "真异步"
+  │
+  ... 时间流逝 ...
+  │
+  ▼ 内核侧:
+  │   ├─ fd 已连接 + 数据到达 → 拷贝数据 → CQE {res=N}
+  │   └─ fd 未连接 → CQE {res=-107} (ENOTCONN)
+  │       ★ ENOTCONN 以异步 CQE 形式返回，不在 SubmitRead 调用栈内
+  │
+  ▼ ring_fd 变为可读
+  │
+  ▼ [libev 事件循环]
+ev_run() 迭代:
+  │
+  ├─ epoll_wait → ring_fd 就绪
+  │
+  └─ ev_io(ring_fd) → RingEventCallback
+      └─ ReapCqes()
+          ├─ io_uring_for_each_cqe(&ring, head, cqe)
+          │   ├─ user_data = cqe->user_data
+          │   ├─ op = m_mapPending[user_data]
+          │   ├─ result = cqe->res              ← -107 (ENOTCONN)
+          │   ├─ m_mapPending.erase(user_data)
+          │   └─ m_callback(op.fd, op.seq, Read, result, user_data)
+          │       │
+          │       └─ Worker::OnIoComplete
+          │           └─ Worker::HandleIoReadComplete(pConn, -107)
+          │               └─ ★ 异步 ENOTCONN → DestroyConnect ★
+          │                   与 AsioUringIoBackend 相同的结果:
+          │                   SubmitRead 已返回 true，调用者已继续执行
+          │                   此时 DestroyConnect 销毁 fd
+          │                   调用者对销毁不知情
+          │
+          └─ io_uring_cq_advance(&ring, count)
+```
+
+**特点**: SQE 通过 `io_uring_submit` **立即提交**。ENOTCONN 作为**异步 CQE** 返回。与 AsioUringIoBackend 的差异在时序（异步 vs 同步），但根因相同：I/O 在 fd 连接前注册。
+
+### C.4 三种后端写路径对比
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    EvIoBackend — 写路径                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SubmitWrite(fd, buf, seq)                                      │
+│    ├─ ev_io_set(EV_WRITE)     ← 仅注册写就绪事件                  │
+│    └─ ev_io_start()           ← 无实际 I/O                       │
+│                                                                 │
+│  ... epoll_wait → fd 可写 ...                                   │
+│    └─ IoEventCallback(EV_WRITE)                                 │
+│        └─ buf->WriteFD(fd)    ← 真正的 write() 系统调用           │
+│            └─ m_callback(fd, seq, Write, result)                 │
+│                                                                 │
+│  特点: 发起和真正 I/O 完全解耦                                    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                 AsioUringIoBackend — 写路径                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SubmitWrite(fd, buf, seq)                                      │
+│    ├─ readable = buf->ReadableBytes()                           │
+│    │   ├─ == 0 → m_callback(Write, 0) ← 同步回调，result=0       │
+│    │   │   └─ Worker::HandleIoWriteComplete(result=0)            │
+│    │   │       ├─ pWaitForSendBuff 有数据                        │
+│    │   │       │   ├─ CODEC_PB_INTERNAL: CmdConnectWorker::Start │
+│    │   │       │   └─ HTTP: SendTo(stMsgShell) → flush           │
+│    │   │       └─ pWaitForSendBuff 为空 → no-op                  │
+│    │   │                                                         │
+│    │   └─ > 0 → sock.async_write_some(buf, len, callback)        │
+│    │       └─ m_ioCtx.poll() ← 提交 SQE 并收割 CQE               │
+│    │           ├─ 同步完成 (localhost 小包)                      │
+│    │           └─ 异步完成 (EAGAIN) → 等待后续 poll()            │
+│                                                                 │
+│  特点: result==0 是关键路径 — 触发 pWaitForSendBuff flush         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                  UringIoBackend — 写路径                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SubmitWrite(fd, buf, seq)                                      │
+│    ├─ readable = buf->ReadableBytes()                           │
+│    │   ├─ == 0 → m_callback(Write, 0) ← 同步回调 (同 Asio)       │
+│    │   │                                                         │
+│    │   └─ > 0 → buf->WriteFD(fd, iErrno) ← ★ 同步写              │
+│    │       ├─ n > 0:  m_callback(Write, n)   同步完成            │
+│    │       ├─ n < 0 + EAGAIN: m_callback(Write, -errno) 重试     │
+│    │       └─ n < 0 + 其他: m_callback(Write, -errno) 错误        │
+│    │                                                             │
+│  特点: 不使用 io_uring 写 SQE，全部同步 WriteFD                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+
+
+## 附录 D：ENOTCONN 竞态 — 三种后端差异分析
+
+### D.1 问题场景：Worker 创建 outgoing S2S 连接
+
+```
+Worker::AutoSend(strIdentify) 调用链:
+
+  CreateConnectFdAttr(iFd, ulSeq, strIdentify)     ← 创建 FdAttr
+    ├─ CreateFdAttr(iFd, ulSeq)                    ← 加入 mapFdAttr
+    ├─ AddIoTimeout(1.5s)                          ← 连接超时
+    ├─ AddIoReadEvent(pConn)                       ← ★ 此时 fd 尚未 connect()！
+    │   └─ m_pIoBackend->SubmitRead(fd, buf, seq)
+    └─ AddIoWriteEvent(pConn)                      ← ★ pSendBuff 此时为空
+        └─ m_pIoBackend->SubmitWrite(fd, buf, seq)
+
+  EncodeByConnectionCodec(..., pWaitForSendBuff)   ← GenKey 数据编码到等发缓冲区
+  AddMsgShell(strIdentify, stMsgShell)              ← 加入路由表
+  connect(iFd, &addr, sizeof(addr))                ← 建立 TCP 连接
+```
+
+### D.2 三种后端在此场景下的行为对比表
+
+| 阶段 | EvIoBackend | UringIoBackend | AsioUringIoBackend |
+|------|-------------|----------------|---------------------|
+| **AddIoReadEvent** | ev_io_set(EV_READ) — 无系统调用 | io_uring_submit(SQE) — 立即提交 | async_read_some + poll() — 延迟提交 |
+| **fd 状态** | 未连接 | 未连接 | 未连接 |
+| **I/O 触发时机** | epoll_wait 返回后 (fd 就绪) | 内核异步完成 → CQE | poll() 同步完成或后续异步 |
+| **ENOTCONN 路径** | 不发生 — epoll 不报告未连接 fd | 异步 CQE {res=-107} | 同步 CQE {res=-107} |
+| **DestroyConnect 时机** | N/A | SubmitRead 返回后的下个 ev_run 迭代 | SubmitRead 调用栈内 (同步) |
+| **结果** | ✅ 安全 | ⚠️ 延迟爆炸 (异步销毁) | ❌ 立即爆炸 (同步销毁) |
+
+### D.3 AsioUringIoBackend 同步 ENOTCONN 的完整时序
+
+```
+时间 ──────────────────────────────────────────────────────────────►
+
+[AutoSend 调用栈]
+
+CreateConnectFdAttr:
+  CreateFdAttr             → fd=14 加入 mapFdAttr ✅
+  AddIoTimeout             → 超时定时器 ✅
+  AddIoReadEvent           → SubmitRead(fd=14)
+    │
+    │  async_read_some(fd=14, buf, cb)
+    │    └─ SQE 写入 SQ (未提交)
+    │
+    │  ★ poll() ──────────────────────────────────────────────┐
+    │    io_uring_enter → 提交 SQE                              │
+    │    内核: fd=14 未连接 → 立即返回 ENOTCONN CQE              │
+    │    ASIO 收割 CQE {res=-107}                               │
+    │    ★ lambda callback 同步触发 ──────────────────────┐     │
+    │      m_callback(14, seq, Read, -107, user_data)     │     │
+    │      └─ Worker::OnIoComplete                        │     │
+    │          └─ HandleIoReadComplete(pConn, -107)       │     │
+    │              errno=107 ≠ EAGAIN/EINTR               │     │
+    │              ★ DestroyConnect(conn_iter) ←──────────┘     │
+    │                  ├─ 从 mapFdAttr 移除 fd=14               │
+    │                  ├─ DelMsgShell (从路由表移除)             │
+    │                  └─ close(fd=14)                          │
+    │                                                           │
+    │    poll() 返回 1 ─────────────────────────────────────────┘
+    │
+    └─ SubmitRead 返回 true ★ 但 fd=14 已被销毁！
+
+  AddIoWriteEvent         → SubmitWrite(fd=14, pSendBuff)
+    │ pSendBuff 为空 → readable=0
+    └─ m_callback(14, seq, Write, 0, user_data)
+        └─ OnIoComplete → mapFdAttr.find(14) == end()
+            └─ ★ 直接返回，无操作 (fd 已不存在)
+
+  return pConn            → ★ 返回指向已销毁 fd 的 FdAttr！
+
+[返回到 AutoSend]
+
+pConn = CreateConnectFdAttr(...)  → pConn ≠ nullptr ★ (致命！)
+EncodeByConnectionCodec(..., pConn->pWaitForSendBuff)
+  → GenKey 数据编码到 pWaitForSendBuff ★ (写到已销毁连接对象)
+AddMsgShell(strIdentify, {fd=14, seq=...})
+  → ★ 已关闭的 fd=14 加入 mapMsgShell!
+connect(fd=14, &addr, sizeof(addr))
+  → ★ connect on closed fd → EBADF → 静默忽略
+return true ★ 调用者以为连接成功
+
+[后续 GenKey 请求]
+
+SendTo → 找到 fd=14 在 mapMsgShell
+  → SendTo({fd=14, seq=...}, oMsgHead, oMsgBody)
+  → mapFdAttr.find(14) == end() ★
+  → LOG4_ERROR "no fd 14 found in mapFdAttr"
+  → 返回 false
+
+所有 GenKey 请求失败！直到路由超时清理该条目或 Manager 侧主动建立新连接。
+```
+
+### D.4 UringIoBackend 异步 ENOTCONN 的时序
+
+```
+时间 ──────────────────────────────────────────────────────────────►
+
+[AutoSend 调用栈]
+
+CreateConnectFdAttr:
+  AddIoReadEvent           → SubmitRead(fd=14)
+    │ io_uring_prep_recv(sqe, fd=14, buf, len)
+    │ io_uring_submit(&ring) ← ★ 立即提交 SQE
+    │ m_mapPending[user_data] = op
+    └─ return true ★ SQE 已在内核，但 CQE 尚未到达
+
+  AddIoWriteEvent          → SubmitWrite(fd=14, pSendBuff)
+    │ pSendBuff 为空 → readable=0
+    └─ m_callback(14, seq, Write, 0)  ← ★ 同步回调 (写不使用 io_uring)
+        └─ OnIoComplete → fd=14 仍在 mapFdAttr ✅
+            └─ HandleIoWriteComplete(result=0):
+                pWaitForSendBuff 此时为空 (编码尚未发生) → no-op
+
+  return pConn             → ★ 返回有效的 FdAttr (fd=14 仍存活)
+
+[返回到 AutoSend]
+
+EncodeByConnectionCodec(..., pWaitForSendBuff)  → 数据编码 ✅
+AddMsgShell(...)                                 → 加入路由表 ✅
+connect(fd=14, &addr, sizeof(addr))              → TCP 连接发起 ✅
+return true ★ AutoSend 看似成功
+
+... 时间流逝 (event loop 继续) ...
+
+[libev 事件循环迭代 N+1]
+
+epoll_wait → ring_fd 可读
+  └─ RingEventCallback → ReapCqes()
+      └─ io_uring_peek_cqe: CQE {user_data=X, res=-107}
+          → op = m_mapPending[X]  (fd=14, Read)
+          → m_callback(14, seq, Read, -107, user_data)
+          └─ HandleIoReadComplete(pConn, -107)
+              └─ ★ 异步 DestroyConnect ★
+                  此时 fd=14 已 connect()、已在 mapMsgShell...
+
+[问题：与 AsioUringIoBackend 同样的后果，只是时序不同]
+
+如果 connect 已完成 + mapMsgShell 已有条目：
+  → DestroyConnect 清理 fd，但 mapMsgShell 可能残留
+  → 后续 SendTo → "no fd 14 found in mapFdAttr" → 失败
+
+如果 connect 未完成 (EINPROGRESS)：
+  → DestroyConnect 关闭 fd → 连接中断
+  → mapMsgShell 已有条目 → 同上的问题
+```
+
+### D.5 EvIoBackend 为何安全
+
+```
+CreateConnectFdAttr:
+  AddIoReadEvent → SubmitRead(fd=14)
+    │ ev_io_set(EV_READ)  ← 仅设置事件标志，无系统调用涉及 fd=14
+    └─ ev_io_start()      ← epoll_ctl(ADD, fd=14, EPOLLIN)
+        ★ 只是把 fd 加入 epoll 集合，不执行任何 I/O
+        ★ epoll 只在 fd 就绪时通知 — 未连接的 fd 不会就绪
+
+[返回到 AutoSend]
+
+EncodeByConnectionCodec(..., pWaitForSendBuff)  → 数据 ✅
+AddMsgShell(...)                                 → 路由表 ✅
+connect(fd=14, &addr, sizeof(addr))              → TCP 连接发起 ✅
+
+... event loop 继续 ...
+
+epoll_wait → fd=14 变为可写 (connect 完成)
+  └─ IoEventCallback(EV_WRITE)
+      └─ buf->WriteFD(fd=14) ← ★ fd 已连接，write 正常
+          └─ result=0 (pSendBuff 为空)
+              └─ HandleIoWriteComplete(result=0):
+                  pWaitForSendBuff 有数据 ✅
+                  → CmdConnectWorker::Start → 发送握手
+
+★ 核心: epoll 只在 fd 就绪时通知
+  未连接的 fd 不会触发 EV_READ 或 EV_WRITE
+  因此 ENOTCONN 不可能发生
+```
+
+### D.6 ENOTCONN 竞态根因与修复
+
+| 后端 | SQE 提交 | ENOTCONN 触发 | 时序 | 表现 |
+|------|---------|--------------|------|------|
+| EvIoBackend | N/A (epoll watcher) | 不发生 | N/A | ✅ 安全 |
+| UringIoBackend | `io_uring_submit` 立即 | 异步 CQE | SubmitRead 返回后 | ⚠️ 延迟爆炸 |
+| AsioUringIoBackend | `poll()` 延迟 | 同步 CQE | SubmitRead 调用栈内 | ❌ 立即爆炸 |
+
+**共同根因**: `CreateConnectFdAttr` 在 `connect()` 之前调用 `AddIoReadEvent`。
+**修复原理**: 将 IO 事件注册移到 `connect()` 之后 → fd 已连接 → 无论同步/异步，都不再有 ENOTCONN。
+
+**修复策略 (兼容 EV + io_uring 双模式)**:
+- Factory 函数 (`CreateConnectFdAttr`, `CreateHttpFdAttr`): `if (!m_pIoBackend)` 保护 IO 事件 → EV 模式保留，io_uring 模式跳过
+- Caller (`AutoSend`, `AutoConnect`): `connect()` 之后统一调用 AddIoReadEvent/AddIoWriteEvent → EV 模式第二次调用是幂等 RefreshEvent，io_uring 模式是唯一调用且 fd 已连接
+
+
+
+## 附录 E：Worker 修复后的完整时序 (io_uring 模式)
+
+### E.1 AutoSend(strIdentify) — S2S 内部连接 (CODEC_PB_INTERNAL)
+
+```
+AutoSend(strIdentify, oGenKeyMsgHead, oGenKeyMsgBody):
+  │
+  ├─ HostPort2SockAddr(strHost, iPort) → creates socket fd
+  │
+  ├─ CreateConnectFdAttr(fd, ulSeq, strIdentify):
+  │   ├─ CreateFdAttr → 加入 mapFdAttr
+  │   ├─ AddIoTimeout(1.5s)
+  │   └─ if (!m_pIoBackend) {              ← EV 模式：注册 watcher
+  │         AddIoReadEvent(pConn)             io_uring 模式：跳过 (defer to caller)
+  │         AddIoWriteEvent(pConn)
+  │       }
+  │
+  ├─ EncodeByConnectionCodec(codec, oGenKeyMsg, pWaitForSendBuff)
+  │   → GenKey 数据在 pWaitForSendBuff 中
+  │
+  ├─ mapSeq2WorkerIndex[ulSeq] = iWorkerIndex
+  ├─ AddMsgShell(strIdentify, stMsgShell)   → 加入路由表
+  │
+  ├─ connect(fd, &addr, sizeof(addr))       ← ★ TCP 连接完成
+  │
+  ├─ ★ AddIoReadEvent(pConn)                ← EV: 第二次调用 (RefreshEvent 幂等)
+  │   └─ [io_uring] SubmitRead → async_read_some + poll()
+  │        ★ fd 已连接 → 无 ENOTCONN → 读 SQE 正常提交
+  │
+  ├─ ★ AddIoWriteEvent(pConn)               ← EV: 第二次调用 (RefreshEvent 幂等)
+  │   └─ [io_uring] SubmitWrite → pSendBuff 为空 → callback(0)
+  │       └─ ★ HandleIoWriteComplete(result=0):
+  │           ├─ pWaitForSendBuff->ReadableBytes() > 0 ✓
+  │           ├─ mapSeq2WorkerIndex.find(ulSeq) → found ✓
+  │           ├─ CmdConnectWorker::Start(stMsgShell, index)
+  │           │   └─ StepConnectWorker::Emit → SendTo(CMD_REQ_CONNECT_TO_WORKER)
+  │           │       └─ Encode to pSendBuff → WriteFD → cmd=7 已发送
+  │           ├─ mapSeq2WorkerIndex.erase(ulSeq)
+  │           ├─ CancelFd(fd)               ← 清理读 SQE (由 AddIoReadEvent 提交)
+  │           └─ SubmitRead(fd, pRecvBuff)   ← 重新提交读 (等待响应)
+  │
+  └─ return true
+
+[远程 Logic Manager 处理]
+
+接收 cmd=7 → StepConnectWorker::Callback → StepTellWorker
+  → StepTellWorker::Emit → SendTo(CMD_REQ_TELL_WORKER, cmd=9)
+
+[Interface Worker 接收响应]
+
+读完成 → HandleIoReadComplete → 解码 cmd=9
+  → StepTellWorker::Callback (StepTellWorker.cpp:48):
+      AddMsgShell(worker_identify, stMsgShell)
+      AddNodeIdentify(node_type, worker_identify)
+      ★ SendTo(stMsgShell)                  ← flush pWaitForSendBuff！
+          ├─ pWaitForSendBuff → pSendBuff   (GenKey 数据)
+          └─ WriteFD(fd) → GenKey 请求发送
+
+[Logic Manager 处理 GenKey → 生成 token+key → 响应]
+
+读完成 → HandleIoReadComplete → GenKey response → dispatch
+  → ModuleInterface::GenKeyVerifyKeyStepCo20 → HTTP 响应
+  → 客户端收到 token+key ✅
+```
+
+### E.2 AutoSend(strHost, iPort) — HTTP 外部连接
+
+```
+AutoSend(strHost, iPort, strUrlPath, oHttpMsg, pStep):
+  │
+  ├─ CreateHttpFdAttr → if (!m_pIoBackend) { IO events }
+  ├─ Encode → pWaitForSendBuff
+  ├─ connect(fd)
+  ├─ AddIoReadEvent + AddIoWriteEvent
+  │   └─ [io_uring] callback(0) → HandleIoWriteComplete:
+  │       ├─ pWaitForSendBuff 有数据 ✓
+  │       ├─ mapSeq2WorkerIndex.find → NOT found (HTTP)
+  │       └─ SendTo(stMsgShell) → flush pWaitForSendBuff → HTTP 请求发送
+  └─ return true
+```
+
+### E.3 AutoConnect(strIdentify) — 预连接 (无数据)
+
+```
+AutoConnect(strIdentify):
+  │
+  ├─ CreateConnectFdAttr → if (!m_pIoBackend) { IO events }
+  ├─ mapSeq2WorkerIndex[ulSeq] = iWorkerIndex
+  ├─ AddMsgShell
+  ├─ connect(fd)
+  ├─ AddIoReadEvent + AddIoWriteEvent
+  │   └─ [io_uring] callback(0) → HandleIoWriteComplete:
+  │       └─ pWaitForSendBuff 为空 → no-op (连接就绪，等待后续 SendTo)
+  └─ return true
+```
+
+
+
+## 附录 F：ASIO io_uring_service 内部实现原理
+
+> 源码: `code/3party/asio/include/asio/detail/io_uring_service.hpp` +
+> `impl/io_uring_service.ipp`
+
+### F.1 初始化：双 fd 唤醒架构
+
+```
+io_uring_service::io_uring_service(execution_context& ctx)
+  │
+  ├─ scheduler_ = use_service<scheduler>(ctx)   ← 获取全局调度器
+  ├─ reactor_   = use_service<reactor>(ctx)     ← 获取 reactor (epoll wrapper)
+  │
+  ├─ init_ring():
+  │   ├─ io_uring_queue_init(ring_size=16384, &ring_, 0)
+  │   │   └─ 创建 io_uring 实例 → ring_.ring_fd (SQ/CQ 共享内存 + 内核 fd)
+  │   │
+  │   ├─ event_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)
+  │   │   └─ 创建用户态事件通知 fd
+  │   │
+  │   └─ io_uring_register_eventfd(&ring_, event_fd_)
+  │       └─ ★ 将 eventfd 注册到 io_uring → 内核完成 CQE 时自动写入 eventfd
+  │          这是 ASIO 与 liburing 直接使用的关键差异：
+  │          ASIO 不 poll ring_fd，而是通过 eventfd + reactor 驱动
+  │
+  └─ register_with_reactor():
+      └─ reactor_.register_internal_descriptor(READ, event_fd_, new event_fd_read_op)
+          └─ ★ 将 eventfd 加入 epoll 集合
+             当 io_uring 有 CQE 完成 → 内核写 eventfd → epoll 检测到 eventfd 可读
+             → reactor 调用 event_fd_read_op::do_perform()
+
+架构图:
+
+  io_uring 实例 (共享内存)
+  ┌─────────────────────────────┐
+  │ SQ (Submission Queue)       │  ← 用户态写 SQE
+  │ CQ (Completion Queue)       │  ← 内核写 CQE
+  │ ring_fd                     │  ← 内核 fd，标准 I/O 事件通知
+  └──────────┬──────────────────┘
+             │ io_uring_register_eventfd(ring, event_fd)
+             ▼
+         event_fd               ← 用户态 eventfd，内核有 CQE 时自动 ++counter
+             │
+             │ reactor::register_internal_descriptor(READ, event_fd)
+             ▼
+         epoll (reactor)
+             │
+             │ eventfd 可读
+             ▼
+    event_fd_read_op::do_perform()
+      ├─ read(event_fd)         ← 清空 counter
+      └─ io_uring_service::run(0, ops)
+          └─ ★ 收割所有 CQE，投递完成回调
+```
+
+### F.2 操作提交流程：`start_op()` → `submit_sqes()`
+
+```
+io_uring_service::start_op(op_type, io_obj, op, is_continuation)
+  │
+  │  前提: async_read_some / async_write_some 内部调用此函数
+  │
+  ├─ io_obj->queues_[op_type].op_queue_.empty()?  ← 检查操作队列是否为空
+  │   │
+  │   ├─ 空: op->perform(false)                  ← 尝试立即执行
+  │   │   ├─ 成功: scheduler_.post_immediate_completion(op)
+  │   │   │         ★ 操作同步完成，直接投递回调 (如 buffer 为空)
+  │   │   │
+  │   │   └─ 失败 (需要异步):
+  │   │       │
+  │   │       ├─ io_obj->queues_[op_type].op_queue_.push(op)
+  │   │       │
+  │   │       ├─ get_sqe():                     ← 从 SQ 获取空闲 SQE
+  │   │       │   ├─ sqe = io_uring_get_sqe(&ring_)
+  │   │       │   └─ 如果 SQ 满 → flush: submit_sqes() → 重试 get_sqe()
+  │   │       │
+  │   │       ├─ op->prepare(sqe)               ← 填充 SQE (io_uring_prep_recv/...)
+  │   │       ├─ io_uring_sqe_set_data(sqe, &io_obj->queues_[op_type])
+  │   │       │                                    ★ 将 io_queue 指针设为 user_data
+  │   │       │
+  │   │       ├─ scheduler_.work_started()      ← 增加 outstanding_work_ 计数
+  │   │       └─ post_submit_sqes_op(lock):     ← ★ 投递提交操作
+  │   │           ├─ pending_sqes_++            ← 累加待提交 SQE 计数
+  │   │           └─ 如果 !pending_submit_sqes_op_:
+  │   │               scheduler_.post_immediate_completion(&submit_sqes_op_)
+  │   │               ★ 将 submit_sqes_op 投递到调度器
+  │   │
+  │   └─ 非空: io_obj->queues_[op_type].op_queue_.push(op)
+  │             ★ 排队等待前一个操作完成
+  │             scheduler_.work_started()
+  │
+  └─ ★ 关键: start_op 本身不调用 io_uring_enter！
+      SQE 只是写入 SQ 共享内存，内核提交由 submit_sqes_op 延迟执行
+
+submit_sqes_op::do_complete():
+  │
+  │  调度器执行此 operation 时调用 (在 poll_one/poll 路径中)
+  │
+  └─ service_->submit_sqes()
+
+io_uring_service::submit_sqes():
+  │
+  ├─ 如果 pending_sqes_ == 0 → 直接返回
+  │
+  ├─ nr = io_uring_submit(&ring_)              ← ★ 系统调用: io_uring_enter
+  │   └─ 批量提交所有 pending SQEs 到内核
+  │
+  ├─ pending_sqes_ -= nr
+  ├─ pending_submit_sqes_op_ = false
+  │
+  └─ 如果 pending_sqes_ > 0:                    ← 还有未提交的 SQE
+      post_submit_sqes_op()                     ← 再次投递提交操作
+```
+
+### F.3 完成处理流程：`run()` → 收割 CQE
+
+```
+io_uring_service::run(long usec, op_queue<operation>& ops)
+  │
+  │  被以下路径调用:
+  │  ├─ event_fd_read_op::do_perform()  ← reactor 检测到 eventfd 可读
+  │  ├─ io_context::poll()              ← 用户主动 poll
+  │  └─ io_context::run()               ← 阻塞运行模式 (Thunder 未使用)
+  │
+  ├─ 限制: 最多处理 complete_batch_size(128) 个 CQE
+  │
+  ├─ while (true):
+  │   │
+  │   ├─ submit_sqes()                         ← ★ 先提交所有待处理的 SQE
+  │   │                                            (关键: 每次 run 都先 flush SQ)
+  │   │
+  │   ├─ io_uring_wait_cqe(&ring_, &cqe)?      ← 等待 CQE (带超时)
+  │   │   ├─ 有 CQE:
+  │   │   │   ├─ ptr = io_uring_cqe_get_data(cqe)
+  │   │   │   │   ★ ptr = &io_obj->queues_[op_type] (start_op 时设置的)
+  │   │   │   │
+  │   │   │   ├─ io_queue* io_q = static_cast<io_queue*>(ptr)
+  │   │   │   ├─ io_q->set_result(cqe->res)    ← 保存操作结果
+  │   │   │   │   cqe->res >= 0: 字节数
+  │   │   │   │   cqe->res < 0:  -errno (如 -107 = ENOTCONN)
+  │   │   │   │
+  │   │   │   ├─ ops.push(io_q)                ← 加入待完成队列
+  │   │   │   │
+  │   │   │   └─ io_uring_cqe_seen(&ring_, cqe) ← 标记 CQE 已消费
+  │   │   │
+  │   │   └─ 无 CQE (超时/中断) → break
+  │   │
+  │   └─ ops 数量达到 batch_size → break
+  │
+  └─ 返回后: 调度器遍历 ops，调用 io_queue::perform_io(result)
+
+io_queue::perform_io(int result):
+  │
+  │  由调度器从 ops 队列中取出执行
+  │
+  ├─ 从 op_queue_ 中取出第一个 io_uring_operation
+  ├─ op->complete(result)                      ← 调用用户 lambda 回调
+  │   └─ 例: async_read_some 的回调 lambda:
+  │       ec.assign(-result, system_category()) [如果 result<0]
+  │       n = result [如果 result>=0]
+  │       → 用户代码执行
+  │
+  ├─ 如果 op_queue_ 还有更多操作:
+  │   └─ start_op() 提交下一个操作              ← 自动排队下一个
+  │
+  └─ scheduler_.work_finished()               ← 减少 outstanding_work_ 计数
+```
+
+### F.4 `io_context::poll()` 的完整执行路径
+
+```
+io_context::poll()
+  │
+  └─ scheduler::poll()
+      │
+      └─ scheduler::do_poll():
+          │
+          ├─ 步骤 1: 执行所有待处理的 ready-to-run operations
+          │   ├─ submit_sqes_op::do_complete   ← ★ 如果有 pending SQEs，先提交
+          │   ├─ io_queue::perform_io           ← CQE 完成回调 (用户 lambda)
+          │   └─ 其他 operations (timer, signal, ...)
+          │
+          ├─ 步骤 2: 如果没有任何就绪 operation:
+          │   │
+          │   ├─ reactor::poll(0)              ← 非阻塞检查 eventfd
+          │   │   └─ event_fd_read_op::do_perform():
+          │   │       ├─ read(event_fd_)        ← 清空计数器
+          │   │       └─ io_uring_service::run(0, ops)
+          │   │           ├─ submit_sqes()      ← 提交 SQEs
+          │   │           ├─ io_uring_wait_cqe(&ring_, &cqe, timeout=0) ← 非阻塞
+          │   │           └─ 收割 CQE → 加入 ops
+          │   │
+          │   └─ 执行 ops 中的 io_queue::perform_io → 触发用户回调
+          │
+          └─ 返回已执行的 handler 数量
+
+关键理解:
+  poll() 一次调用做了两件事:
+  1. submit_sqes() — 将 start_op 中队列化的 SQE 通过 io_uring_enter 提交给内核
+  2. run()      — 收割已完成 CQE 并触发用户回调
+
+  因此 "SubmitRead 末尾调 poll()" 的效果:
+  async_read_some → start_op → SQE 写入 SQ → 立即 poll()
+    → submit_sqes (提交 SQE) + run(收割 CQE)
+    → 如果 fd 已连接 + 数据已就绪 → 同步完成回调
+    → 如果 fd 未连接 → 同步 ENOTCONN 回调
+```
+
+### F.5 与 libev 的三路集成 — 事件循环协同
+
+```
+                    ┌─── libev 事件循环 ───────────────────────────────┐
+                    │                                                  │
+                    │  while (running) {                               │
+                    │                                                  │
+ev_prepare          │    ● ev_prepare → OnPrepare()                    │
+hook                │      └─ m_ioCtx.poll()                           │
+                    │          ├─ submit_sqes() ← commit pending SQEs  │
+                    │          └─ run(0)         ← reap CQEs (non-block)│
+                    │                                                  │
+                    │    ┌─ epoll_wait(timeout) ──────────────────┐    │
+                    │    │  ASIO 内部:                             │    │
+                    │    │  ├─ reactor 监控 event_fd               │    │
+                    │    │  │   ★ event_fd 被 io_uring_register_   │    │
+                    │    │  │     eventfd 注册到内核               │    │
+                    │    │  │   ★ 内核完成 I/O → ++eventfd counter │    │
+                    │    │  │   ★ epoll 检测到 eventfd 可读        │    │
+kernel              │    │  │                                       │    │
+blocking            │    │  ├─ ring_fd 也被 ev_io 监控              │    │
+                    │    │  │   ★ 作为额外的唤醒路径                │    │
+                    │    │  │                                       │    │
+                    │    │  └─ 业务 fd (在 ev 模式中)               │    │
+                    │    └──────────────────────────────────────────┘    │
+                    │                                                  │
+ev_check            │    ● ev_check → OnCheck()                         │
+hook                │      └─ m_ioCtx.poll()                           │
+                    │          └─ 收割 epoll_wait 期间到达的 CQE       │
+                    │                                                  │
+ev_io               │    ● ev_io(ring_fd) → OnRingReady()              │
+hook                │      └─ m_ioCtx.poll()                           │
+                    │          └─ 收割处理其他事件期间到达的 CQE       │
+                    │                                                  │
+                    │    ● ev_io    → 业务 fd 回调 (EV 模式)           │
+                    │    ● ev_timer → 超时检测                         │
+                    │    ● ev_idle  → 空闲任务                         │
+                    │  }                                               │
+                    └──────────────────────────────────────────────────┘
+
+为什么三路都需要？因为 ASIO 不是"push"模型:
+
+  1. OnPrepare (poll before epoll_wait):
+     场景: 上次循环末尾提交了 SQE，CQE 在 epoll_wait 前到达
+     无 OnPrepare: CQE 等待整个 epoll_wait 周期
+
+  2. OnCheck (poll after epoll_wait):
+     场景: CQE 在 epoll_wait 阻塞期间到达 → event_fd 唤醒 epoll_wait
+     但 reactor 的通知可能在 poll 内已处理，或需要再收割
+     无 OnCheck: 某些 CQE 延迟到下一轮
+
+  3. OnRingReady (poll on ring_fd readable):
+     场景: 处理 ev_io/ev_timer 回调时提交了新 SQE → 立即完成 → ring_fd 就绪
+     无 OnRingReady: 这些 CQE 要等下一轮 epoll_wait
+
+  ★ 三路互补保证了 CQE 在任何时间窗口到达都能被及时收割
+```
+
+### F.6 UringIoBackend vs AsioUringIoBackend — SQE 提交时序对比
+
+```
+═══════════════════════════════════════════════════════════════════════
+  操作: SubmitRead(fd=14, buf, seq) — fd 尚未 connect()
+═══════════════════════════════════════════════════════════════════════
+
+UringIoBackend (直接 liburing):
+────────────────────────────────────────────────────────────────────
+  io_uring_get_sqe(&ring)        ← 获取空闲 SQE
+  io_uring_prep_recv(sqe, 14)    ← 填充 SQE
+  io_uring_submit(&ring)         ← ★ io_uring_enter(fd, 1, 0, IORING_ENTER_GETEVENTS)
+                                    系统调用: 提交 1 个 SQE + 收割 CQE (如有)
+                                    内核处理:
+                                      fd=14 未连接 → 生成 CQE {res=-107} (ENOTCONN)
+                                      写入 CQ + ++event_fd counter (如果注册了)
+                                    返回: 已提交 1 SQE
+  return true
+  ★ SQE 已在内核中，但 CQE 尚未被用户态收割
+  ★ CQE 收割在下次 RingEventCallback → ReapCqes 中
+
+AsioUringIoBackend (ASIO 封装):
+────────────────────────────────────────────────────────────────────
+  sock.async_read_some(buf, cb)  ← 调用 ASIO
+    └─ io_uring_service::start_op(read_op, io_obj, op)
+        ├─ op->perform(false)    ← 无法同步完成 (需异步)
+        ├─ io_obj->queues_[read_op].op_queue_.push(op)
+        ├─ get_sqe() → sqe       ← 获取空闲 SQE
+        ├─ op->prepare(sqe)      ← io_uring_prep_recv(sqe, 14, ...)
+        ├─ io_uring_sqe_set_data(sqe, &io_obj->queues_[read_op])
+        └─ post_submit_sqes_op() ← ★ 投递 submit_sqes_op 到调度器
+                                    仅 pending_sqes_++，不调用 io_uring_enter!
+
+  ★★★ 此时 SQE 在 SQ 中但未被内核看到 ★★★
+
+  m_ioCtx.poll()                 ← 调用者显式 poll
+    └─ scheduler::do_poll()
+        ├─ submit_sqes_op::do_complete
+        │   └─ io_uring_service::submit_sqes()
+        │       └─ io_uring_submit(&ring_)  ← ★ 这里才调用 io_uring_enter!
+        │           内核处理:
+        │             fd=14 未连接 → 生成 CQE {res=-107}
+        │             写入 CQ + ++event_fd counter
+        │           返回: 已提交 N SQE
+        │
+        ├─ reactor::poll(0) → eventfd 可读
+        │   └─ event_fd_read_op::do_perform
+        │       └─ io_uring_service::run(0, ops)
+        │           ├─ io_uring_wait_cqe(..., timeout=0) ← 非阻塞取 CQE
+        │           │   └─ 返回 cqe {user_data=io_q, res=-107}
+        │           ├─ io_q->set_result(-107)
+        │           └─ ops.push(io_q)
+        │
+        └─ 执行 io_queue::perform_io(-107)
+            └─ op->complete() → 用户 lambda 回调 ★ 同步触发！
+                └─ m_callback(14, seq, Read, -107, user_data)
+                    └─ Worker::HandleIoReadComplete(pConn, -107)
+                        └─ DestroyConnect ★ 在 poll() 内同步执行！
+
+对比总结:
+  UringIoBackend:    SQE 提交 ───┬─── CQE 生成 ───┬─── CQE 收割 ───┬─── 回调
+                    (io_uring_submit)  (内核异步)    (ReapCqes异步)  (异步)
+
+  AsioUringIoBackend: SQE 写入 SQ ─── poll() ─── submit + 收割 + 回调 (全部同步在一个调用栈内)
+```
+
+---
+
+## 附录 G：`Result==0` 写回调 — pWaitForSendBuff 刷新机制
+
+### G.1 为什么需要一个"空写"回调
+
+Thunder 的 IO Backend 统一接口中，写操作完成后通过 `m_callback(fd, seq, IoOp::Write, result)` 通知 Worker。
+当 `result == 0` 时 (pSendBuff 为空，无需真正写)，`HandleIoWriteComplete` 并不会空转 —
+它检查 `pWaitForSendBuff` 是否有排队数据，这是 outgoing 连接建立后的**第一个数据发送触发点**。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            outgoing 连接建立后的"空写回调"机制                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  AutoSend:                                                      │
+│    1. CreateConnectFdAttr → fd 加入 mapFdAttr                    │
+│    2. Encode → pWaitForSendBuff                                 │
+│    3. AddMsgShell → mapMsgShell                                  │
+│    4. connect()                                                  │
+│    5. AddIoWriteEvent → SubmitWrite(empty pSendBuff)             │
+│       └─ callback(Write, result=0)                               │
+│                                                                 │
+│  HandleIoWriteComplete(result=0):                                │
+│    ├─ pSendBuff 为空 → readable=0 → 触发 result=0 回调            │
+│    ├─ ★ pWaitForSendBuff->ReadableBytes() > 0 ★                 │
+│    │   ├─ mapSeq2WorkerIndex 有条目:                             │
+│    │   │   └─ CmdConnectWorker::Start → 发送握手 (cmd=7)         │
+│    │   │       (GenKey 数据留在 pWaitForSendBuff，等待            │
+│    │   │        StepTellWorker::Callback 中 SendTo 触发的 flush) │
+│    │   │                                                        │
+│    │   └─ 无 mapSeq2WorkerIndex:                                 │
+│    │       └─ SendTo(stMsgShell) → 立即 flush pWaitForSendBuff   │
+│    │                                                                │
+│    └─ pWaitForSendBuff 为空:                                     │
+│        └─ no-op (纯预连接，如 AutoConnect)                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### G.2 三种后端的 result==0 触发时机
+
+| 后端 | SubmitWrite (空 pSendBuff) | 触发方式 | 延迟 | pWaitForSendBuff 状态 |
+|------|--------------------------|---------|------|----------------------|
+| EvIoBackend | ev_io_set(EV_WRITE) → epoll_wait → fd 可写 → WriteFD(pSendBuff=empty)→result=0 | 异步 (epoll) | 1个 ev_run 迭代 | 编码已完成 ✅ |
+| UringIoBackend | WriteFD(pSendBuff=empty)→result=0 | **同步** | 0 (SubmitWrite 内) | 取决于调用时机 |
+| AsioUringIoBackend | async_write_some(empty) → start_op → perform 立即成功 → result=0 | **同步** (poll 前) | 0 | 取决于调用时机 |
+
+**时序要求**: result==0 回调触发时，`pWaitForSendBuff` **必须已经**包含数据。
+在修复后的流程中，`connect()` 之后才调用 `AddIoWriteEvent`，此时编码已在前一步完成 → pWaitForSendBuff 有数据 ✅。

@@ -29,21 +29,24 @@ def test_interface_http_co20_echo(http_session: requests.Session) -> None:
 def test_interface_genkey_verifykey_chain(http_session: requests.Session) -> None:
     token = None
     key = None
-    last = None
-    for _ in range(20):
-        gen = http_session.post(BASE_URL, json={"option": "GenKey"}, timeout=60)
-        assert gen.status_code == 200, gen.text
-        g = gen.json()
-        last = g
-        token = g.get("token")
-        key = g.get("key")
-        if token and key:
+    last = {}
+    # 首次 GenKey 触发 Interface→Logic S2S 连接建立（asio_uring 下需同步等待）
+    # 连接建立后后续请求才能正常路由；30 × 1s = 最多等 30s
+    for _ in range(30):
+        warmup = http_session.post(BASE_URL, json={"option": "GenKey"}, timeout=60)
+        assert warmup.status_code == 200, warmup.text
+        w = warmup.json()
+        last = w
+        t = w.get("token")
+        k = w.get("key")
+        if t and k:
+            token, key = t, k
             break
-        time.sleep(0.5)
+        # "logic step failed" = 路由尚未就绪，继续等待
+        time.sleep(1.0)
 
-    assert isinstance(last, dict), last
+    assert token and key, f"Route to LOGIC never established after 30s: {last}"
     assert str(last.get("msg", "")) == "success", last
-    assert token and key, last
 
     verify = http_session.post(
         BASE_URL, json={"option": "VerifyKey", "token": token, "key": key}, timeout=60
