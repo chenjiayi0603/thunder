@@ -34,8 +34,8 @@ fi
 WRK_HAS_SSL=$("$WRK" --help 2>&1 | grep -c -i "ssl\|--https" || true)
 
 usage() {
-    echo "Usage: $0 [--backend ev|uring] [--backends ev,uring]"
-    echo "Example: $0 --backends ev,uring"
+    echo "Usage: $0 [--backend ev|asio_uring] [--backends ev,asio_uring]"
+    echo "Example: $0 --backends ev,asio_uring"
     exit 1
 }
 
@@ -152,9 +152,7 @@ for BACKEND in "${BACKENDS[@]}"; do
     BUILD_DIR="$THUNDER_ROOT/build_${BACKEND}"
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    if [[ "$BACKEND" == "uring" ]]; then
-        cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_URING=ON > /dev/null 2>&1
-    elif [[ "$BACKEND" == "asio_uring" ]]; then
+    if [[ "$BACKEND" == "asio_uring" ]]; then
         cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_ASIO_URING=ON > /dev/null 2>&1
     else
         cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null 2>&1

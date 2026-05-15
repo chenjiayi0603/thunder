@@ -1,7 +1,7 @@
 """
 IoBackend 行为单元测试
 
-验证 EvIoBackend / UringIoBackend / AsioUringIoBackend 的抽象接口契约:
+验证 EvIoBackend / AsioUringIoBackend 的抽象接口契约:
 - SubmitRead/SubmitWrite/CancelFd/HasPending/Name 语义正确性
 """
 import pytest
@@ -46,29 +46,6 @@ class MockEvIoBackend:
 
     def has_pending(self, fd: int) -> bool:
         return fd in self.fds
-
-
-class MockUringIoBackend:
-    """模拟 UringIoBackend — 全局 m_mapPending"""
-    def __init__(self):
-        self.pending: Dict[int, dict] = {}
-
-    def name(self) -> str:
-        return "uring"
-
-    def submit_read(self, fd: int, seq: int = 0) -> bool:
-        self.pending[fd] = {"fd": fd, "seq": seq, "op": "read"}
-        return True
-
-    def submit_write(self, fd: int, seq: int = 0) -> bool:
-        self.pending[fd] = {"fd": fd, "seq": seq, "op": "write"}
-        return True
-
-    def cancel_fd(self, fd: int) -> None:
-        self.pending.pop(fd, None)
-
-    def has_pending(self, fd: int) -> bool:
-        return fd in self.pending
 
 
 class TestEvIoBackendContract:
@@ -125,28 +102,6 @@ class TestEvIoBackendContract:
         assert self.be.has_pending(20), "fd 20 should not be affected"
 
 
-class TestUringIoBackendContract:
-    """UringIoBackend 接口契约"""
-
-    def setup_method(self):
-        self.be = MockUringIoBackend()
-
-    def test_cancel_fd_removes_pending(self):
-        self.be.submit_read(10)
-        self.be.cancel_fd(10)
-        assert not self.be.has_pending(10)
-
-    def test_cancel_fd_then_read_resubmit(self):
-        """关键: CancelFd 后补交读"""
-        self.be.submit_read(10)
-        self.be.cancel_fd(10)
-        self.be.submit_read(10)
-        assert self.be.has_pending(10)
-
-    def test_name_is_uring(self):
-        assert self.be.name() == "uring"
-
-
 class TestRemoveIoWriteEventRegression:
     """回归: RemoveIoWriteEvent 在 CancelFd 后补交 SubmitRead"""
 
@@ -169,10 +124,3 @@ class TestRemoveIoWriteEventRegression:
         be.submit_read(fd, seq)
         assert be.has_pending(fd), "MUST re-submit Read after CancelFd"
 
-    def test_uring_backend_resubmit_after_cancel(self):
-        be = MockUringIoBackend()
-        be.submit_read(42)
-        be.cancel_fd(42)
-        assert not be.has_pending(42)
-        be.submit_read(42)
-        assert be.has_pending(42), "MUST re-submit Read"

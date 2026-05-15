@@ -18,9 +18,6 @@
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
 #include "EvIoBackend.hpp"
-#ifdef THUNDER_IO_URING
-#include "UringIoBackend.hpp"
-#endif
 #ifdef THUNDER_IO_ASIO_URING
 #include "AsioUringIoBackend.hpp"
 #endif
@@ -470,27 +467,15 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: asio_uring init failed, falling back to uring");
+        LOG4_WARN("IoBackend: asio_uring init failed, falling back to ev");
 #else
-        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to uring");
+        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to ev");
 #endif
     }
 
-    if (strBackend == "uring" || strBackend == "asio_uring")
+    if (strBackend == "uring")
     {
-#ifdef THUNDER_IO_URING
-        UringIoBackend* pBackend = new UringIoBackend();
-        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
-        {
-            m_pIoBackend = pBackend;
-            LOG4_INFO("IoBackend: io_uring initialized successfully");
-            return true;
-        }
-        delete pBackend;
-        LOG4_WARN("IoBackend: io_uring init failed, falling back to ev");
-#else
-        LOG4_WARN("IoBackend: io_uring requested but THUNDER_IO_URING not compiled, falling back to ev");
-#endif
+        LOG4_WARN("IoBackend: \"uring\" backend has been removed, falling back to ev");
     }
 
     // 默认使用 ev 后端
