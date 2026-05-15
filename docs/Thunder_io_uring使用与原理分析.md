@@ -73,6 +73,48 @@ struct io_uring_cqe {
 | **中断驱动**（默认）| 提交需 `io_uring_enter()` syscall，CQ 完成通过 ring_fd 可读通知 | ✅ 当前使用 |
 | **SQPOLL** | 内核线程轮询 SQ，零 syscall 提交，需 `CAP_SYS_NICE` 权限 | ❌ 未使用 |
 
+#### 当前模式确认（代码依据）
+
+Asio io_uring 后端硬编码 `flags=0`（`asio/detail/impl/io_uring_service.ipp:532`）：
+
+```cpp
+::io_uring_queue_init(ring_size, &ring_, 0);
+//                                       ↑ flags=0，无 IORING_SETUP_SQPOLL
+```
+
+当前实际交互流程：
+
+```
+用户态                         内核态
+  │                               │
+  │  io_uring_enter()  ──────────►│  ← 每次提交一次 syscall
+  │  （ev_prepare 批量合并多个 SQE）│    内核执行 I/O，写 CQE
+  │                               │
+  │  ring_fd 可读  ◄────────────── │  ← ring_fd 通知，ev_io(ring_fd) 触发
+  │  io_context.poll() 收割 CQE   │
+```
+
+#### 为什么不用 SQPOLL
+
+```
+  ┌────────────────────────┬──────────────────────────────────────────────────────┐
+  │         原因           │                       说明                           │
+  ├────────────────────────┼──────────────────────────────────────────────────────┤
+  │ 权限问题               │ 需要 CAP_SYS_NICE 或 root                            │
+  │                        │ 生产容器默认无此权限，io_uring_setup() 返回 EPERM     │
+  ├────────────────────────┼──────────────────────────────────────────────────────┤
+  │ 空闲时白烧 CPU         │ SQPOLL 创建常驻内核线程持续轮询 SQ                    │
+  │                        │ 无 I/O 时仍占 CPU，不适合大量空闲连接的场景           │
+  ├────────────────────────┼──────────────────────────────────────────────────────┤
+  │ Asio 不支持配置        │ Asio io_uring 后端硬编码 flags=0                     │
+  │                        │ 要用 SQPOLL 需 patch Asio 或绕过 Asio 直接初始化     │
+  └────────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+**SQPOLL 并非真正"零 syscall"**：内核轮询线程空闲超过 `sq_thread_idle`（默认 1s）后休眠，下次提交仍需 `IORING_ENTER_SQ_WAKEUP` syscall 唤醒，仅在持续高频 I/O 期间才能做到零 syscall。
+
+**Thunder 已通过 ev_prepare 批量合并缓解了 syscall 开销**：多个 SubmitRead/Write 积攒后一次 `io_uring_enter()` 提交，SQPOLL 能消掉的那一次 syscall 在 Thunder 场景下已不是主要瓶颈。
+
 ---
 
 ## 第二部分：Thunder IoBackend 抽象设计
@@ -729,6 +771,6 @@ add_compile_definitions(THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING 
 
 ---
 
-*文档版本：v2.1*
-*最后更新：2026-05-16*（新增 5.5 Little's Law 验算分析、5.6 io_uring 吞吐边界（控制路径 vs 数据路径）、重排第六部分为表格格式）
+*文档版本：v2.2*
+*最后更新：2026-05-16*（1.3 补充当前模式代码依据、SQPOLL 不用原因表格；5.5 Little's Law 验算；5.6 io_uring 吞吐边界；第六部分表格化）
 *项目仓库：https://github.com/chenjiayi0603/thunder*
