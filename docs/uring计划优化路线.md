@@ -28,6 +28,28 @@
 
 > Asio 是我们掌控的 pinned submodule，patch 可控；但 ②③⑤ 三项都要动它，是选型的关键信号。
 
+### 关于 send_zc 的「仅大包写」与按阈值分流
+
+零拷贝发送省的是那次 memcpy，代价是一组**与包大小无关的固定开销**：
+
+```
+普通 send：用户 buffer ─[memcpy]→ 内核 socket buffer → 网卡
+           发完即可复用，一个 CQE
+
+send_zc：  内核 pin 住用户页 → 网卡直接 DMA 用户内存
+           发完前 buffer 不可动 → 两个 CQE（提交 + NOTIF 才可复用）
+```
+
+| 固定开销 | 说明 |
+|---------|------|
+| 页 pin/unpin | 内核 `get_user_pages` 锁用户页，发完解锁 |
+| 双 CQE | 比普通 send 多一个 NOTIF 完成，收割/记账翻倍 |
+| 零拷贝记账 | skb zerocopy 状态跟踪 |
+
+小包（如 37B）省下的 memcpy 几乎免费（cache 内、个位数纳秒），却要付上面三笔固定开销 → **净亏**。Linux 内核文档明确 `MSG_ZEROCOPY` "不是免费午餐"，经验阈值约 **~10KB 以上才划算**。
+
+**实现要求**：send_zc **必须按 buffer 大小分流**——超过阈值（建议 ~16KB，可配）走 `prep_send_zc`，小包走普通 `prep_send`。不可无脑全用，否则小包路径净劣化。这也是表中标「仅大包写」的原因。
+
 ---
 
 ## Asio 后端 vs 原生 liburing
