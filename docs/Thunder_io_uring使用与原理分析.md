@@ -2,7 +2,7 @@
 
 ## 摘要
 
-本文档深入分析 Thunder 实时异步通信分布式后台框架中 io_uring 的集成设计与实现。Thunder 项目采用 C++20 开发，其核心事件循环基于 libev，通过抽象的 IoBackend 接口支持三种 I/O 后端：传统的 EvIoBackend（基线实现）、手写的 UringIoBackend（实验性，待移除）以及基于 Asio 的 AsioUringIoBackend（生产级主力）。本文档从 io_uring 基础原理出发，详细剖析 Thunder 的 IoBackend 抽象设计、三种后端的实现细节、并发模型的演进历程，以及 wrk benchmark 性能数据背后的设计权衡。
+本文档深入分析 Thunder 实时异步通信分布式后台框架中 io_uring 的集成设计与实现。Thunder 项目采用 C++20 开发，其核心事件循环基于 libev，通过抽象的 IoBackend 接口支持两种 I/O 后端：传统的 EvIoBackend（基线实现）以及基于 Asio 的 AsioUringIoBackend（生产级主力）。手写 UringIoBackend 已于 2026-05-15 完成历史使命，正式从代码库移除。本文档从 io_uring 基础原理出发，详细剖析 Thunder 的 IoBackend 抽象设计、两种后端的实现细节、并发模型的演进历程，以及 wrk benchmark 性能数据背后的设计权衡。
 
 ---
 
