@@ -18,13 +18,13 @@
 
 ## 5 项优化一览
 
-| 优化 | 能否做 | 改动量 | 一句话方案 |
-|------|--------|--------|-----------|
-| **Fixed Buffers** | ✅ | 中，不改 Asio | Asio 原生支持；Thunder 把 per-conn 动态缓冲改成固定注册池 |
-| **native accept/connect** | ✅ | 中，不改 Asio | Asio 原生支持；建连从裸 syscall 搬进 Asio |
-| **SQPOLL** | ✅ | 小，需 patch Asio | Asio 硬编码 flags=0，patch 一处加 SQPOLL 标志；内核 7.0 免特权 |
-| **MSG_ZEROCOPY send** | ✅ | 中，需 patch Asio | Asio 无 send_zc，patch 加零拷贝发送路径；依赖 Fixed Buffers |
-| **Provided Buffers** | ⚠️ | 大，架构岔路 | Asio 完全无支持，需深度 patch 或 recv 侧绕开 Asio |
+| 优化 | 能否做 | 改动量 | 收益 | 一句话方案 |
+|------|--------|--------|------|-----------|
+| **Fixed Buffers** | ✅ | 中，不改 Asio | **中-高**：省内核 pin/unpin，大包尤明显，是 send_zc 前置 | Asio 原生支持；Thunder 把 per-conn 动态缓冲改成固定注册池 |
+| **MSG_ZEROCOPY send** | ✅ | 中，需 patch Asio | **高（仅大包写）**：直击 64KB 写 memcpy 瓶颈；小包反而负收益 | Asio 无 send_zc，patch 加零拷贝发送路径；依赖 Fixed Buffers |
+| **SQPOLL** | ✅ | 小，需 patch Asio | **中**：消提交 syscall，小包高频明显；Thunder 已批量合并，边际打折 | Asio 硬编码 flags=0，patch 一处加 SQPOLL 标志；内核 7.0 免特权 |
+| **Provided Buffers** | ⚠️ | 大，架构岔路 | **中-高**：recv 省一次拷贝、多连接内存效率高；但实现代价大 | Asio 完全无支持，需深度 patch 或 recv 侧绕开 Asio |
+| **native accept/connect** | ✅ | 中，不改 Asio | **低**：非吞吐热路径，仅高频建连场景受益 | Asio 原生支持；建连从裸 syscall 搬进 Asio |
 
 > Asio 是我们掌控的 pinned submodule，patch 可控；但 ②③⑤ 三项都要动它，是选型的关键信号。
 
