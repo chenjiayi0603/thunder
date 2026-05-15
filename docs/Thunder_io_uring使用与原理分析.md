@@ -25,7 +25,7 @@ io_uring 是 Linux 5.1（2019年3月）引入的异步 I/O 接口，由 Jens Axb
 | epoll + non-blocking | 每次 I/O 仍需多次 syscall（epoll_ctl + read + 可能的重试） |
 | POSIX AIO (glibc) | 功能残缺，实际是线程池模拟 |
 
-io_uring 通过 mmap 共享内存实现零拷贝内核交互：
+io_uring 通过 mmap 共享内存消除 **控制路径**的拷贝开销：
 
 ```
 用户态                              内核态
@@ -40,7 +40,11 @@ io_uring 通过 mmap 共享内存实现零拷贝内核交互：
   │  │ CQE: user_data/res  │◄──────────  完成通知
   │  └─────────────────────┘          │
   │                                   │
-  └──── 共享内存（mmap），无需数据拷贝 ────┘
+  └─ SQE/CQE 元数据通过 mmap 共享，无需拷贝 ─┘
+
+注意：消除的是控制元数据（SQE/CQE）的拷贝，不是业务数据本身。
+业务数据仍走：用户 buffer ↔ 内核 socket buffer 的 memcpy。
+真正的数据零拷贝需要 Fixed Buffers / Provided Buffers / MSG_ZEROCOPY（见第六部分）。
 ```
 
 ### 1.2 核心数据结构
@@ -771,6 +775,6 @@ add_compile_definitions(THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING 
 
 ---
 
-*文档版本：v2.2*
+*文档版本：v2.3*
 *最后更新：2026-05-16*（1.3 补充当前模式代码依据、SQPOLL 不用原因表格；5.5 Little's Law 验算；5.6 io_uring 吞吐边界；第六部分表格化）
 *项目仓库：https://github.com/chenjiayi0603/thunder*
