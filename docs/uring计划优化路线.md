@@ -23,8 +23,8 @@
 | **Fixed Buffers** | ✅ | 中，不改 Asio | **中-高**：省内核 pin/unpin，大包尤明显，是 send_zc 前置 | Asio 原生支持；Thunder 把 per-conn 动态缓冲改成固定注册池 |
 | **MSG_ZEROCOPY send** | ✅ | 中，需 patch Asio | **高（仅大包写）**：直击 64KB 写 memcpy 瓶颈；小包反而负收益 | Asio 无 send_zc，patch 加零拷贝发送路径；依赖 Fixed Buffers |
 | **SQPOLL** | ✅ | 小，需 patch Asio | **中**：消提交 syscall，小包高频明显；Thunder 已批量合并，边际打折 | Asio 硬编码 flags=0，patch 一处加 SQPOLL 标志；内核 7.0 免特权 |
-| **Provided Buffers** | ⚠️ | 大，架构岔路 | **中-高**：recv 省一次拷贝、多连接内存效率高；但实现代价大 | Asio 完全无支持，需深度 patch 或 recv 侧绕开 Asio |
 | **native accept/connect** | ✅ | 中，不改 Asio | **低**：非吞吐热路径，仅高频建连场景受益 | Asio 原生支持；建连从裸 syscall 搬进 Asio |
+| **Provided Buffers** | ⚠️ | 大，架构岔路 | **中-高**：recv 省一次拷贝、多连接内存效率高；但实现代价大 | Asio 完全无支持，需深度 patch 或 recv 侧绕开 Asio |
 
 > Asio 是我们掌控的 pinned submodule，patch 可控；但 ②③⑤ 三项都要动它，是选型的关键信号。
 
@@ -49,6 +49,49 @@ send_zc：  内核 pin 住用户页 → 网卡直接 DMA 用户内存
 小包（如 37B）省下的 memcpy 几乎免费（cache 内、个位数纳秒），却要付上面三笔固定开销 → **净亏**。Linux 内核文档明确 `MSG_ZEROCOPY` "不是免费午餐"，经验阈值约 **~10KB 以上才划算**。
 
 **实现要求**：send_zc **必须按 buffer 大小分流**——超过阈值（建议 ~16KB，可配）走 `prep_send_zc`，小包走普通 `prep_send`。不可无脑全用，否则小包路径净劣化。这也是表中标「仅大包写」的原因。
+
+### 关于接收侧零拷贝（zcrx）为何不做
+
+接收侧也有零拷贝（zcrx，对应 send_zc 的反方向）：
+
+```
+普通 recv：NIC → 内核 skb → [copy_to_user] → 你的 buffer   ← 这次拷贝是成本
+zcrx：     NIC 把包头给内核走协议栈，包体直接 DMA 进你预注册的用户内存
+           CQE 告诉你数据落在区域哪个位置，无 copy_to_user
+           用完通过 refill ring 把 buffer 还给内核
+```
+
+不做的三个理由（任一即足够）：
+
+**1. send/recv 所有权不对称 → recv 侧耦合极重**
+
+| | send_zc | zcrx（recv） |
+|--|---------|-------------|
+| buffer 谁拥有 | 你（pSendBuff） | 内核/NIC（它挑哪块放数据） |
+| 生命周期谁控 | 你：NOTIF 前不复用 | 内核：用完 refill 还回 ring |
+| 数据布局 | 你定，codec 原样产出 | 内核选，可能每次不同块、跨块不连续 |
+| codec 影响 | **零** | **必须重构**：从内核选的非连续池缓冲解析 + 跨块重组 |
+
+send 你产数据你说了算；recv 数据何时来、落哪块，内核说了算。recv 侧零拷贝必然把"内核选的非连续池缓冲"灌进 codec，是比 send 更狠的数据面重构。
+
+**2. 容器不友好（已用本机事实坐实）**
+
+zcrx 要内核 ≥6.11 + 网卡支持 header/data split + 特定驱动。容器只锁用户态镜像，锁不住宿主机内核与网卡。本机实测：内核 7.0 ✅、liburing 2.14 ✅，但有线网卡 `e1000e`、WiFi `mt7921e` **均不支持 zcrx**；且本机是 K8s 节点（`flannel.1`/`cni0`/`veth*`），容器流量全走虚拟接口，根本不经物理网卡 → zcrx 连应用机会都没有。K8s 跨节点内核/网卡异构，更不可靠。
+
+**3. Thunder 瓶颈在发送，不在接收**
+
+Thunder 是请求/响应模型：
+
+| 方向 | 数据量 | 拷贝成本 |
+|------|--------|---------|
+| 接收（请求） | 小（基准里 37B ~ 几 KB 的 JSON option） | cache 内、纳秒级，**可忽略** |
+| 发送（响应） | 大（64KB 响应体） | ≈640MB/s memcpy，**就是那道墙**（§5.6） |
+
+请求/响应服务（HTTP API / echo / RPC 返回数据）天然"问得小、答得大"，数据面拷贝成本压在发送侧。实测 64KB RPS 墙就在写/send 路径。zcrx 优化的是接收侧那次**几乎免费的小拷贝**——即便能用，也是优化非瓶颈。
+
+> 注（诚实）：此结论依赖工作负载。若 Thunder 用于大体积上传（客户端 POST 巨大 body），接收侧才会变重。当前 Hello/echo/API 画像与实测 64KB 瓶颈均在响应/发送侧。
+
+**结论**：recv 侧零拷贝（即 ⑤ Provided Buffers / zcrx）= 重耦合 + 容器不友好 + 优化非瓶颈，三重否定。**只做 send_zc，接收侧维持现状。**
 
 ---
 
@@ -94,5 +137,5 @@ Gate    K8s seccomp 就绪 + 降级可观测  ── 一切 io_uring 优化的�
 
 ---
 
-*v2.0 — 2026-05-16｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
+*v2.1 — 2026-05-16｜新增「接收侧零拷贝 zcrx 为何不做」（所有权不对称 + 容器不友好 + 非瓶颈）｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
 *仓库：https://github.com/chenjiayi0603/thunder*
