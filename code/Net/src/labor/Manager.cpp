@@ -532,6 +532,10 @@ void Manager::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user
     {
         pManager->HandleIoReadComplete(pConn, result);
     }
+    else if (op == IoOp::WriteNotif)
+    {
+        pManager->HandleIoWriteNotifComplete(pConn, result);
+    }
     else
     {
         pManager->HandleIoWriteComplete(pConn, result);
@@ -682,6 +686,35 @@ bool Manager::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
     }
 
     pConn->dActiveTime = ev_now(m_loop);
+    return FinishWriteAndDrain(pConn, result);
+}
+
+bool Manager::HandleIoWriteNotifComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = m_mapFdAttr.find(iFd);
+    if (attr_iter == m_mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+    return FinishWriteAndDrain(pConn, result);
+}
+
+bool Manager::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
+{
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = m_mapFdAttr.find(iFd);
+    if (attr_iter == m_mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
 
     if (result < 0)
     {

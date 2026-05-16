@@ -300,6 +300,10 @@ protected:
      */
     bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
     bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /** @brief send_zc NOTIF 完成（buffer 可复用），驱动回收/重提/倒 pWaitForSendBuff */
+    bool HandleIoWriteNotifComplete(tagConnectionAttr* pConn, int result);
+    /** @brief 写完成后的回收/重提/倒 pWaitForSendBuff 决策（Write 与 WriteNotif 共用） */
+    bool FinishWriteAndDrain(tagConnectionAttr* pConn, int result);
     /**
      * @brief 读完成后继续调度消息，并在有部分写时重新提交写
      */

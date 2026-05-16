@@ -24,8 +24,11 @@ namespace net
  */
 enum class IoOp : uint8_t
 {
-    Read  = 0,
-    Write = 1,
+    Read       = 0,
+    Write      = 1,
+    // send_zc 的第二个 CQE（IORING_CQE_F_NOTIF）：buffer 已脱离内核引用，可安全复用。
+    // 仅原生 io_uring + send_zc 路径产生；ev / 普通 send / asio_uring 永不产生此事件。
+    WriteNotif = 2,
 };
 
 /**
