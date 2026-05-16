@@ -18,6 +18,7 @@
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
 #include "EvIoBackend.hpp"
+#include "NativeUringIoBackend.hpp"
 #ifdef THUNDER_IO_ASIO_URING
 #include "AsioUringIoBackend.hpp"
 #endif
@@ -471,6 +472,19 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
 #else
         LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to ev");
 #endif
+    }
+
+    if (strBackend == "native_uring")
+    {
+        NativeUringIoBackend* pBackend = new NativeUringIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: native_uring initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: native_uring init failed, falling back to ev");
     }
 
     if (strBackend == "uring")
