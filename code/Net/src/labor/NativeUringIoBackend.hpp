@@ -51,7 +51,13 @@ private:
         int                 fd;
         uint32_t            seq;
         IoOp                op;
-        util::CBuffer*      buf;   // 仅当 fd/seq 仍有效且未取消时才解引用
+        util::CBuffer*      buf;       // 仅当 fd/seq 仍有效且未取消时才解引用
+        // send_zc：后端自有 bounce 缓冲，NOTIF 前内核 DMA 它，与连接 buffer
+        // 生命周期解耦（DestroyConnect 同步释放连接 buffer 不会 UAF）。
+        bool                isZc      = false;
+        char*               zcBuf     = nullptr;  // bounce 缓冲，NOTIF 时 free
+        int                 zcBytes   = 0;        // 结果 CQE 的字节数（NOTIF 时回传）
+        bool                gotResult = false;
     };
 
     bool GetSqe(struct io_uring_sqe** out);   // 满则先 submit 再取
@@ -74,6 +80,9 @@ private:
     std::unordered_map<int, FdState> m_fds;
 
     unsigned m_sqDepth = 4096;
+    // send_zc：>= 阈值且启用才走 prep_send_zc（小包零拷贝净亏，见 docs）
+    bool   m_zcEnabled   = false;
+    size_t m_zcThreshold = 16384;   // THUNDER_URING_ZC_THRESHOLD
 };
 
 } /* namespace net */

@@ -33,6 +33,18 @@ bool NativeUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callb
         if (v >= 256 && v <= 32768) m_sqDepth = static_cast<unsigned>(v);
     }
 
+    // send_zc：env 门控（THUNDER_URING_ZC=1），默认关。阈值默认 16KB
+    // （小包零拷贝固定开销 > 省下的 memcpy，净亏，见 docs）。
+    if (const char* z = ::getenv("THUNDER_URING_ZC"); z && z[0] == '1')
+    {
+        m_zcEnabled = true;
+        if (const char* t = ::getenv("THUNDER_URING_ZC_THRESHOLD"))
+        {
+            long v = ::atol(t);
+            if (v >= 1024 && v <= (4 << 20)) m_zcThreshold = static_cast<size_t>(v);
+        }
+    }
+
     int rc;
     const char* sqp = ::getenv("THUNDER_URING_SQPOLL");
     if (sqp && sqp[0] == '1')
@@ -184,7 +196,33 @@ bool NativeUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
     if (!GetSqe(&sqe)) return false;
 
     PendingOp* po = new PendingOp{fd, seq, IoOp::Write, buf};
-    ::io_uring_prep_send(sqe, fd, src, static_cast<size_t>(readable), 0);
+
+    if (m_zcEnabled && static_cast<size_t>(readable) >= m_zcThreshold)
+    {
+        // send_zc：拷到后端自有 bounce 缓冲再零拷贝发送，使内核 DMA 的
+        // 内存与连接 buffer 解耦——DestroyConnect 同步释放 pSendBuff 不会
+        // UAF。bounce 缓冲在 NOTIF CQE（buffer 可复用）时释放。
+        // 注：此拷贝使本步收益≈0（拷贝挪位），真零拷贝需后续让
+        // DestroyConnect 延迟到 NOTIF 才释放连接 buffer（见 docs）。
+        po->isZc  = true;
+        po->zcBuf = static_cast<char*>(::malloc(static_cast<size_t>(readable)));
+        if (!po->zcBuf)   // 退回普通 send
+        {
+            po->isZc = false;
+            ::io_uring_prep_send(sqe, fd, src, static_cast<size_t>(readable), 0);
+        }
+        else
+        {
+            std::memcpy(po->zcBuf, src, static_cast<size_t>(readable));
+            ::io_uring_prep_send_zc(sqe, fd, po->zcBuf,
+                                    static_cast<size_t>(readable), 0, 0);
+        }
+    }
+    else
+    {
+        ::io_uring_prep_send(sqe, fd, src, static_cast<size_t>(readable), 0);
+    }
+
     ::io_uring_sqe_set_data(sqe, po);
     st.writePending++;
     ::io_uring_submit(&m_ring);
@@ -216,7 +254,8 @@ void NativeUringIoBackend::ReapCqes()
     while (::io_uring_peek_cqe(&m_ring, &cqe) == 0 && cqe != nullptr)
     {
         PendingOp* po = static_cast<PendingOp*>(::io_uring_cqe_get_data(cqe));
-        int res = cqe->res;
+        int      res   = cqe->res;
+        unsigned flags = cqe->flags;        // 必须在 cqe_seen 前取（zc 双 CQE 靠 flags 分流）
         ::io_uring_cqe_seen(&m_ring, cqe);
         if (!po) continue;
 
@@ -225,6 +264,46 @@ void NativeUringIoBackend::ReapCqes()
                       && it->second.seq == po->seq
                       && !it->second.cancelled);
 
+        // ---- send_zc 双 CQE ----
+        if (po->isZc)
+        {
+            if (flags & IORING_CQE_F_NOTIF)
+            {
+                // 通知 CQE：内核已脱离 bounce 缓冲，可安全释放/复用。
+                int bytes = po->gotResult ? po->zcBytes : res;
+                if (valid)
+                {
+                    if (it->second.writePending > 0) it->second.writePending--;
+                    if (bytes > 0) po->buf->AdvanceReadIndex(bytes);
+                    m_callback(po->fd, po->seq, IoOp::WriteNotif, bytes, m_userData);
+                }
+                ::free(po->zcBuf);
+                delete po;          // 终态
+            }
+            else
+            {
+                // 结果 CQE：记录字节数。F_MORE 表示通知 CQE 仍会来。
+                po->zcBytes   = res;
+                po->gotResult = true;
+                if (!(flags & IORING_CQE_F_MORE))
+                {
+                    // 无通知后续（多为立即失败）：此刻即终态，
+                    // 直接以 WriteNotif 驱动 Worker 回收/报错。
+                    if (valid)
+                    {
+                        if (it->second.writePending > 0) it->second.writePending--;
+                        if (res > 0) po->buf->AdvanceReadIndex(res);
+                        m_callback(po->fd, po->seq, IoOp::WriteNotif, res, m_userData);
+                    }
+                    ::free(po->zcBuf);
+                    delete po;
+                }
+                // else：F_MORE → 等通知 CQE，保留 po/zcBuf，不回调不减 pending
+            }
+            continue;
+        }
+
+        // ---- 普通 Read/Write（单 CQE）----
         if (valid)
         {
             if (po->op == IoOp::Read)
