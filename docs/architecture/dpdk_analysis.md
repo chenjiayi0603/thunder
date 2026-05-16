@@ -8,7 +8,7 @@
 
 DPDK (Data Plane Development Kit) 是一套用户态高性能网络数据面库，通过 **旁路内核协议栈**、**轮询模式驱动 (PMD)**、**大页内存**、**无锁队列** 等技术，将网络包处理从内核态迁移到用户态，典型可达到 10Gbps 线速、μs 级延迟。
 
-Thunder 项目在 `docs/architecture_design.md` 第 12.2 节将 DPDK 列为「中期优化」方向：
+Thunder 项目在 `docs/architecture/architecture_design.md` 第 12.2 节将 DPDK 列为「中期优化」方向：
 > 目标: 将网络数据面从内核协议栈迁移到 DPDK。收益: 10x+ 小包吞吐提升，延迟降至 10μs 级。
 
 本文从 **现状分析**、**收益评估**、**代价分析** 和 **替代方案** 四个维度，详细论证该项目当前是否需要 DPDK。

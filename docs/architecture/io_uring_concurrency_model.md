@@ -280,13 +280,15 @@ cmake -S . -B build -DTHUNDER_IO_ASIO_URING=ON
 
 ### 5.2 实测数据（64KB 响应，c50/12s）
 
-| 后端 | RPS | 平均延迟 | 尾延迟 |
-|------|-----|---------|--------|
-| ev 基线 | 5,485 | 8.86ms | ±3.44ms / max 155ms |
-| **native_uring** | **5,903（+7.6%）** | **4.06ms（−54%）** | **±133μs / max 11ms** |
-| asio_uring | 5,473（-3% vs ev）| 9.67ms（TTFB，非完整）| - |
+| 后端 | RPS | wrk 延迟（TTFB）| 真实整包延迟（Little's Law）| 尾延迟 |
+|------|-----|----------------|--------------------------|--------|
+| ev 基线 | 5,485 | 8.86ms | **9.12ms**（50÷5485）| ±3.44ms / max 155ms |
+| **native_uring** | **5,903（+7.6%）** | 4.06ms（TTFB）| **8.47ms**（50÷5903，**−7.1%**）| ±133μs / max 11ms |
+| asio_uring | 5,473（-3% vs ev）| 9.67ms（TTFB）| 18.3ms（100÷5473）| - |
 
-**核心发现**：原生后端精简控制路径（无 Asio 中间层 / NOP SQE / /proc hack）在 64KB 写场景拿到真实收益，asio_uring 对 ev≈持平。
+> **wrk 延迟 vs 整包延迟**：ev 同步写时 wrk ≈ 整包（8.86ms vs 9.12ms）；native_uring 异步分片写时 wrk = TTFB 首字节（4.06ms），真实整包用 Little's Law 反算 = 并发÷RPS = 8.47ms（−7.1%）。RPS +7.6% 不受影响，是真实吞吐改善。
+
+**核心发现**：原生后端精简控制路径（无 Asio 中间层 / NOP SQE / /proc hack）在 64KB 写场景拿到 +7.6% RPS 真实收益，asio_uring 对 ev≈持平。
 
 ### 5.3 适用场景
 

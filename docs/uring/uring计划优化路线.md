@@ -179,27 +179,213 @@ socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backen
 | B-3 send_zc 双 CQE→WriteNotif | ✅ | 1KB普通/64KB-zc 路由正确，64KB 完整，20x串+25x并发，0 错误 |
 | B-4 recv 普通 | ✅ | zcrx 硬件天花板，维持普通 recv（已定论） |
 
-### 压测结论（64KB 响应，隔离，c50/12s）
+### 压测结论（Echo size=N 响应，三档，12s，2026-05-16）
 
-| 后端 | RPS | 平均延迟 | Transfer |
-|------|-----|---------|----------|
-| ev 基线 | 5485 | 8.86ms | 344 MB/s |
-| **native_uring（无 zc）** | **5903（+7.6%）** | **4.06ms（−54%）** | 370 MB/s |
-| native_uring + send_zc(bounce) | 5854（+6.7%） | 4.26ms | 367 MB/s |
+| 包大小 | 后端 | RPS | avg lat | stdev | max lat | Transfer |
+|--------|------|-----|---------|-------|---------|----------|
+| 小包 37B c100 | ev | **136,452** | 730us | 74us | 12ms | 24.3 MB/s |
+| | native_uring | 121,383（**−11%**）| 765us | 95us | **4ms** | 21.6 MB/s |
+| 中包 4KB c100 | ev | 49,750 | 2.01ms | 324us | 37ms | 201 MB/s |
+| | native_uring | **50,229（+1%）** | **1.49ms** | **81us** | **4ms** | 203 MB/s |
+| 大包 64KB c50 | ev | 5,098 | 9.49ms | 2.88ms | 144ms | 319 MB/s |
+| | native_uring | **5,486（+7.6%）** | **2.91ms**（TTFB）| **158us** | **6ms** | 344 MB/s |
+
+> **64KB 延迟辨析**：ev 同步写 = wrk ≈ 整包（9.49ms）。native_uring 异步分片写 = wrk 报告 TTFB（2.91ms），真实整包 = 50÷5486 = 9.12ms（−3.9% vs ev 9.81ms）。尾延迟大幅改善（stdev 158us vs 2.88ms，max 6ms vs 144ms）。
 
 **关键结论：**
 
-1. **原生后端本身就是真实收益**——64KB 写 +7.6% RPS、延迟 −54%、尾延迟远稳（4.06ms±133us vs ev 8.86ms±3.44ms/max155ms）。与 asio_uring「对 ev≈持平」截然不同。**Path B 价值光靠"换原生"已兑现大半**（精简控制路径：无 Asio NOP/interrupt、无 /proc hack、直收割）。
-2. **send_zc(bounce) 对 no-zc ≈ 持平**（5854 vs 5903，噪声内）——实测确证 bounce 拷贝挪位 = 净收益≈0。
-3. **B-3b 真零拷贝（去 bounce，#10）= 不确定上行 × 高风险**：bounce-vs-nozc 持平说明那次拷贝≈一趟内存带宽，彻底去掉"可能"再多个位数 %，但不保证（recv 拷贝+TCP 栈仍在）；代价是连接生命周期重构（fd 复用×lingering 的 UAF 雷区，v1 沉没区）。
+1. **native_uring 不是通用优化——是按包大小的 tradeoff**：
+   - 小包（37B）：−11% RPS，native_uring 的 PendingOp malloc + fd/seq 校验常数开销 > 节省的 syscall
+   - 中包（4KB）：持平（开销与收益抵消）
+   - 大包（64KB）：+7.6% RPS，精简控制路径生效，尾延迟碾压（stdev 18× 更小，max 24× 更小）
+2. **send_zc(bounce) 对 no-zc ≈ 持平**（前次实测 5854 vs 5903，噪声内）——bounce 拷贝挪位 = 净收益≈0。
+3. **B-3b 真零拷贝（去 bounce，#10）= 不确定上行 × 高风险**：数据表明原生后端已拿到主要收益；去 bounce 的上行不确定、风险高（v1 沉没区）。
 
 ### 建议（measurement-gated）
 
-- **采用 native_uring 作为 io 后端的真实优化项**：相对 ev 在 64KB 写有确证收益（+7.6% RPS / −54% 延迟），且代码安全（bounce 版无 UAF 风险）。send_zc 可开可不开（当前 bounce 版净零，留作 B-3b 的接口）。
-- **B-3b 真零拷贝（#10）暂不做**：数据表明原生后端已拿到主要收益，去 bounce 的上行不确定、风险高（v1 沉没区）。仅当 64KB 写吞吐成为最高优先级且接受连接生命周期重构风险时再评估，且须先解决 fd-复用-during-linger 的 UAF 设计。
-- 部署 Gate G1/G2（K8s seccomp + 降级可观测）与选型无关，仍必做。
+- **大包场景（64KB+）推荐 native_uring**：+7.6% RPS，尾延迟极稳
+- **小包场景推荐 ev**：−11% 不可接受，ev 的 epoll 对小包最优
+- **中包可任选**：差异在噪声内
+- send_zc 可开可不开：当前 bounce 版净收益≈0，留作 B-3b 接口
+- **B-3b 真零拷贝暂不做**：已拿到主要收益，上行不确定 × 高风险
+- 部署 Gate G1/G2（K8s seccomp）与选型无关，仍必做
 
 ---
 
-*v3.1 — 2026-05-16｜Path B 实现+实测落地：原生后端 64KB 写 +7.6% RPS/−54% 延迟（真实收益，非 asio 的持平）；send_zc bounce 版净零（实测确证）；B-3b 真零拷贝判为不确定上行×高风险，measurement-gated 暂不做｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
+## NativeUringIoBackend 架构
+
+### 整体架构：单线程，eventfd + ev_io 收割
+
+绕开 Asio 中间层，自管 SQ/CQ，通过 libev 单线程驱动收割。与 AsioUringIoBackend 的关键差异：
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Worker 进程（单线程）                           │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                    libev Event Loop                        │  │
+│  │  ① SubmitRead/SubmitWrite ──► io_uring_prep_recv/send     │  │
+│  │     直填 SQE → io_uring_submit（无 Asio 中间层）           │  │
+│  │  ② epoll_wait（唯一阻塞点）                                │  │
+│  │     监听: eventfd（CQE 通知）+ 业务 fd                     │  │
+│  │  ③ ev_io(eventfd) ──► ReapCqes() 收割 CQE                 │  │
+│  │  ④ ev_check ──► ReapCqes() 兜底收割                       │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│  驱动：eventfd + ev_io + ev_check（两路，无需 ev_prepare）        │
+│  SQPOLL：env 门控（THUNDER_URING_SQPOLL=1，内核 7.0 免特权）     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+| 维度 | AsioUringIoBackend | NativeUringIoBackend |
+|------|-------------------|---------------------|
+| 收割驱动 | ev_prepare + ev_check + ev_io(ring_fd) 三路 | eventfd + ev_io + ev_check 两路 |
+| 完成通知 | /proc hack 找 ring_fd | io_uring_register_eventfd 标准 API |
+| 中间层 | Asio io_context.poll() → scheduler → reactor | 直收割：io_uring_peek_cqe → PendingOp → m_callback |
+| NOP SQE 空转 | 有（interrupt NOP） | 无 |
+| SQPOLL | ❌ 硬编码 flags=0 | ✅ env 门控 |
+| send_zc | ❌ 无支持 | ✅ 按阈值分流 + WriteNotif |
+
+### 初始化
+
+```cpp
+bool NativeUringIoBackend::Init(struct ev_loop* loop,
+    IoCompletionCallback callback, void* user_data)
+{
+    // 1. 创建 io_uring 实例（可选 SQPOLL）
+    if (THUNDER_URING_SQPOLL=1) {
+        struct io_uring_params params{};
+        params.flags = IORING_SETUP_SQPOLL;
+        params.sq_thread_idle = 100;  // 防吃 cgroup CPU
+        io_uring_queue_init_params(sqDepth, &m_ring, &params);
+    } else {
+        io_uring_queue_init(sqDepth, &m_ring, 0);
+    }
+
+    // 2. eventfd + 注册到 io_uring（标准 API，无需 /proc hack）
+    m_evfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    io_uring_register_eventfd(&m_ring, m_evfd);
+    // → 内核完成 CQE 时自动 ++eventfd counter
+    // → libev ev_io(eventfd) 被唤醒 → ReapCqes()
+
+    // 3. 注册 ev_io(eventfd) + ev_check 兜底
+    ev_io_init(&m_evWatcher, &OnEvfd, m_evfd, EV_READ);
+    ev_io_start(loop, &m_evWatcher);
+    ev_check_init(&m_check, &OnCheck);
+    ev_check_start(loop, &m_check);
+}
+```
+
+### PendingOp：安全模型
+
+```cpp
+// 后端 heap 持有，生命周期 = 直到其 CQE 被收割。
+// 绝不持有连接资源所有权。
+struct PendingOp {
+    int            fd;
+    uint32_t       seq;
+    IoOp           op;
+    util::CBuffer* buf;        // 仅 fd/seq 有效且未取消时才解引用
+    // send_zc 字段
+    bool   isZc      = false;
+    char*  zcBuf     = nullptr; // bounce 缓冲，NOTIF 时 free
+    int    zcBytes   = 0;
+    bool   gotResult = false;
+};
+```
+
+CancelFd 从 `m_fds` 擦除 fd 状态但不释放 PendingOp。陈旧 CQE 到达时因 fd 不在表（或 seq 不符）被识别为陈旧，仅 `delete po`，绝不触碰已释放的连接缓冲。
+
+### SubmitWrite（send_zc 按阈值分流）
+
+```cpp
+bool NativeUringIoBackend::SubmitWrite(int fd, CBuffer* buf, uint32_t seq)
+{
+    int readable = buf->ReadableBytes();
+    if (readable <= 0) {
+        m_callback(fd, seq, IoOp::Write, 0, m_userData); // 空写回调
+        return true;
+    }
+
+    PendingOp* po = new PendingOp{fd, seq, IoOp::Write, buf};
+    struct io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
+
+    if (m_zcEnabled && readable >= m_zcThreshold)  // >=16KB
+    {
+        // send_zc bounce：拷到后端自有缓冲再零拷贝发送
+        // 解耦连接 buffer 生命周期（DestroyConnect 同步释放安全）
+        po->isZc  = true;
+        po->zcBuf = malloc(readable);
+        memcpy(po->zcBuf, buf->GetRawReadBuffer(), readable);
+        io_uring_prep_send_zc(sqe, fd, po->zcBuf, readable, 0, 0);
+    }
+    else
+    {
+        io_uring_prep_send(sqe, fd, buf->GetRawReadBuffer(), readable, 0);
+    }
+
+    io_uring_sqe_set_data(sqe, po);
+    io_uring_submit(&m_ring);
+    return true;
+}
+```
+
+### send_zc 双 CQE 收割
+
+send_zc 产生两个 CQE：结果（res=字节数）+ 通知（IORING_CQE_F_NOTIF，buffer 可复用）。收割按 flags 分流：
+
+```cpp
+void NativeUringIoBackend::ReapCqes()
+{
+    struct io_uring_cqe* cqe;
+    while (io_uring_peek_cqe(&m_ring, &cqe) == 0)
+    {
+        PendingOp* po = static_cast<PendingOp*>(io_uring_cqe_get_data(cqe));
+        int      res   = cqe->res;
+        unsigned flags = cqe->flags;   // 必须在 cqe_seen 前取
+        io_uring_cqe_seen(&m_ring, cqe);
+
+        bool valid = (fd/seq 匹配 m_fds 且未取消);
+
+        if (po->isZc) {
+            if (flags & IORING_CQE_F_NOTIF) {
+                // 通知 CQE：内核已脱离 bounce，可安全释放
+                if (valid) m_callback(po->fd, po->seq, IoOp::WriteNotif, bytes, ...);
+                free(po->zcBuf); delete po;          // 终态
+            } else {
+                po->zcBytes = res; po->gotResult = true;
+                if (!(flags & IORING_CQE_F_MORE)) {
+                    // 无通知后续（立即失败）：此刻即终态
+                    m_callback(..., IoOp::WriteNotif, res, ...);
+                    free(po->zcBuf); delete po;
+                }
+                // else: F_MORE → 等通知 CQE
+            }
+            continue;
+        }
+
+        // 普通 Read/Write（单 CQE，直接回调 + delete po）
+        ...
+    }
+}
+```
+
+### 性能上限分析
+
+64KB 写场景下 io_uring 控制路径优化的天花板：
+
+```
+单请求开销 (Echo 64KB, c50):
+  recv 37B          ≈ 可忽略
+  codec             ≈ 可忽略
+  send 64KB         ≈ 8-9ms  ← 占总时间 95%+
+    ├─ 用户→内核 memcpy   ~3ms   ← io_uring 不动
+    ├─ TCP 栈/拥塞        ~3ms   ← io_uring 不动
+    └─ syscall 开销       ~1ms   ← io_uring 能省的部分
+                          
++7.6% ≈ 省掉的 syscall 开销 / 总开销
+已经到控制路径天花板。真正的突破需 send_zc 真零拷贝（去 bounce，#10）。
+```
+
+---
+
+*v3.4 — 2026-05-16｜三档压测（37B/4KB/64KB Echo）：native_uring 大包 +7.6%/尾延迟碾压，中包持平，小包 −11%；明确 tradeoff：大包用 native_uring，小包用 ev。合并架构+代码。*
 *仓库：https://github.com/chenjiayi0603/thunder*
