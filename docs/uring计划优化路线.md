@@ -166,5 +166,40 @@ socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backen
 
 ---
 
-*v3.0 — 2026-05-16｜决策落定：走 Path B 原生 NativeUringIoBackend，记录拱心石结论(IO 完成非协程，send_zc=回调多一事件类型)与 6 步主线；旧 Asio 增量 patch 路线作废｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
+## Path B 落地结果（已实现 + 实测，2026-05-16）
+
+主线 1–3、5 已实现并隔离功能验证 + 压测；提交 `5590565`(B-1) `965af9f`(B-2) `7cd39ef`(B-3)。
+
+### 实现状态
+
+| 步 | 状态 | 验证 |
+|----|------|------|
+| B-1 IoOp::WriteNotif + 写完成拆分 | ✅ | 纯重构，60/60 单元，行为不变 |
+| B-2 NativeUringIoBackend 骨架 | ✅ | init/20序列/40并发/256KB 正确，0 错误 |
+| B-3 send_zc 双 CQE→WriteNotif | ✅ | 1KB普通/64KB-zc 路由正确，64KB 完整，20x串+25x并发，0 错误 |
+| B-4 recv 普通 | ✅ | zcrx 硬件天花板，维持普通 recv（已定论） |
+
+### 压测结论（64KB 响应，隔离，c50/12s）
+
+| 后端 | RPS | 平均延迟 | Transfer |
+|------|-----|---------|----------|
+| ev 基线 | 5485 | 8.86ms | 344 MB/s |
+| **native_uring（无 zc）** | **5903（+7.6%）** | **4.06ms（−54%）** | 370 MB/s |
+| native_uring + send_zc(bounce) | 5854（+6.7%） | 4.26ms | 367 MB/s |
+
+**关键结论：**
+
+1. **原生后端本身就是真实收益**——64KB 写 +7.6% RPS、延迟 −54%、尾延迟远稳（4.06ms±133us vs ev 8.86ms±3.44ms/max155ms）。与 asio_uring「对 ev≈持平」截然不同。**Path B 价值光靠"换原生"已兑现大半**（精简控制路径：无 Asio NOP/interrupt、无 /proc hack、直收割）。
+2. **send_zc(bounce) 对 no-zc ≈ 持平**（5854 vs 5903，噪声内）——实测确证 bounce 拷贝挪位 = 净收益≈0。
+3. **B-3b 真零拷贝（去 bounce，#10）= 不确定上行 × 高风险**：bounce-vs-nozc 持平说明那次拷贝≈一趟内存带宽，彻底去掉"可能"再多个位数 %，但不保证（recv 拷贝+TCP 栈仍在）；代价是连接生命周期重构（fd 复用×lingering 的 UAF 雷区，v1 沉没区）。
+
+### 建议（measurement-gated）
+
+- **采用 native_uring 作为 io 后端的真实优化项**：相对 ev 在 64KB 写有确证收益（+7.6% RPS / −54% 延迟），且代码安全（bounce 版无 UAF 风险）。send_zc 可开可不开（当前 bounce 版净零，留作 B-3b 的接口）。
+- **B-3b 真零拷贝（#10）暂不做**：数据表明原生后端已拿到主要收益，去 bounce 的上行不确定、风险高（v1 沉没区）。仅当 64KB 写吞吐成为最高优先级且接受连接生命周期重构风险时再评估，且须先解决 fd-复用-during-linger 的 UAF 设计。
+- 部署 Gate G1/G2（K8s seccomp + 降级可观测）与选型无关，仍必做。
+
+---
+
+*v3.1 — 2026-05-16｜Path B 实现+实测落地：原生后端 64KB 写 +7.6% RPS/−54% 延迟（真实收益，非 asio 的持平）；send_zc bounce 版净零（实测确证）；B-3b 真零拷贝判为不确定上行×高风险，measurement-gated 暂不做｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
 *仓库：https://github.com/chenjiayi0603/thunder*
