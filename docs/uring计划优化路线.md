@@ -120,22 +120,51 @@ zcrx 要内核 ≥6.11 + 网卡支持 header/data split + 特定驱动。容器�
 
 ---
 
-## 推荐落地顺序
+## 决策已定：走 Path B（原生 NativeUringIoBackend）
+
+经分析定论，**不再走「留 Asio 增量 patch」**，原因已坐实：
+
+- Asio 架构性锁死 SQPOLL/send_zc/Provided Buffers；patch 子模块还撞上 **asio 子模块未初始化**，补丁不进版本控制、`submodule update` 即失（Task 2 的 SQPOLL patch 实证）。
+- A1（Asio 注册池 + 边界拷贝）= 把拷贝从内核挪到用户态，**净收益≈0**，非真零拷贝。
+- 真零拷贝只有 send_zc；其前置不是 A1，是「buffer 持有到 NOTIF」的生命周期——Thunder **已有** `pSendBuff`/`pWaitForSendBuff` 双缓冲可承接。
+
+### 拱心石结论（已读码坐实）
+
+socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backend → Worker::OnIoComplete(fd,seq,IoOp,result,ud)`（`IoBackend.hpp:39` 函数指针，`Worker.cpp:1060`）→ `HandleIoRead/WriteComplete`。Step 协程只在 Read 完成**下游**(codec decode 后)被驱动。
+
+→ **send_zc 的双 CQE 不需要协程、不需要 awaiter、不碰 codec/ev**：只是同一条 C 回调桥上**多一个事件类型** + 拆一个写完成函数。风险等级远低于"重写状态机"。
+
+### Path B 主线（旧 Asio 任务 A1/SQPOLL-patch 作废，思路保留）
 
 ```
-P0  既有《使用与原理分析》bridge→host 纠错（独立，零代码）
-        │
-Gate    K8s seccomp 就绪 + 降级可观测  ── 一切 io_uring 优化的前提
-        │
-①  Fixed Buffers（数据路径根本，零选型风险）──► send_zc（依赖①）
-②  SQPOLL          ③ native accept/connect（独立，按需）
-        │
-        └──► Provided Buffers（①完成、实测后再决策走 Asio 还是原生）
+1. IoOp::WriteNotif + 契约/Worker 写完成分发拆分
+     IoOp { Read, Write, WriteNotif }；OnIoComplete 加分支；
+     HandleIoWriteComplete 拆「字节记账(Write)」+「回收 pSendBuff/倒 pWaitForSendBuff/重提(WriteNotif)」；
+     per-op 标志区分 普通 send / zc send；ev 与普通 send 行为不变。
+     —— 小、安全、可独立编译验证，先做。
+
+2. NativeUringIoBackend 骨架
+     自管 SQ/CQ；libev 单线程驱动收割（接 ev_prepare/ev_check/ev_io(ring_fd)，
+     绝不 thread-per-op，io_engine_uring.cpp 的反面教材）；SQPOLL flag 内建；
+     ev 始终保留作回退（io_backend 配置三档：ev / asio_uring / native_uring）。
+
+3. send_zc
+     prep_send_zc 直发 pSendBuff；收割循环按 IORING_CQE_F_MORE/F_NOTIF 分流：
+     F_MORE → (fd,seq,Write,bytes)；F_NOTIF → (fd,seq,WriteNotif,0)；
+     NOTIF 经 OnIoComplete→WriteNotif 门控 pSendBuff 回收；按大小阈值(~16KB)
+     分流，小包走普通 send。
+
+4. recv：普通 recv（真 recv 零拷贝 zcrx 受网卡硬件天花板，本部署不可行，已定论）。
+
+5. 编译（-j1，强制）+ 单元 + E2E。
+
+6. 压测对比 ev —— Path B 验收：原生+send_zc 必须对 64KB 发送有实测收益，
+   否则按 Path B 自身逻辑回退默认 ev。
 ```
 
-**建议**：先做 Gate + Fixed Buffers，拿实测数据，再决定是否为 SQPOLL/send_zc/Provided Buffers 走「留 Asio 增量 patch」还是「重写原生后端」。
+部署前置（Gate G1/G2，K8s seccomp + 降级可观测）与选型无关，仍必做，并入主线。
 
 ---
 
-*v2.2 — 2026-05-16｜修正：S2S 路径接收可能重（架构内在），但 recv 侧零拷贝否定理由路径无关（容器不友好/Asio 零支持）仍成立｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
+*v3.0 — 2026-05-16｜决策落定：走 Path B 原生 NativeUringIoBackend，记录拱心石结论(IO 完成非协程，send_zc=回调多一事件类型)与 6 步主线；旧 Asio 增量 patch 路线作废｜配套《Thunder_io_uring使用与原理分析.md》（原理）*
 *仓库：https://github.com/chenjiayi0603/thunder*
