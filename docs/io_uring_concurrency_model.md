@@ -54,39 +54,40 @@ IoEventCallback()
 - **优点**: 简单，调试方便
 - **缺点**: 高并发时 epoll + read/write 各一次 syscall，开销翻倍
 
-### 2.2 UringIoBackend（原始 io_uring）
+### 2.2 NativeUringIoBackend（原生 liburing，推荐 io_uring 后端）
 
 ```
 应用层
   │ SubmitRead(fd, buf)
   ▼
-io_uring_prep_recv(sqe, fd, buf, len, 0)   ← 填 SQE
-io_uring_sqe_set_data(sqe, user_data)
-io_uring_submit(&ring)                      ← 提交批量 SQE（1 次系统调用）
+io_uring_prep_recv(sqe, fd, buf, len, 0)   ← 直填 SQE
+io_uring_sqe_set_data(sqe, po)              ← PendingOp* 作为 user_data
+io_uring_submit(&ring)                      ← 提交批量 SQE
   │
-  ▼  内核完成 I/O → CQE 写入完成队列
-ring_fd 可读 (epoll 通知 libev)
-  │
-RingEventCallback()
+  ▼  内核完成 I/O → CQE 写入完成队列 → ++eventfd counter
+ev_io(eventfd) 被唤醒 (epoll 通知 libev)
   │
 ReapCqes()
-  ├─ io_uring_peek_cqe()    → 取 CQE（无系统调用，共享内存）
-  ├─ buf->AdvanceWriteIndex(result)
-  ├─ m_callback(fd, seq, IoOp::Read, result)
-  └─ io_uring_cqe_seen()    → 标记 CQE 已消费
+  ├─ io_uring_peek_cqe()    → 取 CQE（零 syscall，共享内存）
+  ├─ PendingOp* po = cqe_get_data(cqe)
+  ├─ flags = cqe->flags     → send_zc 双 CQE 分流
+  ├─ 有效连接 → m_callback(fd, seq, op, result)
+  └─ delete po
 ```
 
-| 维度 | EvIoBackend | UringIoBackend |
-|------|-------------|----------------|
-| 读路径系统调用 | epoll_wait + read (2次) | io_uring_submit + ring_fd 唤醒 (可批量) |
-| 写路径 | **同步** `WriteFD()` | **同步** `WriteFD()`（未用 io_uring 写） |
-| CQE 收割 | N/A | 共享内存零拷贝，批量处理 (最多 32/次) |
-| 队列深度 | N/A | 256 |
-| 适用场景 | 通用 | 读密集型，减少 syscall |
+| 维度 | EvIoBackend | NativeUringIoBackend |
+|------|-------------|---------------------|
+| 读路径 | epoll_wait + read (2 syscall) | io_uring_submit + eventfd 唤醒 (可批量) |
+| 写路径 | **同步** WriteFD | **异步** prep_send / prep_send_zc |
+| 集成方式 | per-fd ev_io watcher | eventfd + ev_io + ev_check 兜底（两路收割） |
+| 队列深度 | N/A | 4096（env 可配） |
+| SQPOLL | N/A | ✅ env 门控（内核 7.0 免特权） |
+| send_zc | N/A | ✅ 按阈值分流 + WriteNotif 门控 |
+| 状态 | 基线 | 推荐 io_uring |
 
-**写路径说明**: `SubmitWrite()` 故意保持同步。源码注释指出异步写会与 TLS/Codec 状态机产生不必要的往返开销，小数据量的 buffered send 在内核中本质上是同步完成的。
+**与旧 UringIoBackend 的关键差异**：旧版写路径退化为同步 `WriteFD()`，且未解决 buffer 生命周期/取消等核心问题。NativeUringIoBackend 全部异步，PedingOp 后端持有 + fd/seq 校验保证陈旧 CQE 安全。
 
-### 2.3 AsioUringIoBackend（ASIO + io_uring）
+### 2.3 AsioUringIoBackend（ASIO + io_uring，保留）
 
 ```
 应用层
@@ -108,19 +109,20 @@ callback(ec, n)
 ```
 libev 事件循环
   │
-  ├─ ev_prepare  ──── 每次 epoll_wait 前 ──▶ io_context.poll()  收割 CQE
+  ├─ ev_prepare  ──── 每次 epoll_wait 前 ──▶ io_context.poll()  提交 SQE + 收割 CQE
   ├─ ev_check    ──── 每次 epoll_wait 后 ──▶ io_context.poll()  收割 CQE
   └─ ev_io(ring_fd) ─ ring_fd 可读    ──▶ io_context.poll()  收割 CQE
 ```
 
-| 维度 | UringIoBackend | AsioUringIoBackend |
-|------|----------------|---------------------|
-| 读路径 | `io_uring_prep_recv` 直接操作 | `async_read_some` ASIO 封装 |
-| 写路径 | **同步** `WriteFD()` | **异步** `async_write_some` |
-| 集成方式 | 监听 ring_fd → ReapCqes | 三路 poll (prepare/check/ring_fd) |
-| 队列深度 | 256 | ASIO 内部管理 |
-| 复杂度 | 轻量，head-only liburing | 依赖 ASIO standalone 库 |
-| 当前状态 | `THUNDER_IO_URING=OFF` (默认关闭) | `THUNDER_IO_ASIO_URING=ON` (默认开启) |
+| 维度 | NativeUringIoBackend | AsioUringIoBackend |
+|------|---------------------|---------------------|
+| 收割驱动 | eventfd + ev_io + ev_check（两路）| ev_prepare + ev_check + ev_io(ring_fd)（三路）|
+| 中间层 | 无（直收割）| Asio io_context.poll() → scheduler → reactor |
+| NOP SQE 空转 | 无 | 有（interrupt NOP 唤醒 ring_fd）|
+| SQPOLL | ✅ 内置 | ❌ Asio 硬编码 flags=0 |
+| send_zc | ✅ 内置 | ❌ 无支持 |
+| 写路径 | prep_send(zc) 直发 | async_write_some |
+| 状态 | 推荐 | 保留（对比参照） |
 
 ---
 
@@ -137,11 +139,13 @@ libev 事件循环
 │       ├─ ev_prepare    → io_context.poll()  [asio_uring]    │
 │       ├─ epoll_wait    → 等待 fd / timer / ring_fd 就绪     │
 │       ├─ ev_check      → io_context.poll()  [asio_uring]    │
+│       │                   ReapCqes()         [native_uring] │
 │       │                                                     │
 │       ├─ ev_io 回调:                                        │
-│       │   ├─ ring_fd 就绪  → ReapCqes()      [uring]       │
-│       │   ├─ 业务 fd 就绪  → HandleIoRead()   [ev/epoll]   │
-│       │   └─ 业务 fd 可写  → HandleIoWrite()  [ev/epoll]   │
+│       │   ├─ eventfd 就绪 → ReapCqes()       [native_uring] │
+│       │   ├─ ring_fd 就绪 → io_context.poll() [asio_uring]  │
+│       │   ├─ 业务 fd 就绪 → HandleIoRead()    [ev/epoll]    │
+│       │   └─ 业务 fd 可写 → HandleIoWrite()   [ev/epoll]    │
 │       │                                                     │
 │       ├─ ev_timer 回调:                                     │
 │       │   ├─ IoTimeout (心跳/超时检测)                      │
@@ -156,7 +160,7 @@ libev 事件循环
 
 **关键结论**:
 - **无并发竞争**: 所有 I/O 回调、定时器、协程恢复都在同一线程执行
-- **无锁设计**: `m_mapPending`、`m_fds` 等数据结构不需要加锁
+- **无锁设计**: `m_fds` 等数据结构不需要加锁
 - **非抢占**: 回调之间不会互相打断，类似 Node.js 的事件循环模型
 
 ### 3.2 io_uring 上下文隔离
@@ -183,20 +187,19 @@ HandleIoReadComplete()
   ▼
 SubmitRead(fd, pRecvBuff, seq)
   │
-  ├─ [ev]     ev_io_set(fd, EV_READ)  → epoll_ctl 注册
-  │                                     → 下次 epoll_wait 返回
-  │                                     → IoEventCallback → ReadFD()
+  ├─ [ev]           ev_io_set(fd, EV_READ)  → epoll_ctl 注册
+  │                                      → 下次 epoll_wait 返回
+  │                                      → IoEventCallback → ReadFD()
   │
-  ├─ [uring]  io_uring_prep_recv(sqe, fd, buf)
-  │           io_uring_submit(&ring)   → 1 次系统调用提交 SQ
-  │                                     → 内核完成 → CQE
-  │                                     → ring_fd 可读
-  │                                     → RingEventCallback → ReapCqes()
+  ├─ [native_uring] io_uring_prep_recv(sqe, fd, buf)
+  │                 io_uring_submit(&ring)  → 1 次系统调用提交 SQ
+  │                                        → 内核完成 → CQE → ++eventfd
+  │                                        → ev_io(eventfd) → ReapCqes()
   │
-  └─ [asio]   sock.async_read_some(buf, callback)
-              → ASIO 内部 io_uring submit
-              → io_context.poll() 收割 CQE
-              → callback 被调用
+  └─ [asio_uring]   sock.async_read_some(buf, callback)
+                    → ASIO 内部 io_uring submit
+                    → io_context.poll() 收割 CQE
+                    → callback 被调用
 ```
 
 ### 3.4 RemoveIoWriteEvent 中的读事件补交
@@ -212,7 +215,7 @@ pConn->pRecvBuff->EnsureWritableBytes(8192);
 m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
 ```
 
-- `CancelFd()` 在 uring 路径只移除 `m_mapPending` 中的条目
+- `CancelFd()` 在 native_uring 路径标记取消并移除 `m_fds` 中的条目，陈旧 CQE 安全丢弃
 - 在 ev 路径会 `ev_io_stop` 并销毁 watcher
 - 两种情况下都必须补交 `SubmitRead()`，否则 fd 永久失去读监听
 
@@ -224,12 +227,13 @@ m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
-| `THUNDER_IO_URING` | OFF | 启用原始 io_uring 后端 |
 | `THUNDER_IO_ASIO_URING` | ON | 启用 ASIO + io_uring 后端 |
 
 ```bash
-cmake -S . -B build -DTHUNDER_IO_URING=ON -DTHUNDER_IO_ASIO_URING=ON
+cmake -S . -B build -DTHUNDER_IO_ASIO_URING=ON
 ```
+
+原生后端（`NativeUringIoBackend`）始终编译，无需额外选项；运行时按配置选择。
 
 ### 4.2 运行时配置
 
@@ -237,7 +241,7 @@ cmake -S . -B build -DTHUNDER_IO_URING=ON -DTHUNDER_IO_ASIO_URING=ON
 
 ```json
 {
-    "io_backend": "asio_uring"   // 可选: "ev", "uring", "asio_uring"
+    "io_backend": "native_uring"   // 可选: "ev", "asio_uring", "native_uring"
 }
 ```
 
@@ -246,14 +250,14 @@ cmake -S . -B build -DTHUNDER_IO_URING=ON -DTHUNDER_IO_ASIO_URING=ON
 ### 4.3 后端选择顺序（Labor::InitIoBackend）
 
 ```
-配置 "asio_uring"?
-  ├─ 是 → 尝试 AsioUringIoBackend::Init()
-  │         ├─ 成功 → 使用 asio_uring
-  │         └─ 失败 → fallback 到 uring
+配置 "native_uring"?
+  ├─ 是 → 尝试 NativeUringIoBackend::Init()
+  │         ├─ 成功 → 使用 native_uring
+  │         └─ 失败 → fallback 到 ev
   │
-  ├─ 否 / asio_uring 失败 → 配置 "uring"?
-  │         ├─ 是 → 尝试 UringIoBackend::Init()
-  │         │         ├─ 成功 → 使用 uring
+  ├─ 否 / native_uring 失败 → 配置 "asio_uring"?
+  │         ├─ 是 → 尝试 AsioUringIoBackend::Init()
+  │         │         ├─ 成功 → 使用 asio_uring
   │         │         └─ 失败 → fallback 到 ev
   │         │
   │         └─ 否 → EvIoBackend::Init() (最终兜底)
@@ -267,28 +271,38 @@ cmake -S . -B build -DTHUNDER_IO_URING=ON -DTHUNDER_IO_ASIO_URING=ON
 
 ### 5.1 系统调用对比
 
-| 场景 | ev (epoll) | uring | asio_uring |
-|------|-----------|-------|------------|
-| 单次读 | epoll_wait + read (2) | submit + ring_fd 唤醒 (2, 但可批量) | submit + poll (2, 可批量) |
-| 批量读 (32 fd) | 32×epoll_wait + 32×read | 1×submit + ring_fd 批量 CQE | 1×submit + poll 批量 CQE |
-| 单次写 | write (1) | WriteFD (1, 同步) | async_write (submit+回调) |
+| 场景 | ev (epoll) | native_uring | asio_uring |
+|------|-----------|-------------|------------|
+| 单次读 | epoll_wait + read (2) | submit + eventfd 唤醒 (2, 可批量) | submit + poll (2, 可批量) |
+| 批量读 (32 fd) | 32×epoll_wait + 32×read | 1×submit + eventfd 批量 CQE | 1×submit + poll 批量 CQE |
+| 单次写 | write (1) | prep_send/prep_send_zc (异步) | async_write (异步) |
 | CQE 收割 | N/A | 共享内存, 0 syscall | poll, 0 syscall |
 
-### 5.2 适用场景
+### 5.2 实测数据（64KB 响应，c50/12s）
+
+| 后端 | RPS | 平均延迟 | 尾延迟 |
+|------|-----|---------|--------|
+| ev 基线 | 5,485 | 8.86ms | ±3.44ms / max 155ms |
+| **native_uring** | **5,903（+7.6%）** | **4.06ms（−54%）** | **±133μs / max 11ms** |
+| asio_uring | 5,473（-3% vs ev）| 9.67ms（TTFB，非完整）| - |
+
+**核心发现**：原生后端精简控制路径（无 Asio 中间层 / NOP SQE / /proc hack）在 64KB 写场景拿到真实收益，asio_uring 对 ev≈持平。
+
+### 5.3 适用场景
 
 | 后端 | 最佳场景 |
 |------|---------|
 | `ev` | 通用场景，调试友好，兼容性最好 |
-| `uring` | 读密集型（大量并发连接读），减少 syscall |
-| `asio_uring` | 读写均衡场景，希望全部异步化 |
+| `native_uring` | 大包写（64KB+），需 SQPOLL/send_zc 天花板 |
+| `asio_uring` | 保留参照，小包 TTFB 有优势 |
 
-### 5.3 限制与注意
+### 5.4 限制与注意
 
 1. **io_uring 需要 Linux 5.1+** (`IORING_FEAT_FAST_POLL` 需 5.5+)
 2. **单线程模型**: io_uring 在本架构中不改变并发模型 — 仍然是单线程事件循环
-3. **uring 写路径是同步的**: `UringIoBackend::SubmitWrite()` 直接调 `WriteFD()`，不是真正的异步写
-4. **队列深度 256**: 高并发时需确保 SQE 不被耗尽（`io_uring_get_sqe` 返回 NULL）
-5. **ring_fd 数量**: 每个进程一个 ring，不存在 ring 膨胀问题
+3. **队列深度**: native_uring 默认 4096，env 可配（`THUNDER_URING_SQDEPTH`）
+4. **ring_fd 数量**: 每个进程一个 ring，不存在 ring 膨胀问题
+5. **send_zc bounce 版净收益≈0**：真零拷贝（去 bounce，#10）measurement-gated 暂不做
 
 ---
 
@@ -297,14 +311,14 @@ cmake -S . -B build -DTHUNDER_IO_URING=ON -DTHUNDER_IO_ASIO_URING=ON
 ```
 code/Net/
 ├── include/labor/
-│   └── IoBackend.hpp              # 抽象接口定义
+│   └── IoBackend.hpp              # 抽象接口定义、IoOp 枚举（含 WriteNotif）
 ├── src/labor/
 │   ├── EvIoBackend.{hpp,cpp}      # epoll 基准实现
-│   ├── UringIoBackend.{hpp,cpp}   # 原始 io_uring (liburing)
-│   ├── AsioUringIoBackend.{hpp,cpp} # ASIO + io_uring
+│   ├── AsioUringIoBackend.{hpp,cpp} # ASIO + io_uring（保留）
+│   ├── NativeUringIoBackend.{hpp,cpp} # 原生 liburing（推荐）
 │   ├── Labor.cpp                  # InitIoBackend() 选择逻辑
-│   ├── Manager.cpp                # Manager 侧 RemoveIoWriteEvent
-│   └── Worker.cpp                 # Worker 侧 RemoveIoWriteEvent
+│   ├── Manager.cpp                # Manager 侧 IoComplete 三路分发
+│   └── Worker.cpp                 # Worker 侧 IoComplete 三路分发 + HandleIoWriteNotifComplete
 ```
 
 ---
@@ -313,10 +327,11 @@ code/Net/
 
 Thunder 的 io_uring 集成遵循 **"最小侵入"原则**:
 
-1. **不改变并发模型**: 仍然是单线程事件循环，io_uring 只是换了一种 syscall 方式
+1. **不改变并发模型**: 仍然是单线程事件循环，三后端全部在此模型内
 2. **透明替换**: 通过 `IoBackend` 抽象，上层代码 (`Worker`, `Manager`) 完全无感
-3. **渐进式采用**: 默认 `asio_uring=ON`，但可随时退回到 `ev`
+3. **渐进式采用**: 推荐 `native_uring`（实测 +7.6% RPS / −54% 延迟），可随时退回 `ev`
 4. **保持简单**: 每个进程一个 ring，无共享，无锁，无额外线程
+5. **send_zc 就绪**: IoOp::WriteNotif 双 CQE 门控已实现，bounce 版安全（真零拷贝暂不做）
 
 
 ## 附录 A：三路 CQE 收割机制深度分析
@@ -427,7 +442,7 @@ libev 线程:
 
 | 维度 | 单线程 (Thunder) | 多线程 |
 |------|-----------------|--------|
-| 锁开销 | **零** — `m_fds`、`m_mapPending` 无需加锁 | 需要细粒度锁或 lock-free 队列 |
+| 锁开销 | **零** — `m_fds` 无需加锁 | 需要细粒度锁或 lock-free 队列 |
 | 上下文切换 | **零** — 回调之间无抢占 | 线程间切换 ≈ 1-10µs/次 |
 | 缓存局部性 | **极好** — 所有数据在单核 cache | 跨核 cache line bouncing |
 | 调试 | 简单 — 单调用栈 | 困难 — 多线程交织 |
@@ -669,9 +684,10 @@ io_context.poll() 被调用 (无论来自哪个路径)
 
 | 数据结构 | 访问者 | 需要锁? |
 |---------|--------|---------|
+| `NativeUringIoBackend::m_fds` | 仅 ev_run 线程 | ❌ 不需要 |
+| `NativeUringIoBackend::m_ring` | 仅 ev_run 线程 | ❌ 不需要 |
 | `AsioUringIoBackend::m_fds` | 仅 ev_run 线程 | ❌ 不需要 |
 | `AsioUringIoBackend::m_ioCtx` | 仅 ev_run 线程调用 poll() | ❌ 不需要 |
-| `UringIoBackend::m_mapPending` | 仅 ev_run 线程 | ❌ 不需要 |
 | `io_uring SQ/CQ` (共享内存) | 内核 + 用户态 单线程 | ❌ 不需要 (内核侧原子操作) |
 | `Worker::m_mapFdData` (ev 后端) | 仅 ev_run 线程 | ❌ 不需要 |
 | `Manager::m_mapFdData` (ev 后端) | 仅 ev_run 线程 | ❌ 不需要 |
@@ -682,6 +698,8 @@ io_context.poll() 被调用 (无论来自哪个路径)
 - `io_object::mutex_`: 保护单个 io_object 的操作队列。
 
 这些锁在单线程场景下 **从不竞争**（始终立即获得），仅增加极微小的原子操作开销。
+
+**NativeUringIoBackend 无任何锁**：SQ/CQ 共享内存由内核侧原子操作保证一致性，用户态单线程访问无竞争。
 
 ### B.7 单线程模型的边界与代价
 
@@ -854,72 +872,59 @@ ev_run() 迭代:
 
 **特点**: `async_read_some` 只是队列化 SQE，真正的内核提交在 `poll()` 中。`poll()` 可能**同步完成**回调 → 如果 fd 未连接，ENOTCONN 在 SubmitRead 调用栈内触发 DestroyConnect。
 
-### C.3 UringIoBackend — 读路径 (异步 ENOTCONN)
+### C.3 NativeUringIoBackend — 读路径
 
 ```
 Worker::AddIoReadEvent(fd, pConn)
   │
   ▼
-UringIoBackend::SubmitRead(fd, buf, seq)
+NativeUringIoBackend::SubmitRead(fd, buf, seq)
   │
-  ├─ io_uring_get_sqe(&ring)                 ← 从 SQ 获取空闲 SQE
-  │   └─ 队列满时返回 NULL → SubmitRead 失败
+  ├─ auto& st = m_fds[fd]                      ← 获取/创建 fd 状态
+  │   └─ st.readPending > 0 → return true       ← 防重入
+  │
+  ├─ io_uring_get_sqe(&ring)                    ← 从 SQ 获取空闲 SQE
+  │   └─ 满 → io_uring_submit → 再试
   │
   ├─ buf->EnsureWritableBytes(8192)
   │
-  ├─ io_uring_prep_recv(sqe, fd, buf, len, 0)  ← 填充 SQE
-  ├─ io_uring_sqe_set_data(sqe, user_data)     ← 绑定 user_data
+  ├─ PendingOp* po = new PendingOp{fd, seq, Read, buf}
   │
-  ├─ m_mapPending[user_data] = PendingOp{fd, seq, Read, buf}
+  ├─ io_uring_prep_recv(sqe, fd, buf->GetRawWriteBuffer(), cap, 0)
+  ├─ io_uring_sqe_set_data(sqe, po)            ← PendingOp* 作为 user_data
   │
-  ├─ io_uring_submit(&ring)                  ← ★ 立即提交 SQE (系统调用)
-  │   │
-  │   │  ★ 关键差异: 与 AsioUringIoBackend 不同，
-  │   │    SQE 在此立即通过 io_uring_enter 提交给内核
-  │   │    没有延迟到后续 poll()
-  │   │
-  │   └─ 返回已提交的 SQE 数量
+  ├─ st.readPending++
+  ├─ io_uring_submit(&ring)                    ← ★ 立即提交 SQE
   │
-  └─ return true ─────────────────────► 调用者继续执行
+  └─ return true
   │
-  │  ★ 此时 SQE 已在内核中，但 CQE 尚未到达
-  │    SubmitRead 返回时回调不会被触发 — "真异步"
+  │  ★ SQE 已在内核中，CQE 尚未到达 — "真异步"
   │
   ... 时间流逝 ...
   │
   ▼ 内核侧:
-  │   ├─ fd 已连接 + 数据到达 → 拷贝数据 → CQE {res=N}
+  │   ├─ fd 已连接 + 数据到达 → CQE {res=N}
   │   └─ fd 未连接 → CQE {res=-107} (ENOTCONN)
-  │       ★ ENOTCONN 以异步 CQE 形式返回，不在 SubmitRead 调用栈内
   │
-  ▼ ring_fd 变为可读
+  ▼ 内核完成 → ++eventfd counter
   │
   ▼ [libev 事件循环]
 ev_run() 迭代:
   │
-  ├─ epoll_wait → ring_fd 就绪
+  ├─ epoll_wait → eventfd 就绪
   │
-  └─ ev_io(ring_fd) → RingEventCallback
-      └─ ReapCqes()
-          ├─ io_uring_for_each_cqe(&ring, head, cqe)
-          │   ├─ user_data = cqe->user_data
-          │   ├─ op = m_mapPending[user_data]
-          │   ├─ result = cqe->res              ← -107 (ENOTCONN)
-          │   ├─ m_mapPending.erase(user_data)
-          │   └─ m_callback(op.fd, op.seq, Read, result, user_data)
-          │       │
-          │       └─ Worker::OnIoComplete
-          │           └─ Worker::HandleIoReadComplete(pConn, -107)
-          │               └─ ★ 异步 ENOTCONN → DestroyConnect ★
-          │                   与 AsioUringIoBackend 相同的结果:
-          │                   SubmitRead 已返回 true，调用者已继续执行
-          │                   此时 DestroyConnect 销毁 fd
-          │                   调用者对销毁不知情
-          │
-          └─ io_uring_cq_advance(&ring, count)
+  └─ ev_io(eventfd) → OnEvfd → ReapCqes()
+      └─ io_uring_peek_cqe + io_uring_cqe_seen
+          ├─ PendingOp* po = cqe_get_data(cqe)
+          ├─ fd/seq 校验 (m_fds 中且未取消)
+          ├─ valid:
+          │   ├─ po->op == Read → buf->AdvanceWriteIndex(res)
+          │   └─ m_callback(fd, seq, IoOp::Read, res, user_data)
+          │       └─ Worker::HandleIoReadComplete(...)
+          └─ delete po
 ```
 
-**特点**: SQE 通过 `io_uring_submit` **立即提交**。ENOTCONN 作为**异步 CQE** 返回。与 AsioUringIoBackend 的差异在时序（异步 vs 同步），但根因相同：I/O 在 fd 连接前注册。
+**特点**: SQE 通过 `io_uring_submit` **立即提交**，无延迟。eventfd（通过 `io_uring_register_eventfd` 标准 API 注册）作为完成通知，无 /proc hack。陈旧 CQE 通过 fd/seq 校验安全丢弃，不触碰连接缓冲。
 
 ### C.4 三种后端写路径对比
 
@@ -962,19 +967,21 @@ ev_run() 迭代:
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                  UringIoBackend — 写路径                         │
+│               NativeUringIoBackend — 写路径                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  SubmitWrite(fd, buf, seq)                                      │
 │    ├─ readable = buf->ReadableBytes()                           │
-│    │   ├─ == 0 → m_callback(Write, 0) ← 同步回调 (同 Asio)       │
+│    │   ├─ == 0 → m_callback(Write, 0) ← 同步回调 (空写触发)      │
 │    │   │                                                         │
-│    │   └─ > 0 → buf->WriteFD(fd, iErrno) ← ★ 同步写              │
-│    │       ├─ n > 0:  m_callback(Write, n)   同步完成            │
-│    │       ├─ n < 0 + EAGAIN: m_callback(Write, -errno) 重试     │
-│    │       └─ n < 0 + 其他: m_callback(Write, -errno) 错误        │
+│    │   └─ > 0 → io_uring_get_sqe → PendingOp                    │
+│    │       ├─ zc + >=threshold:                                 │
+│    │       │   malloc(bounce) + memcpy + prep_send_zc(bounce)   │
+│    │       │   → 双 CQE：结果(Write) + NOTIF(WriteNotif)        │
+│    │       └─ 普通: prep_send(buf->GetRawReadBuffer())          │
+│    │           → 单 CQE：Write                                  │
 │    │                                                             │
-│  特点: 不使用 io_uring 写 SQE，全部同步 WriteFD                   │
+│  特点: 全异步 io_uring send(zc)，按阈值分流，bounce 解耦生命周期   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1002,11 +1009,11 @@ Worker::AutoSend(strIdentify) 调用链:
 
 ### D.2 三种后端在此场景下的行为对比表
 
-| 阶段 | EvIoBackend | UringIoBackend | AsioUringIoBackend |
-|------|-------------|----------------|---------------------|
+| 阶段 | EvIoBackend | NativeUringIoBackend | AsioUringIoBackend |
+|------|-------------|---------------------|---------------------|
 | **AddIoReadEvent** | ev_io_set(EV_READ) — 无系统调用 | io_uring_submit(SQE) — 立即提交 | async_read_some + poll() — 延迟提交 |
 | **fd 状态** | 未连接 | 未连接 | 未连接 |
-| **I/O 触发时机** | epoll_wait 返回后 (fd 就绪) | 内核异步完成 → CQE | poll() 同步完成或后续异步 |
+| **I/O 触发时机** | epoll_wait 返回后 (fd 就绪) | 内核异步完成 → CQE → eventfd | poll() 同步完成或后续异步 |
 | **ENOTCONN 路径** | 不发生 — epoll 不报告未连接 fd | 异步 CQE {res=-107} | 同步 CQE {res=-107} |
 | **DestroyConnect 时机** | N/A | SubmitRead 返回后的下个 ev_run 迭代 | SubmitRead 调用栈内 (同步) |
 | **结果** | ✅ 安全 | ⚠️ 延迟爆炸 (异步销毁) | ❌ 立即爆炸 (同步销毁) |
@@ -1074,7 +1081,7 @@ SendTo → 找到 fd=14 在 mapMsgShell
 所有 GenKey 请求失败！直到路由超时清理该条目或 Manager 侧主动建立新连接。
 ```
 
-### D.4 UringIoBackend 异步 ENOTCONN 的时序
+### D.4 NativeUringIoBackend 异步 ENOTCONN 的时序
 
 ```
 时间 ──────────────────────────────────────────────────────────────►
@@ -1085,12 +1092,13 @@ CreateConnectFdAttr:
   AddIoReadEvent           → SubmitRead(fd=14)
     │ io_uring_prep_recv(sqe, fd=14, buf, len)
     │ io_uring_submit(&ring) ← ★ 立即提交 SQE
-    │ m_mapPending[user_data] = op
+    │ PendingOp* po = new PendingOp{14, seq, Read, buf}
+    │ st.readPending++
     └─ return true ★ SQE 已在内核，但 CQE 尚未到达
 
   AddIoWriteEvent          → SubmitWrite(fd=14, pSendBuff)
     │ pSendBuff 为空 → readable=0
-    └─ m_callback(14, seq, Write, 0)  ← ★ 同步回调 (写不使用 io_uring)
+    └─ m_callback(14, seq, Write, 0)  ← ★ 同步回调
         └─ OnIoComplete → fd=14 仍在 mapFdAttr ✅
             └─ HandleIoWriteComplete(result=0):
                 pWaitForSendBuff 此时为空 (编码尚未发生) → no-op
@@ -1108,14 +1116,16 @@ return true ★ AutoSend 看似成功
 
 [libev 事件循环迭代 N+1]
 
-epoll_wait → ring_fd 可读
-  └─ RingEventCallback → ReapCqes()
-      └─ io_uring_peek_cqe: CQE {user_data=X, res=-107}
-          → op = m_mapPending[X]  (fd=14, Read)
+epoll_wait → eventfd 可读
+  └─ ev_io(eventfd) → ReapCqes()
+      └─ io_uring_peek_cqe: CQE {user_data=po, res=-107}
+          → po = PendingOp{fd=14, seq, Read, buf}
+          → valid (fd/seq 匹配且未取消)
           → m_callback(14, seq, Read, -107, user_data)
           └─ HandleIoReadComplete(pConn, -107)
               └─ ★ 异步 DestroyConnect ★
                   此时 fd=14 已 connect()、已在 mapMsgShell...
+          → delete po
 
 [问题：与 AsioUringIoBackend 同样的后果，只是时序不同]
 
@@ -1164,7 +1174,7 @@ epoll_wait → fd=14 变为可写 (connect 完成)
 | 后端 | SQE 提交 | ENOTCONN 触发 | 时序 | 表现 |
 |------|---------|--------------|------|------|
 | EvIoBackend | N/A (epoll watcher) | 不发生 | N/A | ✅ 安全 |
-| UringIoBackend | `io_uring_submit` 立即 | 异步 CQE | SubmitRead 返回后 | ⚠️ 延迟爆炸 |
+| NativeUringIoBackend | `io_uring_submit` 立即 | 异步 CQE | SubmitRead 返回后 | ⚠️ 延迟爆炸 |
 | AsioUringIoBackend | `poll()` 延迟 | 同步 CQE | SubmitRead 调用栈内 | ❌ 立即爆炸 |
 
 **共同根因**: `CreateConnectFdAttr` 在 `connect()` 之前调用 `AddIoReadEvent`。
@@ -1540,26 +1550,27 @@ hook                │      └─ m_ioCtx.poll()                           │
   ★ 三路互补保证了 CQE 在任何时间窗口到达都能被及时收割
 ```
 
-### F.6 UringIoBackend vs AsioUringIoBackend — SQE 提交时序对比
+### F.6 NativeUringIoBackend vs AsioUringIoBackend — SQE 提交时序对比
 
 ```
 ═══════════════════════════════════════════════════════════════════════
   操作: SubmitRead(fd=14, buf, seq) — fd 尚未 connect()
 ═══════════════════════════════════════════════════════════════════════
 
-UringIoBackend (直接 liburing):
+NativeUringIoBackend (原生 liburing):
 ────────────────────────────────────────────────────────────────────
   io_uring_get_sqe(&ring)        ← 获取空闲 SQE
+  PendingOp* po = new PendingOp  ← heap 分配 op 上下文
   io_uring_prep_recv(sqe, 14)    ← 填充 SQE
-  io_uring_submit(&ring)         ← ★ io_uring_enter(fd, 1, 0, IORING_ENTER_GETEVENTS)
-                                    系统调用: 提交 1 个 SQE + 收割 CQE (如有)
+  io_uring_sqe_set_data(sqe, po) ← PendingOp* 作为 user_data
+  io_uring_submit(&ring)         ← ★ io_uring_enter 提交 SQE
                                     内核处理:
                                       fd=14 未连接 → 生成 CQE {res=-107} (ENOTCONN)
-                                      写入 CQ + ++event_fd counter (如果注册了)
+                                      写入 CQ + ++eventfd counter
                                     返回: 已提交 1 SQE
   return true
-  ★ SQE 已在内核中，但 CQE 尚未被用户态收割
-  ★ CQE 收割在下次 RingEventCallback → ReapCqes 中
+  ★ SQE 已在内核中，CQE 尚未被收割
+  ★ CQE 收割在下次 ev_io(eventfd) → ReapCqes 中（异步）
 
 AsioUringIoBackend (ASIO 封装):
 ────────────────────────────────────────────────────────────────────
@@ -1600,10 +1611,10 @@ AsioUringIoBackend (ASIO 封装):
                         └─ DestroyConnect ★ 在 poll() 内同步执行！
 
 对比总结:
-  UringIoBackend:    SQE 提交 ───┬─── CQE 生成 ───┬─── CQE 收割 ───┬─── 回调
-                    (io_uring_submit)  (内核异步)    (ReapCqes异步)  (异步)
+  NativeUringIoBackend: SQE 提交 ───┬─── CQE 生成 ───┬─── CQE 收割 ───┬─── 回调
+                       (io_uring_submit)  (内核异步)    (ReapCqes异步)  (异步)
 
-  AsioUringIoBackend: SQE 写入 SQ ─── poll() ─── submit + 收割 + 回调 (全部同步在一个调用栈内)
+  AsioUringIoBackend:  SQE 写入 SQ ─── poll() ─── submit + 收割 + 回调 (全部同步在一个调用栈内)
 ```
 
 ---
@@ -1651,7 +1662,7 @@ Thunder 的 IO Backend 统一接口中，写操作完成后通过 `m_callback(fd
 | 后端 | SubmitWrite (空 pSendBuff) | 触发方式 | 延迟 | pWaitForSendBuff 状态 |
 |------|--------------------------|---------|------|----------------------|
 | EvIoBackend | ev_io_set(EV_WRITE) → epoll_wait → fd 可写 → WriteFD(pSendBuff=empty)→result=0 | 异步 (epoll) | 1个 ev_run 迭代 | 编码已完成 ✅ |
-| UringIoBackend | WriteFD(pSendBuff=empty)→result=0 | **同步** | 0 (SubmitWrite 内) | 取决于调用时机 |
+| NativeUringIoBackend | readable=0 → m_callback(Write, 0) | **同步** | 0 (SubmitWrite 内) | 取决于调用时机 |
 | AsioUringIoBackend | async_write_some(empty) → start_op → perform 立即成功 → result=0 | **同步** (poll 前) | 0 | 取决于调用时机 |
 
 **时序要求**: result==0 回调触发时，`pWaitForSendBuff` **必须已经**包含数据。
