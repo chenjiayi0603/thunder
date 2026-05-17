@@ -44,6 +44,12 @@ bool NativeUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callb
             if (v >= 1024 && v <= (4 << 20)) m_zcThreshold = static_cast<size_t>(v);
         }
     }
+    // send_zc true zero-copy (THUNDER_URING_ZC_DIRECT=1): 跳过 bounce buffer，
+    // 内核直接 DMA CBuffer 内存。buffer 生命周期由 PendingOp::buf (shared_ptr) 保护。
+    if (const char* d = ::getenv("THUNDER_URING_ZC_DIRECT"); d && d[0] == '1')
+    {
+        m_zcDirectEnabled = true;
+    }
 
     int rc;
     const char* sqp = ::getenv("THUNDER_URING_SQPOLL");
@@ -142,7 +148,7 @@ bool NativeUringIoBackend::GetSqe(struct io_uring_sqe** out)
     return true;
 }
 
-bool NativeUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
+bool NativeUringIoBackend::SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!buf || !m_callback) return false;
 
@@ -162,7 +168,7 @@ bool NativeUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
     struct io_uring_sqe* sqe = nullptr;
     if (!GetSqe(&sqe)) return false;
 
-    PendingOp* po = new PendingOp{fd, seq, IoOp::Read, buf};
+    PendingOp* po = new PendingOp{fd, seq, IoOp::Read, buf};  // buf copy = shared_ptr +1 ref
     ::io_uring_prep_recv(sqe, fd, dst, cap, 0);
     ::io_uring_sqe_set_data(sqe, po);
     st.readPending++;
@@ -170,7 +176,7 @@ bool NativeUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
     return true;
 }
 
-bool NativeUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
+bool NativeUringIoBackend::SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!buf || !m_callback) return false;
 
@@ -195,27 +201,38 @@ bool NativeUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
     struct io_uring_sqe* sqe = nullptr;
     if (!GetSqe(&sqe)) return false;
 
-    PendingOp* po = new PendingOp{fd, seq, IoOp::Write, buf};
+    PendingOp* po = new PendingOp{fd, seq, IoOp::Write, buf};  // buf copy = shared_ptr +1 ref
 
     if (m_zcEnabled && static_cast<size_t>(readable) >= m_zcThreshold)
     {
-        // send_zc：拷到后端自有 bounce 缓冲再零拷贝发送，使内核 DMA 的
-        // 内存与连接 buffer 解耦——DestroyConnect 同步释放 pSendBuff 不会
-        // UAF。bounce 缓冲在 NOTIF CQE（buffer 可复用）时释放。
-        // 注：此拷贝使本步收益≈0（拷贝挪位），真零拷贝需后续让
-        // DestroyConnect 延迟到 NOTIF 才释放连接 buffer（见 docs）。
-        po->isZc  = true;
-        po->zcBuf = static_cast<char*>(::malloc(static_cast<size_t>(readable)));
-        if (!po->zcBuf)   // 退回普通 send
+        po->isZc = true;
+
+        if (m_zcDirectEnabled)
         {
-            po->isZc = false;
-            ::io_uring_prep_send(sqe, fd, src, static_cast<size_t>(readable), 0);
+            // 真零拷贝：内核直接 DMA CBuffer 内存，无 bounce。
+            // buffer 生命周期由 po->buf (shared_ptr) 保护 — PendingOp 析构时才释放。
+            po->isZcDirect = true;
+            ::io_uring_prep_send_zc(sqe, fd, src, static_cast<size_t>(readable), 0, 0);
         }
         else
         {
-            std::memcpy(po->zcBuf, src, static_cast<size_t>(readable));
-            ::io_uring_prep_send_zc(sqe, fd, po->zcBuf,
-                                    static_cast<size_t>(readable), 0, 0);
+            // send_zc：拷到后端自有 bounce 缓冲再零拷贝发送，使内核 DMA 的
+            // 内存与连接 buffer 解耦——DestroyConnect 同步释放 pSendBuff 不会
+            // UAF。bounce 缓冲在 NOTIF CQE（buffer 可复用）时释放。
+            // 注：此拷贝使本步收益≈0（拷贝挪位），真零拷贝需后续让
+            // DestroyConnect 延迟到 NOTIF 才释放连接 buffer（见 docs）。
+            po->zcBuf = static_cast<char*>(::malloc(static_cast<size_t>(readable)));
+            if (!po->zcBuf)   // 退回普通 send
+            {
+                po->isZc = false;
+                ::io_uring_prep_send(sqe, fd, src, static_cast<size_t>(readable), 0);
+            }
+            else
+            {
+                std::memcpy(po->zcBuf, src, static_cast<size_t>(readable));
+                ::io_uring_prep_send_zc(sqe, fd, po->zcBuf,
+                                        static_cast<size_t>(readable), 0, 0);
+            }
         }
     }
     else
@@ -269,7 +286,9 @@ void NativeUringIoBackend::ReapCqes()
         {
             if (flags & IORING_CQE_F_NOTIF)
             {
-                // 通知 CQE：内核已脱离 bounce 缓冲，可安全释放/复用。
+                // 通知 CQE：内核已脱离缓冲，可安全释放/复用。
+                // isZcDirect: zcBuf==nullptr（内核直接 DMA CBuffer）→ free 无操作；
+                // bounce: 释放 malloc 的 bounce 缓冲。
                 int bytes = po->gotResult ? po->zcBytes : res;
                 if (valid)
                 {
@@ -277,7 +296,7 @@ void NativeUringIoBackend::ReapCqes()
                     if (bytes > 0) po->buf->AdvanceReadIndex(bytes);
                     m_callback(po->fd, po->seq, IoOp::WriteNotif, bytes, m_userData);
                 }
-                ::free(po->zcBuf);
+                ::free(po->zcBuf);   // isZcDirect → nullptr → no-op
                 delete po;          // 终态
             }
             else
@@ -289,13 +308,14 @@ void NativeUringIoBackend::ReapCqes()
                 {
                     // 无通知后续（多为立即失败）：此刻即终态，
                     // 直接以 WriteNotif 驱动 Worker 回收/报错。
+                    // isZcDirect: zcBuf==nullptr → free 无操作。
                     if (valid)
                     {
                         if (it->second.writePending > 0) it->second.writePending--;
                         if (res > 0) po->buf->AdvanceReadIndex(res);
                         m_callback(po->fd, po->seq, IoOp::WriteNotif, res, m_userData);
                     }
-                    ::free(po->zcBuf);
+                    ::free(po->zcBuf);   // isZcDirect → nullptr → no-op
                     delete po;
                 }
                 // else：F_MORE → 等通知 CQE，保留 po/zcBuf，不回调不减 pending

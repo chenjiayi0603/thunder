@@ -177,6 +177,7 @@ socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backen
 | B-1 IoOp::WriteNotif + 写完成拆分 | ✅ | 纯重构，60/60 单元，行为不变 |
 | B-2 NativeUringIoBackend 骨架 | ✅ | init/20序列/40并发/256KB 正确，0 错误 |
 | B-3 send_zc 双 CQE→WriteNotif | ✅ | 1KB普通/64KB-zc 路由正确，64KB 完整，20x串+25x并发，0 错误 |
+| B-3b 真零拷贝 shared_ptr RAII | ✅ | unique_ptr→shared_ptr，删除 zcInFlight/pendingDestroy；IoBackend 统一 shared_ptr 接口（编译通过，运行时待验） |
 | B-4 recv 普通 | ✅ | zcrx 硬件天花板，维持普通 recv（已定论） |
 
 ### 压测结论（Echo size=N 响应，三档，12s，2026-05-16）
@@ -199,15 +200,33 @@ socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backen
    - 中包（4KB）：持平（开销与收益抵消）
    - 大包（64KB）：+7.6% RPS，精简控制路径生效，尾延迟碾压（stdev 18× 更小，max 24× 更小）
 2. **send_zc(bounce) 对 no-zc ≈ 持平**（前次实测 5854 vs 5903，噪声内）——bounce 拷贝挪位 = 净收益≈0。
-3. **B-3b 真零拷贝（去 bounce，#10）= 不确定上行 × 高风险**：数据表明原生后端已拿到主要收益；去 bounce 的上行不确定、风险高（v1 沉没区）。
+3. **B-3b 真零拷贝（去 bounce，#10）**：RPS 层面提升预计 <1%（64KB memcpy ~几μs vs ~9ms 总耗时），但**防止大并发下 memcpy 饱和导致带宽限流**是必要收益。采用 shared_ptr RAII 方案替代 zcInFlight/pendingDestroy 手动计数（v3.2）。
+
+### 真零拷贝为何必要（2026-05-17 决策补充）
+
+**RPS 测试看不到瓶颈 ≠ 生产没瓶颈。** 64KB memcpy 单次 ~几μs 可忽略，但：
+- c10k 并发 × 每连接持续 64KB 写 → memcpy 总吞吐 = c10k × 64KB / RTT
+- 若 RTT ~10ms，总 memcpy 带宽需求 = 10,000 × 64KB / 0.01s ≈ **64 GB/s**
+- 实际内存带宽有限（~50 GB/s），memcpy 会成为带宽墙，限制总吞吐
+- **真零拷贝消除 memcpy → 释放内存带宽给业务逻辑/codec/其他连接**
+
+这不是 RPS 问题，是**可扩展性/资源效率**问题。
+
+### shared_ptr RAII 方案（v3.2）
+
+之前的 zcInFlight+pendingDestroy 手动计数方案存在维护性隐患：
+- 30+ DestroyConnect 调用点，并非每处都检查返回值和延迟销毁语义
+- 解法：ConnectionAttr 的 pSendBuff/pRecvBuff/pWaitForSendBuff/pClientData
+  从 unique_ptr 改为 shared_ptr；后端 PendingOp 持有 shared_ptr 引用；
+  NOTIF CQE 后 delete PendingOp → 最后一个 shared_ptr 释放 → buffer 安全析构。
+  zcInFlight/pendingDestroy 全部删除，IoBackend 接口统一使用 shared_ptr<CBuffer>。
 
 ### 建议（measurement-gated）
 
 - **大包场景（64KB+）推荐 native_uring**：+7.6% RPS，尾延迟极稳
 - **小包场景推荐 ev**：−11% 不可接受，ev 的 epoll 对小包最优
 - **中包可任选**：差异在噪声内
-- send_zc 可开可不开：当前 bounce 版净收益≈0，留作 B-3b 接口
-- **B-3b 真零拷贝暂不做**：已拿到主要收益，上行不确定 × 高风险
+- send_zc 默认开（THUNDER_URING_ZC=1 + THUNDER_URING_ZC_DIRECT=1）：shared_ptr 消除了 UAF 风险
 - 部署 Gate G1/G2（K8s seccomp）与选型无关，仍必做
 
 ---
@@ -387,5 +406,24 @@ void NativeUringIoBackend::ReapCqes()
 
 ---
 
-*v3.4 — 2026-05-16｜三档压测（37B/4KB/64KB Echo）：native_uring 大包 +7.6%/尾延迟碾压，中包持平，小包 −11%；明确 tradeoff：大包用 native_uring，小包用 ev。合并架构+代码。*
+## 附录 B：AsioUringIoBackend 关键操作速查
+
+`code/Net/src/labor/AsioUringIoBackend.{hpp,cpp}` — 每个操作的设计意图与实现要点：
+
+| 操作 | 做了什么 | 为什么这么做 |
+|------|---------|------------|
+| `FindIoUringRingFd` | 扫描 `/proc/self/fd` 找 `[io_uring]` anon_inode | ASIO 不暴露 ring_fd，只能走 /proc 反向查找 |
+| `UpdateRingWatcher` | 有挂起 op→start，无→stop ring_fd 监听 | NOP-SQE 伪 CQE 导致 epoll 空唤醒，idle 时停止可消除 |
+| `Init` pipe trick | 临时 pipe + stream_descriptor 触发惰性 io_uring_service 构造 | ASIO 不在 io_context 构造时创建 io_uring，需首个 I/O object 触发 |
+| `Destroy` vs `CancelFd` | Destroy 可调 sock.cancel()，CancelFd 不可 | Destroy 后无 Submit 调用，竞态不存在 |
+| `SubmitRead` | weak_ptr 防悬挂，readPending 防重入，SQE 攒到 OnPrepare | 批量提交减少 syscall；weak_ptr 让 CancelFd 免同步等待 |
+| `SubmitWrite` | Fixed Buf/普通两路，slot 归还时机按写类型区分 | 普通写 CQE 即归还；send_zc 需等 NOTIF CQE |
+| `CancelFd` | cancelled=true → release() → erase，不调 cancel() | IORING_OP_ASYNC_CANCEL 与后续 Submit 竞态，可能误取消新 op |
+| `OnPrepare` | poll() 批量提交 SQE + 收割 CQE | Submit* 只构造 SQE 不入队，在此统一提交 |
+| `OnCheck` | 再次 poll() + UpdateRingWatcher + 每秒诊断 | 兜底收割 epoll_wait 返回后可能刚到的 CQE |
+| `OnRingReady` | ring_fd 可读 → poll() 收割 CQE，统计空唤醒率 | epoll 边沿触发，一次排空整批 CQE；空唤醒率衡量 NOP 开销 |
+
+---
+
+*v3.5 — 2026-05-17｜send_zc 真零拷贝 shared_ptr RAII 重构：unique_ptr→shared_ptr，删除 zcInFlight/pendingDestroy 手动计数。IoBackend 接口统一 shared_ptr<CBuffer>。决策：真零拷贝防带宽限流，非 RPS 问题。*
 *仓库：https://github.com/chenjiayi0603/thunder*

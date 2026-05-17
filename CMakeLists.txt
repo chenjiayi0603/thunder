@@ -27,10 +27,44 @@ option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface/Center 节点 .so 插�
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
 # 第三方库超级构建（code/3party/CMakeLists.txt），默认仅注册目标，不随主工程 all 一起编；见 target thirdparty_deploy
 option(THUNDER_INCLUDE_3PARTY "包含第三方库 CMake 目标（thunder_3party_all、thirdparty_deploy）" ON)
-option(THUNDER_IO_ASIO_URING "启用 standalone Asio io_uring I/O 后端" ON)
+option(THUNDER_IO_ASIO_URING "启用 standalone Asio io_uring I/O 后端" OFF)
+option(THUNDER_IO_URING "启用原生 io_uring I/O 后端 (NativeUringIoBackend)" ON)
 
 if(THUNDER_IO_ASIO_URING)
   add_compile_definitions(THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
+endif()
+
+# liburing: NativeUringIoBackend 编译/链接必备
+if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
+  # 尝试 pkg-config
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(LIBURING QUIET liburing)
+  endif()
+  if(LIBURING_FOUND)
+    message(STATUS "liburing: pkg-config ${LIBURING_VERSION}")
+    set(LIBURING_INCLUDE_DIRS "${LIBURING_INCLUDE_DIRS}" CACHE PATH "liburing include path")
+    set(LIBURING_LIBRARY_DIRS "${LIBURING_LIBRARY_DIRS}" CACHE PATH "liburing library path")
+  else()
+    # 回退：找头文件和库
+    find_path(LIBURING_INCLUDE_DIRS liburing.h
+      HINTS "$ENV{HOME}/.local/include" "/usr/local/include"
+      DOC "liburing include path")
+    find_library(LIBURING_LIBRARY uring
+      HINTS "$ENV{HOME}/.local/lib" "/usr/local/lib"
+      DOC "liburing library")
+    if(LIBURING_INCLUDE_DIRS)
+      message(STATUS "liburing include: ${LIBURING_INCLUDE_DIRS}")
+    else()
+      message(WARNING "liburing.h 未找到 — NativeUringIoBackend 将编译失败。请安装 liburing-dev 或设置 LIBURING_INCLUDE_DIRS。")
+    endif()
+    if(LIBURING_LIBRARY)
+      get_filename_component(LIBURING_LIBRARY_DIRS "${LIBURING_LIBRARY}" DIRECTORY)
+      message(STATUS "liburing library: ${LIBURING_LIBRARY} (dir: ${LIBURING_LIBRARY_DIRS})")
+    else()
+      message(WARNING "liburing.so 未找到 — 链接将失败。请安装 liburing-dev 或设置 LIBURING_LIBRARY。")
+    endif()
+  endif()
 endif()
 
 find_package(Threads REQUIRED)

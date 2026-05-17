@@ -1205,7 +1205,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                     {
                         if (m_pIoBackend)
                         {
-                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
                         }
                         else
                         {
@@ -1289,7 +1289,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                         {
                             if (m_pIoBackend)
                             {
-                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
                             }
                             else
                             {
@@ -1333,7 +1333,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
         {
             pConn->pRecvBuff->Compact(8192);
             pConn->pRecvBuff->EnsureWritableBytes(8192);
-            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
         }
     }
 
@@ -1383,6 +1383,8 @@ bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
         return false;
     }
 
+    // 写完成回调到达。buffer 生命周期由 shared_ptr 保护，无需手动计数。
+
     if (result < 0)
     {
         int iErrno = -result;
@@ -1390,7 +1392,7 @@ bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
             return true;
         }
@@ -1409,7 +1411,7 @@ bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
         }
         else
@@ -1447,7 +1449,7 @@ bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
                     if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq)
                     {
                         pConn->pRecvBuff->Compact(8192);
-                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
                     }
                 }
             }
@@ -1457,6 +1459,12 @@ bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
             }
         }
     }
+
+    // buffer 生命周期由 shared_ptr 保护：DestroyConnect 释放 mapFdAttr 中的
+    // shared_ptr 后，若后端 PendingOp 仍持有引用，buffer 不会析构。NOTIF CQE
+    // 到达后 PendingOp 被 delete，最后一个 shared_ptr 释放 → buffer 安全析构。
+    // 无需 pendingDestroy/zcInFlight 手动补刀。
+
     return true;
 }
 
@@ -4981,7 +4989,7 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
         && pConn->iFd != iManagerControlFd)
     {
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -5025,7 +5033,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
         && pConn->iFd != iManagerDataFd
         && pConn->iFd != iManagerControlFd)
     {
-        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -5079,7 +5087,7 @@ bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
         // 会因 HasPending==true 而跳过，不会重复提交。
         pConn->pRecvBuff->Compact(8192);
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
         return true;
     }
 
@@ -5238,10 +5246,10 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
     {
         auto pConnAttr = std::make_unique<tagConnectionAttr>();
         pConnAttr->iFd = iFd;
-        pConnAttr->pRecvBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pSendBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pWaitForSendBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pClientData = std::make_unique<util::CBuffer>();
+        pConnAttr->pRecvBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pSendBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pWaitForSendBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pClientData = std::make_shared<util::CBuffer>();
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
         pConnAttr->eCodecType = eCodecType;
@@ -5326,6 +5334,11 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
         return(false);
     }
     tagConnectionAttr* pConn = iter->second.get();
+
+    // buffer 为 shared_ptr：DestroyConnect 释放 mapFdAttr 中的引用后，
+    // 若后端 PendingOp 仍持有引用（内核 DMA 中），buffer 不会析构。
+    // NOTIF CQE 到达 → delete PendingOp → buffer 最后一个引用释放 → 安全析构。
+
     if (pConn->iFd == iManagerControlFd || pConn->iFd == iManagerDataFd)//收到父进程通信fd关闭
     {
     	LOG4_TRACE("refuse DestroyConnect on manager ipc fd(%u) control(%u) data(%u)",

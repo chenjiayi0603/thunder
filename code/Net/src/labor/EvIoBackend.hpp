@@ -28,8 +28,8 @@ public:
 
     bool Init(struct ev_loop* loop, IoCompletionCallback callback, void* user_data) override;
     void Destroy() override;
-    bool SubmitRead(int fd, util::CBuffer* buf, uint32_t seq) override;
-    bool SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq) override;
+    bool SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
+    bool SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
     void CancelFd(int fd) override;
     const char* Name() const override { return "ev"; }
     bool HasPending(int fd) const override;

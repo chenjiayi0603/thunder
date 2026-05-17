@@ -11,6 +11,7 @@
 #define IOBACKEND_HPP_
 
 #include <cstdint>
+#include <memory>
 
 struct ev_loop;
 
@@ -56,11 +57,11 @@ public:
     /** @brief 销毁后端，释放所有资源 */
     virtual void Destroy() = 0;
 
-    /** @brief 提交读操作；数据到达后通过回调通知 */
-    virtual bool SubmitRead(int fd, util::CBuffer* buf, uint32_t seq) = 0;
+    /** @brief 提交读操作；数据到达后通过回调通知。buf 为 shared_ptr，后端按需持有引用 */
+    virtual bool SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) = 0;
 
-    /** @brief 提交写操作；写完成后通过回调通知 */
-    virtual bool SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq) = 0;
+    /** @brief 提交写操作；写完成后通过回调通知。buf 为 shared_ptr，后端按需持有引用 */
+    virtual bool SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) = 0;
 
     /** @brief 取消 fd 上所有待处理/已注册的 I/O 操作（连接关闭前调用） */
     virtual void CancelFd(int fd) = 0;

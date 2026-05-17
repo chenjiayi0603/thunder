@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# backward compat wrapper → tests/build_and_test.sh
-exec "$(dirname "$0")/tests/build_and_test.sh" "$@"
+# backward compat wrapper → tests/run_all.sh
+exec "$(dirname "$0")/tests/run_all.sh" "$@"

@@ -45,7 +45,7 @@ void EvIoBackend::Destroy()
     m_userData = nullptr;
 }
 
-bool EvIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
+bool EvIoBackend::SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!m_loop || !buf)
     {
@@ -78,7 +78,7 @@ bool EvIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
     }
 
     pData->ulSeq = seq;
-    pData->pReadBuf = buf;
+    pData->pReadBuf = buf.get();
 
     // 刷新/启动读事件（幂等）
     ev_io_set(pData->pWatcher, fd, pData->pWatcher->events | EV_READ);
@@ -87,7 +87,7 @@ bool EvIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
     return true;
 }
 
-bool EvIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
+bool EvIoBackend::SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!m_loop || !buf)
     {
@@ -120,7 +120,7 @@ bool EvIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
     }
 
     pData->ulSeq = seq;
-    pData->pWriteBuf = buf;
+    pData->pWriteBuf = buf.get();
 
     // 刷新/启动写事件（幂等）
     ev_io_set(pData->pWatcher, fd, pData->pWatcher->events | EV_WRITE);

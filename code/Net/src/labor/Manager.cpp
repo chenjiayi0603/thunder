@@ -666,7 +666,7 @@ bool Manager::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
             && !m_pIoBackend->HasPending(iFd))
         {
             pConn->pRecvBuff->Compact(8192);
-            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
         }
     }
 
@@ -723,7 +723,7 @@ bool Manager::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
             return true;
         }
@@ -741,7 +741,7 @@ bool Manager::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
         }
         else
@@ -1757,7 +1757,7 @@ bool Manager::AddIoReadEvent(tagConnectionAttr* pConn)
         && pConn->iFd != m_iS2SListenFd)
     {
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -1799,7 +1799,7 @@ bool Manager::AddIoWriteEvent(tagConnectionAttr* pConn)
     if (m_pIoBackend
         && pConn->iFd != m_iS2SListenFd)
     {
-        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -1847,7 +1847,7 @@ bool Manager::RemoveIoWriteEvent(tagConnectionAttr* pConn)
         // 补交读，避免 CancelFd 后 fd 不再被监听。
         pConn->pRecvBuff->Compact(8192);
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
         return true;
     }
 

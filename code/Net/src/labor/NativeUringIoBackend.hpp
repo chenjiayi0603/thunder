@@ -30,8 +30,8 @@ public:
 
     bool Init(struct ev_loop* loop, IoCompletionCallback callback, void* user_data) override;
     void Destroy() override;
-    bool SubmitRead(int fd, util::CBuffer* buf, uint32_t seq) override;
-    bool SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq) override;
+    bool SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
+    bool SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
     void CancelFd(int fd) override;
     const char* Name() const override { return "native_uring"; }
     bool HasPending(int fd) const override;
@@ -45,17 +45,22 @@ private:
         int      writePending = 0;
         bool     cancelled    = false;
     };
-    // 本后端 heap 持有，生命周期 = 直到其 CQE 被收割。绝不持有连接资源所有权。
+    // 本后端 heap 持有，生命周期 = 直到其 CQE 被收割。
+    // buf 为 shared_ptr：NOTIF CQE 到达前内核正 DMA 读取 buffer，
+    // PendingOp 持有 shared_ptr 引用防止 buffer 被提前释放（RAII，无需手动计数）。
     struct PendingOp
     {
-        int                 fd;
-        uint32_t            seq;
-        IoOp                op;
-        util::CBuffer*      buf;       // 仅当 fd/seq 仍有效且未取消时才解引用
+        int                              fd;
+        uint32_t                         seq;
+        IoOp                             op;
+        std::shared_ptr<util::CBuffer>   buf;       // 持有引用，防 UAF；最后引用释放时安全析构
         // send_zc：后端自有 bounce 缓冲，NOTIF 前内核 DMA 它，与连接 buffer
         // 生命周期解耦（DestroyConnect 同步释放连接 buffer 不会 UAF）。
+        // isZcDirect: true = 真零拷贝，内核直接 DMA CBuffer 内存（无 bounce），
+        // buffer 生命周期由 buf (shared_ptr) 保护。
         bool                isZc      = false;
-        char*               zcBuf     = nullptr;  // bounce 缓冲，NOTIF 时 free
+        bool                isZcDirect = false;  // true = kernel DMA's directly from CBuffer
+        char*               zcBuf     = nullptr;  // bounce 缓冲，NOTIF 时 free（isZcDirect 时 nullptr）
         int                 zcBytes   = 0;        // 结果 CQE 的字节数（NOTIF 时回传）
         bool                gotResult = false;
     };
@@ -83,6 +88,7 @@ private:
     // send_zc：>= 阈值且启用才走 prep_send_zc（小包零拷贝净亏，见 docs）
     bool   m_zcEnabled   = false;
     size_t m_zcThreshold = 16384;   // THUNDER_URING_ZC_THRESHOLD
+    bool   m_zcDirectEnabled = false; // THUNDER_URING_ZC_DIRECT=1: 真零拷贝（无 bounce）
 };
 
 } /* namespace net */

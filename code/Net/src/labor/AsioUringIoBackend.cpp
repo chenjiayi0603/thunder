@@ -1,8 +1,9 @@
 /*******************************************************************************
  * Project:  Net
  * @file     AsioUringIoBackend.cpp
- * @brief    Single-threaded: io_context runs on libev main loop via
- *           ev_prepare/ev_check hooks + ev_io ring_fd wakeup.
+ * @brief    ASIO io_uring 后端实现 — 单线程，libev 主循环三路驱动 poll()
+ *
+ * 详见同目录 AsioUringIoBackend.hpp 文件头核心流程与关键设计说明。
  ******************************************************************************/
 #ifdef THUNDER_IO_ASIO_URING
 
@@ -20,38 +21,35 @@
 
 namespace {
 
-// 5.B: THUNDER_ASIO_URING_DIAG=1 才输出，默认关闭，防止生产环境 fflush 风暴
+// 诊断默认关闭 — 生产环境 fopen+fflush 每条 CQE 路经都有开销，仅排障时开。
 static bool g_diag_enabled = (::getenv("THUNDER_ASIO_URING_DIAG") != nullptr);
 FILE* g_diag_fp = nullptr;
-__thread char g_diag_tmp[512];
+__thread char g_diag_tmp[512];  // __thread 避免 malloc，诊断路径零分配
 
 void diag_log(const char* fmt, ...) {
-    if (!g_diag_enabled) return;  // 5.B: 默认不输出
-    if (!g_diag_fp) {
-        g_diag_fp = fopen("/tmp/asio_uring_diag.log", "a");
-    }
-    if (g_diag_fp) {
-        time_t now = time(nullptr);
-        struct tm tm_buf;
-        localtime_r(&now, &tm_buf);
-        int off = snprintf(g_diag_tmp, sizeof(g_diag_tmp),
-                          "[%02d:%02d:%02d] ", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
-        va_list ap;
-        va_start(ap, fmt);
-        vsnprintf(g_diag_tmp + off, sizeof(g_diag_tmp) - off, fmt, ap);
-        va_end(ap);
-        fputs(g_diag_tmp, g_diag_fp);
-        fflush(g_diag_fp);
-    }
+    if (!g_diag_enabled) return;
+    if (!g_diag_fp) g_diag_fp = fopen("/tmp/asio_uring_diag.log", "a");
+    if (!g_diag_fp) return;
+    time_t now = time(nullptr);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    int off = snprintf(g_diag_tmp, sizeof(g_diag_tmp),
+                      "[%02d:%02d:%02d] ", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(g_diag_tmp + off, sizeof(g_diag_tmp) - off, fmt, ap);
+    va_end(ap);
+    fputs(g_diag_tmp, g_diag_fp);
+    fflush(g_diag_fp);
 }
 
-// 5.D: 诊断计数器（env 门控，每秒输出一次，用于修复前后对比空唤醒率）
+// 每秒输出一次诊断计数器 — 空唤醒率 (ring_empty/ring_ready) 衡量 NOP-SQE 副作用程度
 struct DiagStats {
-    uint64_t ring_ready   = 0;  // OnRingReady 触发次数
-    uint64_t ring_empty   = 0;  // 其中 poll()=0（NOP/中断 CQE，无用户 op）
-    uint64_t ring_real    = 0;  // 其中 poll()>0（含真实完成事件）
-    uint64_t prepare_real = 0;  // OnPrepare poll()>0 次数
-    uint64_t check_real   = 0;  // OnCheck poll()>0 次数
+    uint64_t ring_ready   = 0;  // ring_fd 可读触发次数
+    uint64_t ring_empty   = 0;  // 其中 poll()=0 (NOP/中断 CQE, 无用户 op 完成)
+    uint64_t ring_real    = 0;  // 其中 poll()>0 (有真实完成事件)
+    uint64_t prepare_real = 0;  // OnPrepare 收割到 CQE 次数
+    uint64_t check_real   = 0;  // OnCheck 收割到 CQE 次数
     time_t   last_flush   = 0;
 
     void tick() {
@@ -78,6 +76,9 @@ AsioUringIoBackend::~AsioUringIoBackend()
     Destroy();
 }
 
+// 扫描 /proc/self/fd 找到 ASIO io_uring_service 的 ring_fd。
+// 原因: ASIO 不暴露 ring_fd，只能通过 readlink 检查每个 fd 指向的 anon_inode
+//       是否为 [io_uring] 来定位。仅在 Init 时调用一次，之后缓存于 m_ringFd。
 int AsioUringIoBackend::FindIoUringRingFd()
 {
     DIR* dir = opendir("/proc/self/fd");
@@ -99,7 +100,12 @@ int AsioUringIoBackend::FindIoUringRingFd()
     return found;
 }
 
-// 5.A: 按需启停 ring_fd 监听 — 有挂起 op 才 start，无则 stop，断开 NOP 驱动的忙循环
+// 按需启停 ring_fd 的 ev_io 监听 — 核心目的: 消除 NOP-SQE 空唤醒。
+//
+// 原因: ASIO waitable reactor 通过 NOP-SQE 在内核 io_uring 中注册 ring_fd 可读性。
+//       即使无用户 IO op，内核也可能因中断或其他内部 CQE 将 ring_fd 标记为可读，
+//       导致 epoll_wait 被唤醒 → OnRingReady → poll()=0 空转一次。
+//       无挂起 op 时 stop ring_fd 监听即可消除此 overhead。
 void AsioUringIoBackend::UpdateRingWatcher()
 {
     if (m_ringFd < 0) return;
@@ -122,8 +128,11 @@ void AsioUringIoBackend::UpdateRingWatcher()
     }
 }
 
-// A1: 注册缓冲池 — env 门控（THUNDER_ASIO_URING_FIXEDBUF=1），默认关，不回归生产默认。
-// 仅写路径使用：写完成后归还槽；本质是 send_zc 的注册池+槽生命周期地基。
+// 注册 io_uring fixed buffers — send_zc 地基。
+// 原因: send_zc(MSG_ZEROCOPY) 需要 registered buffers，内核 DMA 直接读写注册内存。
+//       当前普通写路径也用此池命中 prep_write_fixed 减少一次内核拷贝。
+// env 门控: THUNDER_ASIO_URING_FIXEDBUF=1 才启用，默认关闭（零影响）。
+// 回退: 注册失败或未启用时，SubmitWrite 自动回退非注册 async_write_some。
 bool AsioUringIoBackend::InitFixedBuffers()
 {
     const char* en = ::getenv("THUNDER_ASIO_URING_FIXEDBUF");
@@ -186,34 +195,37 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
     m_loop     = loop;
     m_callback = callback;
     m_userData = user_data;
-    m_workGuard.emplace(m_ioCtx.get_executor());
+    m_workGuard.emplace(m_ioCtx.get_executor());  // 防止 io_context 在无 op 时退出
 
-    /* Trigger lazy io_uring_service initialization */
+    // 触发 ASIO io_uring_service 惰性初始化 — 原因:
+    // ASIO 不在 io_context 构造时创建 io_uring，而是在第一个 I/O object 构造时。
+    // 此处创建临时 pipe + stream_descriptor 触发 io_uring_setup 内核调用，
+    // poll() 一次让 ASIO 完成内部注册。pipe 用完即关，仅作初始化 side effect。
     int pfd[2] = {-1, -1};
     if (::pipe2(pfd, O_NONBLOCK | O_CLOEXEC) == 0)
     {
         {
-            asio::posix::stream_descriptor tmp(m_ioCtx, pfd[0]);
-            (void)tmp.release();
+            asio::posix::stream_descriptor tmp(m_ioCtx, pfd[0]);  // 触发 io_uring_service 构造
+            (void)tmp.release();  // 归还 fd 所有权，不关闭
         }
         ::close(pfd[0]);
         ::close(pfd[1]);
-        (void)m_ioCtx.poll();
+        (void)m_ioCtx.poll();  // 完成 io_uring_setup + 清理内部状态
     }
 
-    /* A1: io_uring_service 已惰性初始化，此处注册固定缓冲池（env 门控） */
+    // io_uring_service 已就绪，此时可安全调用 register_buffers()
     InitFixedBuffers();
 
-    /* 初始化 ring_fd watcher，但 5.A: 不立即 start，等 SubmitRead/SubmitWrite 时按需启动 */
+    // 找 ring_fd 并初始化 watcher，但不立即 start — 等有 op 时按需启动
     m_ringFd = FindIoUringRingFd();
     diag_log("[IODIAG AsioUring Init ring_fd=%d\n", m_ringFd);
     if (m_ringFd >= 0)
     {
         ev_io_init(&m_ringWatcher, &OnRingReady, m_ringFd, EV_READ);
         m_ringWatcher.data = this;
-        // 5.A: 不在此处 start，由 UpdateRingWatcher() 按需控制
     }
 
+    // prepare/check 始终启动 — prepare 负责批量提交 SQE，check 负责最后收割
     ev_prepare_init(&m_prepare, &OnPrepare);
     m_prepare.data = this;
     ev_prepare_start(loop, &m_prepare);
@@ -229,26 +241,29 @@ void AsioUringIoBackend::Destroy()
 {
     if (!m_loop) return;
 
+    // 停止所有 watcher
     if (m_ringFd >= 0 && m_ringWatcherActive) ev_io_stop(m_loop, &m_ringWatcher);
     m_ringWatcherActive = false;
     ev_prepare_stop(m_loop, &m_prepare);
     ev_check_stop(m_loop, &m_check);
 
+    // 取消所有 fd — Destroy 中可以安全调 cancel(), 因为不会再 Submit 新 op
     for (auto& [fd, sp] : m_fds)
     {
         asio::error_code ec;
         sp->cancelled = true;
-        sp->sock.cancel(ec);
+        sp->sock.cancel(ec);    // Destroy 中不存在竞态: 此后再无 Submit 调用
         (void)sp->sock.release();
     }
     m_fds.clear();
 
-    // A1: 先注销注册池（RAII 调 unregister_buffers），再拆 io_context
+    // 先注销注册池（bufReg 析构调 unregister_buffers），再拆 io_context
     m_bufReg.reset();
     m_slotMem.reset();
     m_freeSlots.clear();
     m_fixedBufEnabled = false;
 
+    // 释放 work guard → poll 清空队列 → stop
     m_workGuard.reset();
     (void)m_ioCtx.poll();
     m_ioCtx.stop();
@@ -267,31 +282,34 @@ std::shared_ptr<AsioUringIoBackend::FdState>& AsioUringIoBackend::EnsureFdState(
     return ins->second;
 }
 
-bool AsioUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
+bool AsioUringIoBackend::SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!buf || !m_callback) {
-        diag_log("[IODIAG AsioUring SubmitRead fd=%d FAIL buf=%p callback=%p\n", fd, (void*)buf, (void*)m_callback);
+        diag_log("[IODIAG AsioUring SubmitRead fd=%d FAIL buf=%p callback=%p\n", fd, (void*)buf.get(), (void*)m_callback);
         return false;
     }
     auto& sp = EnsureFdState(fd);
-    if (sp->readPending) {
+    if (sp->readPending) {  // 同一 fd 已有未完成读，跳过（防重入）
         diag_log("[IODIAG AsioUring SubmitRead fd=%d SKIP (readPending)\n", fd);
         return true;
     }
     sp->readPending = true;
 
+    // 确保 CBuffer 有接收空间（8KB 预分配，够 HTTP 头/小包）
     buf->EnsureWritableBytes(8192);
     char*  dst = const_cast<char*>(buf->GetRawWriteBuffer());
     size_t cap = buf->WriteableBytes();
 
     diag_log("[IODIAG AsioUring SubmitRead fd=%d seq=%u buf_cap=%zu\n", fd, seq, cap);
 
+    // completion lambda 持有 weak_ptr — CancelFd erase 后回调自动丢弃
     std::weak_ptr<FdState> wp = sp;
     sp->sock.async_read_some(
         asio::buffer(dst, cap),
         [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
         {
             auto live = wp.lock();
+            // live 为空或已 cancelled → fd 已被 CancelFd，丢弃本次回调
             if (!live || live->cancelled) {
                 diag_log("[IODIAG AsioUring ReadComplete fd=%d seq=%u DROPPED live=%d cancelled=%d\n",
                         fd, seq, (live!=nullptr), (live ? live->cancelled : -1));
@@ -308,31 +326,32 @@ bool AsioUringIoBackend::SubmitRead(int fd, util::CBuffer* buf, uint32_t seq)
             }
             diag_log("[IODIAG AsioUring ReadComplete fd=%d seq=%u n=%zu\n", fd, seq, n);
             if (n == 0) { m_callback(fd, seq, IoOp::Read, 0, m_userData); return; }
-            buf->AdvanceWriteIndex(static_cast<int>(n));
+            buf->AdvanceWriteIndex(static_cast<int>(n));  // CBuffer 写指针推进
             m_callback(fd, seq, IoOp::Read, static_cast<int>(n), m_userData);
         });
-    // 5.C: 移除再入 m_ioCtx.poll()，SQE 由下一个 OnPrepare 统一批量 flush
-    UpdateRingWatcher();  // 5.A: 有挂起读 op，确保 ring_fd 监听已启动
+    // 注意: 不在此处调 poll() — SQE 由下一个 OnPrepare 批量提交（减少 syscall）
+    UpdateRingWatcher();  // 有挂起读 → 确保 ring_fd 监听已启动
     return true;
 }
 
-bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
+bool AsioUringIoBackend::SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq)
 {
     if (!buf || !m_callback) return false;
     int readable = static_cast<int>(buf->ReadableBytes());
     if (readable <= 0)
     {
-        m_callback(fd, seq, IoOp::Write, 0, m_userData);
+        m_callback(fd, seq, IoOp::Write, 0, m_userData);  // 空写, 直接回调完成
         return true;
     }
     auto& sp = EnsureFdState(fd);
-    if (sp->writePending) return true;
+    if (sp->writePending) return true;  // 同一 fd 已有未完成写, 跳过
     sp->writePending = true;
 
     const char* src = buf->GetRawReadBuffer();
 
-    // A1: 满足「池启用 && 有空槽 && payload≤槽」走注册缓冲（命中 prep_write_fixed）。
-    // 否则回退既有非注册路径（即今天的行为，零风险）。
+    // 写路径分两路:
+    //   [Fixed Buf 路] 池启用 + 有空槽 + payload≤槽 → memcpy 到注册内存, prep_write_fixed
+    //   [普通路]      回退 — async_write_some(CBuffer 原始指针), 零额外拷贝
     int slot = -1;
     if (m_fixedBufEnabled && static_cast<size_t>(readable) <= m_slotSize)
         slot = BorrowSlot();
@@ -341,6 +360,8 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
 
     if (slot >= 0)
     {
+        // Fixed Buf 路径: 拷贝到注册缓冲后 async_write_some(registered buffer)。
+        // 内核通过 buffer index 直接 DMA，减少一次内核→用户态拷贝。
         std::memcpy(m_slotMem.get() + static_cast<size_t>(slot) * m_slotSize,
                     src, static_cast<size_t>(readable));
         sp->sock.async_write_some(
@@ -348,8 +369,8 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
                          static_cast<std::size_t>(readable)),
             [this, wp, fd, seq, buf, slot](const asio::error_code& ec, std::size_t n)
             {
-                // 普通写：CQE 到达时内核已消费缓冲，任何分支都先归还槽防泄漏。
-                // （send_zc 接入后此处改为 NOTIF CQE 才归还）
+                // 普通写: CQE 到达 = 内核已消费缓冲，可立即归还 slot。
+                // send_zc 后改为 NOTIF CQE 才归还（缓冲仍在内核待确认）。
                 ReturnSlot(slot);
                 auto live = wp.lock();
                 if (!live || live->cancelled) return;
@@ -366,6 +387,8 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
     }
     else
     {
+        // 普通路径: 直接用 CBuffer 原始指针（无注册，零额外拷贝）。
+        // 适合小包或 Fixed Buf 未启用/池满/超长场景。
         sp->sock.async_write_some(
             asio::buffer(src, readable),
             [this, wp, fd, seq, buf](const asio::error_code& ec, std::size_t n)
@@ -383,8 +406,7 @@ bool AsioUringIoBackend::SubmitWrite(int fd, util::CBuffer* buf, uint32_t seq)
                 m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
             });
     }
-    // 5.C: 移除再入 m_ioCtx.poll()，SQE 由下一个 OnPrepare 统一批量 flush
-    UpdateRingWatcher();  // 5.A: 有挂起写 op，确保 ring_fd 监听已启动
+    UpdateRingWatcher();  // 有挂起写 → 确保 ring_fd 监听已启动
     return true;
 }
 
@@ -393,11 +415,14 @@ void AsioUringIoBackend::CancelFd(int fd)
     auto it = m_fds.find(fd);
     if (it == m_fds.end()) return;
     it->second->cancelled = true;
-    // Do NOT call sock.cancel() — it submits an async IORING_OP_ASYNC_CANCEL
-    // that races with subsequent SubmitRead/SubmitWrite on the same fd.
-    (void)it->second->sock.release();
-    m_fds.erase(it);
-    UpdateRingWatcher();  // 5.A: fd 移除后检查是否还有挂起 op
+
+    // 不调 sock.cancel() — 原因:
+    //   sock.cancel() 提交 IORING_OP_ASYNC_CANCEL，该 op 与 io_uring 中的其他 SQE
+    //   异步执行。若紧接 SubmitRead/SubmitWrite 复用同一 fd，新 op 可能在 cancel
+    //   生效后被误取消。改用 cancelled 标志 + release() 让已入队 op 完成后丢弃回调。
+    (void)it->second->sock.release();  // 归还 fd 所有权给调用方（不 close）
+    m_fds.erase(it);                   // erase → shared_ptr 析构（最后一个 lambda 释放后）
+    UpdateRingWatcher();               // fd 移除后检查是否还需 ring_fd 监听
 }
 
 bool AsioUringIoBackend::HasPending(int fd) const
@@ -406,16 +431,22 @@ bool AsioUringIoBackend::HasPending(int fd) const
     return it != m_fds.end() && (it->second->readPending || it->second->writePending);
 }
 
+// ev_prepare — epoll_wait 前: 批量提交 SQE 到内核 + 收割已到 CQE。
+// 这是 SQE 批量提交的时机: SubmitRead/SubmitWrite 攒下的 async ops 在此一次性
+// 通过 io_uring_enter 提交到 SQ，减少 syscall 次数。
 void AsioUringIoBackend::OnPrepare(struct ev_loop*, ev_prepare* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);
-    auto n = be->m_ioCtx.poll();
+    auto n = be->m_ioCtx.poll();  // poll() 内部: 提交 SQ → 收割 CQE → 触发 completion lambda
     if (n > 0) {
         diag_log("[IODIAG AsioUring OnPrepare poll=%zu\n", n);
         ++g_stats.prepare_real;
     }
 }
 
+// ev_check — epoll_wait 后: 再次收割 CQE + 按需启停 ring_fd。
+// 原因: OnRingReady 与本次 epoll_wait 之间可能存在 race window，
+//       内核在 epoll_wait 返回后刚好写入一个新 CQE → 此次 ev_check 兜底收割。
 void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);
@@ -424,18 +455,20 @@ void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
         diag_log("[IODIAG AsioUring OnCheck poll=%zu\n", n);
         ++g_stats.check_real;
     }
-    be->UpdateRingWatcher();  // 5.A: 完成收割后，若无挂起 op 则停止 ring_fd 监听
-    g_stats.tick();           // 5.D: 每秒输出一次诊断计数
+    be->UpdateRingWatcher();  // 收割完后，若无挂起 op 则停 ring_fd 监听
+    g_stats.tick();           // 每秒一次诊断输出
 }
 
+// ev_io(ring_fd) — ring_fd 可读回调: io_uring 有新 CQE。
+// ring_fd 由 ASIO 内部 waitable reactor 管理，通过 epoll 边沿触发通知。
+// 一次唤醒可能有多个 CQE，poll() 内部会排空整批。
 void AsioUringIoBackend::OnRingReady(struct ev_loop*, ev_io* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);
     auto n = be->m_ioCtx.poll();
-    // 5.D: 统计空唤醒（n=0 表示本次 poll 仅处理了 NOP/中断 CQE，无用户完成事件）
     ++g_stats.ring_ready;
-    if (n == 0) ++g_stats.ring_empty;
-    else        ++g_stats.ring_real;
+    if (n == 0) ++g_stats.ring_empty;  // 空唤醒: poll() 只处理了 NOP/中断 CQE
+    else        ++g_stats.ring_real;   // 真实完成: 有用户 op 的 CQE 被收割
     diag_log("[IODIAG AsioUring OnRingReady ring_fd=%d poll=%zu\n", be->m_ringFd, n);
 }
 

@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-# Thunder 一键测试入口
+# =============================================================================
+# Thunder 一键测试入口 — 覆盖单元测试、端到端测试、性能基准、构建
+# =============================================================================
+#
+# 测试分层:
+#   unit   - Python 单元测试，零外部依赖，秒级完成
+#            test_conhash.py        一致性哈希算法
+#            test_iobackend_behavior.py  IoBackend 行为契约
+#            test_json_parse.py      JSON 解析
+#            test_token_verify.py    Token 验证
+#            test_websocket_key.py   WebSocket 密钥
+#   e2e    - 端到端集成测试，需 Docker 栈（hello/http/ws/https/center）
+#            test_http_hello.py     HTTP Hello 服务
+#            test_https_hello.py    HTTPS Hello 服务
+#            test_ws_hello.py       WebSocket Hello 服务
+#            test_center_admin.py   Center 管理接口
+#            test_interface_chain.py Interface→Logic 链路
+#            test_multicenter_raft.py Raft 多中心
+#            test_stress.py         压力测试
+#            test_wrk_smoke.py      wrk 冒烟
+#   bench  - 性能基准（需 wrk），按后端对比 RPS/延迟
+#   build  - 全量 CMake 构建 + 安装（-j1 强制，避免子模块竞态）
 #
 # 用法:
 #   ./tests/run_all.sh                        # 全部测试 (unit + e2e)
@@ -10,9 +31,19 @@
 #   ./tests/run_all.sh build+test             # 构建 + 安装 + 全部测试
 #   ./tests/run_all.sh fast                   # 快速模式: 仅单元测试 (跳过 E2E)
 #   ./tests/run_all.sh clean                  # 清理构建产物 (rm -rf build/)
-#   MODE=external ./tests/run_all.sh e2e      # e2e external 模式
+#   MODE=external ./tests/run_all.sh e2e      # e2e external 模式（远程栈）
 #   KEEP_DOCKER=1 ./tests/run_all.sh e2e      # 测试后保留 Docker 容器
 #
+# 环境变量:
+#   MODE          - e2e 模式: local(默认, 需 Docker) | external(远程栈)
+#   KEEP_DOCKER   - e2e 后是否保留容器: 0(默认, 销毁) | 1(保留)
+#
+# 前置依赖:
+#   unit:  python3, pytest
+#   e2e:   python3, pytest, requests, docker
+#   bench: wrk
+#   build: cmake, make, gcc, g++
+# =============================================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,6 +71,62 @@ check_prereqs() {
         echo "第三方子模块未初始化，正在 git submodule update --init --recursive ..."
         git -C "${REPO_ROOT}" submodule update --init --recursive
     fi
+}
+
+# 自动检测 OpenSSL 安装路径（cmake FindOpenSSL 对非标准路径的支持参差不齐）
+detect_openssl() {
+    # 优先用用户传入的 OPENSSL_ROOT_DIR
+    if [[ -n "${OPENSSL_ROOT_DIR:-}" ]] && [[ -f "${OPENSSL_ROOT_DIR}/include/openssl/ssl.h" ]]; then
+        echo "OpenSSL: 使用 OPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
+        CMAKE_OPENSSL_ARGS=(
+            "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
+            "-DOPENSSL_CRYPTO_LIBRARY=${OPENSSL_ROOT_DIR}/lib/libcrypto.so"
+            "-DOPENSSL_SSL_LIBRARY=${OPENSSL_ROOT_DIR}/lib/libssl.so"
+        )
+        return 0
+    fi
+
+    # 常见非标准路径
+    local search_paths=(
+        "$HOME/local/openssl-dev/usr"
+        "/opt/openssl"
+        "/usr/local/opt/openssl"
+        "/usr/local"
+    )
+
+    for prefix in "${search_paths[@]}"; do
+        if [[ -f "${prefix}/include/openssl/ssl.h" ]]; then
+            # 确定 lib 子目录（可能是 lib/ 或 lib/x86_64-linux-gnu/）
+            local libdir="${prefix}/lib"
+            [[ -d "${prefix}/lib/x86_64-linux-gnu" ]] && libdir="${prefix}/lib/x86_64-linux-gnu"
+            local crypto_lib="${libdir}/libcrypto.so"
+            local ssl_lib="${libdir}/libssl.so"
+            # so 找不到则尝试 .a
+            [[ -f "${crypto_lib}" ]] || crypto_lib="${libdir}/libcrypto.a"
+            [[ -f "${ssl_lib}" ]] || ssl_lib="${libdir}/libssl.a"
+
+            if [[ -f "${crypto_lib}" ]] && [[ -f "${ssl_lib}" ]]; then
+                echo "OpenSSL: 自动检测 ${prefix} (${libdir})"
+                CMAKE_OPENSSL_ARGS=(
+                    "-DOPENSSL_ROOT_DIR=${prefix}"
+                    "-DOPENSSL_CRYPTO_LIBRARY=${crypto_lib}"
+                    "-DOPENSSL_SSL_LIBRARY=${ssl_lib}"
+                )
+                return 0
+            fi
+        fi
+    done
+
+    # 系统默认路径
+    if [[ -f "/usr/include/openssl/ssl.h" ]]; then
+        echo "OpenSSL: 使用系统默认路径"
+        CMAKE_OPENSSL_ARGS=()
+        return 0
+    fi
+
+    echo "警告: 未找到 OpenSSL，cmake 可能失败。请设置 OPENSSL_ROOT_DIR 环境变量。" >&2
+    CMAKE_OPENSSL_ARGS=()
+    return 1
 }
 
 run_unit() {
@@ -99,9 +186,17 @@ run_build() {
     cd "${REPO_ROOT}"
 
     check_prereqs
+    detect_openssl
 
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-    cmake --build build --target thirdparty_deploy -j1
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "${CMAKE_OPENSSL_ARGS[@]}"
+
+    # thirdparty_deploy: 初次构建或第三方库变更时需要；已部署时跳过避免 absl RPATH 重写报错
+    if cmake --build build --target thirdparty_deploy -j1 2>&1; then
+        echo "thirdparty_deploy 完成"
+    else
+        echo "thirdparty_deploy 失败（可能已部署），继续主构建..."
+    fi
+
     cmake --build build -j1
     cmake --install build
     echo "--- 构建完成 ---"

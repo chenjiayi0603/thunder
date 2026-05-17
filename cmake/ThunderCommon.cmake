@@ -47,6 +47,9 @@ function(thunder_target_include_net _target)
     "${THUNDER_3PARTY}/include/libev"
     "${THUNDER_3PARTY}/asio/asio/include"
   )
+  if(LIBURING_INCLUDE_DIRS)
+    target_include_directories(${_target} PRIVATE "${LIBURING_INCLUDE_DIRS}")
+  endif()
 endfunction()
 
 # Abseil：protobuf 可能编出静态 .a 或共享 .so（BUILD_SHARED_LIBS=ON 时多为 .so）
@@ -155,6 +158,9 @@ function(thunder_link_thirdparty_shared _target)
   )
 
   if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
+    if(LIBURING_LIBRARY_DIRS)
+      target_link_directories(${_target} PRIVATE "${LIBURING_LIBRARY_DIRS}")
+    endif()
     target_link_libraries(${_target} PRIVATE uring)
   endif()
 
