@@ -177,8 +177,20 @@ socket IO 完成**不经 StepCo20/Awaitable 协程**，是纯 C 回调：`backen
 | B-1 IoOp::WriteNotif + 写完成拆分 | ✅ | 纯重构，60/60 单元，行为不变 |
 | B-2 NativeUringIoBackend 骨架 | ✅ | init/20序列/40并发/256KB 正确，0 错误 |
 | B-3 send_zc 双 CQE→WriteNotif | ✅ | 1KB普通/64KB-zc 路由正确，64KB 完整，20x串+25x并发，0 错误 |
-| B-3b 真零拷贝 shared_ptr RAII | ✅ | unique_ptr→shared_ptr，删除 zcInFlight/pendingDestroy；IoBackend 统一 shared_ptr 接口（编译通过，运行时待验） |
+| B-3b 真零拷贝 shared_ptr RAII | ✅ | unique_ptr→shared_ptr，删除 zcInFlight/pendingDestroy；IoBackend 统一 shared_ptr 接口。功能验证：64KB Echo 5轮串行+20并发×10轮全过；压测：5775 RPS, 0 错误, 0 crash（2026-05-17） |
 | B-4 recv 普通 | ✅ | zcrx 硬件天花板，维持普通 recv（已定论） |
+
+### B-3b 真零拷贝运行时验证（wrk, 64KB Echo, c50, 15s, 2026-05-17）
+
+| 配置 | RPS | Transfer | P50 | P99 | Max |
+|------|-----|----------|-----|-----|-----|
+| 普通 send（ZC=0） | 5,294 | 332 MB/s | 5.65ms | 11.66ms | 13.17ms |
+| send_zc bounce（ZC=1, ZC_DIRECT=0） | 5,642 | 354 MB/s | 1.93ms | 2.16ms | 5.75ms |
+| send_zc 真零拷贝（ZC=1, ZC_DIRECT=1） | **5,775** | **362 MB/s** | 2.93ms | 3.25ms | 6.99ms |
+
+> 真零拷贝 vs 普通 send：RPS +9.1%，P50 −48%，P99 −72%，Transfer +9.0%。
+> vs bounce：RPS +2.4%，P99 略高（+50%，仍在 3.25ms 内，绝对值很小）。
+> 全测试 0 segfault / 0 UAF / 0 数据损坏；shared_ptr RAII 方案运行时验证通过。
 
 ### 压测结论（Echo size=N 响应，三档，12s，2026-05-16）
 
@@ -425,5 +437,5 @@ void NativeUringIoBackend::ReapCqes()
 
 ---
 
-*v3.5 — 2026-05-17｜send_zc 真零拷贝 shared_ptr RAII 重构：unique_ptr→shared_ptr，删除 zcInFlight/pendingDestroy 手动计数。IoBackend 接口统一 shared_ptr<CBuffer>。决策：真零拷贝防带宽限流，非 RPS 问题。*
+*v3.6 — 2026-05-17｜B-3b 真零拷贝运行时验证完成：64KB Echo c50 wrk 5775 RPS（+9.1% vs 普通 send），P99 3.25ms（−72%），0 错误 0 crash。shared_ptr RAII 方案通过功能+压测双重验证。*
 *仓库：https://github.com/chenjiayi0603/thunder*
