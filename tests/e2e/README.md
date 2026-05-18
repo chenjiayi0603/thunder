@@ -3,16 +3,16 @@
 ## 运行方式
 
 - 默认 local（自动拉起 docker 栈）：
-  - `pytest deploy/tests/pytest -m "integration or smoke" --mode=local`
+  - `pytest tests/e2e -m "integration or smoke" --mode=local`
 - external（连接现有环境）：
-  - `pytest deploy/tests/pytest --mode=external`
+  - `pytest tests/e2e --mode=external`
 - 性能测试（wrk）：
-  - `pytest deploy/tests/pytest -m perf --mode=local`
+  - `pytest tests/e2e -m perf --mode=local`
 
 也可直接用总入口：
 
-- `./deploy/tests/test_all.sh`
-- `MODE=external ./deploy/tests/test_all.sh`
+- `./tests/run_all.sh`
+- `MODE=external ./tests/run_all.sh e2e`
 
 ## 稳定性策略
 

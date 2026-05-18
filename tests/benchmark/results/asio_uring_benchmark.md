@@ -65,7 +65,7 @@ libev 主循环:
 
 ### wrk 脚本
 
-三档 payload 的 wrk Lua 脚本位于 `deploy/tests/benchmark/`：
+三档 payload 的 wrk Lua 脚本位于 `tests/benchmark/`：
 
 | 脚本 | Payload | 用途 |
 |------|---------|------|
@@ -92,10 +92,10 @@ with open('deploy/HelloHttp/conf/Hello.json','w') as f:
 cd deploy/HelloHttp && ./node.sh restart
 
 # 3. 运行单个 benchmark
-wrk -t4 -c100 -d15s -s deploy/tests/benchmark/wrk_64k.lua \
+wrk -t4 -c100 -d15s -s tests/benchmark/wrk_64k.lua \
     http://127.0.0.1:27006/hello/hello
 
-wrk -t4 -c500 -d30s -s deploy/tests/benchmark/wrk_small.lua \
+wrk -t4 -c500 -d30s -s tests/benchmark/wrk_small.lua \
     http://127.0.0.1:27006/hello/hello
 ```
 
@@ -103,7 +103,7 @@ wrk -t4 -c500 -d30s -s deploy/tests/benchmark/wrk_small.lua \
 
 ```bash
 # 三档横向对比（顺序运行 ev, uring, asio_uring）
-cd deploy/tests/benchmark
+cd tests/benchmark
 ./run_bench.sh --backends ev,uring,asio_uring
 
 # 快速冒烟

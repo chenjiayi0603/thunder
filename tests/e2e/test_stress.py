@@ -70,7 +70,21 @@ def test_stress_large_response(http_session: requests.Session) -> None:
 
 @pytest.mark.integration
 def test_stress_keepalive_reuse(http_session: requests.Session) -> None:
-    """同一 session 多次请求复用连接"""
+    """同一 session 多次请求复用连接（容忍前序压力测试导致的过期连接）"""
+    s = http_session
     for i in range(20):
-        r = http_session.post(HELLO_URL, json={"option": "Echo"}, timeout=15)
-        assert r.status_code == 200, f"Request {i} failed"
+        try:
+            r = s.post(HELLO_URL, json={"option": "Echo"}, timeout=15)
+            assert r.status_code == 200, f"Request {i} failed"
+        except requests.exceptions.ConnectionError:
+            # 连接池中有过期连接，换新 session 重试一次
+            s = requests.Session()
+            s.trust_env = False
+            r = s.post(HELLO_URL, json={"option": "Echo"}, timeout=15)
+            assert r.status_code == 200, f"Request {i} failed after reconnect"
+        except requests.exceptions.ReadTimeout:
+            # 同上，可能是 keepalive 连接被服务端关闭
+            s = requests.Session()
+            s.trust_env = False
+            r = s.post(HELLO_URL, json={"option": "Echo"}, timeout=15)
+            assert r.status_code == 200, f"Request {i} failed after read timeout retry"

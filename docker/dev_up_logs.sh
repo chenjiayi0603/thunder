@@ -2,17 +2,17 @@
 # 构建 Thunder → 构建/启动 Docker Compose → 打印多节点日志片段
 #
 # 用法（仓库任意路径）:
-#   ./deploy/docker/dev_up_logs.sh
-#   ./deploy/tests/test_all.sh                 # 统一 pytest 入口（integration/smoke）
-#   ./deploy/docker/dev_up_logs.sh down                  # 仅关闭 Compose 栈（等价 stop）
-#   ./deploy/docker/dev_up_logs.sh status                # 仅查看 Compose 容器状态（等价 ps）
-#   ./deploy/docker/dev_up_logs.sh restart               # 若有运行中容器则先 down，再走构建/启动/日志；无则跳过 down
-#   DOCKER_DOWN=1 ./deploy/docker/dev_up_logs.sh         # 同上
-#   DOCKER_STATUS=1 ./deploy/docker/dev_up_logs.sh       # 同上 status
-#   DOCKER_RESTART=1 ./deploy/docker/dev_up_logs.sh      # 同上 restart（与首参 restart 二选一）
-#   SKIP_BUILD=1 ./deploy/docker/dev_up_logs.sh          # 跳过 cmake，直接 docker
-#   FOLLOW=1 ./deploy/docker/dev_up_logs.sh              # 持续跟随 docker 日志（Ctrl+C 结束）
-#   SERVICES="center logic" LOG_TAIL=100 ./deploy/docker/dev_up_logs.sh
+#   ./docker/dev_up_logs.sh
+#   ./tests/run_all.sh                       # 统一 pytest 入口（integration/smoke）
+#   ./docker/dev_up_logs.sh down                  # 仅关闭 Compose 栈（等价 stop）
+#   ./docker/dev_up_logs.sh status                # 仅查看 Compose 容器状态（等价 ps）
+#   ./docker/dev_up_logs.sh restart               # 若有运行中容器则先 down，再走构建/启动/日志；无则跳过 down
+#   DOCKER_DOWN=1 ./docker/dev_up_logs.sh         # 同上
+#   DOCKER_STATUS=1 ./docker/dev_up_logs.sh       # 同上 status
+#   DOCKER_RESTART=1 ./docker/dev_up_logs.sh      # 同上 restart（与首参 restart 二选一）
+#   SKIP_BUILD=1 ./docker/dev_up_logs.sh          # 跳过 cmake，直接 docker
+#   FOLLOW=1 ./docker/dev_up_logs.sh              # 持续跟随 docker 日志（Ctrl+C 结束）
+#   SERVICES="center logic" LOG_TAIL=100 ./docker/dev_up_logs.sh
 #
 # 环境变量:
 #   SKIP_BUILD=1          不执行 cmake 构建与 install
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DOCKER_DIR="${SCRIPT_DIR}"
 BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/build}"
 CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-RelWithDebInfo}"

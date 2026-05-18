@@ -1,7 +1,7 @@
 """
 pytest 会话级 fixture：本地模式下负责构建、安装、Docker 编排与端口就绪检查。
 
-与 deploy/tests/test_all.sh 配合使用；业务用例通过 helpers/runtime 访问服务。
+与 tests/run_all.sh 配合使用；业务用例通过 helpers/runtime 访问服务。
 """
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ def mode(pytestconfig: pytest.Config) -> str:
 @pytest.fixture(scope="session", autouse=True)
 def docker_stack(mode: str, pytestconfig: pytest.Config) -> None:
     """
-    本地模式下一键拉起/ teardown Docker 编排栈（deploy/docker）。
+    本地模式下一键拉起/ teardown Docker 编排栈（docker/）。
 
     步骤概览：
       1) external：不建栈，直接返回。
@@ -137,7 +137,7 @@ def docker_stack(mode: str, pytestconfig: pytest.Config) -> None:
 
     _phase("会话 setup：开始（本地模式会先全量构建 + docker compose，可能数分钟且无子进程输出）…")
     repo = Path(__file__).resolve().parents[2]
-    dd = repo / "deploy" / "docker"
+    dd = repo / "docker"
     # 关闭 BuildKit：部分环境 buildx/缓存异常时更稳定（与仓库 docker 脚本保持一致）
     compose_env = {
         "DOCKER_BUILDKIT": "0",
@@ -227,9 +227,9 @@ def proxyless_env() -> dict[str, str]:
     return env
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def http_session() -> requests.Session:
-    """requests 会话：不信任环境代理（与 proxyless_env 同一目的，双保险）。"""
+    """requests 会话（function scope：避免跨测试共享过期连接）。"""
     s = requests.Session()
     # 强制忽略 HTTP(S)_PROXY / ALL_PROXY
     s.trust_env = False

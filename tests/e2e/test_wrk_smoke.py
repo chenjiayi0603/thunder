@@ -19,7 +19,9 @@ def _extract_metric(text: str, pattern: str) -> str:
 @pytest.mark.perf
 def test_wrk_smoke(proxyless_env: dict[str, str]) -> None:
     # 测试目的：给出可读的性能冒烟结果（而不仅仅是“命令成功”）。
-    report = repo_root() / "deploy" / "tests" / "wrk_test_result.md"
+    results_dir = repo_root() / "tests" / "benchmark" / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report = results_dir / "wrk_test_result.md"
     wrk_threads = os.getenv("WRK_THREADS", "4")
     wrk_connections = os.getenv("WRK_CONNECTIONS", "100")
     wrk_duration = os.getenv("WRK_DURATION", "60s")
@@ -40,7 +42,7 @@ def test_wrk_smoke(proxyless_env: dict[str, str]) -> None:
             encoding="utf-8",
         )
         return
-    script = Path(repo_root() / "deploy" / "tests" / "wrk_helloserver.lua")
+    script = repo_root() / "tests" / "benchmark" / "wrk_helloserver.lua"
     cp = run_cmd(
         [
             "wrk",

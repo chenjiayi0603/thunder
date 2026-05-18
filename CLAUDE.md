@@ -272,7 +272,7 @@ MODE=external ./tests/run_all.sh e2e
 
 ```bash
 # Docker Compose 容器与网络（停止并移除，避免端口占用和网络残留）
-( cd deploy/docker && docker compose down 2>/dev/null )
+( cd docker && docker compose down 2>/dev/null )
 
 # Docker 构建残留（每次 docker compose build 累计数百 MB overlay 层）
 docker system prune -f

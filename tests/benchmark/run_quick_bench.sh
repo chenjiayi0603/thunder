@@ -40,7 +40,7 @@ run_test() {
         extra="--no-check-certificate"
     fi
     echo "  wrk $protocol $backend c=$conn ..."
-    "$WRK" -t"$THREADS" -c"$conn" -d"$DUR" -s "$THUNDER_ROOT/deploy/tests/benchmark/wrk_post.lua" $extra "$url" > "$out" 2>&1 || true
+    "$WRK" -t"$THREADS" -c"$conn" -d"$DUR" -s "$THUNDER_ROOT/tests/benchmark/wrk_post.lua" $extra "$url" > "$out" 2>&1 || true
 }
 
 parse_result() {

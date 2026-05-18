@@ -77,3 +77,4 @@ code/3party/log4cplus
 code/3party/mariadb-connector-c
 code/3party/mongo-c-driver
 deploy/Logic/bin/Logic
+docker/data/
