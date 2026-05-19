@@ -88,39 +88,27 @@ public:
     AsioUringIoBackend();
     ~AsioUringIoBackend() override;
 
-    /**
-     * 初始化: 触发 ASIO io_uring_service 惰性初始化 → InitFixedBuffers (env 门控)
-     * → 扫描 /proc/self/fd 取 ring_fd → 安装 ev_prepare/ev_check/ev_io(ring_fd) 三 watcher。
-     * @return 始终 true（调用方负责失败降级到 EvIoBackend）
-     */
+    // 生命周期
     bool Init(struct ev_loop* loop, IoCompletionCallback callback, void* user_data) override;
-
-    /** 停止所有 watcher，取消全部 fd，归还固定缓冲池，停 io_context。 */
     void Destroy() override;
-
-    /**
-     * 异步读: EnsureFdState → readPending 防重入 → async_read_some。
-     * 完成时 buf->AdvanceWriteIndex(nbytes)，回调 m_callback(Read)。
-     */
-    bool SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
-
-    /**
-     * 异步写: readable≤0 立即回调 Write 0；否则 writePending 防重入。
-     * Fixed Buf 启用且命中 → async_write_some(registered buffer)；否则回退原始指针路径。
-     * 完成时 buf->AdvanceReadIndex(nbytes)，回调 m_callback(Write)。
-     */
-    bool SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
-
-    /**
-     * 取消 fd: cancelled=true → sock.release() → erase。
-     * 不调 sock.cancel() — 避免 IORING_OP_ASYNC_CANCEL 与后续 Submit 竞态。
-     */
-    void CancelFd(int fd) override;
-
     const char* Name() const override { return "asio_uring"; }
 
-    /** @return fd 上是否有挂起的 read 或 write */
+    // 监听 socket
+    int  CreateListenSocket(const char* ip, uint16_t port, bool boReusePort, int backlog) override;
+    int  Accept(int listenFd, PeerAddr& outPeerAddr) override;
+
+    // I/O 提交
+    bool SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
+    bool SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf, uint32_t seq) override;
+
+    // 连接关闭
+    void CancelFd(int fd) override;
+    void CloseFd(int fd) override;
     bool HasPending(int fd) const override;
+
+    // Socket 属性 / 对端地址
+    void SetSocketOpt(int fd) override;
+    bool GetPeerName(int fd, PeerAddr& outAddr) override;
 
 private:
     /// completion lambda 持有 weak_ptr<FdState>，CancelFd erase 后回调自动丢弃

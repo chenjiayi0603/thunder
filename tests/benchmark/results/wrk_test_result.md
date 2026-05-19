@@ -3,9 +3,9 @@
 - mode: wrk
 - target: `http://127.0.0.1:27006/hello/hello`
 - args: `-t4 -c100 -d60s`
-- requests_per_sec: 122594.76
-- latency_avg: 749.92us
-- transfer_per_sec: 15.20MB
+- requests_per_sec: 121974.85
+- latency_avg: 425.56us
+- transfer_per_sec: 15.12MB
 
 ## raw output
 
@@ -13,16 +13,15 @@
 Running 1m test @ http://127.0.0.1:27006/hello/hello
   4 threads and 100 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   749.92us  115.90us   3.76ms   75.14%
-    Req/Sec    30.81k     3.28k   42.96k    78.38%
+    Latency   425.56us   67.86us  11.07ms   98.29%
+    Req/Sec    30.65k    11.30k   52.99k    50.25%
   Latency Distribution
-     50%  793.00us
-     75%  835.00us
-     90%    0.86ms
-     99%    0.97ms
-  7358133 requests in 1.00m, 0.89GB read
-  Socket errors: connect 0, read 0, write 0, timeout 18
-Requests/sec: 122594.76
-Transfer/sec:     15.20MB
+     50%  424.00us
+     75%  437.00us
+     90%  448.00us
+     99%  509.00us
+  7319872 requests in 1.00m, 0.89GB read
+Requests/sec: 121974.85
+Transfer/sec:     15.12MB
 
 ```

@@ -6,8 +6,29 @@
 #include "EvIoBackend.hpp"
 #include "util/CBuffer.hpp"
 
+#include <arpa/inet.h>
+#include <cerrno>
+#include <cstring>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 namespace net
 {
+
+// ---- 辅助: 字符串 IP + port → sockaddr_in -------------------------------------------------
+static bool IpPort2SockAddr(const char* ip, uint16_t port, sockaddr_in& outAddr)
+{
+    std::memset(&outAddr, 0, sizeof(outAddr));
+    outAddr.sin_family = AF_INET;
+    outAddr.sin_port   = htons(port);
+    if (inet_pton(AF_INET, ip, &outAddr.sin_addr) != 1)
+    {
+        return false;
+    }
+    return true;
+}
 
 EvIoBackend::~EvIoBackend()
 {
@@ -181,6 +202,112 @@ void EvIoBackend::IoEventCallback(struct ev_loop* loop, struct ev_io* watcher, i
         int result = (n >= 0) ? n : -iErrno;
         pBackend->m_callback(iFd, pData->ulSeq, IoOp::Write, result, pBackend->m_userData);
     }
+}
+
+// ========== 连接生命周期: 内核 socket API 包装 ==========
+
+int EvIoBackend::CreateListenSocket(const char* ip, uint16_t port, bool boReusePort, int backlog)
+{
+    sockaddr_in addr;
+    if (!IpPort2SockAddr(ip, port, addr))
+    {
+        return -1;
+    }
+
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+        return -1;
+    }
+
+    int iOpt = 1;
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &iOpt, sizeof(iOpt)) != 0)
+    {
+        ::close(fd);
+        return -1;
+    }
+
+#ifdef SO_REUSEPORT
+    if (boReusePort)
+    {
+        if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
+        {
+            ::close(fd);
+            return -1;
+        }
+    }
+#endif
+
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    {
+        ::close(fd);
+        return -1;
+    }
+
+    if (::listen(fd, backlog) < 0)
+    {
+        ::close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+int EvIoBackend::Accept(int listenFd, PeerAddr& outPeerAddr)
+{
+    sockaddr_in stClientAddr;
+    socklen_t clientAddrSize = sizeof(stClientAddr);
+    int clientFd = ::accept(listenFd, reinterpret_cast<sockaddr*>(&stClientAddr), &clientAddrSize);
+    if (clientFd < 0)
+    {
+        return -1;
+    }
+
+    // 填充对端地址
+    if (inet_ntop(AF_INET, &stClientAddr.sin_addr, outPeerAddr.ip, sizeof(outPeerAddr.ip)) != nullptr)
+    {
+        outPeerAddr.port = ntohs(stClientAddr.sin_port);
+    }
+
+    // 设置 TCP_NODELAY 等属性
+    SetSocketOpt(clientFd);
+
+    return clientFd;
+}
+
+void EvIoBackend::CloseFd(int fd)
+{
+    if (fd >= 0)
+    {
+        ::close(fd);
+    }
+}
+
+void EvIoBackend::SetSocketOpt(int fd)
+{
+    if (fd < 0) return;
+
+    int iOpt = 1;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &iOpt, sizeof(iOpt));
+
+    iOpt = 60;  // keepalive idle 60s
+    ::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &iOpt, sizeof(iOpt));
+}
+
+bool EvIoBackend::GetPeerName(int fd, PeerAddr& outAddr)
+{
+    sockaddr_in addr;
+    socklen_t addrLen = sizeof(addr);
+    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) != 0)
+    {
+        return false;
+    }
+    if (inet_ntop(AF_INET, &addr.sin_addr, outAddr.ip, sizeof(outAddr.ip)) == nullptr)
+    {
+        return false;
+    }
+    outAddr.port = ntohs(addr.sin_port);
+    return true;
 }
 
 } /* namespace net */

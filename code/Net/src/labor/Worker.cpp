@@ -934,9 +934,36 @@ bool Worker::FdTransfer()
 
 bool Worker::AcceptClientConn(int iFd)
 {
+    int iAcceptFd = -1;
+
+    if (m_pIoBackend)
+    {
+        // 策略模式: 通过 IoBackend accept（内置 SetSocketOpt）
+        net::PeerAddr peerAddr;
+        iAcceptFd = m_pIoBackend->Accept(iFd, peerAddr);
+        if (iAcceptFd < 0)
+        {
+            if (errno != EAGAIN)
+            {
+                LOG4_ERROR("IoBackend Accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            }
+            return false;
+        }
+        tagConnectionAttr* pConnAttr = CreateAcceptFdAttr(iAcceptFd, GetFdSequence(), m_eAccessCodec);
+        if (pConnAttr == nullptr)
+        {
+            LOG4_ERROR("CreateAcceptFdAttr failed for client fd %d", iAcceptFd);
+            m_pIoBackend->CloseFd(iAcceptFd);
+            return false;
+        }
+        snprintf(pConnAttr->szRemoteAddr, sizeof(pConnAttr->szRemoteAddr), "%s", peerAddr.ip);
+        return true;
+    }
+
+    // Legacy 路径: 直接内核 socket API
     struct sockaddr_in stClientAddr;
     socklen_t clientAddrSize = sizeof(stClientAddr);
-    int iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
+    iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
     if (iAcceptFd < 0)
     {
         LOG4_ERROR("accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
@@ -2384,38 +2411,58 @@ bool Worker::InitClientListener()
         LOG4_WARN("%s() worker_reuseport enabled but access host/port invalid.", __FUNCTION__);
         return true;
     }
+
     int iFd = -1;
-    struct sockaddr addr;
-    if (!HostPort2SockAddr(m_strHostForClient, m_iPortForClient, addr, iFd, true))
+
+    if (m_pIoBackend)
     {
-        LOG4_ERROR("HostPort2SockAddr error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        return false;
+        // 策略模式: 通过 IoBackend 创建监听 socket（支持 ev/io_uring/DPDK）
+        iFd = m_pIoBackend->CreateListenSocket(m_strHostForClient.c_str(),
+                                                static_cast<uint16_t>(m_iPortForClient),
+                                                true /*SO_REUSEPORT*/, m_iClientSocketBackLog);
+        if (iFd < 0)
+        {
+            LOG4_ERROR("IoBackend CreateListenSocket failed for %s:%d",
+                       m_strHostForClient.c_str(), m_iPortForClient);
+            return false;
+        }
     }
+    else
+    {
+        // Legacy 路径: 直接内核 socket API
+        struct sockaddr addr;
+        if (!HostPort2SockAddr(m_strHostForClient, m_iPortForClient, addr, iFd, true))
+        {
+            LOG4_ERROR("HostPort2SockAddr error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            return false;
+        }
 #ifdef SO_REUSEPORT
-    int iOpt = 1;
-    if (setsockopt(iFd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
-    {
-        LOG4_ERROR("setsockopt SO_REUSEPORT error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
-    }
+        int iOpt = 1;
+        if (setsockopt(iFd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
+        {
+            LOG4_ERROR("setsockopt SO_REUSEPORT error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
 #else
-    LOG4_ERROR("SO_REUSEPORT not supported by current build environment.");
-    close(iFd);
-    return false;
+        LOG4_ERROR("SO_REUSEPORT not supported by current build environment.");
+        close(iFd);
+        return false;
 #endif
-    if (bind(iFd, &addr, sizeof(addr)) < 0)
-    {
-        LOG4_ERROR("bind error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
+        if (bind(iFd, &addr, sizeof(addr)) < 0)
+        {
+            LOG4_ERROR("bind error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
+        if (listen(iFd, m_iClientSocketBackLog) < 0)
+        {
+            LOG4_ERROR("listen error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
     }
-    if (listen(iFd, m_iClientSocketBackLog) < 0)
-    {
-        LOG4_ERROR("listen error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
-    }
+
     m_iC2SListenFd = iFd;
     tagConnectionAttr* pListenConn = CreateFdAttr(m_iC2SListenFd, GetFdSequence(), util::CODEC_PB_INTERNAL);
     if (pListenConn == nullptr)
@@ -2430,8 +2477,9 @@ bool Worker::InitClientListener()
         DestroyConnect(mapFdAttr.find(m_iC2SListenFd));
         return false;
     }
-    LOG4_INFO("%s() worker_%d listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d)",
-              __FUNCTION__, iWorkerIndex, m_iPortForClient, m_strHostForClient.c_str(), m_iClientSocketBackLog);
+    LOG4_INFO("%s() worker_%d listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d) backend=%s",
+              __FUNCTION__, iWorkerIndex, m_iPortForClient, m_strHostForClient.c_str(), m_iClientSocketBackLog,
+              m_pIoBackend ? m_pIoBackend->Name() : "legacy");
     return true;
 }
 
@@ -5381,16 +5429,24 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
 		LOG4_TRACE("%s() timer ev_timer_stop",__FUNCTION__);
 		DelEvent(pConn->pTimeWatcher,(tagIoWatcherData*)pConn->pTimeWatcher->data);
 	}
-    int iResult = close(iter->first);
-    if (0 != iResult)
+    // Close fd: IoBackend (CloseFd supports kernel close + mtcp_close), legacy path uses ::close
+    if (m_pIoBackend)
     {
-        if (EINTR != errno)
+        m_pIoBackend->CloseFd(iter->first);
+    }
+    else
+    {
+        int iResult = close(iter->first);
+        if (0 != iResult)
         {
-            LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
-        }
-        else
-        {
-            LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            if (EINTR != errno)
+            {
+                LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            }
+            else
+            {
+                LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            }
         }
     }
     mapFdAttr.erase(iter);

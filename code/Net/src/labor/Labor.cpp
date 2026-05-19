@@ -22,6 +22,9 @@
 #ifdef THUNDER_IO_ASIO_URING
 #include "AsioUringIoBackend.hpp"
 #endif
+#ifdef THUNDER_IO_DPDK
+#include "DpdkIoBackend.hpp"
+#endif
 
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
@@ -490,6 +493,23 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
     if (strBackend == "uring")
     {
         LOG4_WARN("IoBackend: \"uring\" backend has been removed, falling back to ev");
+    }
+
+    if (strBackend == "dpdk")
+    {
+#ifdef THUNDER_IO_DPDK
+        DpdkIoBackend* pBackend = new DpdkIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: dpdk initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: dpdk init failed, falling back to ev");
+#else
+        LOG4_WARN("IoBackend: dpdk requested but THUNDER_IO_DPDK not compiled, falling back to ev");
+#endif
     }
 
     // 默认使用 ev 后端

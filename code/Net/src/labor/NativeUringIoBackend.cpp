@@ -5,11 +5,15 @@
  ******************************************************************************/
 #include "NativeUringIoBackend.hpp"
 #include "util/CBuffer.hpp"
+#include <arpa/inet.h>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
-#include <unistd.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace net
 {
@@ -356,6 +360,65 @@ void NativeUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
 {
     // 兜底：eventfd 通知与 epoll_wait 窗口期到达的 CQE 不积压超过一轮
     static_cast<NativeUringIoBackend*>(w->data)->ReapCqes();
+}
+
+// ========== 连接生命周期: 内核 socket API 包装 ==========
+
+int NativeUringIoBackend::CreateListenSocket(const char* ip, uint16_t port, bool boReusePort, int backlog)
+{
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port   = htons(port);
+    if (inet_pton(AF_INET, ip, &addr.sin_addr) != 1) return -1;
+
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+
+    int opt = 1;
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) != 0) { ::close(fd); return -1; }
+#ifdef SO_REUSEPORT
+    if (boReusePort && ::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) != 0) { ::close(fd); return -1; }
+#endif
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) { ::close(fd); return -1; }
+    if (::listen(fd, backlog) < 0) { ::close(fd); return -1; }
+    return fd;
+}
+
+int NativeUringIoBackend::Accept(int listenFd, PeerAddr& outPeerAddr)
+{
+    sockaddr_in stClientAddr;
+    socklen_t clientAddrSize = sizeof(stClientAddr);
+    int clientFd = ::accept(listenFd, reinterpret_cast<sockaddr*>(&stClientAddr), &clientAddrSize);
+    if (clientFd < 0) return -1;
+
+    inet_ntop(AF_INET, &stClientAddr.sin_addr, outPeerAddr.ip, sizeof(outPeerAddr.ip));
+    outPeerAddr.port = ntohs(stClientAddr.sin_port);
+    SetSocketOpt(clientFd);
+    return clientFd;
+}
+
+void NativeUringIoBackend::CloseFd(int fd)
+{
+    if (fd >= 0) ::close(fd);
+}
+
+void NativeUringIoBackend::SetSocketOpt(int fd)
+{
+    if (fd < 0) return;
+    int opt = 1;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+    ::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
+}
+
+bool NativeUringIoBackend::GetPeerName(int fd, PeerAddr& outAddr)
+{
+    sockaddr_in addr;
+    socklen_t addrLen = sizeof(addr);
+    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) != 0) return false;
+    if (inet_ntop(AF_INET, &addr.sin_addr, outAddr.ip, sizeof(outAddr.ip)) == nullptr) return false;
+    outAddr.port = ntohs(addr.sin_port);
+    return true;
 }
 
 } /* namespace net */

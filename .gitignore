@@ -78,3 +78,10 @@ code/3party/mariadb-connector-c
 code/3party/mongo-c-driver
 deploy/Logic/bin/Logic
 docker/data/
+code/3party/cryptopp
+code/3party/libev
+deploy/Center/log/readme.txt
+*.pid
+deploy/Interface/log/readme.txt
+deploy/Logic/bin/Logic
+deploy/Logic/log/readme.txt
