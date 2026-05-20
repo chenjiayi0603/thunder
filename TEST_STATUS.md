@@ -27,14 +27,21 @@
 
 ---
 
-## ✅ TEST 1: IoBackend (native_uring) — 已通过（真实环境）
+## ✅ TEST 1: IoBackend 多后端 + 多协议 — 全通过（真实环境）
 
-### 配置
-- 后端: `native_uring`
-- Docker Compose 项目: thunder-e2e
-- 验证: 所有服务正常启动，端口监听正常
+### 验证方法
+将所有 6 个服务（Center/Logic/Interface/HelloHttp/HelloWs/HelloHttps）统一切换到同一后端，逐一验证所有接入协议（HTTP、HTTPS、WebSocket、Raft、protobuf internal）。
 
-### 功能验证（HelloHttp POST /hello/hello）
+### 后端-协议兼容性矩阵
+
+| 后端 | HTTP | HTTPS | WebSocket | Raft | protobuf | 结论 |
+|------|------|-------|-----------|------|----------|------|
+| **ev (epoll)** | ✅ | ✅ | ✅ | ✅ | ✅ | 全部协议正常 |
+| **native_uring** | ✅ | ✅ | ✅ | ✅ | ✅ | 全部协议正常 |
+
+结论：**io_uring 作为底层 I/O 后端，协议无关**——它只管 socket accept/read/write/close，上层 HTTP/HTTPS/WS/Raft/protobuf 全部透明支持。
+
+### 功能验证（POST /hello/hello，所有后端一致）
 ```
 Echo:              {"code":0,"msg":"ok"}
 TestHelloPoolCpu:  {"option":"TestHelloPoolCpu","checksum":786432}
@@ -42,15 +49,25 @@ TestHelloPoolBlock: {"option":"TestHelloPoolBlock","slept_ms":80,"result":161}
 5x 连接复用:       全部返回 {"code":0,"msg":"ok"}
 ```
 
-### wrk 压测数据 (真实 HTTP 请求经 127.0.0.1:27006)
-| 场景 | 连接数 | QPS | P50 延迟 | P99 延迟 | 吞吐 |
-|------|--------|-----|---------|---------|------|
-| 小包 Echo | c100 | 119,090 | 422us | 546us | 14.76 MB/s |
-| 高并发 | c500 | 116,609 | 2.05ms | 2.50ms | 14.46 MB/s |
-| 极限并发 | c1000 | 109,723 | 6.55ms | 7.61ms | 13.60 MB/s |
+### wrk 压测数据 — ev vs native_uring
 
-### 结论
-NativeUringIoBackend 功能正常，延迟表现优异（c100 P99=546us, c1000 P99=7.61ms），无 timeout 错误。
+**HTTP (port 27006)**：
+| 场景 | ev QPS | ev P50 | ev P99 | uring QPS | uring P50 | uring P99 | 差异 |
+|------|--------|--------|--------|-----------|-----------|-----------|------|
+| c100 | 145,868 | 678us | 810us | 129,491 | 591us | 771us | ev 吞吐高 12.6% |
+| c500 | 125,889 | 3.91ms | 4.86ms | 123,290 | 3.93ms | 4.76ms | 持平 |
+| c1000 | 120,335 | 8.16ms | 10.34ms | 123,782 | 3.97ms | 4.58ms | **uring 延迟低 56%** |
+
+**HTTPS (port 27443, TLSv1.3)**：
+| 场景 | ev QPS | ev P50 | ev P99 | uring QPS | uring P50 | uring P99 |
+|------|--------|--------|--------|-----------|-----------|-----------|
+| c100 | 112,612 | 0.86ms | 2.86ms | 106,151 | 0.91ms | 7.39ms |
+
+### 分析
+- **低并发**：ev 吞吐更高（c100: 146K vs 129K），因为 epoll 单次 syscall 开销更小
+- **高并发**：**native_uring 碾压 ev**（c1000 P99: 4.58ms vs 10.34ms），io_uring 批量提交/收割减少 syscall 次数，延迟抖动极低
+- ev 在 c1000 出现严重尾延迟（stdev 23.85ms, max 870ms），而 uring 保持极稳（stdev 0.3ms, max 14ms）
+- HTTPS 下 ev 的 P99（2.86ms）暂时优于 uring（7.39ms），可能与 TLS 编解码在 uring 下的 CQE 收割批次有关
 
 ---
 
