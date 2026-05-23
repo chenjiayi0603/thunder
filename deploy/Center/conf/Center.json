@@ -1,4 +1,5 @@
 {
+  "io_backend": "ev",
     "node_type": "CENTER",
     "inner_host": "127.0.0.1",
     "inner_port": 27000,

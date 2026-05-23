@@ -85,3 +85,5 @@ deploy/Center/log/readme.txt
 deploy/Interface/log/readme.txt
 deploy/Logic/bin/Logic
 deploy/Logic/log/readme.txt
+deploy/Center/log/readme.txt
+*.pid

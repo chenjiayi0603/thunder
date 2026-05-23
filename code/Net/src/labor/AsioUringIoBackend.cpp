@@ -105,12 +105,15 @@ int AsioUringIoBackend::FindIoUringRingFd()
     return found;
 }
 
-// 按需启停 ring_fd 的 ev_io 监听 — 核心目的: 消除 NOP-SQE 空唤醒。
+// ========== 按需启停三路-第 2 路 ring_fd 监听 ==========
+// 核心目的: 消除 idle 场景下的 NOP-SQE 空唤醒，实现 "idle 友好"。
 //
-// 原因: ASIO waitable reactor 通过 NOP-SQE 在内核 io_uring 中注册 ring_fd 可读性。
-//       即使无用户 IO op，内核也可能因中断或其他内部 CQE 将 ring_fd 标记为可读，
-//       导致 epoll_wait 被唤醒 → OnRingReady → poll()=0 空转一次。
-//       无挂起 op 时 stop ring_fd 监听即可消除此 overhead。
+// 问题: ASIO waitable reactor 通过 NOP-SQE 在 io_uring 中注册 ring_fd 的可读性。
+//       即使无用户 I/O op，内核也可能因中断/定时器产生内部 CQE → ring_fd 可读
+//       → epoll_wait 唤醒 → OnRingReady → poll()=0 → 空转（纯浪费 CPU）。
+//
+// 方案: 有挂起 op 时 start ring_fd 监听，无挂起 op 时 stop。
+//       idle 连接不触发任何 op → ring_fd 不监听 → epoll_wait 不被空唤醒。
 void AsioUringIoBackend::UpdateRingWatcher()
 {
     if (m_ringFd < 0) return;
@@ -221,7 +224,21 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
     // io_uring_service 已就绪，此时可安全调用 register_buffers()
     InitFixedBuffers();
 
-    // 找 ring_fd 并初始化 watcher，但不立即 start — 等有 op 时按需启动
+    // ========== 三路 libev 驱动: 分别挂在 prepare / io(ring_fd) / check 三个钩子 ==========
+    //
+    // 第 1 路 ev_prepare — 每次 epoll_wait 之前: 批量提交 SQE + 抢先收割 CQE
+    //   投递: SubmitRead/Write 攒下的 async ops 在此一次 io_uring_enter 批量提交到内核 SQ
+    //   收割: 同时收割已到的 CQE → lambda → m_callback（减少延迟）
+    //
+    // 第 2 路 ev_io(ring_fd) — ring_fd 可读时: 收割内核新完成的 CQE
+    //   接货: 内核完成 I/O → 写入 CQE → 标记 ring_fd 可读 → epoll 唤醒 → poll() 排空整批 CQE
+    //   启停: UpdateRingWatcher 按需启停 — 无挂起 op 时 stop，消除 NOP-SQE 空唤醒
+    //
+    // 第 3 路 ev_check — 每次 epoll_wait 之后: 补刀收割 + 善后
+    //   补刀: 收割 OnRingReady 与 epoll_wait 之间 race window 中新到的 CQE
+    //   善后: UpdateRingWatcher 更新 ring_fd 监听状态 + 每秒诊断统计
+
+    // 找 ring_fd 并初始化第 2 路 watcher，但不立即 start — 等有 op 时按需启动
     m_ringFd = FindIoUringRingFd();
     diag_log("[IODIAG AsioUring Init ring_fd=%d\n", m_ringFd);
     if (m_ringFd >= 0)
@@ -230,7 +247,7 @@ bool AsioUringIoBackend::Init(struct ev_loop* loop, IoCompletionCallback callbac
         m_ringWatcher.data = this;
     }
 
-    // prepare/check 始终启动 — prepare 负责批量提交 SQE，check 负责最后收割
+    // 第 1 路和第 3 路 always-on — 即使无 op 也要运行（准备投递 + 兜底收割）
     ev_prepare_init(&m_prepare, &OnPrepare);
     m_prepare.data = this;
     ev_prepare_start(loop, &m_prepare);
@@ -334,8 +351,9 @@ bool AsioUringIoBackend::SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, 
             buf->AdvanceWriteIndex(static_cast<int>(n));  // CBuffer 写指针推进
             m_callback(fd, seq, IoOp::Read, static_cast<int>(n), m_userData);
         });
-    // 注意: 不在此处调 poll() — SQE 由下一个 OnPrepare 批量提交（减少 syscall）
-    UpdateRingWatcher();  // 有挂起读 → 确保 ring_fd 监听已启动
+    // ⚠️ 不在此处调 poll()/io_uring_enter — SQE 由三路-第 1 路 OnPrepare 批量提交
+    // 此处只构造 SQE（写入内存 SQ），零 syscall。批量提交将 N 次 syscall 压为 1 次。
+    UpdateRingWatcher();  // 有挂起读 → 确保三路-第 2 路 ring_fd 监听已启动
     return true;
 }
 
@@ -411,7 +429,8 @@ bool AsioUringIoBackend::SubmitWrite(int fd, std::shared_ptr<util::CBuffer> buf,
                 m_callback(fd, seq, IoOp::Write, static_cast<int>(n), m_userData);
             });
     }
-    UpdateRingWatcher();  // 有挂起写 → 确保 ring_fd 监听已启动
+    // ⚠️ 同 SubmitRead: 不在此处提交 — SQE 由三路-第 1 路 OnPrepare 批量提交
+    UpdateRingWatcher();  // 有挂起写 → 确保三路-第 2 路 ring_fd 监听已启动
     return true;
 }
 
@@ -436,9 +455,11 @@ bool AsioUringIoBackend::HasPending(int fd) const
     return it != m_fds.end() && (it->second->readPending || it->second->writePending);
 }
 
-// ev_prepare — epoll_wait 前: 批量提交 SQE 到内核 + 收割已到 CQE。
-// 这是 SQE 批量提交的时机: SubmitRead/SubmitWrite 攒下的 async ops 在此一次性
-// 通过 io_uring_enter 提交到 SQ，减少 syscall 次数。
+// ========== 三路-第 1 路: ev_prepare ==========
+// 时机: libev 每次 epoll_wait 之前
+// 投递: SubmitRead/Write 攒下的 async ops → 一次 io_uring_enter 批量提交到内核 SQ
+// 收割: poll() 同时收割已到 CQE → lambda → m_callback (提前处理，减少延迟)
+// 核心价值: N 个 I/O 操作 → 1 次 syscall (vs ev 的 N 次 read/write)
 void AsioUringIoBackend::OnPrepare(struct ev_loop*, ev_prepare* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);
@@ -449,9 +470,12 @@ void AsioUringIoBackend::OnPrepare(struct ev_loop*, ev_prepare* w, int)
     }
 }
 
-// ev_check — epoll_wait 后: 再次收割 CQE + 按需启停 ring_fd。
-// 原因: OnRingReady 与本次 epoll_wait 之间可能存在 race window，
-//       内核在 epoll_wait 返回后刚好写入一个新 CQE → 此次 ev_check 兜底收割。
+// ========== 三路-第 3 路: ev_check ==========
+// 时机: libev 每次 epoll_wait 之后
+// 补刀: poll() 收割 OnRingReady 与 epoll_wait 之间 race window 中新到的 CQE
+//       内核可能在 epoll_wait 返回与 OnRingReady 执行之间刚好写入 CQE，
+//       若不在 check 中补刀收割，这些 CQE 会延迟到下一轮事件循环
+// 善后: UpdateRingWatcher (无挂起 op 则停 ring_fd 监听) + 每秒诊断统计
 void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);
@@ -464,9 +488,11 @@ void AsioUringIoBackend::OnCheck(struct ev_loop*, ev_check* w, int)
     g_stats.tick();           // 每秒一次诊断输出
 }
 
-// ev_io(ring_fd) — ring_fd 可读回调: io_uring 有新 CQE。
-// ring_fd 由 ASIO 内部 waitable reactor 管理，通过 epoll 边沿触发通知。
-// 一次唤醒可能有多个 CQE，poll() 内部会排空整批。
+// ========== 三路-第 2 路: ev_io(ring_fd) ==========
+// 时机: ring_fd 可读（内核有 CQE 完成通知）
+// 接货: poll() 批量收割 CQE → ASIO 触发 completion lambda → m_callback 分发到业务层
+//      一次唤醒可能排空多个 CQE（epoll 边沿触发，poll() 排空整批）
+// 启停: 由 UpdateRingWatcher 按需管理 — 有挂起 op(readPending||writePending) 才 start
 void AsioUringIoBackend::OnRingReady(struct ev_loop*, ev_io* w, int)
 {
     auto* be = static_cast<AsioUringIoBackend*>(w->data);

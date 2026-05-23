@@ -5,9 +5,14 @@
  *
  * === 核心流程: 三路驱动 SQE 提交 + CQE 收割／分发 ===
  *
+ * "三路" 指嵌入 libev 事件循环的三个 watcher，在每次迭代的不同阶段各司其职:
+ *   第 1 路 ev_prepare   → 投递 — 批量提交 SQE + 抢先收割 CQE
+ *   第 2 路 ev_io(ring_fd) → 接货 — 收割内核完成的 CQE，按需启停
+ *   第 3 路 ev_check      → 补刀 — 收割 race window CQE + 善后
+ *
  * 无后台线程 — ASIO io_uring_service 嵌入 libev 主循环，三个 watcher 协同:
  *
- *   ev_prepare (每次 epoll_wait 之前)
+ *   ev_prepare (每次 epoll_wait 之前) [三路-第 1 路: 投递]
  *     │  调用 io_context.poll() 将 SubmitRead/SubmitWrite 攒下的 async_read_some/
  *     │  async_write_some 批量转化为 SQE 一次性提交到内核 SQ（io_uring_enter）。
  *     │  同时收割目前已到的 CQE，触发 ASIO 内部 reactive 层调用 completion lambda，
@@ -19,13 +24,13 @@
  *     │  业务 fd 就绪 → accept/connect 事件（由 EvIoBackend/NativeUringIoBackend 处理）
  *     │  timer 超时 → Step 超时、心跳等
  *     ▼
- *   ev_io(ring_fd) → OnRingReady
+ *   ev_io(ring_fd) → OnRingReady [三路-第 2 路: 接货]
  *     │  epoll 通知 ring_fd 可读 → poll() 收割 CQE（可能存在多个完成的 op）。
  *     │  ASIO lambda 回调分发到 m_callback → Worker::OnIoComplete 处理 codec 状态机。
  *     │  按需启停: 有挂起 op(readPending||writePending) 才 start，无则 stop，
  *     │    阻止 ASIO NOP-SQE 产生的伪 CQE 在 idle 时唤醒 epoll 造成忙循环。
  *     ▼
- *   ev_check (每次 epoll_wait 之后)
+ *   ev_check (每次 epoll_wait 之后) [三路-第 3 路: 补刀]
  *     │  再次 poll() — 收割 OnRingReady 与本次 epoll_wait 之间可能到达的 CQE。
  *     │  UpdateRingWatcher: 收割完后若无挂起 op 则 stop ring_fd 监听。
  *     │  每秒输出诊断统计（THUNDER_ASIO_URING_DIAG=1 时，包括空唤醒率）。
@@ -123,10 +128,10 @@ private:
 
     std::shared_ptr<FdState>& EnsureFdState(int fd);
 
-    // ---- libev 三路驱动 ----
-    static void OnPrepare(struct ev_loop*, ev_prepare* w, int);   ///< epoll_wait 前: poll() 批量提交 SQE + 收割 CQE
-    static void OnCheck(struct ev_loop*, ev_check* w, int);       ///< epoll_wait 后: 再次收割 + UpdateRingWatcher + 每秒诊断
-    static void OnRingReady(struct ev_loop*, ev_io* w, int);      ///< ring_fd 可读 → poll() 收割 CQE
+    // ---- libev 三路驱动 (投递 → 接货 → 补刀) ----
+    static void OnPrepare(struct ev_loop*, ev_prepare* w, int);   ///< [三路-1] epoll_wait 前: poll() 批量提交 SQE + 收割 CQE
+    static void OnRingReady(struct ev_loop*, ev_io* w, int);      ///< [三路-2] ring_fd 可读 → poll() 收割 CQE
+    static void OnCheck(struct ev_loop*, ev_check* w, int);       ///< [三路-3] epoll_wait 后: 补刀收割 + UpdateRingWatcher + 诊断
 
     static int FindIoUringRingFd();                               ///< 扫描 /proc/self/fd 找 [io_uring] anon_inode
 
