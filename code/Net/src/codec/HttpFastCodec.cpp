@@ -54,10 +54,10 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
     const char* const end = raw + rawLen;
 
     // ── 1. 请求行: METHOD SP PATH SP HTTP/1.x CRLF ──
-    const char* sp1 = static_cast<const char*>(std::memchr(p, ' ', end - p));
+    const char* sp1 = static_cast<const char*>(std::memchr(p, ' ', end - p));     // 找到 method 后的第一个空格
     if (!sp1 || sp1 >= end - 1) return false;
 
-    size_t methodLen = sp1 - p;
+    size_t methodLen = sp1 - p;                                                   // method 长度 = 第一个SP - 行首
     switch (methodLen) {
     case 3:
         if      (p[0]=='G' && p[1]=='E' && p[2]=='T')    oHttpMsg.set_method(HTTP_GET);
@@ -87,16 +87,16 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
     }
 
     // path+query: url = 完整URL, path = 去掉?query
-    p = sp1 + 1;
-    const char* sp2 = static_cast<const char*>(std::memchr(p, ' ', end - p));
+    p = sp1 + 1;                                                                  // 跳过第一个空格, p 指向 path 首字节
+    const char* sp2 = static_cast<const char*>(std::memchr(p, ' ', end - p));     // 找到 path+query 后的第二个空格
     if (!sp2) return false;
-    size_t urlLen = sp2 - p;
+    size_t urlLen = sp2 - p;                                                      // 完整 URL 长度 (含 query string)
     oHttpMsg.set_url(p, urlLen);
-    const char* qm = static_cast<const char*>(std::memchr(p, '?', urlLen));
+    const char* qm = static_cast<const char*>(std::memchr(p, '?', urlLen));       // path 中找 '?' 分隔符
     if (qm)
     {
-        oHttpMsg.set_path(p, qm - p);
-        std::string strQuery(qm + 1, sp2 - qm - 1);
+        oHttpMsg.set_path(p, qm - p);                                             // path = 从起始到 '?' 之前
+        std::string strQuery(qm + 1, sp2 - qm - 1);                               // query = '?' 之后到 SP 之前
         if (!strQuery.empty())
         {
             std::map<std::string, std::string> mapParam;
@@ -111,17 +111,18 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
     }
 
     // HTTP/1.x
-    p = sp2 + 1;
+    p = sp2 + 1;                                                                  // 跳过第二个空格, p 指向 'H' (HTTP/x.y)
     if (p + 8 > end) return false;
     if (p[0]!='H' || p[1]!='T' || p[2]!='T' || p[3]!='P' || p[4]!='/' || p[6]!='.') return false;
-    int major = p[5] - '0';
-    int minor = p[7] - '0';
-    if (major < 0 || major > 9 || minor < 0 || minor > 9) return false;
+    int major = p[5] - '0';                                                       // HTTP 主版本: 字符 '1' → 数字 1
+    int minor = p[7] - '0';                                                       // HTTP 次版本: 字符 '1' → 数字 1
+
+    if (major < 0 || major > 9 || minor < 0 || minor > 9) return false;           // 版本号范围校验
     oHttpMsg.set_http_major(major);
     oHttpMsg.set_http_minor(minor);
 
-    p = static_cast<const char*>(std::memchr(p, '\n', end - p));
-    if (!p || ++p >= end) return false;
+    p = static_cast<const char*>(std::memchr(p, '\n', end - p));                   // 跳过请求行剩余部分, 到 \n (行尾)
+    if (!p || ++p >= end) return false;                                            // ++p 跳过 \n, 指向 headers 区域首字节
 
     // ── 2. headers ──
     bool   hasContentLength   = false;
@@ -139,15 +140,15 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
             && !strncasecmp(p, "content-length:", 15))
         {
             hasContentLength = true;
-            p += 15;
-            while (p < end && (*p == ' ' || *p == '\t')) ++p;
+            p += 15;                                                              // 跳过 "content-length:"
+            while (p < end && (*p == ' ' || *p == '\t')) ++p;                     // 跳过 : 后的空白
             contentLen = 0;
-            while (p < end && *p >= '0' && *p <= '9') {
-                contentLen = contentLen * 10 + static_cast<size_t>(*p - '0');
+            while (p < end && *p >= '0' && *p <= '9') {                           // 逐字符累加十进制数字
+                contentLen = contentLen * 10 + static_cast<size_t>(*p - '0');     // 乘10进位 + 新数字位
                 ++p;
             }
-            while (p < end && *p != '\n') ++p;
-            if (p < end) ++p;
+            while (p < end && *p != '\n') ++p;                                    // 跳过本行剩余字符
+            if (p < end) ++p;                                                     // 跳过 \n 到下一行首
         }
         else if (static_cast<size_t>(end - p) >= 18
             && !strncasecmp(p, "transfer-encoding:", 18))
@@ -162,54 +163,57 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
             && !strncasecmp(p, "content-encoding:", 17))
         {
             hasContentEncoding = true;
-            p += 17;
-            while (p < end && (*p == ' ' || *p == '\t')) ++p;
-            const char* ve = static_cast<const char*>(std::memchr(p, '\r', end - p));
+            p += 17;                                                              // 跳过 "content-encoding:"
+            while (p < end && (*p == ' ' || *p == '\t')) ++p;                     // 跳过空白
+            const char* ve = (p < end) ? static_cast<const char*>(std::memchr(p, '\r', static_cast<size_t>(end - p))) : nullptr;
+            // ↑ 找 header value 末尾的 \r; p<end 防编译器有符号/无符号警告, 没找到用 end 兜底
             if (!ve) ve = end;
-            contentEncodingVal.assign(p, static_cast<size_t>(ve - p));
+            contentEncodingVal.assign(p, static_cast<size_t>(ve - p));            // 复制 value 内容
             p = ve;
-            while (p < end && *p != '\n') ++p;
-            if (p < end) ++p;
+            while (p < end && *p != '\n') ++p;                                    // 跳过行尾, 到 \n
+            if (p < end) ++p;                                                     // 跳过 \n 到下一行首
         }
         else if (static_cast<size_t>(end - p) >= 11
             && !strncasecmp(p, "connection:", 11))
         {
-            p += 11;
-            while (p < end && (*p == ' ' || *p == '\t')) ++p;
-            const char* ve = static_cast<const char*>(std::memchr(p, '\r', end - p));
+            p += 11;                                                              // 跳过 "connection:"
+            while (p < end && (*p == ' ' || *p == '\t')) ++p;                     // 跳过空白
+            const char* ve = (p < end) ? static_cast<const char*>(std::memchr(p, '\r', static_cast<size_t>(end - p))) : nullptr;
+            // ↑ 找 value 末尾 \r; p<end 防编译器警告, 没找到用 end 兜底
             if (!ve) ve = end;
             connectionVal.assign(p, static_cast<size_t>(ve - p));
             p = ve;
-            while (p < end && *p != '\n') ++p;
+            while (p < end && *p != '\n') ++p;                                    // 跳过行尾
             if (p < end) ++p;
         }
         else if (static_cast<size_t>(end - p) >= 11
             && !strncasecmp(p, "keep-alive:", 11))
         {
-            p += 11;
-            while (p < end && (*p == ' ' || *p == '\t')) ++p;
-            const char* ve = static_cast<const char*>(std::memchr(p, '\r', end - p));
+            p += 11;                                                              // 跳过 "keep-alive:"
+            while (p < end && (*p == ' ' || *p == '\t')) ++p;                     // 跳过空白
+            const char* ve = (p < end) ? static_cast<const char*>(std::memchr(p, '\r', static_cast<size_t>(end - p))) : nullptr;
+            // ↑ 找 value 末尾 \r; p<end 防编译器警告, 没找到用 end 兜底
             if (!ve) ve = end;
             keepAliveVal.assign(p, static_cast<size_t>(ve - p));
             p = ve;
-            while (p < end && *p != '\n') ++p;
+            while (p < end && *p != '\n') ++p;                                    // 跳过行尾
             if (p < end) ++p;
         }
         else
         {
-            while (p < end && *p != '\n') ++p;
-            if (p < end) ++p;
+            while (p < end && *p != '\n') ++p;                                    // 跳过不需要的 header 行
+            if (p < end) ++p;                                                     // 跳过 \n 到下一行首
         }
     }
 
-    if (isChunked) return false;
+    if (isChunked) return false;                                                    // chunked 编码回退 http_parser
 
     // ── 3. body ──
     if (hasContentLength)
     {
-        if (static_cast<size_t>(end - p) < contentLen) return false;
-        if (contentLen > 0) oHttpMsg.set_body(p, contentLen);
-        p += contentLen;
+        if (static_cast<size_t>(end - p) < contentLen) return false;               // body 数据不完整, 回退
+        if (contentLen > 0) oHttpMsg.set_body(p, contentLen);                      // 拷贝 body 到 protobuf
+        p += contentLen;                                                            // 推进指针经过 body
     }
 
     // ── 4. 填充 HttpMsg ──
@@ -222,7 +226,7 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
     if (hasContentEncoding && !contentEncodingVal.empty())
         (*oHttpMsg.mutable_headers())["Content-Encoding"] = contentEncodingVal;
 
-    consumed = static_cast<size_t>(p - raw);
+    consumed = static_cast<size_t>(p - raw);                                        // 返回已消费字节数
     return true;
 }
 
@@ -282,22 +286,22 @@ bool TryFastEncodeHttpResponse(const HttpMsg& oHttpMsg,
         "Content-Type: application/json;charset=UTF-8\r\n"
         "Content-Length: ";
 
-    pBuff->Write(kHeader200, sizeof(kHeader200) - 1);
-    iHadWriteSize = static_cast<int>(sizeof(kHeader200) - 1);
+    pBuff->Write(kHeader200, sizeof(kHeader200) - 1);                      // 写固定响应头模板
+    iHadWriteSize = static_cast<int>(sizeof(kHeader200) - 1);              // sizeof-1: 不写末尾 \0
 
-    int iWriteSize = pBuff->Printf("%u\r\n\r\n",
+    int iWriteSize = pBuff->Printf("%u\r\n\r\n",                            // 动态填入 body 长度
             static_cast<unsigned>(oHttpMsg.body().size()));
     if (iWriteSize < 0)
     {
-        pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);
+        pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);       // 写入失败: 回退 write index
         return false;
     }
     iHadWriteSize += iWriteSize;
 
     if (pBuff->Write(oHttpMsg.body().c_str(),
-            static_cast<int>(oHttpMsg.body().size())) < 0)
+            static_cast<int>(oHttpMsg.body().size())) < 0)                   // 写 body 字节
     {
-        pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);
+        pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);        // 写入失败: 回退全部
         return false;
     }
 

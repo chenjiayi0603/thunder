@@ -4,7 +4,6 @@
  * @brief    HTTPS codec（当前复用 HttpCodec 编解码，TLS 传输层待扩展）
  ******************************************************************************/
 #include "HttpsCodec.hpp"
-#include "codec/HttpFastCodec.hpp"
 #include <cstring>
 #include <cstdlib>
 #include <openssl/err.h>
@@ -86,24 +85,7 @@ E_CODEC_STATUS HttpsCodec::Decode(tagConnectionAttr* pConn, MsgHead& oMsgHead, M
         return CODEC_STATUS_ERR;
     }
 
-    // === HTTPS Recv Fast-Path ===
-    // 解密后的明文走通用 HTTP Fast Path，覆盖所有常规请求。
-    // 不匹配/数据不全时回退 HttpCodec::Decode (http_parser)。
-    if (pState->oPlainRecvBuff.ReadableBytes() > 0)
-    {
-        HttpMsg oInHttpMsg;
-        size_t consumed = 0;
-        if (TryFastDecodeHttpRequest(
-                pState->oPlainRecvBuff.GetRawReadBuffer(),
-                pState->oPlainRecvBuff.ReadableBytes(),
-                oInHttpMsg, consumed))
-        {
-            oMsgBody.set_body(oInHttpMsg.SerializeAsString());
-            oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
-            pState->oPlainRecvBuff.AdvanceReadIndex(consumed);
-            return CODEC_STATUS_OK;
-        }
-    }
+    // 4) TLS 解密后的明文直接走 HttpCodec::Decode (内部 Fast-Path → http_parser 回退)
     return HttpCodec::Decode(&pState->oPlainRecvBuff, oMsgHead, oMsgBody);
 }
 
