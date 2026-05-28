@@ -168,6 +168,13 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false){return(false);}
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody){return(false);}
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>()){return(false);}
+	/**
+	 * @brief Fast-path 发送常量响应 (绕过 protobuf HttpMsg + vsnprintf 编码)
+	 * @note  适用于已知 body 是编译期常量的简单响应 (如 benchmark raw path)
+	 */
+	virtual bool SendToClientFast(const tagMsgShell& stMsgShell,
+	                               const char* body, size_t bodyLen,
+	                               int statusCode = 200) { return false; }
    	/**
 	 * @brief 发送数据到服务器（异步回调处理）
 	 * @note 异步通用回调接口简化封装

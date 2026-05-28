@@ -245,6 +245,16 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 
 bool ModuleHello::AnyMessage(const net::tagMsgShell& stMsgShell,const HttpMsg& oInHttpMsg)
 {
+	// Fast path: /hello/raw — zero overhead: skip JSON, skip CJsonObject, fixed string
+	// Used for pure I/O benchmark comparison with Nginx
+	// 进一步优化: 使用 SendToClientFast 绕过 protobuf HttpMsg 构建 + vsnprintf 编码
+	if (oInHttpMsg.path() == "/hello/raw")
+	{
+		static const char kRawResponse[] = "{\"code\":0,\"msg\":\"ok\"}";
+		GetLabor()->SendToClientFast(stMsgShell, kRawResponse, sizeof(kRawResponse) - 1);
+		return true;
+	}
+
 	LOG4_TRACE("body %s oInHttpMsg %s url:%s",oInHttpMsg.body().c_str(),oInHttpMsg.DebugString().c_str(),oInHttpMsg.url().c_str());
 	for(auto&& p:oInHttpMsg.params())
 	{

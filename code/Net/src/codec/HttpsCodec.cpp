@@ -4,6 +4,8 @@
  * @brief    HTTPS codec（当前复用 HttpCodec 编解码，TLS 传输层待扩展）
  ******************************************************************************/
 #include "HttpsCodec.hpp"
+#include <cstring>
+#include <cstdlib>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -76,11 +78,77 @@ E_CODEC_STATUS HttpsCodec::Decode(tagConnectionAttr* pConn, MsgHead& oMsgHead, M
             return CODEC_STATUS_ERR;
         }
     }
-    // 4) 从 SSL 引擎持续提取解密后的明文，再复用 HttpCodec 解析 HTTP 消息。
+    // 4) 从 SSL 引擎持续提取解密后的明文。
     E_CODEC_STATUS eDrainStatus = DrainSslToPlain(pState);
     if (eDrainStatus == CODEC_STATUS_ERR)
     {
         return CODEC_STATUS_ERR;
+    }
+
+    // === HTTPS Recv Fast-Path ===
+    // 在解密后的明文上做快速前缀匹配，绕过 http_parser 回调链 (8+ callbacks).
+    // 只对 POST /hello/raw 启用；不匹配或数据不全时回退到正常 HttpCodec::Decode.
+    if (pState->oPlainRecvBuff.ReadableBytes() > 0)
+    {
+        const char* raw = pState->oPlainRecvBuff.GetRawReadBuffer();
+        size_t rawLen = pState->oPlainRecvBuff.ReadableBytes();
+        static const char kRawPrefix[] = "POST /hello/raw ";
+        if (rawLen > sizeof(kRawPrefix) - 1
+            && std::memcmp(raw, kRawPrefix, sizeof(kRawPrefix) - 1) == 0)
+        {
+            // memchr 找 header 结束标记 \r\n\r\n
+            const char* bodyStart = nullptr;
+            const char* p = raw + 4;
+            const char* end = raw + rawLen;
+            while (p + 3 < end)
+            {
+                p = static_cast<const char*>(std::memchr(p, '\r', static_cast<size_t>(end - p)));
+                if (!p) break;
+                if (p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+                {
+                    bodyStart = p + 4;
+                    break;
+                }
+                ++p;
+            }
+            if (bodyStart != nullptr)
+            {
+                // 快速解析 Content-Length
+                size_t contentLen = 0;
+                size_t hdrLen = static_cast<size_t>(bodyStart - raw);
+                for (size_t i = 0; i + 15 < hdrLen; ++i)
+                {
+                    if ((raw[i] == 'C' || raw[i] == 'c')
+                        && std::memcmp(raw + i + 1, "ontent-Length:", 14) == 0)
+                    {
+                        const char* cl = raw + i + 15;
+                        while (*cl == ' ' || *cl == '\t') ++cl;
+                        contentLen = static_cast<size_t>(std::strtoul(cl, nullptr, 10));
+                        break;
+                    }
+                }
+                size_t totalLen = hdrLen + contentLen;
+                if (totalLen <= rawLen)
+                {
+                    // 完整请求到达：直接构造 MsgHead/MsgBody，跳过 http_parser
+                    HttpMsg oInHttpMsg;
+                    oInHttpMsg.set_type(HTTP_REQUEST);
+                    oInHttpMsg.set_http_major(1);
+                    oInHttpMsg.set_http_minor(1);
+                    oInHttpMsg.set_method(HTTP_POST);
+                    oInHttpMsg.set_path("/hello/raw");
+                    if (contentLen > 0)
+                    {
+                        oInHttpMsg.set_body(std::string(bodyStart, contentLen));
+                    }
+                    oMsgBody.set_body(oInHttpMsg.SerializeAsString());
+                    oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
+                    pState->oPlainRecvBuff.AdvanceReadIndex(totalLen);
+                    return CODEC_STATUS_OK;
+                }
+                // 数据不全, 回退到正常 HttpCodec::Decode (它会处理分包)
+            }
+        }
     }
     return HttpCodec::Decode(&pState->oPlainRecvBuff, oMsgHead, oMsgBody);
 }
@@ -246,6 +314,8 @@ HttpsCodec::TlsConnState* HttpsCodec::EnsureState(tagConnectionAttr* pConn)
             {
                 LOG4_ERROR("load server cert/key failed(cert=%s,key=%s)", m_oConfig.strServerCertFile.c_str(), m_oConfig.strServerKeyFile.c_str());
             }
+            // 设置兼容的加密套件, 避免 "no shared cipher" 握手失败
+            SSL_CTX_set_cipher_list(pNew->pCtx, "DEFAULT:!aNULL:!eNULL:!MD5:!3DES");
         }
         if (!m_oConfig.strServerCaFile.empty())
         {

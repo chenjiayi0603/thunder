@@ -210,6 +210,10 @@ public:
     virtual bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
     virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
     virtual bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>())override;
+    // Fast-path: 绕过 protobuf HttpMsg 构建 + vsnprintf 编码, 直接写 HTTP 字节流
+    virtual bool SendToClientFast(const tagMsgShell& stMsgShell,
+                                   const char* body, size_t bodyLen,
+                                   int statusCode = 200) override;
     virtual bool BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
 	virtual bool ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &message)override;
 	/**
@@ -353,6 +357,9 @@ private:
     int m_iMgrToWorkerEfd = -1;                      ///< 通知 Worker
     int m_iWorkerToMgrEfd = -1;                      ///< 通知 Manager
     ev_io* m_pShmReadWatcher = nullptr;              ///< libev watcher for shm eventfd
+
+    // 抽取 SendTo 中 write-to-fd 逻辑为公共 helper, 供 Fast path 复用
+    bool FlushSendBuf(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter);
 };
 
 } /* namespace net */

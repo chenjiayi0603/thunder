@@ -69,9 +69,28 @@ E_CODEC_STATUS ProtoCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBo
 
 E_CODEC_STATUS ProtoCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(), oMsgHead, oMsgBody);
-    if (CODEC_STATUS_OK == eCodecStatus)//连接状态处理
+    // 获取/创建连接级 Arena 上下文 (挂 pProtoCtx, 连接关闭时 delete)
+    auto* ctx = static_cast<ProtoConnContext*>(pConn->pProtoCtx);
+    if (!ctx)
     {
+        ctx = new ProtoConnContext();
+        pConn->pProtoCtx = ctx;
+    }
+
+    // Arena 上分配 MsgHead/MsgBody: ParseFromArray 内部的子对象分配
+    // (repeated field / string / nested msg) 全部走 Arena bump pointer 而非散列 malloc
+    auto* arenaHead = google::protobuf::Arena::Create<MsgHead>(&ctx->arena);
+    auto* arenaBody = google::protobuf::Arena::Create<MsgBody>(&ctx->arena);
+
+    E_CODEC_STATUS eCodecStatus = Decode(pConn->pRecvBuff.get(), *arenaHead, *arenaBody);
+
+    if (CODEC_STATUS_OK == eCodecStatus)
+    {
+        // CopyFrom 拷贝到栈对象: protobuf 深拷贝, 数据所有权转移到堆
+        oMsgHead.CopyFrom(*arenaHead);
+        oMsgBody.CopyFrom(*arenaBody);
+
+        // 连接状态处理
         if(eConnectStatus_ok != pConn->ucConnectStatus)// 连接尚未完成
         {
             LOG4_TRACE("oInMsgHead.cmd(%u),ucConnectStatus(%u)", oMsgHead.cmd(),pConn->ucConnectStatus);
@@ -85,6 +104,8 @@ E_CODEC_STATUS ProtoCodec::Decode(tagConnectionAttr* pConn,MsgHead& oMsgHead, Ms
             }
         }
     }
+
+    ctx->arena.Reset();  // Arena 游标归零, 内存块跨请求复用
     return eCodecStatus;
 }
 

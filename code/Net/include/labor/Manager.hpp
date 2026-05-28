@@ -14,6 +14,7 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "labor/ManagerContext.hpp"
+#include "labor/CenterConnector.hpp"
 #include "session/Session.hpp"
 
 class NodeReportRsp;
@@ -193,11 +194,12 @@ protected:
     bool DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataFromCenter(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
-    void UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeReportRsp);
+    // UpdateRaftLeaderHintFromNodeReportRsp — 已迁移至 TcpCenterConnector 插件
+    // ---- CenterConnector 插件集成 ----
+    std::unique_ptr<CenterConnector> CreateCenterConnector();
+    void OnCenterEvent(const CenterEvent& ev);
 private:
-    /**
-	 * @brief 配置、记录成员
-	 */
+    std::unique_ptr<CenterConnector> m_pCenterConnector;
 };
 
 } /* namespace net */

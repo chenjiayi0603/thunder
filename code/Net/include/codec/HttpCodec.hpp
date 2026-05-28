@@ -13,9 +13,22 @@
 #include "util/http/http_parser.h"
 #include "protocol/http.pb.h"
 #include "ThunderCodec.hpp"
+#include "google/protobuf/arena.h"
 
 namespace net
 {
+
+/**
+ * @brief HTTP 连接专属上下文 (每连接一个, 挂在 tagConnectionAttr::pProtoCtx 上)
+ * @note  Arena 首次使用时自动分配 block, 每个请求结束后 Reset() 复用
+ *        连接关闭时 delete
+ */
+struct HttpConnContext
+{
+    google::protobuf::Arena arena;
+    HttpConnContext() = default;
+    ~HttpConnContext() = default;
+};
 //#define HTTP_CMD
 /**
  * @brief http格式通信编码解码器
@@ -53,7 +66,6 @@ protected:
     static int OnChunkComplete(http_parser *parser);
 
 private:
-    http_parser_settings m_parser_setting;
     std::string m_strHttpString;
     std::unordered_map<std::string, std::string> m_mapAddingHttpHeader;       ///< encode前添加的http头，encode之后要清空
 };

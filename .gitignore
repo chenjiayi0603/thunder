@@ -87,3 +87,5 @@ deploy/Logic/bin/Logic
 deploy/Logic/log/readme.txt
 deploy/Center/log/readme.txt
 *.pid
+build_asio_uring/
+build_no_https/

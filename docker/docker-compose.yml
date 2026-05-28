@@ -7,7 +7,7 @@
 #   docker compose up -d
 #   docker compose logs -f
 #   docker compose down
-#   ./dev_up_logs.sh                     # 一键构建/启动/日志 或 仓库根 ./docker-up.sh
+#   ./dev_up_logs.sh                     # 一键构建/启动/日志 或 仓库根 ./deploy.sh up
 #
 # 说明：
 # - 默认 network_mode: host，与 conf 中 127.0.0.1 一致；需 Linux 宿主机（含 WSL2 上的 Docker）。

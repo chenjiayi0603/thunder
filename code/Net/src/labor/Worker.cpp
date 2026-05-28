@@ -284,6 +284,12 @@ Worker::~Worker()
 void Worker::Run()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // libev 事件循环 — 每次迭代的执行顺序 (详见 libev/ev.c:ev_run):
+    //   [三路-1] ev_prepare 回调 → 投递 SQE + 抢先收割 CQE (AsioUringIoBackend::OnPrepare)
+    //   backend_poll (epoll_wait) → 阻塞等待 ring_fd/业务 fd/timer
+    //   [三路-2] ev_io 回调 → ring_fd 可读 → 接货 CQE (AsioUringIoBackend::OnRingReady)
+    //             + 其他就绪 fd 的 IoCallback / ShmReadCallback
+    //   [三路-3] ev_check 回调 → 补刀收割 CQE (AsioUringIoBackend::OnCheck)
     ev_run (m_loop, 0);
 }
 
@@ -575,16 +581,88 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
         if (iReadLen > 0)
         {
             iRecvByte += iReadLen;
+
+            // === Receive Fast-Path ===
+            // 对于 /hello/raw 等简单请求, 直接从 raw buffer 提取 path 并响应,
+            // 绕过 HttpCodec::Decode (http-parser 回调 + protobuf HttpMsg 构造)
+            // 和 Dispose → AnyMessage → SendToClient 全流程.
+            if (pConn->eCodecType == util::CODEC_HTTP
+                && pConn->pRecvBuff->ReadableBytes() > 0)
+            {
+                const char* raw = pConn->pRecvBuff->GetRawReadBuffer();
+                size_t rawLen = pConn->pRecvBuff->ReadableBytes();
+
+                // 快速匹配: 检查请求行是否为 "POST /hello/raw HTTP/..."
+                static const char kRawPrefix[] = "POST /hello/raw ";
+                if (rawLen > sizeof(kRawPrefix) - 1
+                    && memcmp(raw, kRawPrefix, sizeof(kRawPrefix) - 1) == 0)
+                {
+                    // 用 memchr 跳行找 \r\n\r\n (header 结束标记), 避免逐字节扫描
+                    const char* bodyStart = nullptr;
+                    const char* p = raw + 4;
+                    const char* end = raw + rawLen;
+                    while (p + 3 < end)
+                    {
+                        p = static_cast<const char*>(memchr(p, '\r', end - p));
+                        if (!p) break;
+                        if (p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+                        {
+                            bodyStart = p + 4;
+                            break;
+                        }
+                        ++p;
+                    }
+                    if (bodyStart != nullptr)
+                    {
+                        // 快速解析 Content-Length (避免 memmem 需要 _GNU_SOURCE)
+                        size_t contentLen = 0;
+                        const char* cl = nullptr;
+                        size_t hdrLen = static_cast<size_t>(bodyStart - raw);
+                        for (size_t i = 0; i + 15 < hdrLen; ++i)
+                        {
+                            if ((raw[i] == 'C' || raw[i] == 'c')
+                                && memcmp(raw + i + 1, "ontent-Length:", 14) == 0)
+                            {
+                                cl = raw + i;
+                                break;
+                            }
+                        }
+                        if (cl != nullptr)
+                        {
+                            cl += 15;  // skip "Content-Length:"
+                            while (*cl == ' ' || *cl == '\t') ++cl;
+                            contentLen = static_cast<size_t>(strtoul(cl, nullptr, 10));
+                        }
+                        size_t totalLen = static_cast<size_t>(bodyStart - raw) + contentLen;
+                        if (totalLen <= rawLen)
+                        {
+                            // 完整的请求, 直接 fast-response
+                            static const char kRespBody[] = "{\"code\":0,\"msg\":\"ok\"}";
+                            pConn->pRecvBuff->AdvanceReadIndex(totalLen);
+                            tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                            SendToClientFast(stMsgShell, kRespBody, sizeof(kRespBody) - 1);
+                            goto read_again;
+                        }
+                        // 请求不完整, 回退到正常 decode 流程继续读
+                    }
+                }
+            }
+            // === Receive Fast-Path End ===
+
             MsgHead oInMsgHead, oOutMsgHead;
             MsgBody oInMsgBody, oOutMsgBody;
-            auto codec_iter = mapCodec.find(conn_iter->second->eCodecType);
-            if (codec_iter == mapCodec.end())
+            ThunderCodec* pCodec = pConn->pCodec;
+            if (!pCodec)
             {
-                LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
-                DestroyConnect(conn_iter);
-                return(false);
+                auto codec_iter = mapCodec.find(conn_iter->second->eCodecType);
+                if (codec_iter == mapCodec.end())
+                {
+                    LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
+                    DestroyConnect(conn_iter);
+                    return(false);
+                }
+                pCodec = codec_iter->second.get();
             }
-            ThunderCodec* pCodec = codec_iter->second.get();
             while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
                     || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
             {
@@ -1155,6 +1233,85 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
 
     iRecvByte += result;
 
+    // === Receive Fast-Path (IoBackend) ===
+    // 对于 /hello/raw 等简单请求, 直接从 raw buffer 提取 path 并响应,
+    // 绕过 HttpCodec::Decode (http-parser 回调 + protobuf HttpMsg 构造)
+    // 和 Dispose → AnyMessage → SendToClient 全流程.
+    if (pConn->eCodecType == util::CODEC_HTTP
+        && pConn->pRecvBuff->ReadableBytes() > 0)
+    {
+        const char* raw = pConn->pRecvBuff->GetRawReadBuffer();
+        size_t rawLen = pConn->pRecvBuff->ReadableBytes();
+
+        // 快速匹配: 检查请求行是否为 "POST /hello/raw HTTP/..."
+        static const char kRawPrefix[] = "POST /hello/raw ";
+        if (rawLen > sizeof(kRawPrefix) - 1
+            && memcmp(raw, kRawPrefix, sizeof(kRawPrefix) - 1) == 0)
+        {
+            // 用 memchr 跳行找 \r\n\r\n (header 结束标记)
+            const char* bodyStart = nullptr;
+            const char* p = raw + 4;
+            const char* end = raw + rawLen;
+            while (p + 3 < end)
+            {
+                p = static_cast<const char*>(memchr(p, '\r', end - p));
+                if (!p) break;
+                if (p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+                {
+                    bodyStart = p + 4;
+                    break;
+                }
+                ++p;
+            }
+            if (bodyStart != nullptr)
+            {
+                // 快速解析 Content-Length
+                size_t contentLen = 0;
+                const char* cl = nullptr;
+                size_t hdrLen = static_cast<size_t>(bodyStart - raw);
+                for (size_t i = 0; i + 15 < hdrLen; ++i)
+                {
+                    if ((raw[i] == 'C' || raw[i] == 'c')
+                        && memcmp(raw + i + 1, "ontent-Length:", 14) == 0)
+                    {
+                        cl = raw + i;
+                        break;
+                    }
+                }
+                if (cl != nullptr)
+                {
+                    cl += 15;  // skip "Content-Length:"
+                    while (*cl == ' ' || *cl == '\t') ++cl;
+                    contentLen = static_cast<size_t>(strtoul(cl, nullptr, 10));
+                }
+                size_t totalLen = static_cast<size_t>(bodyStart - raw) + contentLen;
+                if (totalLen <= rawLen)
+                {
+                    // 完整的请求, 直接 fast-response
+                    static const char kRespBody[] = "{\"code\":0,\"msg\":\"ok\"}";
+                    pConn->pRecvBuff->AdvanceReadIndex(totalLen);
+                    tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                    SendToClientFast(stMsgShell, kRespBody, sizeof(kRespBody) - 1);
+
+                    // IoBackend: re-submit read for keep-alive (same as normal path end)
+                    if (m_pIoBackend)
+                    {
+                        auto recheck = mapFdAttr.find(iFd);
+                        if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+                            && !m_pIoBackend->HasPending(iFd))
+                        {
+                            pConn->pRecvBuff->Compact(8192);
+                            pConn->pRecvBuff->EnsureWritableBytes(8192);
+                            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
+                        }
+                    }
+                    return true;  // fast path handled
+                }
+                // 请求不完整, 回退到正常 decode 流程
+            }
+        }
+    }
+    // === Receive Fast-Path End ===
     MsgHead oInMsgHead, oOutMsgHead;
     MsgBody oInMsgBody, oOutMsgBody;
     auto codec_iter = mapCodec.find(pConn->eCodecType);
@@ -2316,29 +2473,28 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     mapCodec.insert(std::make_pair(util::CODEC_PB_INTERNAL, std::make_unique<ProtoCodec>(util::CODEC_PB_INTERNAL)));
     mapCodec.insert(std::make_pair(util::CODEC_HTTP, std::make_unique<HttpCodec>(util::CODEC_HTTP)));
     mapCodec.insert(std::make_pair(util::CODEC_HTTPS, std::make_unique<HttpsCodec>()));
+    // 从配置文件中读取 HTTPS 证书 (需要 "https" 段: server_cert, server_key)
+    {
+        auto* pHttpsCodec = static_cast<HttpsCodec*>(mapCodec[util::CODEC_HTTPS].get());
+        HttpsCodec::HttpsConfig oHttpsConfig;
+        std::string strCertFile, strKeyFile;
+        if (m_oCurrentConf["https"].Get("server_cert", strCertFile) && !strCertFile.empty())
+        {
+            oHttpsConfig.strServerCertFile = strCertFile;
+        }
+        if (m_oCurrentConf["https"].Get("server_key", strKeyFile) && !strKeyFile.empty())
+        {
+            oHttpsConfig.strServerKeyFile = strKeyFile;
+        }
+        m_oCurrentConf["https"].Get("verify_client", oHttpsConfig.bServerVerifyClient);
+        pHttpsCodec->SetHttpsConfig(oHttpsConfig);
+    }
     mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, std::make_unique<ClientMsgCodec>(util::CODEC_PRIVATE)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, std::make_unique<CodecWebSocketJson>(util::CODEC_WEBSOCKET_EX_JS)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, std::make_unique<CodecWebSocketPb>(util::CODEC_WEBSOCKET_EX_PB)));
 	mapCodec.insert(std::make_pair(util::CODEC_TEST, std::make_unique<CodecCustom>(util::CODEC_TEST)));
 	mapCodec.insert(std::make_pair(util::CODEC_APP, std::make_unique<AppMsgCodec>(util::CODEC_APP)));
 	mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, std::make_unique<CodecWebSocketPbApp>(util::CODEC_WEBSOCKET_EX_PB_APP)));
-    {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
-        if (codec_iter != mapCodec.end())
-        {
-            HttpsCodec::HttpsConfig oHttpsCfg;
-            util::CJsonObject oHttpsConf = m_oCustomConf["https"];
-            util::CJsonObject oHttpsServer = oHttpsConf["server"];
-            util::CJsonObject oHttpsClient = oHttpsConf["client"];
-            oHttpsServer.Get("cert_file", oHttpsCfg.strServerCertFile);
-            oHttpsServer.Get("key_file", oHttpsCfg.strServerKeyFile);
-            oHttpsServer.Get("ca_file", oHttpsCfg.strServerCaFile);
-            oHttpsServer.Get("verify_client", oHttpsCfg.bServerVerifyClient);
-            oHttpsClient.Get("ca_file", oHttpsCfg.strClientCaFile);
-            oHttpsClient.Get("verify_peer", oHttpsCfg.bClientVerifyPeer);
-            static_cast<HttpsCodec*>(codec_iter->second.get())->SetHttpsConfig(oHttpsCfg);
-        }
-    }
 
     bool bCpuAffinity = false;
 	oJsonConf.Get("cpu_affinity", bCpuAffinity);
@@ -3034,28 +3190,164 @@ bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgH
 
 bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::unordered_map<std::string,std::string> &heads)
 {
-    // auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
-    // if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
-    // {
-    //     LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
-    //               __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
-    //     return false;
-    // }
+    auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
+    if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
+    {
+        LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
+                  __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
+        return false;
+    }
 
-	HttpMsg oHttpMsg;
-	for(const auto & iter:heads)
+    auto* pConn = conn_iter->second.get();
+    bool bUseArena = false;
+    auto* ctx = static_cast<net::HttpConnContext*>(pConn->pProtoCtx);
+
+    // 全链路 Arena: recv 侧已在 HttpCodec::Decode 中 Reset, send 侧从同一 Arena 分配响应 HttpMsg
+    HttpMsg oHttpMsg_fallback;  // 栈分配, 仅当 Arena 不可用时使用
+    HttpMsg* pHttpMsg = nullptr;
+    if (ctx != nullptr)
+    {
+        pHttpMsg = google::protobuf::Arena::Create<HttpMsg>(&ctx->arena);
+        bUseArena = true;
+    }
+    else
+    {
+        pHttpMsg = &oHttpMsg_fallback;
+    }
+
+    for(const auto & iter:heads)
+    {
+        pHttpMsg->mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>(iter.first, iter.second));
+    }
+    pHttpMsg->set_type(HTTP_RESPONSE);
+    pHttpMsg->set_status_code(iCode);
+    pHttpMsg->set_http_major(oInHttpMsg.http_major());
+    pHttpMsg->set_http_minor(oInHttpMsg.http_minor());
+    pHttpMsg->set_body(strBody);
+    bool bRet = SendTo(stInMsgShell, *pHttpMsg);
+    if (!bRet)
+    {
+        LOG4_ERROR("send to tagMsgShell(fd %d, seq %u) error!", stInMsgShell.iFd, stInMsgShell.ulSeq);
+    }
+
+    if (bUseArena)
+    {
+        ctx->arena.Reset();  // 请求完成, Arena 游标归零
+    }
+    return bRet;
+}
+
+// Fast-path: 绕过 protobuf HttpMsg + HttpCodec::Encode(vsnprintf) 全流程
+// 直接将预格式化的 HTTP 响应写入 send buffer
+// HTTPS: 需要通过 SSL 加密, 走正常 EncodeByConnectionCodec 路径
+bool Worker::SendToClientFast(const tagMsgShell& stMsgShell,
+                               const char* body, size_t bodyLen,
+                               int statusCode)
+{
+	auto conn_iter = mapFdAttr.find(stMsgShell.iFd);
+	if (conn_iter == mapFdAttr.end())
 	{
-		oHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>(iter.first, iter.second));
-	}
-	oHttpMsg.set_type(HTTP_RESPONSE);
-	oHttpMsg.set_status_code(iCode);
-	oHttpMsg.set_http_major(oInHttpMsg.http_major());
-	oHttpMsg.set_http_minor(oInHttpMsg.http_minor());
-	oHttpMsg.set_body(strBody);
-	if (!SendTo(stInMsgShell, oHttpMsg))
-	{
-		LOG4_ERROR("send to tagMsgShell(fd %d, seq %u) error!", stInMsgShell.iFd, stInMsgShell.ulSeq);
+		LOG4_ERROR("SendToClientFast: no fd %d", stMsgShell.iFd);
 		return false;
+	}
+	auto& pConn = conn_iter->second;
+	if (pConn->ulSeq != stMsgShell.ulSeq || pConn->iFd != stMsgShell.iFd)
+	{
+		LOG4_ERROR("SendToClientFast: seq mismatch fd %d", stMsgShell.iFd);
+		return false;
+	}
+
+	// HTTPS: 必须经过 SSL 加密, 走正常 SendToClient 路径
+	if (pConn->eCodecType == util::CODEC_HTTPS)
+	{
+		auto codec_iter = mapCodec.find(pConn->eCodecType);
+		if (codec_iter == mapCodec.end())
+		{
+			LOG4_ERROR("SendToClientFast: no HTTPS codec for fd %d", stMsgShell.iFd);
+			return false;
+		}
+		HttpMsg oOutHttpMsg;
+		oOutHttpMsg.set_type(HTTP_RESPONSE);
+		oOutHttpMsg.set_status_code(statusCode);
+		oOutHttpMsg.set_http_major(1);
+		oOutHttpMsg.set_http_minor(1);
+		oOutHttpMsg.set_body(std::string(body, bodyLen));
+		(*oOutHttpMsg.mutable_headers())["Connection"] = "keep-alive";
+		(*oOutHttpMsg.mutable_headers())["Content-Type"] = "application/json;charset=UTF-8";
+
+		E_CODEC_STATUS eStatus = EncodeByConnectionCodec(pConn.get(), codec_iter->second.get(),
+		        oOutHttpMsg, pConn->pSendBuff.get());
+		if (eStatus != CODEC_STATUS_OK)
+		{
+			LOG4_ERROR("SendToClientFast: HTTPS encode failed for fd %d", stMsgShell.iFd);
+			return false;
+		}
+		return FlushSendBuf(conn_iter);
+	}
+
+	// 预格式化 HTTP 响应 (替代 HttpCodec::Encode 的 5+ 次 vsnprintf)
+	char header[256];
+	int n = snprintf(header, sizeof(header),
+		"HTTP/1.1 %d OK\r\n"
+		"Connection: keep-alive\r\n"
+		"Content-Type: application/json;charset=UTF-8\r\n"
+		"Content-Length: %zu\r\n\r\n",
+		statusCode, bodyLen);
+	if (n < 0 || static_cast<size_t>(n) >= sizeof(header))
+	{
+		LOG4_ERROR("SendToClientFast: header buffer overflow");
+		return false;
+	}
+
+	pConn->pSendBuff->Write(header, static_cast<size_t>(n));
+	pConn->pSendBuff->Write(body, bodyLen);
+
+	return FlushSendBuf(conn_iter);
+}
+
+// 抽取自 SendTo: write-to-fd 公共逻辑 (EV_WRITE 检测 / WriteFD / EAGAIN / 部分写入)
+bool Worker::FlushSendBuf(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter)
+{
+	auto& pConn = conn_iter->second;
+	if (pConn->pSendBuff->ReadableBytes() == 0)
+	{
+		return true;
+	}
+	++iSendNum;
+	if ((pConn->pIoWatcher != nullptr) && (pConn->pIoWatcher->events & EV_WRITE))
+	{
+		// 正在监听写事件(send buffer 满), 等 EV_WRITE 回调再写
+		return true;
+	}
+	int iErrno = 0;
+	int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+	int iWriteLen = pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+	pConn->pSendBuff->Compact(8192);
+	if (iWriteLen < 0)
+	{
+		if (EAGAIN != iErrno && EINTR != iErrno)
+		{
+			LOG4_ERROR("send to fd %d error %d: %s", pConn->iFd, iErrno,
+			           strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+			DestroyConnect(conn_iter);
+			return false;
+		}
+		// EAGAIN/EINTR: buffer 满, 注册写事件等待下次可写
+		pConn->dActiveTime = ev_now(m_loop);
+		AddIoWriteEvent(pConn.get());
+	}
+	else if (iWriteLen > 0)
+	{
+		iSendByte += iWriteLen;
+		pConn->dActiveTime = ev_now(m_loop);
+		if (iWriteLen == iNeedWriteLen)
+		{
+			RemoveIoWriteEvent(pConn.get());
+		}
+		else
+		{
+			AddIoWriteEvent(pConn.get());
+		}
 	}
 	return true;
 }
@@ -3740,12 +4032,18 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
     	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
-            auto codec_iter = mapCodec.find(pConn->eCodecType);
-            if (codec_iter == mapCodec.end())
+            // 优先使用连接缓存的 codec 指针 (CreateFdAttr 时已填入), 避免 hash 查找
+            ThunderCodec* pCodec = pConn->pCodec;
+            if (!pCodec)
             {
-                LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
-                DestroyConnect(conn_iter);
-                return(false);
+                auto codec_iter = mapCodec.find(pConn->eCodecType);
+                if (codec_iter == mapCodec.end())
+                {
+                    LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
+                    DestroyConnect(conn_iter);
+                    return(false);
+                }
+                pCodec = codec_iter->second.get();
             }
             E_CODEC_STATUS eCodecStatus;
             if (util::CODEC_HTTP == conn_iter->second->eCodecType
@@ -3756,12 +4054,12 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
 			{
 				if (pConn->pWaitForSendBuff->ReadableBytes() > 0)   // 正在连接
 				{
-					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pWaitForSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oHttpMsg, pConn->pWaitForSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pWaitForSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pWaitForSendBuff->ReadableBytes());
 				}
 				else
 				{
-					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oHttpMsg, pConn->pSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff->ReadableBytes());
 				}
 			}
@@ -5301,6 +5599,12 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
         pConnAttr->eCodecType = eCodecType;
+        // 缓存 codec 指针, 避免每次 SendTo/Recv 都 mapCodec.find()
+        auto codec_cache_iter = mapCodec.find(eCodecType);
+        if (codec_cache_iter != mapCodec.end())
+        {
+            pConnAttr->pCodec = codec_cache_iter->second.get();
+        }
         tagConnectionAttr* pRaw = pConnAttr.get();
         mapFdAttr.insert(std::make_pair(iFd, std::move(pConnAttr)));
         return(pRaw);
@@ -5448,6 +5752,19 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
                 LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
             }
         }
+    }
+    // 清理协议专属上下文 (如 HTTP 的 HttpConnContext/Arena)
+    if (pConn->pProtoCtx != nullptr)
+    {
+        if (pConn->eCodecType == util::CODEC_HTTP || pConn->eCodecType == util::CODEC_HTTPS)
+        {
+            delete static_cast<net::HttpConnContext*>(pConn->pProtoCtx);
+        }
+        else if (pConn->eCodecType == util::CODEC_PB_INTERNAL)
+        {
+            delete static_cast<net::ProtoConnContext*>(pConn->pProtoCtx);
+        }
+        pConn->pProtoCtx = nullptr;
     }
     mapFdAttr.erase(iter);
     return(true);

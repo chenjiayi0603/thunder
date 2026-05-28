@@ -32,9 +32,7 @@ struct ManagerRuntimeContext
     std::unordered_map<int32, tagWorkerAttr> m_mapWorker;  ///< 业务逻辑工作进程及进程属性，key为pid
     std::unordered_map<int32, int32> m_mapWorkerRestartNum;  ///< 进程被重启次数，key为WorkerIdx
     std::unordered_map<int32, int32> m_mapWorkerFdPid;  ///< 工作进程通信FD对应的进程号
-    std::unordered_map<std::string, tagMsgShell> m_mapCenterMsgShell;  ///< 到center服务器的连接
-    /** 与 m_mapCenterMsgShell 的 key 一致（Center WorkerIdentify）；空表示对所有 Center 上报/注册 */
-    std::string m_strRaftLeaderCenterKey;
+    // m_mapCenterMsgShell / m_strRaftLeaderCenterKey 已迁移至 TcpCenterConnector 插件
 
     std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>> m_mapFdAttr;  ///< 连接的文件描述符属性
     std::unordered_map<uint32, int32> m_mapSeq2WorkerIndex;  ///< 序列号对应的Worker进程编号（用于connect成功后，向对端Manager发送希望连接的Worker进程编号）

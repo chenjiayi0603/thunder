@@ -326,10 +326,11 @@ TEST(ShmRingQueueE2E, WorkerRestartSimulation)
 
     q2->TryEnqueue(2, 2, "new", 3);
     uint32_t cmd, seq, out_len;
-    char buf[256];
+    char buf[256] = {};
     EXPECT_TRUE(q2->TryDequeue(cmd, seq, buf, out_len));
     EXPECT_EQ(cmd, 2u);
-    EXPECT_STREQ(buf, "new");
+    EXPECT_EQ(out_len, 3u);
+    EXPECT_EQ(memcmp(buf, "new", 3), 0);
 
     ShmRingQueue::Destroy(q2, kSlots, 4096);
 }

@@ -85,38 +85,42 @@ cmake --build build -j1
 
 ### 部署与测试
 
+**统一入口：`./deploy.sh`**（所有测试/构建/部署操作）
+
 ```bash
-# 启停
-( cd deploy && ./nodes.sh restart all )
-( cd deploy && ./nodes.sh status )
+# 构建
+./deploy.sh build                 # cmake configure + build + install
 
-# 全部测试 (单元 + E2E)
-./tests/run_all.sh
+# 测试 (速度层级: unit → e2e → bench)
+./deploy.sh test unit             # C++ gtest + Python unit (~45s, 零外部依赖)
+./deploy.sh test e2e              # Docker 集成测试 (~3min, 需 Docker)
+./deploy.sh test                  # 全部: unit + e2e
+./deploy.sh test bench            # wrk 性能基准
 
-# 仅单元测试 (14s, 零外部依赖)
-./tests/run_all.sh unit
+# Docker 环境管理
+./deploy.sh up                    # 启动开发环境 (docker compose up -d)
+./deploy.sh down                  # 停止并清理
+./deploy.sh restart               # 重启
+./deploy.sh status                # 查看容器状态 + 端口
 
-# 仅 E2E 集成测试 (需 Docker)
-./tests/run_all.sh e2e
-MODE=external ./tests/run_all.sh e2e
+# 清理
+./deploy.sh clean                 # 清理 build/ + Docker + tmp
 
-# 构建 + 全部测试
-./tests/run_all.sh build+test
-
-# 仅构建（不跑测试）
-./tests/run_all.sh build
-
-# 清理构建产物
-./tests/run_all.sh clean
-
-# 性能基准测试 (需 wrk)
-./tests/run_all.sh bench
+# 选项
+./deploy.sh test unit --skip-build  # 跳过构建，只跑测试
+./deploy.sh test e2e --keep-docker  # E2E 后保留容器排障
+./deploy.sh test --verbose          # 详细输出
 ```
+
+**旧命令仍可用**（内部转发到 deploy.sh）：
+- `./tests/run_all.sh unit` → 等价 `./deploy.sh test unit`
+- `./docker/dev_up_logs.sh` → 等价 `./deploy.sh up`
 
 ### 改完代码后必须验证
 
-- [ ] `cmake --build build -j1` — 编译通过
-- [ ] `cmake --install build` — 安装到 deploy/
+- [ ] `./deploy.sh build` — 编译 + 安装 (必须通过)
+- [ ] `./deploy.sh test unit` — C++ + Python 单元测试 (全部通过)
+- [ ] (如涉及集成) `./deploy.sh test e2e` — Docker E2E (全部通过)
 - [ ] (如改 Proto) `cmake --build build --target thunder_proto_gen -j1`
 
 ---
@@ -243,22 +247,20 @@ MODE=external ./tests/run_all.sh e2e
 
 #### 改 C++ 代码后
 
-- [ ] `cmake --build build -j1` — 编译检查 (必须通过)
-- [ ] `cmake --install build` — 安装到 deploy/
-- [ ] `( cd deploy && ./nodes.sh restart all )` — 重启节点
-- [ ] `./tests/run_all.sh unit` — 单元测试 (14s)
-- [ ] `./tests/run_all.sh e2e` — E2E 测试 (需 Docker)
+- [ ] `./deploy.sh build` — 编译检查 (必须通过)
+- [ ] `./deploy.sh test unit` — C++ + Python 单元测试 (必须通过)
+- [ ] (如涉及集成) `./deploy.sh test e2e` — Docker E2E (必须通过)
 
 #### 改 Proto 后
 
 - [ ] `cmake --build build --target thunder_proto_gen -j1` — 重新生成 .pb.cc/.pb.h
-- [ ] `cmake --build build -j1` — 全量编译
+- [ ] `./deploy.sh build` — 全量编译
 - [ ] 联调冒烟测试
 
 #### 改部署脚本后
 
-- [ ] `( cd deploy && ./nodes.sh restart all )` — 启停正常
-- [ ] `( cd deploy && ./nodes.sh status )` — 所有节点状态正常
+- [ ] `./deploy.sh restart` — 启停正常
+- [ ] `./deploy.sh status` — 所有服务状态正常
 
 #### 禁止
 
@@ -268,23 +270,9 @@ MODE=external ./tests/run_all.sh e2e
 
 #### 测试后必须清理
 
-每次测试（E2E、冒烟、压测、构建部署）完成后，必须清理：
-
 ```bash
-# Docker Compose 容器与网络（停止并移除，避免端口占用和网络残留）
-( cd docker && docker compose down 2>/dev/null )
-
-# Docker 构建残留（每次 docker compose build 累计数百 MB overlay 层）
-docker system prune -f
-
-# io_uring 诊断日志（busy loop 时可增长到几十 GB）
-rm -f /tmp/asio_uring_diag.log
-
-# E2E 临时文件（若存在）
-rm -rf /tmp/e2e-* /tmp/stress-* 2>/dev/null
+./deploy.sh clean    # 一键清理 build/ + Docker + tmp
 ```
-
-**原因**：Docker overlayfs 每次构建不自动清理，多次 `docker compose build` 可占满磁盘且 overlay mount 导致 `df` 虚报 100%。`asio_uring_diag.log` 在 ring_fd busy loop 场景下单次可达数十 GB。
 
 ---
 
@@ -408,55 +396,43 @@ Gitee：chenjiayi/thunder
 - ⚠️ 已通过（模拟环境）— 标注模拟方式，不展示模拟性能数据
 - ❌ 当前环境无法测试 — 列出原因
 
-## deploytest - Thunder本地部署测试
+## deploytest — Thunder 本地部署测试
 
 当用户说"deploytest"或"本地部署测试"时：
-1. 检查 docker compose 是否可用
-2. 检查项目根目录下是否有 docker-compose.yml，没有则根据项目结构生成
-3. 执行 docker compose up --build -d
-4. 等待所有容器健康（healthcheck通过）
-5. 按Thunder测试规则执行完整端到端测试，不许跳过，不许等用户提示：
 
-   **中心服务（Raft）：**
-   - 多节点选举成功
-   - 日志复制：主节点写入→从节点同步
-   - 服务发现：节点注册→查询→下线
-   - 集群状态查询
-   - 配置同步/下发
+**唯一入口：`./deploy.sh`**
 
-   **deploy/HelloHttp — HTTP接入服务：**
-   - 逐个验证每个API端点：请求+响应+状态码
-   - GET/POST/PUT/DELETE各方法
-   - 参数校验（缺参、越界、非法值）
-   - 错误处理（404/400/500）
+### 第一步：构建 + 单元测试
+```bash
+./deploy.sh test unit    # C++ gtest (~250 cases) + Python pytest (64 cases)，全部通过才继续
+```
 
-   **deploy/HelloHttps — HTTPS接入服务：**
-   - TLS握手成功，证书校验通过
-   - 逐个验证每个API端点：请求+响应+状态码
-   - 异常断连
+### 第二步：E2E 集成测试
+```bash
+./deploy.sh test e2e     # Docker compose up → 等待服务就绪 → pytest E2E (25 cases) → docker compose down
+```
+等价于手动流程：`./deploy.sh build` → `./deploy.sh up` → 等待端口 → `./deploy.sh test e2e --skip-build` → `./deploy.sh down`
 
-   **deploy/HelloWs — WebSocket接入服务：**
-   - 连接→消息收发→断开
-   - 异常断连重连
-   - 逐个验证每个消息类型
+### E2E 覆盖范围
 
-   **deploy/Interface — 接口服务：**
-   - 逐个验证每个API端点：请求+响应+状态码
-   - 参数校验（缺参、越界、非法值）
-   - 错误处理（404/400/500）
-   - 插件加载→调用→卸载→无内存泄漏（ASan验证）
+| 服务 | 测试内容 |
+|------|---------|
+| **Center (Raft)** | 节点选举、日志复制、服务注册/发现、集群状态查询、配置同步 |
+| **HelloHttp** | GET/POST/PUT/DELETE 各方法、参数校验、错误处理 |
+| **HelloHttps** | TLS 握手、证书校验、API 端点、异常断连 |
+| **HelloWs** | WebSocket 连接→消息收发→断开、异常重连 |
+| **Interface** | API 端点、参数校验、错误处理、插件加载→卸载 |
+| **跨服务** | Manager-Worker 通信、心跳机制、全链路交互 |
+| **性能** | QPS、延迟 P99、内存占用 (真实 I/O) |
 
-   **跨服务联调：**
-   - Manager-Worker多进程通信正常
-   - 心跳机制正常
-   - 各接入服务与中心服务/接口服务的交互
+### 测试后清理
+```bash
+./deploy.sh clean        # 一键清理 build/ + Docker + tmp
+```
 
-   **性能数据：**
-   - 各服务QPS、延迟P99、内存占用（真实I/O，非模拟）
-
-6. 测试完成后展示完整输出，按测试规则要求
-7. 失败则分析日志、修复、重试，最多3次
-8. 只有全部端到端测试通过后才能说"测试通过"
-9. 模拟测试通过≠测试通过，硬件限制的标注"当前环境无法测试"及原因
-10. 测试通过后 docker compose down 清理环境
-11. git add + commit + push 所有改动
+### 规则
+- 单元测试通过不算整体通过，E2E 必须也通过
+- 失败则分析日志、修复、重试，最多 3 次
+- 部分通过 = 未通过，要么全通要么明确列出未通过项及原因
+- 模拟测试通过 ≠ 测试通过，硬件限制的标注"当前环境无法测试"及原因
+- git add + commit + push 所有改动

@@ -137,30 +137,20 @@ cmake --build build --target InterfacePlugins -j1
 # 全部测试 (单元 → E2E)
 ./tests/run_all.sh
 
-# 仅单元测试 (零外部依赖, 14 秒)
-./tests/run_all.sh unit
+# 构建
+./deploy.sh build
 
-# 仅端到端测试 (需 Docker)
-./tests/run_all.sh e2e
+# 单元测试 (C++ gtest + Python, ~45s, 零外部依赖)
+./deploy.sh test unit
 
-# external 模式 (二进制在本地运行)
-MODE=external ./tests/run_all.sh e2e
+# E2E 集成测试 (需 Docker)
+./deploy.sh test e2e
 
-# 构建 + 测试
-./tests/run_all.sh build
+# 全部测试 (unit + e2e)
+./deploy.sh test
 
-# 快速模式 (跳过 E2E)
-./tests/run_all.sh fast
-```
-
-或使用更细粒度的 `build_and_test.sh`：
-
-```bash
-./tests/build_and_test.sh              # 构建 + 全部测试
-./tests/build_and_test.sh build        # 仅构建
-./tests/build_and_test.sh test         # 仅测试 (单元 + E2E)
-./tests/build_and_test.sh fast         # 构建 + 单元测试
-```
+# 快速模式 (仅 unit)
+./deploy.sh test unit
 
 ### 单元测试 (纯 Python, 零外部依赖)
 
@@ -182,6 +172,107 @@ cd tests && python3 -m pytest e2e/ -v -s -m "integration or smoke" --mode=local
 ```
 
 详细性能数据见 `docs/performance_benchmark_2026-05-13.md`。
+
+### 性能调优 (压测前必读)
+
+> 测试机硬件: i9-12900H (6P+8E, 20逻辑核, 最大5.0GHz), 30GB DDR4, NVMe SSD, Ubuntu 26.04 LTS
+
+#### 1. CPU governor
+
+#### 1. CPU governor
+
+默认 `powersave` 会将空闲核心降到 400MHz，严重影响单线程事件驱动吞吐（Thunder 实测 −9.7%, Nginx 仅 −1.1%，因 Thunder protobuf/JSON 路径对 CPU 频率更敏感）。
+
+```bash
+# 检查当前模式
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+
+# 设为 performance（需 root）
+echo "performance" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# 验证频率已提升
+grep MHz /proc/cpuinfo | sort -t: -k2 -n | tail -5
+```
+
+> **注意**: i9-12900H 等混合架构 CPU 有 P-core (性能核) 和 E-core (能效核)。Worker 是单线程，若被调度到 E-core 或低频 P-core，吞吐会大幅下降。建议同时用 `taskset` 绑核。
+
+#### 2. I/O Backend 选择
+
+`conf/Hello.json` → `io_backend`:
+
+| 值 | 说明 | 适用场景 |
+|----|------|---------|
+| `"ev"` | libev/epoll **(默认)** | **推荐**，HTTP echo 场景最优 (216k)，高/低频均稳定 |
+| `"native_uring"` | io_uring | 大文件传输/批量异步 I/O 场景，kernel≥5.10 |
+| `"asio_uring"` | asio+io_uring | 需编译选项 `-DTHUNDER_IO_ASIO_URING=ON` |
+| `"dpdk"` | DPDK | 需编译选项 `-DTHUNDER_IO_DPDK=ON` |
+
+```json
+// 推荐:
+{ "io_backend": "ev" }
+
+// 大文件传输/批量 I/O:
+{ "io_backend": "native_uring" }
+```
+
+> 实测 ev (epoll) 在小消息 HTTP echo 场景下优于 native_uring (216k vs 183k)，io_uring 的 SQE 构造开销 > 节省的 syscall 次数。详见 `docs/reports/thunder_vs_nginx_benchmark_20260526.md` §1.1。
+
+#### 5. 对比测试注意事项
+
+与 Nginx/其他服务对比时必须**同一 CPU governor**：
+
+```
+performance 公平对比 (5/28, P-core 绑核):
+  Thunder Fast Path (ev)  216.0k  (109%)  🏆 超越 Nginx
+  Nginx  POST              198.2k  (100%)
+  Thunder 完整路径 (ev)     132.5k  (67%)
+  
+powersave 公平对比:
+  Nginx  POST              192.9k  (100%)
+  Thunder Fast Path        184.8k  (96%)
+  Thunder 完整路径         132.1k  (68%)
+```
+
+> **对比测试必须同 governor + 同核心**。若一方 performance 一方 powersave，或一方 P-core 一方 E-core，偏差可达 15-20%。
+
+#### 3. 日志级别
+
+压测时必须用 `INFO` 或更高级别，`TRACE` 会导致 70% 性能下降（实测 64k vs 216k）。
+
+```json
+{ "log_level": "INFO" }
+```
+
+#### 4. 进程绑核 (i9-12900H 混合架构必须)
+
+> i9-12900H: 6 P-core (max 5.0GHz) + 8 E-core (max 3.8GHz)。Worker 默认可能调度到 E-core，吞吐损失 ~17%。
+
+**核心拓扑**:
+
+```
+P-core (12 逻辑核, 4.9-5.0GHz): cpu0-11  (cpu4-7 最高频 5.0GHz)
+E-core (8 逻辑核, 3.8GHz):     cpu12-19
+```
+
+**绑核命令**:
+
+```bash
+# 查看 Worker 当前跑在哪个核
+ps -eo pid,psr,comm | grep Hello_robot_W0
+
+# 绑到 P-core 4-9 (3个物理 P-core, 含最高频 5.0GHz)
+taskset -cp 4-9 $(pgrep Hello_robot_W0)
+
+# 验证
+taskset -cp $(pgrep Hello_robot_W0)
+# → current affinity list: 4-9
+
+# 启动时绑核 (推荐)
+taskset -c 4-9 ./bin/HelloHttp conf/Hello.json
+
+# wrk 绑到其他 P-core 避免竞争
+taskset -c 0-3 wrk -t4 -c100 ...
+```
 
 ---
 

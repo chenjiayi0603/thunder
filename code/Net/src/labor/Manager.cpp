@@ -13,6 +13,7 @@
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
+#include "labor/TcpCenterConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
@@ -204,6 +205,15 @@ Manager::Manager(const std::string& strConfFile)
         LOG4_WARN("InitIoBackend failed, using legacy ev_io path");
     }
 
+    // CenterConnector 插件初始化（必须在 m_loop 创建之后）
+    m_pCenterConnector = CreateCenterConnector();
+    if (m_pCenterConnector)
+    {
+        m_pCenterConnector->Init(m_loop,
+            [this](const CenterEvent& ev) { this->OnCenterEvent(ev); },
+            this);
+    }
+
     ReportToCenter();
 
 }
@@ -336,25 +346,32 @@ bool Manager::RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* w
                             }
                             else
                             {
-                                LOG4_DEBUG("Received data from connection. strIdentify: %s. Number of center shells: %zu",
-                                           conn_iter->second->strIdentify.c_str(), m_mapCenterMsgShell.size());
+                                LOG4_TRACE("Received data from connection. strIdentify: %s.", conn_iter->second->strIdentify.c_str());
                                            
-								auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
-								const bool bCenterCmd =
-									(oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER) ||
-									(oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER) ||
-									(oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT) ||
-									(oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT);
-								if (center_iter != m_mapCenterMsgShell.end() || bCenterCmd)
-								{// center发来的，或尚未建立identify但消息类型已明确为center链路
-									bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody,pConn);
+								// Center 消息路由：通过 CenterConnector 插件
+
+								bool bCenterHandled = false;
+
+								if (m_pCenterConnector
+
+								    && m_pCenterConnector->IsCenterConnection(pConn->strIdentify))
+
+								{
+
+								    bCenterHandled = m_pCenterConnector->TryConsumeMessage(
+
+								        pConn->iFd, pConn->ulSeq, pConn->strIdentify,
+
+								        oInMsgHead.cmd(), oInMsgHead.seq(), oInMsgBody.body());
+
 								}
-								else
+
+								if (!bCenterHandled)
+
 								{//其他节点（非中心）发来信息
-									LOG4_TRACE("No matching center found for strIdentify: %s, proceeding with DisposeDataAndTransferFd. m_mapCenterMsgShell.size()=%zu",
-											    pConn->strIdentify.c_str(), m_mapCenterMsgShell.size());
-				
-									bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
+
+								    bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
+
 								}
                             }
                             // 跳过已处理的消息头和消息体字节
@@ -466,15 +483,7 @@ bool Manager::IoWrite(tagManagerIoWatcherData* pData, struct ev_io* watcher)
                 {
                     tagMsgShell stMsgShell(pData->iFd,pConn->ulSeq);
                     //AddInnerFd(stMsgShell); 只有Worker需要
-                    auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
-                    if (center_iter == m_mapCenterMsgShell.end())
-                    {
-                        m_mapCenterMsgShell.insert(std::make_pair(pConn->strIdentify, stMsgShell));
-                    }
-                    else
-                    {
-                        center_iter->second = stMsgShell;
-                    }
+                    // Center 连接注册已委托给 CenterConnector 插件
                     ConnectWorker oConnWorker;
                     oConnWorker.set_worker_index(index_iter->second);
                     m_mapSeq2WorkerIndex.erase(index_iter);
@@ -613,19 +622,30 @@ bool Manager::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                     }
                     else
                     {
-                        auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
-                        const bool bCenterCmd =
-                            (oInMsgHead.cmd() == CMD_REQ_NODE_REGISTER) ||
-                            (oInMsgHead.cmd() == CMD_RSP_NODE_REGISTER) ||
-                            (oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT) ||
-                            (oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT);
-                        if (center_iter != m_mapCenterMsgShell.end() || bCenterCmd)
+                        // Center 消息路由：通过 CenterConnector 插件
+
+                        bool bCenterHandled = false;
+
+                        if (m_pCenterConnector
+
+                            && m_pCenterConnector->IsCenterConnection(pConn->strIdentify))
+
                         {
-                            bContinue = DisposeDataFromCenter(oInMsgHead, oInMsgBody, pConn);
+
+                            bCenterHandled = m_pCenterConnector->TryConsumeMessage(
+
+                                pConn->iFd, pConn->ulSeq, pConn->strIdentify,
+
+                                oInMsgHead.cmd(), oInMsgHead.seq(), oInMsgBody.body());
+
                         }
-                        else
+
+                        if (!bCenterHandled)
+
                         {
+
                             bContinue = DisposeDataAndTransferFd(oInMsgHead, oInMsgBody, pConn);
+
                         }
                     }
                     pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgBody.ByteSize());
@@ -762,15 +782,7 @@ bool Manager::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
             if (index_iter != m_mapSeq2WorkerIndex.end())
             {
                 tagMsgShell stMsgShell(iFd, ulSeq);
-                auto center_iter = m_mapCenterMsgShell.find(pConn->strIdentify);
-                if (center_iter == m_mapCenterMsgShell.end())
-                {
-                    m_mapCenterMsgShell.insert(std::make_pair(pConn->strIdentify, stMsgShell));
-                }
-                else
-                {
-                    center_iter->second = stMsgShell;
-                }
+                // Center 连接已委托给 CenterConnector 插件
                 ConnectWorker oConnWorker;
                 oConnWorker.set_worker_index(index_iter->second);
                 m_mapSeq2WorkerIndex.erase(index_iter);
@@ -840,6 +852,12 @@ bool Manager::ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct
 void Manager::Run()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // libev 事件循环 — 每次迭代的执行顺序 (详见 libev/ev.c:ev_run):
+    //   [三路-1] ev_prepare 回调 → 投递 SQE + 抢先收割 CQE (AsioUringIoBackend::OnPrepare)
+    //   backend_poll (epoll_wait) → 阻塞等待 ring_fd/业务 fd/timer
+    //   [三路-2] ev_io 回调 → ring_fd 可读 → 接货 CQE (AsioUringIoBackend::OnRingReady)
+    //             + 其他就绪 fd 的 IoCallback
+    //   [三路-3] ev_check 回调 → 补刀收割 CQE (AsioUringIoBackend::OnCheck)
     ev_run (m_loop, 0);
 }
 
@@ -1110,12 +1128,7 @@ bool Manager::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, 
         LOG4_TRACE("fd %d seq %u identify %s.iter->second->pWaitForSendBuff->ReadableBytes()=%zu",
                         iFd, ulSeq, strIdentify.c_str(), pConn->pWaitForSendBuff->ReadableBytes());
 		m_mapSeq2WorkerIndex.insert(std::make_pair(ulSeq, iWorkerIndex));
-		auto center_iter = m_mapCenterMsgShell.find(strIdentify);
-		if (center_iter != m_mapCenterMsgShell.end())
-		{
-			center_iter->second.iFd = iFd;
-			center_iter->second.ulSeq = ulSeq;
-		}
+		// Center 连接已委托给 CenterConnector 插件管理
         if (connect(iFd, &addr, sizeof(addr)) < 0 && errno != EINPROGRESS)
         {
             LOG4_ERROR("connect error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
@@ -1311,58 +1324,8 @@ bool Manager::Init()
     }
     LOG4_INFO("%s() pid(%d) listen on iPortForServer(%d) strHostForServer(%s) iServerSocketBackLog(%d)",
     		__FUNCTION__,nPid,m_iPortForServer,m_strHostForServer.c_str(),m_iServerSocketBackLog);
-    // 创建到Center的连接信息（center 可为 JSON 数组或逗号分隔的 host:port 字符串）
-    auto insertCenterIdentify = [this](const std::string& strIdentify)
-    {
-        tagMsgShell stMsgShell;
-        LOG4_TRACE("m_mapCenterMsgShell.insert(%s, fd %d, seq %u)", strIdentify.c_str(),
-                        stMsgShell.iFd, stMsgShell.ulSeq);
-        m_mapCenterMsgShell.insert(std::make_pair(strIdentify, stMsgShell));
-    };
-    util::CJsonObject& oCenter = m_oCurrentConf["center"];
-    if (oCenter.IsArray() && oCenter.GetArraySize() > 0)
-    {
-        for (int i = 0; i < oCenter.GetArraySize(); ++i)
-        {
-            // CenterServer 只有一个 Worker
-            std::string strIdentify = oCenter[i]("host") + std::string(":") + oCenter[i]("port") + std::string(".0");
-            insertCenterIdentify(strIdentify);
-        }
-    }
-    else
-    {
-        std::string csv;
-        if (m_oCurrentConf.Get("center", csv))
-        {
-            size_t start = 0;
-            while (start < csv.size())
-            {
-                size_t comma = csv.find(',', start);
-                std::string token = (comma == std::string::npos) ? csv.substr(start) : csv.substr(start, comma - start);
-                start = (comma == std::string::npos) ? csv.size() : comma + 1;
-                TrimCenterToken(token);
-                if (token.empty())
-                {
-                    continue;
-                }
-                size_t colon = token.rfind(':');
-                if (colon == std::string::npos || colon + 1 >= token.size())
-                {
-                    LOG4_WARN("skip invalid center entry (expect host:port): %s", token.c_str());
-                    continue;
-                }
-                std::string host = token.substr(0, colon);
-                std::string port = token.substr(colon + 1);
-                TrimCenterToken(host);
-                TrimCenterToken(port);
-                if (host.empty() || port.empty())
-                {
-                    continue;
-                }
-                insertCenterIdentify(host + std::string(":") + port + std::string(".0"));
-            }
-        }
-    }
+    // Center M-eM-^PM-^MM-fM-^NM-%M-dM-?M-!M-fM-^AM-/M-eM-7M-2M-eM-7M-"M-fM-^LM-^_ m_pCenterConnector M-fM-^OM-^RM-dM-;M-6M-gM-.M-!M-gM-^PM-^FM-oM-<M-^HM-eM-^\M-(M-fM-^^M-^DM-iM-^@M- M-eM-^GM-=M-dM-8M--M-eM-^HM-^]M-eM-^PM-^LM-eM-^PM-^LM-oM-<M-^I
+
 #ifdef WORKER_OVERDUE
     int iWorkerBeat = WORKER_OVERDUE > ((gc_iBeatInterval << 1) + 1) ? WORKER_OVERDUE:((gc_iBeatInterval << 1) + 1);
     if (iWorkerBeat > m_iWorkerBeat) m_iWorkerBeat = iWorkerBeat;
@@ -1377,6 +1340,12 @@ bool Manager::Init()
 void Manager::Destroy()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
+    // 先销毁 CenterConnector 插件（关闭所有 Center 连接）
+    if (m_pCenterConnector)
+    {
+        m_pCenterConnector->Destroy();
+        m_pCenterConnector.reset();
+    }
     m_mapSysCmd.clear();
     m_mapWorker.clear();
     m_mapWorkerFdPid.clear();
@@ -1987,16 +1956,18 @@ bool Manager::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnec
     }
     LOG4_TRACE("%s() iter->second->pIoWatcher = 0x%p, fd %d", __FUNCTION__,
                     iter->second->pIoWatcher, iter->second->iFd);
-    auto center_iter = m_mapCenterMsgShell.find(iter->second->strIdentify);
-    if (center_iter != m_mapCenterMsgShell.end())
+    // 通知 CenterConnector 插件连接已销毁
+
+    if (m_pCenterConnector
+
+        && m_pCenterConnector->IsCenterConnection(iter->second->strIdentify))
+
     {
-        if (!m_strRaftLeaderCenterKey.empty() && iter->second->strIdentify == m_strRaftLeaderCenterKey)
-        {
-            m_strRaftLeaderCenterKey.clear();
-            LOG4_INFO("%s lost connection to cached raft leader %s, fan-out all centers", __FUNCTION__, iter->second->strIdentify.c_str());
-        }
-        center_iter->second.iFd = 0;
-        center_iter->second.ulSeq = 0;
+
+        m_pCenterConnector->OnConnectionDestroy(
+
+            iter->second->strIdentify, iter->second->iFd, iter->second->ulSeq);
+
     }
     // Cancel IoBackend operations before cleaning ev_io watchers
     if (m_pIoBackend)
@@ -2181,7 +2152,8 @@ void Manager::RefreshServer()
  */
 bool Manager::ReportToCenter(bool boRegister)
 {
-	if (m_mapCenterMsgShell.size() > 0)
+	// 委托给 CenterConnector 插件
+	if (m_pCenterConnector)
 	{
 		int iLoad = 0;
 		int iConnect = 0;
@@ -2191,8 +2163,6 @@ bool Manager::ReportToCenter(bool boRegister)
 		int iSendByte = 0;
 		int iClientNum = 0;
 		NodeReport oNodeReport;
-		MsgHead oMsgHead;
-		MsgBody oMsgBody;
 		oNodeReport.set_node_type(m_strNodeType);
 		oNodeReport.set_node_id(m_uiNodeId);
 		oNodeReport.set_node_ip(m_strNodeType);
@@ -2247,64 +2217,12 @@ bool Manager::ReportToCenter(bool boRegister)
 		oNode->set_send_byte(iSendByte);
 		oNode->set_client(iClientNum);
 
-		oMsgBody.set_body(oNodeReport.SerializeAsString());
-		oMsgHead.set_cmd(CMD_REQ_NODE_STATUS_REPORT);
-		oMsgHead.set_seq(GetSequence());
-		oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
 		LOG4_TRACE("%s():%s", __FUNCTION__, oNodeReport.DebugString().c_str());
-
-		auto sendToOneCenter = [&](const std::string& strCenterKey, const tagMsgShell& stShell) {
-			if (stShell.iFd == 0)
-			{
-				oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
-				LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
-				AutoSend(strCenterKey, oMsgHead, oMsgBody);
-			}
-			else
-			{
-				if (boRegister)
-				{
-					oMsgHead.set_cmd(CMD_REQ_NODE_REGISTER);
-					LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
-					SendTo(stShell, oMsgHead, oMsgBody);
-				}
-				else
-				{
-					oMsgHead.set_cmd(CMD_REQ_NODE_STATUS_REPORT);
-					LOG4_TRACE("%s() cmd %d -> %s", __FUNCTION__, oMsgHead.cmd(), strCenterKey.c_str());
-					SendTo(stShell, oMsgHead, oMsgBody);
-				}
-			}
-		};
-
-		if (m_strRaftLeaderCenterKey.empty())
-		{
-			for (const auto& center_iter : m_mapCenterMsgShell)
-			{
-				sendToOneCenter(center_iter.first, center_iter.second);
-			}
-		}
-		else
-		{
-			auto leader_it = m_mapCenterMsgShell.find(m_strRaftLeaderCenterKey);
-			if (leader_it != m_mapCenterMsgShell.end())
-			{
-				sendToOneCenter(leader_it->first, leader_it->second);
-			}
-			else
-			{
-				LOG4_WARN("%s cached leader %s not in center map, clear and fan-out", __FUNCTION__, m_strRaftLeaderCenterKey.c_str());
-				m_strRaftLeaderCenterKey.clear();
-				for (const auto& center_iter : m_mapCenterMsgShell)
-				{
-					sendToOneCenter(center_iter.first, center_iter.second);
-				}
-			}
-		}
+		m_pCenterConnector->ReportNodeStatus(oNodeReport.SerializeAsString(), boRegister);
 	}
 	else
 	{
-		LOG4_TRACE("%s()", __FUNCTION__);
+		LOG4_TRACE("%s() no center connector", __FUNCTION__);
 	}
     return(true);
 }
@@ -2584,7 +2502,7 @@ bool Manager::DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody&
         oInMsgHead.cmd() == CMD_REQ_NODE_STATUS_REPORT ||
         oInMsgHead.cmd() == CMD_RSP_NODE_STATUS_REPORT)
     {
-        // 某些连接在identify尚未建立时会先收到Center链路消息，按Center通路处理，避免误判为transfer-fd。
+        // 疑似 Center 协议消息，优先通过插件消费
         return DisposeDataFromCenter(oInMsgHead, oInMsgBody, pConn);
     }
 
@@ -2637,202 +2555,178 @@ bool Manager::DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody&
     return(false);
 }
 
-void Manager::UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeReportRsp)
-{
-    const uint32_t err = oNodeReportRsp.errcode();
-    if (err == 2u)
-    {
-        m_strRaftLeaderCenterKey.clear();
-        LOG4_TRACE("%s err=2 (no stable raft leader), fan-out all centers", __FUNCTION__);
-        return;
-    }
-    const std::string& leader = oNodeReportRsp.current_leader_identify();
-    if (!leader.empty())
-    {
-        if (m_mapCenterMsgShell.find(leader) != m_mapCenterMsgShell.end())
-        {
-            if (m_strRaftLeaderCenterKey != leader)
-            {
-                LOG4_INFO("%s cache raft leader center %s (err=%u raft_term=%llu)", __FUNCTION__, leader.c_str(), err,
-                          static_cast<unsigned long long>(oNodeReportRsp.raft_term()));
-            }
-            m_strRaftLeaderCenterKey = leader;
-        }
-        else
-        {
-            m_strRaftLeaderCenterKey.clear();
-            LOG4_TRACE("%s leader %s not in local center config, fan-out all", __FUNCTION__, leader.c_str());
-        }
-    }
-    else if (err == 0u)
-    {
-        m_strRaftLeaderCenterKey.clear();
-        LOG4_TRACE("%s err=0 without leader hint, fan-out all", __FUNCTION__);
-    }
-}
+
 
 bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oInMsgBody,tagConnectionAttr* pConn)
 {
     LOG4_TRACE("%s(cmd %u, seq %u)", __FUNCTION__, oInMsgHead.cmd(), oInMsgHead.seq());
-	tagMsgShell stMsgShell(pConn->iFd,pConn->ulSeq);
-    int iErrno = 0;
-    // 判断是否为新请求，若是则直接转发给Worker，并回复Center已收到请求
+    tagMsgShell stMsgShell(pConn->iFd,pConn->ulSeq);
+
+    // 优先通过 CenterConnector 插件消费（处理所有 Center 协议消息）
+    if (m_pCenterConnector
+        && m_pCenterConnector->TryConsumeMessage(
+            pConn->iFd, pConn->ulSeq, pConn->strIdentify,
+            oInMsgHead.cmd(), oInMsgHead.seq(), oInMsgBody.body()))
+    {
+        return true;
+    }
+
+    // 降级路径：当插件不可用时，直接处理通用 REQ 命令（保留最小兼容集）
     if (gc_uiCmdReq & oInMsgHead.cmd())
     {
-		uint32 uiCmd = gc_uiCmdBit & oInMsgHead.cmd();
-		auto cmd_iter = m_mapSysCmd.find(uiCmd);
-		if (cmd_iter != m_mapSysCmd.end())
-		{
-			cmd_iter->second->AnyMessage(stMsgShell, oInMsgHead, oInMsgBody);
-		}
-		else
-		{
-			if (CMD_REQ_NODE_STOP == oInMsgHead.cmd())
-			{
-				LOG4_TRACE("%s CMD_REQ_NODE_STOP", __FUNCTION__);//退出节点
-				return(true);
-			}
-			else if (CMD_REQ_NODE_RESTART_WORKERS == oInMsgHead.cmd())
-			{
-				LOG4_TRACE("%s CMD_REQ_NODE_RESTART_WORKERS", __FUNCTION__);//重启工作者
-				return(true);
-			}
-			else if (CMD_REQ_SET_NODE_CUSTOM_CONFIG == oInMsgHead.cmd())
-			{
-				OrdinaryResponse oRes;
-				ConfigInfo oConfigInfo;
-				if (!oConfigInfo.ParseFromString(oInMsgBody.body()))
-				{
-					oRes.set_err_no(1);
-					oRes.set_err_msg("invalid ConfigInfo");
-				}
-				else if (!GetCustomConfigVersionData().SetCustomConfig(oConfigInfo.file_content()))
-				{
-					oRes.set_err_no(2);
-					oRes.set_err_msg("write custom shm failed");
-				}
-				else
-				{
-					oRes.set_err_no(0);
-					oRes.set_err_msg("OK");
-					LOG4_INFO("%s() custom mirror updated, version=%llu, bytes=%zu",
-							__FUNCTION__,
-							static_cast<unsigned long long>(GetCustomConfigVersionData().GetCustomVersion()),
-							oConfigInfo.file_content().size());
-				}
-				SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(), oRes.SerializeAsString());
-				return true;
-			}
-			SendToWorker(oInMsgHead, oInMsgBody);
-			OrdinaryResponse oRes;
-			oRes.set_err_no(0);
-			oRes.set_err_msg("OK");
-			SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(),oRes.SerializeAsString());
-		}
-    }
-    else    // 回调
-    {
-        if (CMD_RSP_NODE_REGISTER == oInMsgHead.cmd()||CMD_RSP_NODE_STATUS_REPORT == oInMsgHead.cmd()) //Manager这层只有向center注册会收到回调，上报状态不收回调或者收到回调不必处理
+        uint32 uiCmd = gc_uiCmdBit & oInMsgHead.cmd();
+        auto cmd_iter = m_mapSysCmd.find(uiCmd);
+        if (cmd_iter != m_mapSysCmd.end())
         {
-        	NodeReportRsp oNodeReportRsp;
-        	if (oNodeReportRsp.ParseFromString(oInMsgBody.body()))
-        	{
-        		UpdateRaftLeaderHintFromNodeReportRsp(oNodeReportRsp);
-        		if (oNodeReportRsp.errcode() == 0)
-        		{
-                    // 1) 路由镜像：由 Manager 负责落地到共享内存（只有当订阅快照内容变化才写）
-                    //    Worker 只轮询版本并消费，不依赖此处主动通知。
-                    {
-                        const NodeNotice& oSnapshot = oNodeReportRsp.subscribed_route_snapshot();
-                        // 按 Center 现有逻辑：仅当 node_arry_reg_size() > 0 时才会附带路由快照
-                        if (oSnapshot.node_arry_reg_size() > 0)
-                        {
-                            NodeNotice oldSnapshot;
-                            bool hasOld = GetRouteNoticeVersionData().GetNodeNotice(oldSnapshot);
-                            std::string newSer = oSnapshot.SerializeAsString();
-                            std::string oldSer;
-                            if (hasOld)
-                            {
-                                oldSer = oldSnapshot.SerializeAsString();
-                            }
+            cmd_iter->second->AnyMessage(stMsgShell, oInMsgHead, oInMsgBody);
+        }
+        else if (CMD_REQ_NODE_STOP == oInMsgHead.cmd())
+        {
+            LOG4_INFO("%s center requested NODE_STOP", __FUNCTION__);
+        }
+        else if (CMD_REQ_NODE_RESTART_WORKERS == oInMsgHead.cmd())
+        {
+            LOG4_INFO("%s center requested RESTART_WORKERS", __FUNCTION__);
+            RestartWorkers();
+        }
+        else
+        {
+            // 未识别的 REQ：转发给 Worker 并回复 OK
+            SendToWorker(oInMsgHead, oInMsgBody);
+            OrdinaryResponse oRes;
+            oRes.set_err_no(0);
+            oRes.set_err_msg("OK");
+            SendTo(stMsgShell, oInMsgHead.cmd() + 1, oInMsgHead.seq(), oRes.SerializeAsString());
+        }
+    }
+    else
+    {
+        LOG4_TRACE("%s unhandled RSP cmd %u (plugin not available)", __FUNCTION__, oInMsgHead.cmd());
+    }
+    return true;
+}
 
-                            if (!hasOld || oldSer != newSer)
-                            {
-                                const size_t bytes = newSer.size();
-                                if (GetRouteNoticeVersionData().SetNodeNotice(oSnapshot))
-                                {
-                                    LOG4_INFO("%s() route mirror updated, version=%llu, bytes=%zu",
-                                              __FUNCTION__,
-                                              static_cast<unsigned long long>(GetRouteNoticeVersionData().GetNodeNoticeVersion()),
-                                              bytes);
-                                }
-                                else
-                                {
-                                    const auto bs = oSnapshot.ByteSize();
-                                    LOG4_ERROR("%s() route mirror shm write failed, bytes=%d, reg_size=%d, exit_size=%d",
-                                                __FUNCTION__,
-                                                bs,
-                                                oSnapshot.node_arry_reg_size(),
-                                                oSnapshot.node_arry_exit_size());
-                                }
-                            }
-                            else
-                            {
-                                LOG4_TRACE("%s() route mirror unchanged, skip write. version=%llu, bytes=%zu",
-                                           __FUNCTION__,
-                                           static_cast<unsigned long long>(GetRouteNoticeVersionData().GetNodeNoticeVersion()),
-                                           newSer.size());
-                            }
+std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
+{
+    std::string connectorType = "tcp";
+    m_oCurrentConf.Get("center.connector", connectorType);
+
+    if (connectorType == "tcp" || connectorType.empty())
+    {
+        auto p = std::make_unique<TcpCenterConnector>(m_oCurrentConf["center"]);
+        auto* tcp = static_cast<TcpCenterConnector*>(p.get());
+        tcp->SetNodeInfo(m_strNodeType,
+                         m_strHostForServer, m_iPortForServer,
+                         m_strHostForClient, m_iPortForClient,
+                         m_strGateway, m_iGatewayPort,
+                         m_uiWorkerNum);
+        return p;
+    }
+
+    LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
+    auto p = std::make_unique<TcpCenterConnector>(m_oCurrentConf["center"]);
+    auto* tcp = static_cast<TcpCenterConnector*>(p.get());
+    tcp->SetNodeInfo(m_strNodeType,
+                     m_strHostForServer, m_iPortForServer,
+                     m_strHostForClient, m_iPortForClient,
+                     m_strGateway, m_iGatewayPort,
+                     m_uiWorkerNum);
+    return p;
+}
+
+void Manager::OnCenterEvent(const CenterEvent& ev)
+{
+    switch (ev.type)
+    {
+    case CenterEventType::Registered:
+        if (ev.errcode == 0)
+        {
+            // node_id 更新
+            if (ev.node_id != 0 && m_uiNodeId != ev.node_id)
+            {
+                m_uiNodeId = ev.node_id;
+                LOG4_INFO("OnCenterEvent: node_id updated to %u", m_uiNodeId);
+
+                MsgHead oMsgHead;
+                MsgBody oMsgBody;
+                oMsgHead.set_cmd(CMD_REQ_REFRESH_NODE_ID);
+                oMsgHead.set_seq(GetSequence());
+                oMsgHead.set_msgbody_len(0);
+                SendToWorker(oMsgHead, oMsgBody);
+            }
+
+            // 路由快照 → 共享内存
+            if (!ev.route_snapshot.empty())
+            {
+                NodeNotice oSnapshot;
+                if (oSnapshot.ParseFromString(ev.route_snapshot))
+                {
+                    NodeNotice oldSnapshot;
+                    bool hasOld = GetRouteNoticeVersionData().GetNodeNotice(oldSnapshot);
+                    std::string newSer = oSnapshot.SerializeAsString();
+                    std::string oldSer;
+                    if (hasOld) oldSer = oldSnapshot.SerializeAsString();
+
+                    if (!hasOld || oldSer != newSer)
+                    {
+                        if (GetRouteNoticeVersionData().SetNodeNotice(oSnapshot))
+                        {
+                            LOG4_INFO("OnCenterEvent: route mirror updated, version=%llu bytes=%zu",
+                                      static_cast<unsigned long long>(
+                                          GetRouteNoticeVersionData().GetNodeNoticeVersion()),
+                                      newSer.size());
+                        }
+                        else
+                        {
+                            LOG4_ERROR("OnCenterEvent: route mirror shm write failed");
                         }
                     }
-
-                    // 2) node_id 更新：仅 node_id 变化时主动通知 Worker
-                    if (m_uiNodeId != oNodeReportRsp.node_id())
-                    {
-                        m_uiNodeId = oNodeReportRsp.node_id();
-                        LOG4_INFO("SetNodeId node_id(%u)!", oNodeReportRsp.node_id());
-
-                        MsgHead oMsgHead;
-                        oMsgHead.set_cmd(CMD_REQ_REFRESH_NODE_ID);
-                        oMsgHead.set_seq(oInMsgHead.seq());
-                        oMsgHead.set_msgbody_len(oInMsgHead.msgbody_len());
-                        SendToWorker(oMsgHead, oInMsgBody);
-                    }
-        		}
-        		else
-        		{
-        			LOG4_WARN("NodeReport/Register rsp from center error, errcode %u!", oNodeReportRsp.errcode());
-        		}
-        	}
-        	else
-        	{
-        		LOG4_WARN("oNodeReportRsp parse error!");
-        	}
-        }
-        else if (CMD_RSP_CONNECT_TO_WORKER == oInMsgHead.cmd()) // 连接center时的回调
-        {
-            MsgHead oOutMsgHead;
-            MsgBody oOutMsgBody;
-            TargetWorker oTargetWorker;
-            oTargetWorker.set_err_no(0);
-            oTargetWorker.set_worker_identify(GetNodeIdentify());
-            oTargetWorker.set_node_type(GetNodeType());
-            oTargetWorker.set_err_msg("OK");
-            oOutMsgBody.set_body(oTargetWorker.SerializeAsString());
-            oOutMsgHead.set_cmd(CMD_REQ_TELL_WORKER);//CMD_REQ_TELL_WORKER之后，连同之前的数据，开始发送数据了
-            oOutMsgHead.set_seq(GetSequence());
-            oOutMsgHead.set_msgbody_len(oOutMsgBody.ByteSize());
-            pConn->pSendBuff->Write(oOutMsgHead.SerializeAsString().c_str(), oOutMsgHead.ByteSize());
-            pConn->pSendBuff->Write(oOutMsgBody.SerializeAsString().c_str(), oOutMsgBody.ByteSize());
-            pConn->pSendBuff->Write(pConn->pWaitForSendBuff.get(), pConn->pWaitForSendBuff->ReadableBytes());
-            if (!SendTo(pConn))
-            {
-            	LOG4_ERROR("send to fd %d error %d: %s",stMsgShell.iFd, iErrno, strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
-				return(false);
+                }
             }
         }
+        else
+        {
+            LOG4_WARN("OnCenterEvent: register failed, errcode=%d msg=%s",
+                      ev.errcode, ev.errmsg.c_str());
+        }
+        break;
+
+    case CenterEventType::ConfigUpdated:
+        if (!ev.config_content.empty())
+        {
+            if (GetCustomConfigVersionData().SetCustomConfig(ev.config_content))
+            {
+                LOG4_INFO("OnCenterEvent: custom config updated, bytes=%zu",
+                          ev.config_content.size());
+            }
+            else
+            {
+                LOG4_ERROR("OnCenterEvent: custom config shm write failed");
+            }
+        }
+        break;
+
+    case CenterEventType::NodeStop:
+        LOG4_INFO("OnCenterEvent: center requested node stop");
+        // TODO: graceful shutdown
+        break;
+
+    case CenterEventType::NodeRestartWorkers:
+        LOG4_INFO("OnCenterEvent: center requested restart workers");
+        RestartWorkers();
+        break;
+
+    case CenterEventType::ConnectionLost:
+        LOG4_INFO("OnCenterEvent: connection to center lost");
+        break;
+
+    case CenterEventType::ConnectionRestored:
+        LOG4_INFO("OnCenterEvent: connection to center restored");
+        break;
+
+    default:
+        break;
     }
-    return(true);
 }
 
 } /* namespace net */

@@ -14,6 +14,8 @@
 #include "util/CBuffer.hpp"
 #include "util/StreamCodec.hpp"
 
+namespace net { class ThunderCodec; }
+
 enum ConnectStatus
 {
     eConnectStatus_init = 0,
@@ -46,6 +48,9 @@ struct tagConnectionAttr
     std::string strIdentify;                            ///< 连接标识
     ev_io* pIoWatcher = nullptr;                        ///< 不在结构体析构时回收
     ev_timer* pTimeWatcher = nullptr;                   ///< 不在结构体析构时回收
+    // 缓存的编解码器指针 (连接建立时填入, 避免每条请求 mapCodec.find 的 hash 查找)
+    net::ThunderCodec* pCodec = nullptr;
+    void* pProtoCtx = nullptr;                          ///< 协议专属上下文 (HTTP: HttpConnContext*, Arena 等)
     std::string strSessionKey;                          ///< 会话密钥
 
     std::unordered_map<uint32, uint32> mapCmdsUnitMsgCounter; ///< 连接的单位时间指令统计
