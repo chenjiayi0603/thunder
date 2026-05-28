@@ -2,18 +2,6 @@
 
 > 日期: 2026-05-27 | 分支: dev | 环境: **Ubuntu 26.04 LTS (原生)** | 工具: wrk 4.1.0
 
----
-
-## ⚠️ 5/26 数据作废
-
-> 5/26 的 Nginx 对比存在两个严重问题，数据已作废：
-> 1. Nginx 默认 `worker_processes auto`，20 核 CPU 上启动 **20 个 worker 进程**，与 Thunder 1 进程不对等
-> 2. Nginx POST 端返回 **100% 非 2xx 错误码**（405/404），测试无效
->
-> 以下所有对比数据均为 5/27 公平重测：**双方 1 worker，测试场景一致**。
-
----
-
 ## 🏁 最终基准 (2026-05-28, performance governor, P-core 绑核, wrk -t4 -c100 -d15s POST)
 
 > ⚠️ **公平对比**: Nginx 与 Thunder 均在同一 `performance` governor + P-core 绑核下实测。
@@ -71,6 +59,24 @@ P-cores (6物理 + 6HT = 12逻辑, max 4.9-5.0GHz):
 E-cores (8物理 = 8逻辑, max 3.8GHz):
   cpu12-19
 ```
+
+#### i9-12900H vs 服务器级 Xeon 对比
+
+> Thunder 是单线程事件驱动模型 (1 Worker = 1 线程), 吞吐瓶颈在**单核性能**而非核心数。
+
+| 维度 | i9-12900H (本机) | Xeon 典型 (如 Gold 6338) | 结论 |
+|------|:---:|:---:|------|
+| 单核最大频率 | **5.0 GHz** | 3.2 GHz | i9 单核更快 |
+| 单 Worker RPS | **216k** (实测) | 估 130-150k | i9 胜 |
+| 核心数 | 6P+8E (20线程) | 32核 (64线程) | Xeon 多核胜 |
+| 核心架构 | 混合 (P+E) | 同构 (全大核) | Xeon 省心 |
+| TDP | 45W (笔记本) | 205W+ | — |
+| ECC 内存 | ❌ | ✅ | Xeon 生产级 |
+| 多 Worker 扩展 | 受限于 E-core | 32核线性扩展 | Xeon 胜 |
+| NUMA | 无 | 多 socket | Xeon 强但复杂 |
+
+> **结论**: i9 是"短跑冠军" (单核极限吞吐高), Xeon 是"马拉松选手" (多 Worker 线性扩展 + 生产可靠性)。
+> Thunder 当前瓶颈在单核 protobuf/JSON 路径, 高频消费级 CPU 反而更适合。若未来改为多 Worker 模型, Xeon 的多核优势才能发挥。
 
 ### 1.0b 软件配置
 
@@ -211,157 +217,11 @@ Thunder 支持多种 I/O 后端，在 `conf/Hello.json` 中通过 `io_backend` �
 "io_backend": "native_uring"
 ```
 
----
+## 二、I/O Backend 横向对比 (本机 Ubuntu, wrk)
 
-## 二、一致场景对比：Thunder vs Nginx
+> Thunder 自身三种 I/O Backend 对比，不涉及 Nginx。
 
-**测试场景完全一致**：
-
-- 同一个 wrk 脚本：POST `{"option":"Echo","message":"hello"}` (37B)
-- 同格式 HTTP 响应：`{"code":0,"msg":"ok"}` (21B JSON)
-- **同并发模型**：均为单进程事件驱动 (Nginx 1 worker × 1 thread, Thunder 1 worker)
-
-进程/线程数验证 (`ps -eo pid,comm,nlwp`):
-
-```
-# Nginx (1 worker, 单线程)
-1441752 nginx    1   ← master (不处理请求)
-1441789 nginx    1   ← worker (单线程处理所有请求)
-
-# Thunder (1 worker, 事件驱动)
-Hello_robot       1   ← Manager (不处理请求)
-Hello_robot_W0    N   ← Worker (事件驱动处理所有请求)
-```
-
-### 2.1 吞吐对比
-
-Thunder 三个端点（逐步逼近 Nginx 的最简路径）：
-
-| 端点 | 做了什么 | c100 RPS | vs Nginx |
-|------|---------|---------|---------|
-| `/hello/hello` | JSON解析 → Echo逻辑 → `CJsonObject::Add×2 + ToString` | 129,217 | 64% |
-| `/hello/raw` (v1) | 跳过JSON解析 → `Response()`(CJsonObject构建) | 136,680 | 68% |
-| `/hello/raw` (v2) | 跳过JSON + 跳过CJsonObject → `SendToClient("常量")` | **147,120** | **73%** |
-| Nginx `/echo` | `return 200 '常量'` (纯memcpy) | 200,446 | — |
-
-完整吞吐表：
-
-| 并发 | Thunder Echo (JSON) | Thunder raw v1 (CJsonObject) | Thunder raw v2 (常量) | Nginx (常量) | raw v2 vs Nginx |
-|------|--------------------|-----------------------------|---------------------|-------------|----------------|
-| c10 | 128,495 | 133,373 | **149,074** | 200,937 | 74% |
-| c100 | 129,217 | 136,680 | **147,120** | 200,446 | 73% |
-| c200 | 125,627 | 134,137 | **147,117** | 202,962 | 72% |
-| c500 | 115,580 | 125,324 | **140,727** | 193,752 | 73% |
-
-### 2.2 延迟对比
-
-| 并发 | Thunder Echo | Thunder raw v1 | Thunder raw v2 | Nginx |
-|------|-------------|---------------|---------------|-------|
-| c10 | 61.8 µs | 59.5 µs | 53.2 µs | 39.6 µs |
-| c100 | 771.7 µs | 729.2 µs | 677.3 µs | 497.7 µs |
-| c200 | 1.59 ms | 1.49 ms | 1.36 ms | 0.98 ms |
-| c500 | 4.33 ms | 4.06 ms | 4.65 ms | 2.58 ms |
-
-### 2.3 差距拆解（逐层可测）
-
-```
-                    c100 RPS    vs Nginx    δ
-───────────────────────────────────────────────
-Nginx               200,446      —          —
-Thunder raw v2      147,120      73%        −27%  框架层 (HTTP解析 + dispatch + SendToClient)
-Thunder raw v1      136,680      68%        −5%   CJsonObject::Add×2 + ToString
-Thunder Echo        129,217      64%        −4%   CJsonObject::Parse + Get("option") + 字符串比较
-```
-
-每层都是有实测依据的，不再拍脑袋。
-
-### 2.4 框架层差距深度拆解（代码级路径对比）
-
-> 两者路径一致：epoll → read → 解析 → 路由 → 响应 → send，
-> 但每一步实现细节累积出 ~27% 差距。
-
-**逐步对比：**
-
-```
-步骤           Thunder (raw v2)                       Nginx
-─────────────────────────────────────────────────────────────────────────────────────
-HTTP 解析  🔴  NodeJS http-parser, 9个回调指针赋      自研内联状态机, 解析到
-              值/请求, 结果写入 protobuf HttpMsg       ngx_buf_t (预分配), 零分配
-              (堆分配+map insert), OnUrl 也有 malloc
-
-路由      🟡  mapModule.find(path)                    编译为 trie, 直接指针
-              → unordered_map hash + 字符串比较
-
-请求对象  🔴  protobuf HttpMsg                        ngx_http_request_t (连接池预分配)
-              body = std::string (拷贝)                header = ngx_table_elt_t 链表
-              headers = protobuf map (多次 insert)
-
-响应构建  🔴  SendToClient 内 新建 HttpMsg            return 200 '...' 编译期常量
-              set_body(strBody) → 字符串拷贝           ngx_buf_t → 静态内存, 零拷贝
-
-响应编码  🔴  HttpCodec::Encode                       响应头模板 编译期已生成
-              5次 pBuff->Printf (vsnprintf+va_list)   直接 ngx_writev 一块发出
-              m_mapAddingHttpHeader insert × N
-              每次 insert 都是 string copy
-
-连接查找  🟡  mapFdAttr.find(fd)                      epoll event 内嵌连接指针
-            + mapCodec.find(type)                      直接取, O(1)
-            → 两次 unordered_map
-
-写入      🟡  CBuffer::WriteFD → send() 单次          ngx_writev → iovec 合并
-                                              header+body 一次系统调用
-```
-
-**热点量化：**
-
-```
-Thunder raw v2 每条请求额外开销                      估计     累计
-────────────────────────────────────────────────────────────────────
-1. protobuf HttpMsg 构造+销毁 ×2 (请求+响应)         ~6-8%    ~6-8%
-   (heap分配, string拷贝, protobuf map 操作)
-
-2. vsnprintf × 5+ (状态行, Connection,              ~5-7%   ~11-15%
-   Content-Type, Content-Length, 空行)
-
-3. unordered_map 查找 × 3                            ~3-4%   ~14-19%
-   (路由, 连接属性, 编解码器)
-
-4. m_mapAddingHttpHeader insert × N                  ~3-4%   ~17-23%
-   (字符串拷贝: keep-alive, json/UTF-8 等)
-
-5. http-parser 回调链                                 ~3-4%   ~20-27%
-   (9个函数指针赋值 + 每条 header 回调)
-
-6. 其他杂项                                          ~3-5%   ~23-32%
-   (virtual call, OnUrl malloc/free,
-    ByteSize() 检查, 写 \0 又回退...)
-                                                           ────────
-                                                 实测:  ~27%  ✓
-```
-
-### 2.5 jemalloc 验证：瓶颈不在内存分配器
-
-> 为验证"是否是内存池差异"，用 `LD_PRELOAD=libjemalloc.so.2` 替换 glibc malloc 后重测。
-
-| 分配器 | raw v2 c100 RPS | vs glibc |
-|--------|----------------|----------|
-| glibc malloc (默认) | **145,102** | — |
-| jemalloc 5.3.0 | 144,475 | **−0.4%** (更慢) |
-
-**结论：jemalloc 对单线程事件驱动场景无效（甚至还略慢）。**
-
-- jemalloc 的核心优势是多线程并发分配时减少锁竞争和 false sharing，但 Thunder Worker 是单线程事件驱动，没有并发分配竞争
-- 瓶颈不是 `malloc`/`free` 的速度，而是 **分配行为本身**（构造 protobuf 对象、拷贝字符串、map insert）
-- Nginx 赢在"不分配"而非"分配得快" — 连接级内存池 (`ngx_pool_t`) 让 `ngx_http_request_t` 和响应头都在预分配空间里复用，全程零 malloc
-- 单靠换 allocator（jemalloc / tcmalloc / mimalloc）无法解决这个差距，需要从 **对象复用 + 减少拷贝** 层面优化
-
----
-
-## 三、I/O Backend 横向对比 (本机 Ubuntu, wrk)
-
-> 以下为 5/26 测试数据，仅对比 Thunder 自身三种 I/O Backend，不涉及 Nginx。
-
-### 3.1 小包 (37B)
+### 2.1 小包 (37B)
 
 | 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
 |------|-----------|-------------|------------|------|
@@ -370,7 +230,7 @@ Thunder raw v2 每条请求额外开销                      估计     累计
 | c200 RPS | **132,520** | 124,287 | 124,935 | ev 略优 (~+6%) |
 | c500 RPS | **127,916** | 117,979 | 124,753 | 差距 < 8% |
 
-### 3.2 中包 (4KB)
+### 2.2 中包 (4KB)
 
 | 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
 |------|-----------|-------------|------------|------|
@@ -379,7 +239,7 @@ Thunder raw v2 每条请求额外开销                      估计     累计
 | c200 RPS | **59,509** | 40,256 | 57,056 | native_uring c200 异常 |
 | c500 RPS | **57,552** | 46,274 | 54,400 | ev 最优 |
 
-### 3.3 大包 (64KB)
+### 2.3 大包 (64KB)
 
 | 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
 |------|-----------|-------------|------------|------|
@@ -387,7 +247,7 @@ Thunder raw v2 每条请求额外开销                      估计     累计
 | c100 RPS | 5,926 | 5,821 | 5,835 | 持平 |
 | c500 RPS | 5,735 | 5,507 | 5,604 | 持平 |
 
-### 3.4 I/O Backend 结论
+### 2.4 I/O Backend 结论
 
 ```
 小包 (37B):   ev >= asio_uring ≈ native_uring  (差距 < 8%)
@@ -401,104 +261,9 @@ Thunder raw v2 每条请求额外开销                      估计     累计
 
 ---
 
-## 四、完整数据表
+## 三、测试方法
 
-### 4.1 Thunder — 5/27 一致测试 (三层递进)
-
-| 端点 | Conn | RPS | Latency |
-|------|------|-----|---------|
-| /hello/hello (Echo, 有JSON) | 10 | 128,495 | 61.8 µs |
-| /hello/hello (Echo, 有JSON) | 100 | 129,217 | 771.7 µs |
-| /hello/hello (Echo, 有JSON) | 200 | 125,627 | 1.59 ms |
-| /hello/hello (Echo, 有JSON) | 500 | 115,580 | 4.33 ms |
-| /hello/raw v1 (无JSON, CJsonObject响应) | 10 | 133,373 | 59.5 µs |
-| /hello/raw v1 (无JSON, CJsonObject响应) | 100 | 136,680 | 729.2 µs |
-| /hello/raw v2 (无JSON, 常量字符串) | 10 | 149,074 | 53.2 µs |
-| /hello/raw v2 (无JSON, 常量字符串) | 100 | 147,120 | 677.3 µs |
-| /hello/raw v2 (无JSON, 常量字符串) | 200 | 147,117 | 1.36 ms |
-| /hello/raw v2 (无JSON, 常量字符串) | 500 | 140,727 | 4.65 ms |
-
-### 4.2 Nginx 1.27.5 (1 worker) — 5/27
-
-| Conn | RPS | Latency |
-|------|-----|---------|
-| 10 | 200,937 | 39.6 µs |
-| 100 | 200,446 | 497.7 µs |
-| 200 | 202,962 | 0.98 ms |
-| 500 | 193,752 | 2.58 ms |
-
-### 4.3 Thunder ev (epoll) — 5/26 补充 (不同 Payload)
-
-| Payload | Conn | RPS | Latency |
-|---------|------|-----|---------|
-| 37B | 10 | 138,335 | 57.6 µs |
-| 37B | 100 | 135,680 | 735.0 µs |
-| 4KB | 100 | 59,970 | 1.67 ms |
-| 64KB | 100 | 5,926 | 16.99 ms |
-
-### 4.4 Thunder asio_uring (5/26)
-
-| Payload | Conn | RPS | Latency |
-|---------|------|-----|---------|
-| 37B | 10 | 130,976 | 60.7 µs |
-| 37B | 100 | 128,312 | 776.6 µs |
-| 4KB | 100 | 58,414 | 1.71 ms |
-| 64KB | 100 | 5,835 | 17.48 ms |
-
-### 4.5 Thunder native_uring (5/26)
-
-| Payload | Conn | RPS | Latency |
-|---------|------|-----|---------|
-| 37B | 10 | 135,268 | 58.9 µs |
-| 37B | 100 | 130,902 | 761.3 µs |
-| 4KB | 100 | 58,813 | 1.70 ms |
-| 64KB | 100 | 5,821 | 17.30 ms |
-
----
-
-## 五、对比总结
-
-> 双方并发模型一致：**单进程、事件驱动 (epoll)、无多线程**。
-> Nginx: 1 master + 1 worker (单线程)。Thunder: 1 Manager + 1 Worker。
-
-### 5.1 各版本数据对比
-
-| 对比维度 | 5/26 (作废) | 5/27 (公平) |
-|---------|-----------|----------|
-| Nginx worker | 20 进程 | **1 进程** |
-| Nginx POST 正确性 | 100% 错误码 | **100% 200 OK** |
-| 测试场景 | 不一致 (静态文件 vs POST) | **一致 (同 POST + 同响应)** |
-| Nginx c100 RPS | 420,680 | **200,971** |
-| Thunder raw c100 RPS | — | **136,680** |
-| Thunder Echo c100 RPS | 135,680 | **129,217** |
-| Thunder raw vs Nginx | — | **68%** |
-| Thunder Echo vs Nginx | "32%" | **64%** |
-
-### 5.2 关键结论
-
-1. **跳过 JSON 解析后，Thunder raw v2 是 Nginx 的 73%，差距来自框架层**（HTTP 解析 + protobuf 序列化 + 多次 hash 查找 + vsprintf 编码）
-2. **JSON 解析开销仅 ~4%**（Echo vs raw v1），CJsonObject 响应构建 ~5%，二者都不是主要瓶颈
-3. **瓶颈不在内存分配器**：jemalloc 替换 glibc malloc 后性能无提升（−0.4%），说明问题不是"分配太慢"而是"分配太多" — Nginx 赢在连接池预分配下的零分配，而非 allocator 速度
-4. **Nginx 稳定 ~200k RPS 单进程**，作为纯 I/O 上限参考
-5. **ev (epoll) 仍是 Thunder 小包最优选择**
-6. **Thunder 单进程 14.5万~14.7万 RPS**（raw v2），框架开销 ~27%，对通用 RPC 框架合理
-7. 5/26 的 "Thunder = Nginx 32%" 因进程数不对等 + 测试不一致而严重失实
-8. **Nginx 的优化秘诀是"全路径三件套"**：零分配（连接池预分配）+ 预计算（编译期响应头模板）+ 内联（自研 HTTP 状态机无回调开销）
-
-### 5.3 后续建议
-
-- [ ] 写一个不做 protobuf HttpMsg 序列化的纯 I/O 模块，压 Thunder event loop 裸吞吐上限
-- [ ] 使用 wrk2 做延迟分位数测试 (P99/P999)
-- [ ] 测试多 worker 进程扩展性
-- [ ] HTTPS 协议对比
-- [x] jemalloc 对比验证 — **结论：无效**
-- [ ] 连接级内存池：复用 protobuf HttpMsg 对象, 预格式化响应头, 消除 per-request 分配
-
----
-
-## 六、测试方法
-
-### 6.0 测试前准备 (每次压测前执行)
+### 3.0 测试前准备 (每次压测前执行)
 
 ```bash
 # 1. 切 CPU governor 到 performance (需 sudo)
@@ -522,7 +287,7 @@ taskset -cp 4-9 $(pgrep Hello_robot_W0)
 ps -eo pid,psr,comm | grep Hello_robot_W0
 ```
 
-### 6.1 Nginx 配置 (1 worker, 一致测试)
+### 3.1 Nginx 配置 (1 worker)
 
 ```nginx
 worker_processes 1;
@@ -553,7 +318,7 @@ http {
 }
 ```
 
-### 6.2 启动命令
+### 3.2 启动命令
 
 ```bash
 # Nginx (Docker, host 网络)
@@ -567,7 +332,7 @@ export LD_LIBRARY_PATH="$(pwd)/../lib:$(pwd)/../../build/lib:$(pwd)/../../code/3
 ./bin/HelloHttp conf/Hello.json &
 ```
 
-### 6.3 测试命令 (两者完全一致)
+### 3.3 测试命令
 
 ```bash
 # 同 wrk 脚本, 同参数
@@ -578,7 +343,7 @@ wrk -t4 -c100 -d30s -s tests/benchmark/wrk_small.lua \
     http://127.0.0.1:8088/echo            # Nginx
 ```
 
-### 6.4 jemalloc 对比测试
+### 3.4 jemalloc 对比测试
 
 ```bash
 # 默认 glibc malloc (基线)
@@ -599,25 +364,18 @@ grep jemalloc /proc/$(pgrep Hello_robot_W0)/maps
 wrk -t4 -c100 -d10s -s /tmp/wrk_raw.lua http://127.0.0.1:27006/hello/raw
 ```
 
-### 6.5 原始数据
-
-| 目录 | 内容 |
-|------|------|
-| `docs/reports/bench_results_20260526_172755/` | 5/26 原始输出 (I/O Backend 对比; Nginx 对比数据作废) |
-| `docs/reports/bench_results_20260527_fair/` | 5/27 一致测试原始输出 |
-
 ---
 
-## 七、环境差异说明
+## 四、环境差异说明
 
 ```
-WSL2 环境 (5/13):
+WSL2 环境:
   - 内核: Linux 5.15.x (WSL2 定制内核)
   - io_uring: 部分 syscall 受限
   - epoll: 通过 WSL 转换层，有额外开销
   → asio_uring 大包优势显著 (延迟低 86%)
 
-原生 Ubuntu 26.04 (5/27):
+原生 Ubuntu 26.04 (本机):
   - 内核: Linux 7.0.0-15-generic (原生)
   - io_uring: 完整支持
   - epoll: 原生实现，零转换开销
@@ -626,11 +384,11 @@ WSL2 环境 (5/13):
 
 ---
 
-## 八、Thunder 请求路径优化路线图
+## 五、Thunder 请求路径优化路线图
 
-> 基于 2.4 节的路径拆解分析，逐项评估优化空间和投入产出比。
+> 基于代码路径拆解分析，逐项评估优化空间和投入产出比。
 
-### 8.1 优化项总览
+### 5.1 优化项总览
 
 ```
 优化项                                    难度      估计收益    累计收益
@@ -645,7 +403,7 @@ WSL2 环境 (5/13):
 预估总收益: ~21-28%  (与实测 27% 框架差距基本吻合)
 ```
 
-### 8.2 各项详细方案
+### 5.2 各项详细方案
 
 #### ① static http_parser_settings
 
@@ -982,7 +740,7 @@ void HandleRequest(HttpConnContext* ctx) {
 
 > 此优化改动范围大 (Decode → Dispose → SendToClient 全链路)，建议在前 5 项完成后再评估。
 
-### 8.3 实施进度与里程碑
+### 5.3 实施进度与里程碑
 
 **已完成：**
 
@@ -1121,7 +879,7 @@ recv+send 都走 Arena 后, 省掉的 malloc 翻倍 (~10 次), 但 `Arena::Creat
 4. **其他协议可能受益** — ProtoCodec/ClientMsgCodec 等内部 PB 协议消息更大更复杂, Arena 收益可能显著
 5. `void* pProtoCtx` 设计留作扩展点, 其他协议（ProtoCodec 等）未来可复用此机制
 
-### 8.4 其他协议 Fast Path / Arena 可行性分析
+### 5.4 其他协议 Fast Path / Arena 可行性分析
 
 当前 Fast Path 仅支持 HTTP (CODEC_HTTP=3)。分析其他协议：
 

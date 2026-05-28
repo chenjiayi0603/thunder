@@ -8,6 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include "HttpCodec.hpp"
+#include "codec/HttpFastCodec.hpp"
 #include "util/StringCoder.hpp"
 #include "CodecCommon.hpp"
 
@@ -305,59 +306,12 @@ E_CODEC_STATUS HttpCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
 		}
     }
     // === Fast Encode Path ===
-    // 常见场景 (HTTP/1.1 200, 无 gzip/chunked, 默认 headers) 用预编译模板,
-    // 回退上方已写的状态行, 避免 5+ 次 vsnprintf + header string copy
-    if (HTTP_RESPONSE == oHttpMsg.type()
-        && oHttpMsg.http_major() == 1 && oHttpMsg.http_minor() == 1
-        && oHttpMsg.status_code() == 200
-        && !bIsGzip && !bIsChunked
-        && oHttpMsg.body().size() > 0 && oHttpMsg.body().size() <= 8192)
+    // 常见场景 (HTTP/1.1 200, 无 gzip/chunked, 默认 headers) 用预编译模板
+    if (!bIsGzip && !bIsChunked
+        && TryFastEncodeHttpResponse(oHttpMsg, m_mapAddingHttpHeader, pBuff, iHadWriteSize))
     {
-        bool bDefaultHeaders =
-            (m_mapAddingHttpHeader.size() == 2
-             && m_mapAddingHttpHeader.find("Content-Type") != m_mapAddingHttpHeader.end())
-            || (m_mapAddingHttpHeader.size() == 3
-                && m_mapAddingHttpHeader.find("Content-Type") != m_mapAddingHttpHeader.end()
-                && m_mapAddingHttpHeader.find("Content-Length") != m_mapAddingHttpHeader.end());
-        if (bDefaultHeaders)
-        {
-            // 回退前面已写的状态行, 用预编译模板重写整个响应头+body
-            pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);
-            iHadWriteSize = 0;
-
-            static const char kHeader200[] =
-                "HTTP/1.1 200 OK\r\n"
-                "Connection: keep-alive\r\n"
-                "Content-Type: application/json;charset=UTF-8\r\n"
-                "Content-Length: ";
-
-            pBuff->Write(kHeader200, sizeof(kHeader200) - 1);
-            iHadWriteSize = static_cast<int>(sizeof(kHeader200) - 1);
-
-            iWriteSize = pBuff->Printf("%u\r\n\r\n",
-                static_cast<unsigned>(oHttpMsg.body().size()));
-            if (iWriteSize < 0)
-            {
-                pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);
-                m_mapAddingHttpHeader.clear();
-                return(CODEC_STATUS_ERR);
-            }
-            iHadWriteSize += iWriteSize;
-
-            iWriteSize = pBuff->Write(oHttpMsg.body().c_str(), oHttpMsg.body().size());
-            if (iWriteSize < 0)
-            {
-                pBuff->SetWriteIndex(pBuff->GetWriteIndex() - iHadWriteSize);
-                m_mapAddingHttpHeader.clear();
-                return(CODEC_STATUS_ERR);
-            }
-            iHadWriteSize += iWriteSize;
-
-            LOG4_TRACE("%s() Fast Encode: body=%zu, total=%d",
-                       __FUNCTION__, oHttpMsg.body().size(), iHadWriteSize);
-            m_mapAddingHttpHeader.clear();
-            return(CODEC_STATUS_OK);
-        }
+        m_mapAddingHttpHeader.clear();
+        return(CODEC_STATUS_OK);
     }
     // === Fast Encode Path End ===
 
@@ -720,6 +674,31 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
         LOG4_TRACE("no data...");
         return(CODEC_STATUS_PAUSE);
     }
+
+    // === Generic HTTP Fast-Path ===
+    // 先尝试直接解析，覆盖所有常规 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 请求。
+    // 遇到 chunked / CONNECT / 数据不全 / 未知 method 时回退 http_parser。
+    size_t consumed = 0;
+    if (TryFastDecodeHttpRequest(pBuff->GetRawReadBuffer(), pBuff->ReadableBytes(),
+            oHttpMsg, consumed))
+    {
+        pBuff->AdvanceReadIndex(consumed);
+        // gzip 解压 (与正常路径一致)
+        auto iter = oHttpMsg.headers().find("Content-Encoding");
+        if (iter != oHttpMsg.headers().end() && iter->second == "gzip")
+        {
+            std::string strData;
+            if (Gunzip(oHttpMsg.body(), strData))
+                oHttpMsg.set_body(strData);
+            else
+            {
+                LOG4_ERROR("gunzip error in fast-path!");
+                return CODEC_STATUS_ERR;
+            }
+        }
+        return CODEC_STATUS_OK;
+    }
+
     // Static parser settings — 只初始化一次，避免每请求 9 次函数指针赋值
     static const http_parser_settings kParserSettings = []() {
         http_parser_settings s{};

@@ -89,3 +89,12 @@ deploy/Center/log/readme.txt
 *.pid
 build_asio_uring/
 build_no_https/
+*.txt
+code/3party/cryptopp
+code/3party/libev
+deploy/HelloHttp/conf/Hello.json.bak
+deploy/HelloHttp/conf/Hello.json.bak_ev
+deploy/Interface/log/readme.txt
+deploy/Logic/bin/Logic
+deploy/Logic/log/readme.txt
+deploy/Logic/log/start_interfaceserver_logic.pid
