@@ -56,7 +56,7 @@ public:
 	/**
 	 * @brief 开始步骤
 	 */
-	static bool Launch(MysqlStep *pStep,uint32 uiTimeOutMax=3,uint8 uiToRetry=1,double dTimeout=3.0);//
+	static bool Launch(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax=3,uint8 uiToRetry=1,double dTimeout=3.0);//
 	/**
 	* @brief 追加mysql访问任务
 	* @note (注册过的MysqlStep才能追加).追加mysql访问任务后，会异步提交访问并返回结果

@@ -148,9 +148,8 @@ void RedisAwaitable::await_suspend(std::coroutine_handle<> h)
     m_reply = RedisReply{};
     auto* pBridge = new RedisStepBridge(this, h);
     pBridge->RedisCmd()->AppendRawCmd(m_strCommand);
-    if (!GetLabor()->AutoRedisCmd(m_strHost, m_iPort, pBridge))
+    if (!GetLabor()->AutoRedisCmd(m_strHost, m_iPort, std::unique_ptr<RedisStep>(pBridge)))
     {
-        delete pBridge;
         m_reply.type = RedisReply::Type::ERROR;
         m_reply.errNo = -2;
         m_reply.errMsg = "AutoRedisCmd failed";

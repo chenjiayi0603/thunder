@@ -38,11 +38,11 @@ public:
     }
 
     MOCK_METHOD(bool, ExecStep,
-                (net::Step * pStep, ev_tstamp dTimeout, int iErrno, const std::string& strErrMsg,
+                (std::unique_ptr<net::Step> pStep, ev_tstamp dTimeout, int iErrno, const std::string& strErrMsg,
                  const std::string& strErrShow),
                 (override));
 
-    MOCK_METHOD(bool, RegisterCallback, (net::Step* pStep, double dTimeout), (override));
+    MOCK_METHOD(bool, RegisterCallback, (std::unique_ptr<net::Step> pStep, double dTimeout), (override));
 
     bool SendTo(const net::tagMsgShell&) override { return false; }
     bool SendTo(const net::tagMsgShell&, const MsgHead&, const MsgBody&) override { return false; }
@@ -145,14 +145,13 @@ TEST_F(NetInterfaceTest, Launch_ReturnsExecStepResultAndReleasesStep)
 {
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), ExecStep(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Invoke([](net::Step* p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
+        .WillOnce(::testing::Invoke([](std::unique_ptr<net::Step> p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
             if (p == nullptr)
             {
                 return false;
             }
             const auto st = p->Emit();
             EXPECT_EQ(st, net::STATUS_CMD_COMPLETED);
-            delete p;
             return true;
         }));
 
@@ -168,8 +167,7 @@ TEST_F(NetInterfaceTest, Launch_ReturnsFalseWhenExecStepFails)
 {
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), ExecStep(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Invoke([](net::Step* p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
-            delete p;
+        .WillOnce(::testing::Invoke([](std::unique_ptr<net::Step> p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
             return false;
         }));
 
@@ -185,8 +183,7 @@ TEST_F(NetInterfaceTest, LaunchCo_UsesLaunchWithHttpMsg)
 {
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), ExecStep(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Invoke([](net::Step* p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
-            delete p;
+        .WillOnce(::testing::Invoke([](std::unique_ptr<net::Step> p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
             return true;
         }));
 
@@ -200,8 +197,7 @@ TEST_F(NetInterfaceTest, LaunchCo_UsesLaunchWithMsgHead)
 {
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), ExecStep(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Invoke([](net::Step* p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
-            delete p;
+        .WillOnce(::testing::Invoke([](std::unique_ptr<net::Step> p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
             return true;
         }));
 
@@ -215,8 +211,7 @@ TEST_F(NetInterfaceTest, LaunchCo_UniquePtrStep)
 {
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), ExecStep(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Invoke([](net::Step* p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
-            delete p;
+        .WillOnce(::testing::Invoke([](std::unique_ptr<net::Step> p, ev_tstamp, int, const std::string&, const std::string&) -> bool {
             return true;
         }));
 
@@ -237,9 +232,8 @@ TEST_F(NetInterfaceTest, Register_CallsRegisterCallbackAndInitOnSuccess)
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), RegisterCallback(::testing::_, ::testing::_)).WillOnce(::testing::Return(true));
 
-    auto* step = new net::MysqlStep("127.0.0.1", 3306, "db", "u", "p", "utf8");
-    EXPECT_TRUE(net::Register(step));
-    delete step;
+    auto step = std::unique_ptr<net::MysqlStep>(new net::MysqlStep("127.0.0.1", 3306, "db", "u", "p", "utf8"));
+    EXPECT_TRUE(net::Register(std::move(step)));
 }
 
 TEST_F(NetInterfaceTest, Register_DeletesStepWhenRegisterCallbackFails)
@@ -247,8 +241,8 @@ TEST_F(NetInterfaceTest, Register_DeletesStepWhenRegisterCallbackFails)
     ScopedLaborStub scope(laborStub_);
     EXPECT_CALL(scope.stub(), RegisterCallback(::testing::_, ::testing::_)).WillOnce(::testing::Return(false));
 
-    auto* step = new net::MysqlStep("127.0.0.1", 3306, "db", "u", "p", "utf8");
-    EXPECT_FALSE(net::Register(step));
+    auto step = std::unique_ptr<net::MysqlStep>(new net::MysqlStep("127.0.0.1", 3306, "db", "u", "p", "utf8"));
+    EXPECT_FALSE(net::Register(std::move(step)));
 }
 
 TEST_F(NetInterfaceTest, Json2Pb_EmptyString_ReturnsFalse)

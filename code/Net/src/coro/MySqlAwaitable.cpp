@@ -130,9 +130,8 @@ void MySqlAwaitable::await_suspend(std::coroutine_handle<> h)
     pBridge->Init(m_uiTimeOutMax, m_uiTimeOutRetry);
     pBridge->SetTask(m_strSql, m_uiCmdType);
 
-    if (!GetLabor()->RegisterCallback(pBridge, m_dTimeout))
+    if (!GetLabor()->RegisterCallback(std::unique_ptr<Step>(pBridge), m_dTimeout))
     {
-        delete pBridge;
         m_reply.errNo = -2;
         m_reply.errMsg = "RegisterCallback(Step*) failed";
         if (h && !h.done())

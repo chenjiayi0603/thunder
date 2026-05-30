@@ -113,7 +113,7 @@ public:
     /**
 	* @brief 注册步骤
 	*/
-    virtual bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0)override;
+    virtual bool RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout = 0.0)override;
     /**
    	* @brief 删除步骤
    	*/
@@ -129,7 +129,7 @@ public:
     /**
 	* @brief 注册RedisStep
 	*/
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep)override;
+    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep)override;
     /**
 	* @brief 重置定时器
 	*/
@@ -141,8 +141,8 @@ public:
     virtual Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session")override;
     virtual bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
     virtual bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
-    virtual bool ExecStep(Step* pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
-    virtual bool ExecStep(RedisStep* pStep)override;
+    virtual bool ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
+    virtual bool ExecStep(std::unique_ptr<RedisStep> pStep)override;
     virtual Step* GetStep(uint32 uiStepSeq)override;
     /**
 	* @brief 线程池等跨线程完成时校验 Step 是否仍由本 Worker 持有，避免晚到 resume UAF
@@ -193,8 +193,8 @@ public:
     virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)override;
     virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)override;
 	virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr)override;
-    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword = "")override;
-    virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep)override;
+    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword = "")override;
+    virtual bool AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep)override;
     virtual bool AutoConnect(const std::string& strIdentify)override;
     virtual bool HttpsGet(const std::string & strUrl, std::string & strResponse,const std::string& strUserpwd = "",
     		util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,const std::string& strCaPath= "",int iPort = 0)override;
@@ -246,8 +246,8 @@ public:
 	virtual void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)override;
 	virtual void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys)override;
 	virtual bool HasNodeIdentifys(const std::string& strNodeType)override;
-	virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)override;
-	virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)override;
+	virtual bool RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep)override;
+	virtual bool RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep)override;
 	virtual bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx)override;
 	virtual void DelRedisContextAddr(const redisAsyncContext* ctx)override;
 	virtual void AddInnerFd(const tagMsgShell& stMsgShell) override;

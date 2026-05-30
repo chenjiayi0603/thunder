@@ -2061,27 +2061,29 @@ const std::string& Worker::GetWorkerIdentify()
 	return(m_strWorkerIdentify);
 }
 
-bool Worker::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
+bool Worker::RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout)
 {
-    LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep, dTimeout);
-    if (pStep == nullptr)return(false);
+    LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep.get(), dTimeout);
+    if (!pStep) return(false);
     if (pStep->IsRegistered())  // 已注册过，不必重复注册，不过认为本次注册成功
     {
-        LOG4_WARN("Step(0x%p,seq %u) registered already.",pStep,pStep->GetSequence());
+        LOG4_WARN("Step(0x%p,seq %u) registered already.",pStep.get(),pStep->GetSequence());
+        (void)pStep.release(); // 已由 mapCallbackStep 持有，防止 unique_ptr 析构误删
         return(true);
     }
     pStep->SetRegistered();
     pStep->SetActiveTime(ev_now(m_loop));
-    auto ret = mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), std::unique_ptr<Step>(pStep)));
+    Step* pRawStep = pStep.get();
+    auto ret = mapCallbackStep.insert(std::make_pair(pRawStep->GetSequence(), std::move(pStep)));
     if (ret.second)
     {
-    	AddStep(pStep,dTimeout,StepTimeoutCallback);
-        LOG4_TRACE("Step(0x%p,seq %u, active_time %lf, lifetime %lf) register successful.",pStep,
-                        pStep->GetSequence(), pStep->GetActiveTime(), pStep->GetTimeout());
+    	AddStep(pRawStep,dTimeout,StepTimeoutCallback);
+        LOG4_TRACE("Step(0x%p,seq %u, active_time %lf, lifetime %lf) register successful.",pRawStep,
+                        pRawStep->GetSequence(), pRawStep->GetActiveTime(), pRawStep->GetTimeout());
     }
     else
     {
-        LOG4_WARN("Step(seq %u) register failed.",pStep->GetSequence());
+        LOG4_WARN("Step(seq %u) register failed.",pRawStep->GetSequence());
     }
     return(ret.second);
 }
@@ -2185,10 +2187,10 @@ void Worker::DeleteCallback(Session* pSession)
     }
 }
 
-bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    if (pRedisStep == nullptr)
+    if (!pRedisStep)
     {
         return(false);
     }
@@ -2217,6 +2219,8 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     ev_timer_start (m_loop, timeout_watcher);
     */
 
+    RedisStep* pRawStep = pRedisStep.get();
+
     auto iter = mapRedisAttr.find((redisAsyncContext*)pRedisContext);
     if (iter == mapRedisAttr.end())
     {
@@ -2227,10 +2231,10 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     {
         if (iter->second->bIsReady)
         {
-        	if (pRedisStep->RedisCmd()->GetRawCmds().size() > 0)
+        	if (pRawStep->RedisCmd()->GetRawCmds().size() > 0)
         	{//批处理指令
         		bool boPush(false);
-				const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
+				const std::vector<std::string>& rawCmds = pRawStep->RedisCmd()->GetRawCmds();
 				for(int i = 0;i < rawCmds.size() ;++i)
 				{
 					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, rawCmds[i].c_str());
@@ -2240,9 +2244,9 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 						if (!boPush)
 						{
 							boPush = true;
-							iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+							iter->second->listData.push_back(std::move(pRedisStep));
 						}
-						pRedisStep->AddSendCounter();
+						pRawStep->AddSendCounter();
 					}
 					else
 					{
@@ -2254,13 +2258,13 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
         	else
         	{//一般指令
         		int status;
-				size_t args_size = pRedisStep->GetRedisCmd()->GetCmdArguments().size() + 1;
+				size_t args_size = pRawStep->GetRedisCmd()->GetCmdArguments().size() + 1;
 				const char* argv[args_size];
 				size_t arglen[args_size];
-				argv[0] = pRedisStep->GetRedisCmd()->GetCmd().c_str();
-				arglen[0] = pRedisStep->GetRedisCmd()->GetCmd().size();
-				std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRedisStep->GetRedisCmd()->GetCmdArguments().begin();
-				for (size_t i = 1; c_iter != pRedisStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
+				argv[0] = pRawStep->GetRedisCmd()->GetCmd().c_str();
+				arglen[0] = pRawStep->GetRedisCmd()->GetCmd().size();
+				std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRawStep->GetRedisCmd()->GetCmdArguments().begin();
+				for (size_t i = 1; c_iter != pRawStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
 				{
 					argv[i] = c_iter->first.c_str();
 					arglen[i] = c_iter->first.size();
@@ -2268,9 +2272,9 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, args_size, argv, arglen);
 				if (status == REDIS_OK)
 				{
-					LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
-					iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
-					pRedisStep->AddSendCounter();
+					LOG4_TRACE("succeed in sending redis cmd: %s", pRawStep->GetRedisCmd()->ToString().c_str());
+					iter->second->listData.push_back(std::move(pRedisStep));
+					pRawStep->AddSendCounter();
 					return(true);
 				}
 				else
@@ -2290,7 +2294,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				return(false);
 			}
             LOG4_TRACE("listWaitData.push_back()");
-            iter->second->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+            iter->second->listWaitData.push_back(std::move(pRedisStep));
             return(true);
         }
     }
@@ -2854,13 +2858,13 @@ bool Worker::HasNodeIdentifys(const std::string& strNodeType)
 	return (identifySet.size() > 0);
 }
 
-bool Worker::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
     int iPosIpPortSeparator = strIdentify.find(',');
     if (iPosIpPortSeparator != std::string::npos)
     {
-        return(AutoRedisCluster(strIdentify,pRedisStep));
+        return(AutoRedisCluster(strIdentify, std::move(pRedisStep)));
     }
     iPosIpPortSeparator = strIdentify.find(':');//"192.168.11.71:29000@abcab"
     if (iPosIpPortSeparator == std::string::npos)
@@ -2893,16 +2897,16 @@ bool Worker::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisS
     if (ctx_iter != mapRedisContext.end())
     {
         LOG4_TRACE("redis context %s", szIdentify);
-        return(RegisterCallback(ctx_iter->second, pRedisStep));
+        return(RegisterCallback(ctx_iter->second, std::move(pRedisStep)));
     }
     else
     {
         LOG4_TRACE("AutoRedisCmd(%s, %d, %s)", strHost.c_str(), iPort,strPassword.c_str());
-        return(AutoRedisCmd(strHost, iPort, pRedisStep,strPassword));
+        return(AutoRedisCmd(strHost, iPort, std::move(pRedisStep),strPassword));
     }
 }
 
-bool Worker::RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     char szIdentify[32] = {0};
@@ -2911,12 +2915,12 @@ bool Worker::RegisterCallback(const std::string& strHost, int iPort, RedisStep* 
     if (ctx_iter != mapRedisContext.end())
     {
         LOG4_TRACE("redis context %s", szIdentify);
-        return(RegisterCallback(ctx_iter->second, pRedisStep));
+        return(RegisterCallback(ctx_iter->second, std::move(pRedisStep)));
     }
     else
     {
         LOG4_TRACE("GetLabor()->AutoRedisCmd(%s, %d)", strHost.c_str(), iPort);
-        return(AutoRedisCmd(strHost, iPort, pRedisStep));
+        return(AutoRedisCmd(strHost, iPort, std::move(pRedisStep)));
     }
 }
 
@@ -3385,22 +3389,22 @@ bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pM
 		LOG4_ERROR("pSession empty!");
 		return false;
 	}
-	StepNode* pStep = new StepNode(pMemOper,pStepParam);
+	auto pStep = std::make_unique<StepNode>(pMemOper,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3415,10 +3419,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3427,22 +3430,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(pMemOper,pStepParam);
+	auto pStep = std::make_unique<StepNode>(pMemOper,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3450,22 +3453,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 
 bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,const std::string & strModFactor,StepParam* pStepParam)
 {
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3480,10 +3483,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3492,22 +3494,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3515,22 +3517,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 
 bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const tagMsgShell& stMsgShell,const std::string & strModFactor,StepParam* pStepParam)
 {
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3545,10 +3547,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3557,22 +3558,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -4346,7 +4347,7 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 
 }
 
-bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword)
+bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword)
 {
     LOG4_TRACE("%s() redisAsyncConnect(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     redisAsyncContext *c = redisAsyncConnect(strHost.c_str(), iPort);
@@ -4362,14 +4363,15 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
         return(false);
     }
     c->data = this;
+    RedisStep* pRawStep = pRedisStep.get();
+    pRawStep->SetRegistered();
     tagRedisAttr* pRedisAttr = new tagRedisAttr();
     pRedisAttr->ulSeq = GetFdSequence();
-    pRedisAttr->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+    pRedisAttr->listWaitData.push_back(std::move(pRedisStep));
     if (strPassword.size() > 0)
     {
     	pRedisAttr->strPassword = strPassword;
     }
-    pRedisStep->SetRegistered();
     mapRedisAttr.insert(std::make_pair(c, pRedisAttr));
 //    LOG4_TRACE("redisLibevAttach(0x%p, 0x%p)", m_loop, c);
     redisLibevAttach(m_loop, c);
@@ -4382,14 +4384,15 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
     return(true);
 }
 
-bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep)
+bool Worker::AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, sAddrList.c_str());
     //sAddrList "192.168.18.78:6000,192.168.18.78:6001,192.168.18.78:6002,192.168.18.78:6003,192.168.18.78:6004,192.168.18.78:6005"
-    if (sAddrList.size() == 0 || nullptr == pRedisStep)
+    if (sAddrList.size() == 0 || !pRedisStep)
     {
         return false;
     }
+    RedisStep* pRawStep = pRedisStep.get();
     redisClusterAsyncContext *acc(nullptr);
     std::unordered_map<std::string,redisClusterAsyncContext*>::iterator it = mapRedisClusterContext.find(sAddrList);
     if (it == mapRedisClusterContext.end())
@@ -4419,13 +4422,13 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         LOG4_TRACE("%s use redisClusterAsyncConnect(%s,%d)", __FUNCTION__,acc->cc->ip,acc->cc->port);
     }
     {//format cmd ,直接发送，在客户端api内已有发送缓存
-        size_t args_size = pRedisStep->GetRedisCmd()->GetCmdArguments().size() + 1;
+        size_t args_size = pRawStep->GetRedisCmd()->GetCmdArguments().size() + 1;
         const char* argv[args_size];
         size_t arglen[args_size];
-        argv[0] = pRedisStep->GetRedisCmd()->GetCmd().c_str();
-        arglen[0] = pRedisStep->GetRedisCmd()->GetCmd().size();
-        std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRedisStep->GetRedisCmd()->GetCmdArguments().begin();
-        for (size_t i = 1; c_iter != pRedisStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
+        argv[0] = pRawStep->GetRedisCmd()->GetCmd().c_str();
+        arglen[0] = pRawStep->GetRedisCmd()->GetCmd().size();
+        std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRawStep->GetRedisCmd()->GetCmdArguments().begin();
+        for (size_t i = 1; c_iter != pRawStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
         {
             argv[i] = c_iter->first.c_str();
             arglen[i] = c_iter->first.size();
@@ -4434,7 +4437,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         int iCmdStatus = redisClusterAsyncCommandArgv(acc, RedisClusterCmdCallback, this, args_size, argv, arglen);
         if (iCmdStatus == REDIS_OK)
         {
-            LOG4_TRACE("succeed in sending redis cmd: %s",pRedisStep->GetRedisCmd()->ToString().c_str());
+            LOG4_TRACE("succeed in sending redis cmd: %s",pRawStep->GetRedisCmd()->ToString().c_str());
             tagRedisAttr* ptagRedisAttr(nullptr);
             std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*>::iterator acc_iter = mapRedisClusterAttr.find(acc);
             if (acc_iter == mapRedisClusterAttr.end())
@@ -4447,19 +4450,25 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             {
                 ptagRedisAttr = acc_iter->second;
             }
-            ptagRedisAttr->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+            ptagRedisAttr->listData.push_back(std::move(pRedisStep));
         }
         else    // 命令执行失败，不再继续执行，等待下一次回调
         {
-            LOG4_WARN("failed in sending redis cmd: %s,err:%d,errstr:%s", pRedisStep->GetRedisCmd()->ToString().c_str(),acc->err,acc->errstr);
+            LOG4_WARN("failed in sending redis cmd: %s,err:%d,errstr:%s", pRawStep->GetRedisCmd()->ToString().c_str(),acc->err,acc->errstr);
             redisAsyncContext cobj;//对逻辑层只是抛出错误信息，不直接使用连接对象
             cobj.err = acc->err;
             cobj.errstr = acc->errstr;
             redisAsyncContext *c = &cobj;
-            pRedisStep->AddCallBackCounter();
-            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, nullptr))
+            pRawStep->AddCallBackCounter();
+            E_CMD_STATUS eStatus = pRawStep->Callback(c, acc->err, nullptr);
+            if (eStatus != STATUS_CMD_RUNNING)
             {
-            	delete pRedisStep; pRedisStep = nullptr;
+                // unique_ptr destructor will delete pRedisStep on scope exit
+            }
+            else
+            {
+                // ownership transferred to callback, prevent double-free
+                (void)pRedisStep.release();
             }
         }
     }
@@ -4901,28 +4910,28 @@ bool Worker::ExecStep(uint32 uiStepSeq,int iErrno, const std::string& strErrMsg,
     return false;
 }
 
-bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
 	if (!pStep)
 	{
 		LOG4_ERROR("%s() null pStep",__FUNCTION__);
 		return false;
 	}
+	uint32 uiStepSeq = pStep->GetSequence();
 	if (!pStep->IsRegistered())
 	{
-		if (!RegisterCallback(pStep,dTimeout))
+		if (!RegisterCallback(std::move(pStep),dTimeout))
 		{
 			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-			delete pStep; pStep = nullptr;
 			return(false);
 		}
-		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,pStep->GetSequence());
+		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
 	}
-    LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,pStep->GetSequence());
-    auto step_iter = mapCallbackStep.find(pStep->GetSequence());
+    LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
+    auto step_iter = mapCallbackStep.find(uiStepSeq);
     if (step_iter == mapCallbackStep.end())
     {
-        LOG4_WARN("step %u is not in the callback list.", pStep->GetSequence());
+        LOG4_WARN("step %u is not in the callback list.", uiStepSeq);
     }
     else
     {
@@ -4934,9 +4943,9 @@ bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::stri
     return false;
 }
 
-bool Worker::ExecStep(RedisStep* pRedisStep)
+bool Worker::ExecStep(std::unique_ptr<RedisStep> pRedisStep)
 {
-	if (nullptr == pRedisStep)
+	if (!pRedisStep)
 	{
 		LOG4_ERROR("nullptr == pRedisStep");
 		return(false);
@@ -4944,10 +4953,10 @@ bool Worker::ExecStep(RedisStep* pRedisStep)
 	LOG4_TRACE("%s() pRedisStep",__FUNCTION__);
 	if (net::STATUS_CMD_RUNNING == pRedisStep->Emit(ERR_OK))//RedisStep注册在其Emit内实现
 	{
+		(void)pRedisStep.release(); // ownership transferred to framework via Emit
 		return(true);
 	}
 	LOG4_WARN("%s() pRedisStep",__FUNCTION__);
-	delete pRedisStep; pRedisStep = nullptr;
 	return false;
 }
 

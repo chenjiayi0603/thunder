@@ -118,10 +118,37 @@ cmake --build build -j1
 
 ### 改完代码后必须验证
 
-- [ ] `./deploy.sh build` — 编译 + 安装 (必须通过)
+> 这是唯一的"改动后验证"清单，Agent 行为准则与测试规则均引用此处，勿在别处重复。
+
+#### 改 C++ 代码后
+
+- [ ] `./deploy.sh build` — 编译 + 安装 (必须通过，零告警)
 - [ ] `./deploy.sh test unit` — C++ + Python 单元测试 (全部通过)
+- [ ] 涉及内存/并发改动：ASan + valgrind + TSan 必跑并贴报告 (见 [代码审查检查清单](#代码审查检查清单提交前))
 - [ ] (如涉及集成) `./deploy.sh test e2e` — Docker E2E (全部通过)
-- [ ] (如改 Proto) `cmake --build build --target thunder_proto_gen -j1`
+
+#### 改 Proto 后
+
+- [ ] `cmake --build build --target thunder_proto_gen -j1` — 重新生成 .pb.cc/.pb.h
+- [ ] `./deploy.sh build` — 全量编译
+- [ ] 联调冒烟测试
+
+#### 改部署脚本后
+
+- [ ] `./deploy.sh restart` — 启停正常
+- [ ] `./deploy.sh status` — 所有服务状态正常
+
+#### 禁止
+
+- 改完代码不跑编译就提交
+- 只验证改动功能，不验证相关功能
+- 修改接口后不同步更新 Proto 和所有节点
+
+#### 测试后必须清理
+
+```bash
+./deploy.sh clean    # 一键清理 build/ + Docker + tmp
+```
 
 ---
 
@@ -243,36 +270,10 @@ cmake --build build -j1
 | "重构 X" | 确保改前改后测试都通过 |
 | 复杂任务 | 先列分步计划，每步带验证方式 |
 
-### 5. 每次代码改动后必须执行
+### 5. 每次代码改动后必须验证
 
-#### 改 C++ 代码后
-
-- [ ] `./deploy.sh build` — 编译检查 (必须通过)
-- [ ] `./deploy.sh test unit` — C++ + Python 单元测试 (必须通过)
-- [ ] (如涉及集成) `./deploy.sh test e2e` — Docker E2E (必须通过)
-
-#### 改 Proto 后
-
-- [ ] `cmake --build build --target thunder_proto_gen -j1` — 重新生成 .pb.cc/.pb.h
-- [ ] `./deploy.sh build` — 全量编译
-- [ ] 联调冒烟测试
-
-#### 改部署脚本后
-
-- [ ] `./deploy.sh restart` — 启停正常
-- [ ] `./deploy.sh status` — 所有服务状态正常
-
-#### 禁止
-
-- 改完代码不跑编译就提交
-- 只验证改动功能，不验证相关功能
-- 修改接口后不同步更新 Proto 和所有节点
-
-#### 测试后必须清理
-
-```bash
-./deploy.sh clean    # 一键清理 build/ + Docker + tmp
-```
+- 改动后的编译/测试/清理清单见 [构建与验证 → 改完代码后必须验证](#改完代码后必须验证)，改 C++ / 改 Proto / 改部署脚本各有对应项，提交前必跑，禁止跳过。
+- 提交前还需对照 [代码审查检查清单](#代码审查检查清单提交前) 自查内存安全、竞态、性能。
 
 ---
 
@@ -363,6 +364,53 @@ Gitee：chenjiayi/thunder
 
 ## Thunder框架测试规则
 
+### 代码审查检查清单（提交前）
+
+> 简洁清单，只列"查什么"。工具如何跑见 [改完代码后必须验证](#改完代码后必须验证)；自动化审查接 `/review` `/health` `/qa` skill。
+
+#### 1. 内存非法访问
+
+- use-after-free / 悬垂引用：lambda 与回调捕获引用、协程帧内引用跨挂起点存活
+- 越界：buffer / 数组 / `string_view` / `span` 的索引与长度边界
+- 未初始化：成员变量、栈对象、从 shm 读出的结构体
+- 所有权不清：优先 RAII / `unique_ptr`，慎用裸 `new`/`delete`
+- `shared_ptr` 循环引用导致泄漏
+- 工具：ASan + valgrind，涉及内存改动必跑并贴报告
+
+#### 2. 竞态条件
+
+- 多进程 shm：version 原子递增、先写 blob 再写 len、防半包读取
+- 协程：`co_await` 挂起期间被引用对象必须存活
+- 共享可变状态缺锁 / double-checked locking 误用
+- 信号处理函数只调用 async-signal-safe 接口
+- 工具：TSan，涉及并发改动必跑并贴报告
+
+#### 3. 语法与静态检查
+
+- clang-format 强制（项目根 `.clang-format`），clang-tidy 通过
+- 编译零告警：`-Wall -Wextra` 无 warning
+- 头文件自包含、include 最小化（include-what-you-use）
+- C++20 惯用法适度使用（concepts / ranges / span），不炫技
+
+#### 4. 设计模式优化建议
+
+- 对照本项目模式审查：IoBackend 策略、Step 状态机、插件 RAII 释放、ORM Repository
+- 避免过度设计（呼应"简洁优先"：没要求的灵活性/可配置不加）
+- 重复逻辑提取，避免 copy-paste 漂移
+
+#### 5. 性能优化建议
+
+- 移动语义 / `emplace` / 避免不必要的临时拷贝
+- 大对象按 `const&` 入参，热路径避免内存分配、复用 buffer
+- 协程帧 / 虚函数开销在热路径上权衡
+- 先 profile 再优化，给真实数据，不拍脑袋
+
+#### 6. QA 检查（接入 skill）
+
+- `/review`：PR 前置审查，覆盖上述 1/2/4/5
+- `/health`：类型/lint/测试/死代码 0-10 评分
+- `/qa`：浏览器自动化测试 + 自动修复
+
 ### 测试要求（按模块）
 - io_uring相关测试必须在Linux 5.1+内核上运行，epoll回退路径也必须测试
 - C++20协程测试必须验证异步时序和挂起/恢复行为，不能只测同步返回值
@@ -371,7 +419,7 @@ Gitee：chenjiayi/thunder
 - HTTPS编解码器必须测试TLS握手、证书校验、异常断连，不能只测正常请求
 - 插件动态加载必须测试加载+卸载+热更新，验证资源完全释放无泄漏
 - 性能测试必须给出具体数据（QPS、延迟P99、内存占用），不允许说"性能OK"
-- 内存安全必须用ASan/valgrind检测，线程竞争必须用TSan检测，展示完整报告
+- 内存安全必须用ASan/valgrind检测，线程竞争必须用TSan检测，展示完整报告（检查项见 [代码审查检查清单](#代码审查检查清单提交前) 第 1/2 节）
 
 ### 测试执行规则
 - 必须真实运行，禁止mock/模拟/软件环回

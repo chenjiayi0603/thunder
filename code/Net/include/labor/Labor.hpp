@@ -11,6 +11,7 @@
 #define SRC_NodeLabor_HPP_
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include "NetDefine.hpp"
 #include "Interface.hpp"
@@ -118,7 +119,7 @@ public:     // Labor相关设置（由Cmd类或Step类调用这些方法完成La
    virtual void SetProcessName(const util::CJsonObject& oJsonConf) = 0;
 public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成数据交互，Worker类必须重新实现这些方法，Manager类可不实现）
 
-   virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep) {return false;}
+   virtual bool AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep) {return false;}
    virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr){return false;}
    /**
 	* @brief 自动连接并执行redis命令
@@ -127,7 +128,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
 	* @param pRedisStep 执行redis命令的redis步骤实例
 	* @return 是否可以执行
 	*/
-   virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword = "") {return(false);}
+   virtual bool AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword = "") {return(false);}
    /**
    	 * @brief 发送数据
    	 * @note 指定连接标识符将数据发送。此函数先查找与strIdentify匹配的stMsgShell，如果找到就调用
@@ -386,7 +387,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param dTimeout 超时时间
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(Step* pStep, double dTimeout = 0.0){return(false);}
+    virtual bool RegisterCallback(std::unique_ptr<Step> pStep, double dTimeout = 0.0){return(false);}
     /**
      * @brief 删除步骤回调
      * @param pStep 步骤回调
@@ -414,7 +415,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 延迟Step超时时间（重新设置超时时间）
      * @param pStep 被延迟的Step
@@ -487,7 +488,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 注册redis回调
      * @param strHost redis节点IP
@@ -495,7 +496,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 添加指定标识的redis context地址
      * @note 添加指定标识的redis context由Worker调用，该调用会在Step类中添加一个标识和redis context的对应关系。
@@ -564,8 +565,8 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      */
     virtual bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
 	virtual bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
-	virtual bool ExecStep(Step* pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
-	virtual bool ExecStep(RedisStep* pStep){return false;}
+	virtual bool ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
+	virtual bool ExecStep(std::unique_ptr<RedisStep> pStep){return false;}
 	virtual Step* GetStep(uint32 uiStepSeq){return nullptr;}
 public:// Labor相关设置（由Cmd类或Step类调用这些方法完成Labor自身的初始化和更新，Labor自己实现这些方法）
 	virtual const std::string& GetWorkerIdentify(){return m_strWorkerIdentify;}

@@ -32,7 +32,7 @@ bool CmdConnectWorker::Start(const tagMsgShell& stMsgShell, int iWorkerIndex)
     LOG4_TRACE("send cmd %d.", oMsgHead.cmd());
     for (int i = 0; i < 3; ++i)
     {
-        if (GetLabor()->ExecStep(new StepConnectWorker(stMsgShell, oMsgHead, oMsgBody)))
+        if (GetLabor()->ExecStep(std::make_unique<StepConnectWorker>(stMsgShell, oMsgHead, oMsgBody)))
         {
         	break;
         }

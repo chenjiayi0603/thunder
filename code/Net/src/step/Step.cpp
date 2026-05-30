@@ -40,9 +40,9 @@ Step::~Step()
     delete m_data; m_data = nullptr;
 }
 
-bool Step::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
+bool Step::RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout)
 {
-    return GetLabor()->RegisterCallback(pStep, dTimeout);
+    return GetLabor()->RegisterCallback(std::move(pStep), dTimeout);
 }
 
 uint32 Step::GetSequence()

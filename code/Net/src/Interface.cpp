@@ -26,7 +26,7 @@ bool Launch(std::unique_ptr<Step> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,doub
 		LOG4_ERROR("%s() null step",__FUNCTION__);
 		return(false);
 	}
-	return GetLabor()->ExecStep(pStep.release(),dTimeout);
+	return GetLabor()->ExecStep(std::move(pStep),dTimeout);
 }
 
 bool LaunchCo(const tagMsgShell& stMsgShell,
@@ -48,15 +48,15 @@ bool LaunchCo(std::unique_ptr<StepCo20> pStep)
 	return Launch(std::move(pStep));
 }
 
-bool Register(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
+bool Register(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
-	if (!GetLabor()->RegisterCallback(pStep,dTimeout))
+	MysqlStep* pRaw = pStep.get();
+	if (!GetLabor()->RegisterCallback(std::unique_ptr<Step>(pStep.release()),dTimeout))
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-		delete pStep; pStep = nullptr;
 		return(false);
 	}
-	pStep->Init(uiTimeOutMax,uiToRetry);
+	pRaw->Init(uiTimeOutMax,uiToRetry);
 	return true;
 }
 

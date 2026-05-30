@@ -41,7 +41,7 @@ E_CMD_STATUS StepConnectWorker::Callback(
         {
             for (int i = 0; i < 3; ++i)
             {
-                if (GetLabor()->ExecStep(new StepTellWorker(m_stMsgShell)))
+                if (GetLabor()->ExecStep(std::make_unique<StepTellWorker>(m_stMsgShell)))
                 {
                 	return(STATUS_CMD_COMPLETED);
                 }

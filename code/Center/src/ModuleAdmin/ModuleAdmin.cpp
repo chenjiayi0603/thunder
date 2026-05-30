@@ -398,7 +398,7 @@ void ModuleAdmin::Get(const net::tagMsgShell& stMsgShell,
     {
         if (oCmdJson["args"].GetArraySize() == 2)
         {
-        	if (!GetLabor()->ExecStep(new StepGetConfig(
+        	if (!GetLabor()->ExecStep(std::make_unique<StepGetConfig>(
         	                        stMsgShell, iHttpMajor, iHttpMinor,
         	                        (int32)net::CMD_REQ_GET_NODE_CONFIG,
         	                        oCmdJson["args"](1), std::string(""), std::string(""))))
@@ -417,7 +417,7 @@ void ModuleAdmin::Get(const net::tagMsgShell& stMsgShell,
     {
         if (oCmdJson["args"].GetArraySize() == 2)
         {
-        	if (!GetLabor()->ExecStep(new coor::StepGetConfig(stMsgShell, iHttpMajor, iHttpMinor,
+        	if (!GetLabor()->ExecStep(std::make_unique<coor::StepGetConfig>(stMsgShell, iHttpMajor, iHttpMinor,
 					(int32)net::CMD_REQ_GET_NODE_CUSTOM_CONFIG,
 					oCmdJson["args"](1), std::string(""), std::string(""))))
         	{
@@ -435,7 +435,7 @@ void ModuleAdmin::Get(const net::tagMsgShell& stMsgShell,
     {
         if (oCmdJson["args"].GetArraySize() == 4)
         {
-			if (!GetLabor()->ExecStep(new coor::StepGetConfig(stMsgShell, iHttpMajor, iHttpMinor,
+			if (!GetLabor()->ExecStep(std::make_unique<coor::StepGetConfig>(stMsgShell, iHttpMajor, iHttpMinor,
 					(int32)net::CMD_REQ_GET_CUSTOM_CONFIG,
 					oCmdJson["args"](1), oCmdJson["args"](2), oCmdJson["args"](3))))
 			{
@@ -472,7 +472,7 @@ void ModuleAdmin::Set(const net::tagMsgShell& stMsgShell,int32 iHttpMajor, int32
         }
         if (oCmdJson["args"].GetArraySize() == 3)
         {
-            if (!GetLabor()->ExecStep(new StepSetConfig(m_pSessionOnlineNodes,
+            if (!GetLabor()->ExecStep(std::make_unique<StepSetConfig>(m_pSessionOnlineNodes,
                     stMsgShell, iHttpMajor, iHttpMinor,
                     iCmd, oCmdJson["args"](1), std::string(""),
                     oCmdJson["args"](2), std::string(""), std::string(""))))
@@ -483,7 +483,7 @@ void ModuleAdmin::Set(const net::tagMsgShell& stMsgShell,int32 iHttpMajor, int32
         }
         else if (oCmdJson["args"].GetArraySize() == 4)
         {
-            if (!GetLabor()->ExecStep(new StepSetConfig( m_pSessionOnlineNodes,
+            if (!GetLabor()->ExecStep(std::make_unique<StepSetConfig>( m_pSessionOnlineNodes,
                     stMsgShell, iHttpMajor, iHttpMinor,
                     iCmd, oCmdJson["args"](1),
                     oCmdJson["args"](2), oCmdJson["args"](3), 
@@ -505,7 +505,7 @@ void ModuleAdmin::Set(const net::tagMsgShell& stMsgShell,int32 iHttpMajor, int32
         int32 iCmd = net::CMD_REQ_SET_CUSTOM_CONFIG;
         if (oCmdJson["args"].GetArraySize() == 4)
         {
-            if (!GetLabor()->ExecStep(new StepSetConfig(m_pSessionOnlineNodes,
+            if (!GetLabor()->ExecStep(std::make_unique<StepSetConfig>(m_pSessionOnlineNodes,
                     stMsgShell, iHttpMajor, iHttpMinor,
                     iCmd, oCmdJson["args"](1), std::string(""),
                     oCmdJson["args"](3), std::string(""), oCmdJson["args"](2))))
@@ -516,7 +516,7 @@ void ModuleAdmin::Set(const net::tagMsgShell& stMsgShell,int32 iHttpMajor, int32
         }
         else if (oCmdJson["args"].GetArraySize() == 5)
         {
-            if (!GetLabor()->ExecStep(new StepSetConfig(m_pSessionOnlineNodes,
+            if (!GetLabor()->ExecStep(std::make_unique<StepSetConfig>(m_pSessionOnlineNodes,
                     stMsgShell, iHttpMajor, iHttpMinor,
                     iCmd, oCmdJson["args"](1), std::string(""), oCmdJson["args"](4),
                     oCmdJson["args"](2), oCmdJson["args"](3))))
@@ -527,7 +527,7 @@ void ModuleAdmin::Set(const net::tagMsgShell& stMsgShell,int32 iHttpMajor, int32
         }
         else if (oCmdJson["args"].GetArraySize() == 6)
         {
-            if (!GetLabor()->ExecStep(new StepSetConfig(m_pSessionOnlineNodes,
+            if (!GetLabor()->ExecStep(std::make_unique<StepSetConfig>(m_pSessionOnlineNodes,
                     stMsgShell, iHttpMajor, iHttpMinor,
                     iCmd, oCmdJson["args"](1), oCmdJson["args"](2), oCmdJson["args"](5),
                     oCmdJson["args"](3), oCmdJson["args"](4))))

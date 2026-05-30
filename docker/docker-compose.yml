@@ -78,7 +78,7 @@ services:
       start_period: 5s
 
   mysql:
-    image: docker.1ms.run/library/mariadb:11.2
+    image: mariadb:11.2
     network_mode: host
     volumes:
       - ./data/mariadb:/var/lib/mysql

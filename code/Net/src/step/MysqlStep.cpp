@@ -154,33 +154,38 @@ E_CMD_STATUS MysqlStep::Timeout()
 	return STATUS_CMD_FAULT;
 }
 
-bool MysqlStep::Launch(MysqlStep *pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
+bool MysqlStep::Launch(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
-	if (pStep == nullptr)
+	if (!pStep)
 	{
 		LOG4_ERROR("%s() null MysqlStep",__FUNCTION__);
 		return(false);
 	}
-	if (pStep->CurTask().size() == 0)//MysqlStep必须含mysql访问任务
+	MysqlStep* pRaw = pStep.get();
+	if (pRaw->CurTask().size() == 0)//MysqlStep必须含mysql访问任务
 	{
 		LOG4_ERROR("%s() CurTask().size() == 0",__FUNCTION__);
 		return(false);
 	}
-	if (!pStep->IsRegistered())
+	if (!pRaw->IsRegistered())
 	{
-		if (!net::Register(pStep,uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
+		if (!net::Register(std::move(pStep),uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
 		{
 			LOG4_ERROR("%s() Register error",__FUNCTION__);
 			return(false);
 		}
+		// pStep moved, pRaw now in mapCallbackStep
 	}
-	if (!GetLabor()->RegisterCallback(pStep))//注册mysql访问任务
+	if (!GetLabor()->RegisterCallback(pRaw))//注册mysql访问任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-		delete pStep; pStep = nullptr;
+		if (pRaw->IsRegistered())
+		{
+			GetLabor()->DeleteCallback(pRaw);
+		}
 		return(false);
 	}
-	pStep->SetStepDesc(std::string("MysqlStep:") + pStep->m_strLastCmd);
+	pRaw->SetStepDesc(std::string("MysqlStep:") + pRaw->m_strLastCmd);
 
 	LOG4_TRACE("%s() uiMysqlStepRegisterCounter:%llu",__FUNCTION__,++uiMysqlStepRegisterCounter);
 	return true;
@@ -195,7 +200,7 @@ bool MysqlStep::AppendTask(const std::string &strCmd,uint8 uiCmdType)
 	}
 	LOG4_TRACE("%s()",__FUNCTION__);
 	SetTask(strCmd,uiCmdType);
-	if (!RegisterCallback(this))//注册任务
+	if (!GetLabor()->RegisterCallback(this))//注册任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
 		return(false);
@@ -219,7 +224,7 @@ bool MysqlStep::AppendTask(uint8 uiCmdType,const char *fmt,...)
 		va_end(args);
 	}
 	SetTask(printf_buf,uiCmdType);
-	if (!RegisterCallback(this))//注册任务
+	if (!GetLabor()->RegisterCallback(this))//注册任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
 		return(false);
