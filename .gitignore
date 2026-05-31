@@ -24,6 +24,7 @@ deploy/HelloHttp/bin/HelloHttp
 *.pid
 deploy/Logic/bin/Logic
 build_asan/
+build-asan/
 core.*
 deploy/include/gmock/
 deploy/include/gtest/
@@ -98,3 +99,4 @@ deploy/Interface/log/readme.txt
 deploy/Logic/bin/Logic
 deploy/Logic/log/readme.txt
 deploy/Logic/log/start_interfaceserver_logic.pid
+.claude/

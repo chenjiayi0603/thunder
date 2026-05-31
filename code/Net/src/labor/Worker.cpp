@@ -4918,12 +4918,20 @@ bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno,
 		return false;
 	}
 	uint32 uiStepSeq = pStep->GetSequence();
-	if (!RegisterCallback(std::move(pStep),dTimeout))
+	if (!pStep->IsRegistered())
 	{
-		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-		return(false);
+		if (!RegisterCallback(std::move(pStep),dTimeout))
+		{
+			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
+			return(false);
+		}
+		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
 	}
-	LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
+	else
+	{
+		// 幂等：已注册，对象由 mapCallbackStep 持有，放弃本地 unique_ptr 所有权
+		(void)pStep.release();
+	}
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
     auto step_iter = mapCallbackStep.find(uiStepSeq);
     if (step_iter == mapCallbackStep.end())
