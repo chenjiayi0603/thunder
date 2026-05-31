@@ -173,19 +173,16 @@ bool ModuleHello::DispatchJsonTestsFromBody(const net::tagMsgShell& stMsgShell, 
     const std::string& body = oInHttpMsg.body();
     if (body.empty())
     {
-        Response(stMsgShell, oInHttpMsg, 400);
         return false;
     }
     util::CJsonObject obj;
     if (!obj.Parse(body))
     {
-        Response(stMsgShell, oInHttpMsg, 400);
         return false;
     }
     std::string strOption;
     if (!obj.Get("option", strOption) || strOption.empty())
     {
-        Response(stMsgShell, oInHttpMsg, 400);
         return false;
     }
 
