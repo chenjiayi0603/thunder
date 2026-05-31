@@ -260,8 +260,8 @@ bool TcpCenterConnector::ReportNodeStatus(const std::string& node_report, bool i
             MsgBody oBody;
             oHead.set_cmd(cmd);
             oHead.set_seq(seq);
-            oHead.set_msgbody_len(static_cast<uint32_t>(node_report.size()));
             oBody.set_body(node_report);
+            oHead.set_msgbody_len(oBody.ByteSize());
             pConn->pWaitForSendBuff->Write(oHead.SerializeAsString().c_str(), oHead.ByteSize());
             pConn->pWaitForSendBuff->Write(oBody.SerializeAsString().c_str(), oBody.ByteSize());
             TC_LOG_TRACE("ReportNodeStatus: buffered for " << key);
@@ -625,8 +625,8 @@ bool TcpCenterConnector::SendRegOrBeat(CenterConnectionAttr* pConn,
     MsgBody oBody;
     oHead.set_cmd(cmd);
     oHead.set_seq(seq);
-    oHead.set_msgbody_len(static_cast<uint32_t>(body.size()));
     oBody.set_body(body);
+    oHead.set_msgbody_len(oBody.ByteSize());
 
     pConn->pSendBuff->Write(oHead.SerializeAsString().c_str(), oHead.ByteSize());
     pConn->pSendBuff->Write(oBody.SerializeAsString().c_str(), oBody.ByteSize());
@@ -731,8 +731,8 @@ bool TcpCenterConnector::AutoConnect(const std::string& strIdentify,
     MsgBody oBody;
     oHead.set_cmd(cmd);
     oHead.set_seq(seq);
-    oHead.set_msgbody_len(static_cast<uint32_t>(body.size()));
     oBody.set_body(body);
+    oHead.set_msgbody_len(oBody.ByteSize());
     pConn->pWaitForSendBuff->Write(oHead.SerializeAsString().c_str(), oHead.ByteSize());
     pConn->pWaitForSendBuff->Write(oBody.SerializeAsString().c_str(), oBody.ByteSize());
 
