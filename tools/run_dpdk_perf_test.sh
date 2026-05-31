@@ -11,7 +11,7 @@ DPDK_INC_X86="${DPDK_ROOT}/usr/include/x86_64-linux-gnu/dpdk"
 SUDO_PASS="${SUDO_PASS:-1q2w3e}"
 
 # 编译
-SOURCE="${0%.sh}.c"
+SOURCE="$(dirname "$0")/dpdk_perf_final.c"
 [ -f "$SOURCE" ] || { echo "请将 dpdk_perf_final 的 C 源码放到 $SOURCE"; exit 1; }
 
 gcc -O2 -o /tmp/dpdk_perf_final "$SOURCE" \

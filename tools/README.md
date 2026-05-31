@@ -9,34 +9,37 @@
 | `dpdk_perf_final.c` | DPDK ring 虚拟端口收发测试（功能/吞吐/延迟） |
 | `run_dpdk_perf_test.sh` | 一键编译运行脚本 |
 
-### 前置条件
+### 当前环境实测结果
 
-当前环境 **不具备** 运行条件，需要：
+```
+$ ./tools/run_dpdk_perf_test.sh
 
-1. **安装 DPDK**：
-   ```bash
-   # 安装到 ~/local/dpdk（脚本默认路径）
-   # 或修改 run_dpdk_perf_test.sh 中的 DPDK_ROOT
-   ```
+EAL: Detected CPU lcores: 20
+EAL: Detected NUMA nodes: 1
+EAL: No free 2048 kB hugepages reported on node 0
+EAL: Cannot get hugepage information.
+RING: Cannot reserve memory for tailq
+MEMPOOL: Cannot allocate tailq entry!
+ETHDEV: Invalid port_id=0
+Segmentation fault (core dumped)
+```
 
-2. **配置大页内存**：
+✅ **编译通过** — gcc 链接成功  
+❌ **运行失败** — DPDK EAL 初始化需要大页内存，当前 HugePages_Total=0
+
+### 修复步骤
+
+1. **配置大页内存**：
    ```bash
    echo 1024 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
    ```
 
-3. **加载 DPDK 内核驱动**（如使用物理网卡）或使用 `--no-pci` 模式（仅 ring 虚拟端口，无需物理网卡）
+2. **重新运行**：
+   ```bash
+   ./tools/run_dpdk_perf_test.sh
+   ```
 
-### 编译运行
-
-```bash
-./tools/run_dpdk_perf_test.sh
-```
-
-脚本会：
-- 用 gcc 编译 `dpdk_perf_final.c` → `/tmp/dpdk_perf_final`
-- 通过 sudo 运行（DPDK 需要 root 权限初始化 EAL）
-
-### 运行预期
+### 运行预期（大页配置后）
 
 ```
 Thunder DPDK 数据面性能验证
@@ -54,4 +57,4 @@ DPDK 26.0 | hp=1 | CPU=2400 MHz
 
 ### 与项目关系
 
-Thunder 有 `DpdkIoBackend`（`code/Net/src/labor/DpdkIoBackend.cpp`），作为高性能 I/O 后端选型之一。此测试独立验证 DPDK 数据面是否可用——如果通过，说明 DPDK 环境 OK，可以切换 `io_backend` 配置启用 DPDK 模式。
+Thunder 有 `DpdkIoBackend`（`code/Net/src/labor/DpdkIoBackend.cpp`），作为高性能 I/O 后端。此测试独立验证 DPDK 数据面——编译通过后，配好大页即可运行。
