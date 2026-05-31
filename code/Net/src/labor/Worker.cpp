@@ -4917,12 +4917,13 @@ bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno,
 		LOG4_ERROR("%s() null pStep",__FUNCTION__);
 		return false;
 	}
-	uint32 uiStepSeq = pStep->GetSequence();
+	Step* pRawStep = pStep.get();
 	if (!RegisterCallback(std::move(pStep),dTimeout))
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
 		return(false);
 	}
+	uint32 uiStepSeq = pRawStep->GetSequence();
 	LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
     auto step_iter = mapCallbackStep.find(uiStepSeq);
