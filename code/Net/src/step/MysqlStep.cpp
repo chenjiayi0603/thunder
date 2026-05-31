@@ -176,6 +176,9 @@ bool MysqlStep::Launch(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax,uint
 		}
 		// pStep moved, pRaw now in mapCallbackStep
 	}
+	// 未注册分支已 move 进 mapCallbackStep；已注册分支对象本就由 map 持有。
+	// 两种情况本地 unique_ptr 都不得再 delete（须早于下方失败路径的 DeleteCallback，避免双重释放）。
+	(void)pStep.release();
 	if (!GetLabor()->RegisterCallback(pRaw))//注册mysql访问任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);

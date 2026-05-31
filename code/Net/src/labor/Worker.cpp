@@ -4927,6 +4927,9 @@ bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno,
 		}
 		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
 	}
+	// 未注册分支已 move 进 mapCallbackStep；已注册分支对象本就由 map 持有。
+	// 两种情况本地 unique_ptr 都不得再 delete（已 move 的 null release 也安全）。
+	(void)pStep.release();
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
     auto step_iter = mapCallbackStep.find(uiStepSeq);
     if (step_iter == mapCallbackStep.end())
