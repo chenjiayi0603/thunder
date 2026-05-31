@@ -116,25 +116,25 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start
+        ./node.sh start all
         exec tail -f /dev/null
     deploy:
       resources:
         limits:
-          cpus: "3.00"
-          memory: 2G
+          cpus: "6.00"
+          memory: 4G
         reservations:
-          memory: 256M
+          memory: 512M
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "ss -tln | grep -q ':27000 '",
+          "ss -tln | grep -q ':27000 ' && ss -tln | grep -q ':27022 ' && ss -tln | grep -q ':27032 '",
         ]
-      interval: 3s
-      timeout: 5s
-      retries: 25
-      start_period: 30s
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 40s
 
   logic:
     <<: [*thunder-node, *thunder-ulimits]
@@ -148,7 +148,7 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
@@ -180,7 +180,7 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
@@ -206,7 +206,7 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
@@ -239,7 +239,7 @@ services:
         set -e
         chmod +x ./node.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
         ./scripts/gen_self_signed_https_cert.sh || true
-        ./node.sh start all
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
@@ -269,7 +269,7 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
+        ./node.sh start
         exec tail -f /dev/null
     deploy:
       resources:
