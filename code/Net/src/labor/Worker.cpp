@@ -4918,18 +4918,12 @@ bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno,
 		return false;
 	}
 	uint32 uiStepSeq = pStep->GetSequence();
-	if (!pStep->IsRegistered())
+	if (!RegisterCallback(std::move(pStep),dTimeout))
 	{
-		if (!RegisterCallback(std::move(pStep),dTimeout))
-		{
-			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-			return(false);
-		}
-		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
+		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
+		return(false);
 	}
-	// 未注册分支已 move 进 mapCallbackStep；已注册分支对象本就由 map 持有。
-	// 两种情况本地 unique_ptr 都不得再 delete（已 move 的 null release 也安全）。
-	(void)pStep.release();
+	LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
     LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
     auto step_iter = mapCallbackStep.find(uiStepSeq);
     if (step_iter == mapCallbackStep.end())

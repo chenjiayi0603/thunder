@@ -167,18 +167,12 @@ bool MysqlStep::Launch(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax,uint
 		LOG4_ERROR("%s() CurTask().size() == 0",__FUNCTION__);
 		return(false);
 	}
-	if (!pRaw->IsRegistered())
+	if (!net::Register(std::move(pStep),uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
 	{
-		if (!net::Register(std::move(pStep),uiTimeOutMax,uiToRetry,dTimeout))//注册定时任务
-		{
-			LOG4_ERROR("%s() Register error",__FUNCTION__);
-			return(false);
-		}
-		// pStep moved, pRaw now in mapCallbackStep
+		LOG4_ERROR("%s() Register error",__FUNCTION__);
+		return(false);
 	}
-	// 未注册分支已 move 进 mapCallbackStep；已注册分支对象本就由 map 持有。
-	// 两种情况本地 unique_ptr 都不得再 delete（须早于下方失败路径的 DeleteCallback，避免双重释放）。
-	(void)pStep.release();
+	// pStep moved into net::Register, ownership transferred
 	if (!GetLabor()->RegisterCallback(pRaw))//注册mysql访问任务
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
