@@ -4,6 +4,8 @@
 > 状态: 设计 / 待评审(未落地)
 > 选型依据: [center_raft_implementation_options.md](./center_raft_implementation_options.md)(为何选 NuRaft 而非手写/braft/etcd)
 > 一句话: **用 NuRaft 替换 Center Worker 内自研的简化 Raft(`SessionRaftCluster` + `CmdRaft*` 插件),把选主 / node_id 分配 / 在线表 / 配置变更升级为「真正的 Raft 日志复制 + 持久化」,消除自研 Raft 与 leader lease 的正确性负债;节点内 `Loader → shm → Worker` 一跳与 `CenterConnector` 客户端侧完全不动。**
+>
+> ⚠️ **投入前先权衡**: 本方案只修服务端共识,**客户端那套不优雅的找主/重试/心跳原样保留**(见 [etcd 评估](./etcd_as_center_evaluation.md) §8)。且**若未来用 k8s 运维,Center 大半职责被 k8s 原生吃掉、node_id 可用 StatefulSet 序号解,独立 Center 很可能消解**(见 [k8s 场景评估](./center_on_k8s_evaluation.md))——届时现在投入的自研共识工作会被抵消。**决定是否现在嵌 NuRaft 前,务必读这两篇。**
 
 ---
 

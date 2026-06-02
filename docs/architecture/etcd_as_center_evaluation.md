@@ -4,6 +4,8 @@
 > 状态: 评估 / 技术探索（暂不落地实现）
 > 驱动目标: ① 降低自研 Raft 的正确性维护负担；② 评估用成熟强一致 KV 接管控制面、同时保留 shm 零跳直推的可行性
 > 结论先行: **etcd 能以原语方式接管 Center 的全部职责，且恰好原生解决 [gossip 方案](./gossip_decentralization_evaluation.md)绕不过去的枢纽障碍——`node_id` 强一致分配（etcd 的 txn/CAS 主场）。代价是引入一个外部强一致组件（仍需部署/运维，但无需自研 Raft）。节点内 `Loader → shm → Worker` 一跳完整保留，「shm 零跳直推」优势不丢。**
+>
+> 关联: [NuRaft 接入设计](./nuraft_center_integration_design.md)(嵌库方案) · [k8s 场景评估](./center_on_k8s_evaluation.md)(上 k8s 后 Center 大半消解,影响"是否值得现在自研/嵌库"的权衡)
 
 ---
 
@@ -229,6 +231,33 @@ etcd 黄金客户端是 **Go**(clientv3);Thunder 是 C++,两条路:
 对称地看运行时代价:
 - braft 拖 **bthread** → 已排除;etcd C++ 客户端拖 **gRPC** → 同类问题;NuRaft 只拖 **ASIO**(干净)→ 但**只修服务端,客户端仍丑**。
 - **HTTP gateway 是关键解法**: 走 Thunder 已有 HTTP,绕开 gRPC 运行时,几乎消除"两套运行时"顾虑,代价是 watch 略不顺。
+
+#### HTTP gateway 怎么接 Thunder(细节)
+
+**方向**: Thunder 当**客户端**,用已有 **curl(出站)+ OpenSSL** 连 etcd 的 HTTPS gateway;不是 Thunder 的 HTTPS 服务端 codec(那是别人连 Thunder 用的)。etcd 说标准 HTTPS,双方都用通用协议,不需谁特别适配谁。
+
+**侵入性低**: 业务 Worker/插件/Manager **零改**,改动锁在一个 `EtcdCenterConnector`(实现现有 `CenterConnector` 接口),约 **300~450 行**(走 gateway 约 400~550,watch/续租要多写点)。
+
+**长连接 vs 短连接**(两条连接):
+
+| 操作 | 连接 | gateway 接口 |
+|---|---|---|
+| watch(路由/配置推送) | **长连接**(常驻流式,etcd 持续推事件) | `POST /v3/watch`(HTTP/1.1 chunked) |
+| KV / txn / range(发号/注册/查询) | 短请求-响应(建议 HTTP keep-alive 复用一条 TLS) | `POST /v3/kv/{put,txn,range}` |
+| lease 续租 | 短请求(周期发) | `POST /v3/lease/{grant,keepalive}` |
+
+- curl 支持 HTTPS + 流式读,配 libev(curl multi)能挂住 watch 长连,事件来一条回调一条 → 与现状"一条常驻收推送 + 若干请求"结构一致。
+- **代价**: 不用 SDK 就拿不到自动续租/自动续看,需自己补——续租起个定时器周期 POST,watch 记 `last revision` 断线重连。但对着 etcd 干净 API 写,比现状 Center 手搓简单。
+
+**单 / 3 节点都支持**(与现状 Center 对应):
+
+| etcd 实例 | 容忍故障 | 对应 |
+|---|---|---|
+| 1(单节点) | 0 | 开发/本地(如现状单 Center) |
+| **3** | 1 | 生产标配(如现状 3 Center) |
+| 5 | 2 | 更大集群 |
+
+> 用奇数(1/3/5),别用 2/4(偶数不增容错还多开销)。与现状 Center 单/3 节点模式一一对应,无缝。
 
 ### 8.4 对选型的影响
 
