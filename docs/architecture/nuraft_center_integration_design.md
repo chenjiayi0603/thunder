@@ -203,6 +203,27 @@ CmdNodeRegister
 | 单节点引导 | `m_raftSingleNode` 立即成 leader | 单节点集群也立即成 leader,需配初始成员表 |
 | leader lease 读 | 自研 `raft_leader_lease_design.md`(T2,在做) | **NuRaft 自带 leadership expiration / lease read → 自研设计作废** |
 
+### 8.5 现状的"保存/同步"逻辑也要一并替换
+
+> 不只是选举。现状 Center **没有磁盘持久化**——所谓"保存"其实是**纯内存态 + 靠 AppendEntries/RequestVote 心跳捎带同步**。这套也要全替换。
+
+| 现状逻辑(代码) | 现在怎么"保存/同步" | 替换为 |
+|---|---|---|
+| `m_raftTerm` / `m_raftVotedFor` | 内存任期/投票,不落盘 | NuRaft `srv_state`(**落盘**) |
+| `m_uiNextNodeIdAlloc` 游标 (`SessionRaftCluster.cpp:245`) | 内存 node_id 游标(mod 255 回绕) | state_machine 的空闲槽位集合(随**快照落盘**) |
+| `MergeNodeIdAllocRing` + `leader_next_node_id_alloc` + `next_node_id_alloc_hint` + `voter_next_node_id_alloc_hint` | 游标靠心跳/投票 RPC 捎带 mod255 合并 | `AllocNodeId` 日志 entry + apply(**真共识**) |
+| `m_raftOnlineSnapshotSeq` + `BumpOnlineSnapshotSeqForRaft` + `FillLeaderOnlineSnapshotForRaftAppend` + `ApplyOnlineSnapshotFromLeader` (`SessionOnlineNodes.cpp:380-428`) | 在线表靠 Leader 心跳搭**全量快照**,Follower 整体替换 | `Register/Deregister` 日志 entry + state_machine + NuRaft **增量复制 + 快照** |
+
+**这是净升级,不只是平移**:
+
+```
+现状:  所有状态在内存 ── 三个 Center 一起重启 ──► node_id 游标归1 + 在线表清空 (全丢)
+NuRaft: 日志/快照/srv_state 落盘 ── 全重启 ──► 从磁盘回放恢复 (G5)
+```
+
+- 现状每次心跳捎带**全量**在线表快照(`FillLeaderOnlineSnapshotForRaftAppend`)→ 节点多/在线表大时心跳变胖;NuRaft 是**增量日志复制**,只在落后太多才发快照,更省带宽。
+- 现状 node_id mod255 游标合并是"尽力对齐"的业务近似;NuRaft 是日志强一致,**分区零碰撞**。
+
 ---
 
 ## 9. 日志保存(Raft 日志持久化)
