@@ -4022,3 +4022,19 @@ App ──→ RNIC (RDMA 网卡)           RNIC ──→ App 内存
 > - v1.1: 重写 1.2 双模式架构图（默认 + SQPOLL）；新增 §1.5.2.1 SQPOLL 核心函数深度解析 + Thunder 实战分析；更新 §2 声明引用实际实现
 > - v1.2: 重写 §1.6 为双模式内核路径对比（4 子节）；§1.5.2.1 数据流串接为端到端全链路；重写 §5.5 DPDK+io_uring 混合方案（5 子节）；修正 §4.5 C++26 发布状态
 > - v1.3: 新增 §1.4.1 io_uring 两类 fd 详解 + /proc/fd 验证方法；新增 §1.4.2 三大核心操作 + send/recv 差异 + ZC 双 CQE；§1.2 新增双模式端到端流程对比图；§2 新增 Thunder SQPOLL 5 阶段调用流程图；新增 §1.6.5 通知链详解（内核→eventfd→epoll→用户态 4 跳）
+
+---
+
+## 附录A: AsioUringIoBackend 内部设计
+
+> 2026-05-22 | asio_uring 架构剖析 + nginx/envoy 同类项对比
+
+---
+
+(详见原文档内容)
+
+## 附录B: 三路驱动机制
+(详见原文档: asio-uring-triple-drive-mechanism.md)
+
+## 附录C: 并发模型详解
+(详见原文档: io_uring_concurrency_model.md)

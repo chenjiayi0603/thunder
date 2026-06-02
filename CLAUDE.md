@@ -47,7 +47,11 @@ tests/               # Python 测试（一键入口: run_all.sh）
   unit/              # 单元测试（64 cases, 零外部依赖）
   e2e/               # 端到端集成测试（25 cases, 需 Docker）
   benchmark/         # 性能基准测试（wrk + curl）
-docs/                # 架构设计文档
+docs/                # 设计文档
+  architecture/       # 架构设计 (7篇: IPC/优雅重启/优化)
+  io/                 # I/O 后端 (6篇: io_uring/DPDK/策略)
+  codec/              # 编解码器 (2篇: HTTPS)
+  reports/            # 测试/性能报告 (5篇)
 cmake/               # CMake 模块与构建说明
 ```
 
