@@ -162,6 +162,42 @@ CmdNodeRegister
 | `ModuleAdmin/StepSetConfig.cpp` | 直接写配置→下发 | `Propose(SetConfig)` → apply 后再走**现有下发链路** |
 | 路由/配置 → shm | version++ / 半包保护 | **完全不变**(apply 后调用现有写 shm 逻辑) |
 
+### 7.1 服务注册信息是不是 Raft 日志?(澄清)
+
+**是,服务注册信息也走 Raft 日志,不是只有 node_id。** 但要分清"变更"和"心跳",并非所有注册相关动作都进日志。
+
+Center 三类数据,哪些进日志:
+
+| Center 数据 | 走 Raft 日志? | entry 类型 |
+|---|---|---|
+| ① node_id 分配 | ✅ 走 | `AllocNodeId` |
+| ② 服务注册(节点上线) | ✅ 走 | `RegisterNode` |
+| ② 服务注销(下线/超时摘除) | ✅ 走 | `DeregisterNode` |
+| ② 周期心跳(还活着,不改成员) | ❌ **不走** | Leader 本地刷租约时间戳 |
+| ③ 配置变更 | ✅ 走 | `SetConfig` |
+
+**同一份注册信息在三处,角色不同(别混)**:
+
+```
+ ① Raft 日志(变更流水)          ② 状态机(当前全量)         ③ 快照(全量落盘)
+ ┌────────────────────┐        ┌──────────────────┐      ┌──────────────┐
+ │ #5 Register(Logic,  │        │  在线表:          │      │ 在线表全量    │
+ │      ip:port, id=7) │ apply  │   Logic@ip:port,7 │ 压缩 │ + node_id槽位 │
+ │ #6 Register(Hello,  │ ─────► │   Hello@ip:port,8 │ ───► │ + 配置        │
+ │      ip:port, id=8) │        │ (内存当前状态)    │      │ (删旧日志)    │
+ │ #7 Deregister(id=7) │        └──────────────────┘      └──────────────┘
+ └────────────────────┘
+   "发生了什么"(操作)            "现在是什么"(结果)         "现在是什么"(落盘)
+```
+
+- **日志** = 操作流水(谁注册/注销),顺序追加;
+- **状态机** = 日志 apply 后的**当前在线表**(查"现在谁在线"读这个,不翻日志);
+- **快照** = 状态机某刻全量转储,落盘后压缩日志(删快照前流水);完整在线表 = 快照 + 快照后日志。
+
+**为什么心跳不走日志**: 节点每隔几秒上报"我还活着"(NodeReport),若每次都写一条 Raft 日志 → **写放大爆炸**。所以心跳只由 Leader 本地刷"最后存活时间";只有**成员真变化**(新注册 / 超时判定下线)才写 `Register/Deregister` 日志。
+
+> 一句话: **日志里有 node_id 分配 + 注册/注销 + 配置变更(都是"变更操作");不在日志里:周期心跳(只刷 Leader 本地租约,防写放大)。当前在线表是 apply 出来的结果,存状态机 + 快照,查询读结果而非翻日志。**
+
 ---
 
 ## 8. ⑥ 选主接管(NuRaft 接管选举,自研全删)
@@ -194,6 +230,45 @@ CmdNodeRegister
 
 - NuRaft 在**自己线程**经回调(become leader/follower)通知角色变化 → `PostToEventLoop` 更新 libev 线程的缓存量(`m_isLeader` / `m_leaderId` / `m_beLeaderTime`)。**所有 leader 查询读缓存,不跨线程读 NuRaft。**
 - **重定向语义保留**: 非 leader 收注册 → `engine->IsLeader()==false` → 填 `engine->LeaderId()` → 业务节点重试 leader(行为与现状对齐,业务无感;不用 NuRaft 的 auto-forward,改动更小)。
+
+#### 业务节点怎么送到主(写必须送主)
+
+只有主能分配 node_id、能提交共识,所以写请求最终要到主。机制(现状已有,`CenterConnector`/`TcpCenterConnector` 不动):
+
+```
+业务节点(Logic)              Center 集群(C1主 C2/C3从)
+   │ ① 注册/要 node_id, 发给已知的某个 Center
+   ▼
+ 打到 C2 (Follower)
+   │ C2: "我不是主, 主是 C1"  ← 回 engine->LeaderId()
+   ▼ ② 重定向
+ 打到 C1 (Leader): 分配 node_id / 写共识 / 回包
+   ▼
+ 业务节点记住"主是 C1", 之后直发 C1
+```
+
+- 业务节点配置里有全部 3 个 Center 地址(现有 `centers` 列表)。
+- **NuRaft 关键利好**: 任意节点(含从)都知道当前主(`LeaderId()`),从哪问都能被正确重定向。
+
+#### 三类请求的路由
+
+```
+写(注册 / 要 node_id) ──► 必须主(只有主能分配、写共识)
+心跳(liveness)        ──► 主(主管超时判定→写 Deregister; 不走共识, 轻量)
+读(路由查询)          ──► 任意 Center(从节点也有在线表副本, 容忍最终一致时分担)
+```
+
+#### 换主时(NuRaft 会换主)
+
+```
+C1 挂 → NuRaft 选出 C3 新主
+ 业务节点仍发 C1 → 超时/连不上 → 轮询其它 Center
+   → 打到 C2 → "主是 C3" → 转 C3   (或直接打到 C3 自己就是主)
+ 业务节点更新"主是 C3"
+```
+
+- 换主期业务节点**多重试几次**(redirect),**不丢数据**(没拿到 node_id 就重试到主确认)。
+- 与现状一致;NuRaft 换主收敛通常快于现状 7~8.5s,且任意节点准确知道新主,redirect 不指错。
 
 ### 8.4 行为差异
 
@@ -639,6 +714,98 @@ raft_params 调参(对应现状 center_beat=2s):
 > 单节点(`m_raftSingleNode` 等价场景):集群只有 1 个 Center 时,多数 = 自己,启动即 Leader,无选举等待。
 
 > API 为示意(`raft_launcher` / `raft_params` / `add_srv` / `cb_func` / `append_entries`),具体签名以锁定的 NuRaft v3.0.0 头文件为准。
+
+---
+
+## 17. NuRaft 全功能特性 × Thunder 场景作用
+
+> 标注: ✅ 核心刚需(必用) · 🔵 顺带受益(用得上,非关键) · ⚪ 备而不用(Center 场景用不到,不用即不付代价)
+
+### A. 核心 Raft 机制(全用)
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| Leader 选举(随机超时) | 选出唯一 Leader | 选出唯一**发号者**,保证 node_id 单写者 | ✅ |
+| 日志复制(AppendEntries) | 多数派持久化后提交 | node_id/在线表/配置的**强一致载体** | ✅ |
+| 日志持久化(log_store) | 日志落盘 | 崩溃恢复(**现状没有,全重启丢状态**) | ✅ |
+| 状态持久化(srv_state) | term/voted_for 落盘 | 重启不重复投票、不丢任期 | ✅ |
+| 提交→apply(state_machine) | 提交日志驱动状态机 | 把日志变成**在线表/node_id 实际变更** | ✅ |
+| 安全不变式(Log Matching/选举限制/**Figure 8**) | Raft 正确性保证 | node_id 提交后**不丢不撞**(自研最易错,白嫖) | ✅ |
+
+### B. 选举增强
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| Pre-vote | 拉票前先试探 | 防分区节点回归瞎涨 term,减少无谓换主 | ✅ |
+| Priority election(优先级,0=不参选) | 可定优先级 | 指定某 Center 优先当主 / 排除某节点出选举(运维友好) | 🔵 |
+| Leadership expiry(失多数派自动退位) | 主失联自动退位 | 防"假主"继续发号(**脑裂防护一环**) | ✅ |
+| Leadership transfer(主动让位) | 优雅转移 leadership | 运维下线 leader 前转移,减少抖动 | 🔵 |
+| Custom quorum(自定义法定人数) | 灵活 quorum | Center 3 节点标准多数即可 | ⚪ |
+
+### C. 复制与快照
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| 快照 + 日志压缩 | 定期快照后截断旧日志 | **日志不无限增长**(§9) | ✅ |
+| InstallSnapshot 追平 | 给落后 follower 发快照 | 新加/重启的 Center 快速追平 | ✅ |
+| 异步快照(async compaction,v3) | 出快照不阻塞 | Center 状态小本就快,锦上添花 | 🔵 |
+| Streaming/pipeline 复制(v3) | 高吞吐流水线 | Center 写罕见,用不到 | ⚪ |
+| 并行 append / 批量提交 | 提升写吞吐 | 用不满但无害 | 🔵 |
+
+### D. 成员管理
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| 动态成员变更(add_srv/remove_srv) | 单节点安全增删 | **bootstrap 加节点**用它(§16.3);扩缩容备用 | 🔵 |
+| Learner(非投票只读副本) | 只读不参与投票 | Center 不需要只读副本 | ⚪ |
+| 写请求自动转发到 leader(auto_forwarding) | follower 代转发 | Thunder 用"客户端重定向到 leader"模型,不开它(改动更小) | ⚪ |
+
+### E. 一致性读
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| Leader lease read(线性一致读) | 租约保证强一致读 | Admin/路由强一致查询;**替代自研 leader lease**(`raft_leader_lease_design` 作废) | ✅ |
+| Follower 最终一致读 | 任意节点读 | 容忍最终一致时分担路由查询 | 🔵 |
+
+### F. 可插拔 / 集成
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| 自定义 log_store | 日志存储可换 | 落盘格式自定 / 移植成熟实现(§9) | ✅ |
+| 自定义 state_mgr | 状态管理可换 | 接 Center 数据目录(`conf/conf2/conf3`) | ✅ |
+| 自定义 logger | 日志接口可换 | 接 **log4cplus**(§10.5) | ✅ |
+| 可插拔传输(ASIO 默认) | 传输层可换 | 用默认 ASIO(**已有**),不引 brpc/bthread(G8) | ✅ |
+| TLS/SSL 传输 | Raft 通信加密 | Center 间 Raft 加密(看部署) | 🔵 |
+
+### G. 回调与钩子
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| cb_func 事件回调(BecomeLeader/Follower/Joined…) | 状态变化通知 | 角色变化 → 更新 `m_isLeader` 缓存(§8.3) | ✅ |
+| append_entries 返回 future(cmd_result.then) | 异步写结果 | Propose 异步结果 → **唤醒挂起的注册协程**(§5/§6) | ✅ |
+| pre_commit(预提交/推测执行) | 提交前钩子 | 高级优化,Center 用不到 | ⚪ |
+| rollback(回滚推测) | 撤销推测执行 | 同上 | ⚪ |
+
+### H. 运维 / 可观测(NuRaft 不自带,需自建)
+
+| 特性 | 说明 | Thunder Center 作用 | |
+|---|---|---|---|
+| 复制进度(peer match_index 等) | 暴露复制状态 | 接 Admin 页看 follower 落后(§10.2) | ✅ |
+| 内部运行日志 | NuRaft 内部事件 | 接 log4cplus 分析选主抖动/复制延迟(§10.5) | 🔵 |
+| 手动触发快照 | 主动出快照 | 运维/测试需要时 | 🔵 |
+
+### 小结
+
+```
+✅ 核心刚需 : 选举 + 日志复制 + 持久化 + 快照 + state_machine + Figure8
+              + pre-vote + leadership expiry + lease read + 可插拔(log_store/state_mgr/logger/ASIO)
+              + cb_func + append_entries future  ← 这些撑起整个方案
+🔵 顺带受益 : priority/transfer 选举、异步快照、并行 append、TLS、follower 读、成员变更、可观测自建
+⚪ 备而不用 : streaming 高吞吐、learner、auto_forwarding、custom quorum、pre_commit/rollback
+              (Center 单组小状态低写,用不到这些重武器 —— 不用即不付代价)
+```
+
+> 一句话: **Center 真正吃的是 NuRaft 的"强一致复制 + 持久化 + 选举 + 可插拔集成 + 异步回调"这组核心;NuRaft 那些为大规模/高吞吐准备的重特性(streaming/learner/multi-raft)用不到,但也不构成负担。**
 
 ---
 
