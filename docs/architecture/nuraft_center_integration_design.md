@@ -487,6 +487,110 @@ deploy/Center/data/raft/log/0000001.seg  (append-only):
 
 ---
 
+## 16. NuRaft 启动 / 运行 / 选主(运行机制)
+
+> 前面讲了"换成 NuRaft 后改什么",这节讲 **NuRaft 本身怎么起来、怎么跑、怎么选主**——到能照着写的程度。
+
+### 16.1 启动装配(谁提供什么)
+
+NuRaft 用 `raft_launcher` 把几个零件拼起来。**我们写 ①②③④,NuRaft 自带 ⑤⑥**:
+
+```
+                 ┌────────── raft_launcher.init() ──────────┐
+我们写的 ┌────────┤                                          │
+        │ ① state_machine = CenterStateMachine              │  apply 日志→在线表/node_id/配置
+        │ ② state_mgr     = 管 log_store/srv_state/集群配置  │  负责落盘与加载
+        │ ③ logger        = log4cplus 适配器                 │
+        └─►④ raft_params  = 选举超时/心跳/快照间隔(调参)    │
+NuRaft  ┌─►⑤ asio_service = ASIO 传输(开 N 个线程)          │  Raft 网络
+ 自带   │  ⑥ rpc_listener = 监听本节点 Raft 端口             │
+        └──┤                                                 │
+           └──────────► 返回 raft_server 句柄 ───────────────┘
+                         (之后所有读写/事件都通过它)
+```
+
+| 零件 | 谁写 | 职责 |
+|---|---|---|
+| `state_machine`(CenterStateMachine) | 我们 | commit→apply 业务(§4) |
+| `state_mgr` | 我们 | 提供 `log_store`、读写 `srv_state`(term/voted_for)、加载/保存集群配置 |
+| `log_store` | 我们(移植成熟实现) | Raft 日志落盘(§9) |
+| `logger` | 我们 | NuRaft 内部日志→log4cplus(§10.5) |
+| `raft_params` | 我们(调参) | 选举超时/心跳/快照间隔 |
+| `asio_service` / `rpc_listener` | NuRaft | Raft 网络传输 + 端口监听 |
+
+### 16.2 启动序列(进程起来 → 集群就绪)
+
+```
+Center Worker 启动
+  │
+  ├─ 读 CenterCmd.json: centers[](peer 列表) + 本节点 raft_port + data_dir
+  ├─ 构造 state_mgr → 从磁盘 load 已有日志/快照/srv_state(崩溃恢复靠这步)
+  ├─ 构造 CenterStateMachine → 若有快照, apply_snapshot 还原在线表/node_id
+  ├─ raft_launcher.init(sm, state_mgr, logger, raft_port, asio_opt, params)
+  │     → asio 起线程, 监听 raft_port, 连 peer
+  └─ 拿到 raft_server → 注册角色回调 cb_func → 进入运行
+```
+
+### 16.3 三个 Center 怎么组成集群(bootstrap)
+
+```
+首次冷启动:
+  C1 先以"单节点集群"起来 → 自己即多数(1/1) → 立刻成 Leader
+  C1.add_srv(C2)  → 把 C2 加进集群配置(本身是一条 Raft 日志)
+  C1.add_srv(C3)  → 加 C3
+  C2/C3 启动时配置为空 → 收到 C1 复制来的集群配置+日志 → 追平, 成 Follower
+
+重启:
+  各节点从磁盘 load 到已有集群配置 → 直接重连 peer, 不用再 add_srv
+```
+
+> 复用现有 `CenterCmd.json` 的 `centers` 数组当 peer 来源,每节点新增 `raft_port` + `data_dir` 两个字段即可。
+
+### 16.4 运行时:两套循环怎么共处
+
+```
+NuRaft(ASIO 线程, N 条)          Worker(libev 主线程)
+─────────────────────           ────────────────────
+选举/心跳/复制 自治跑             业务处理(Cmd/协程)
+       ▲                                │
+       │ Propose(写) ◄──────────────────┘  libev 调 raft_server.append_entries
+       │                                   (NuRaft 线程安全 API)
+       │ apply / 角色变化                  │
+       └── PostToEventLoop ──────────────► │  ev_async 投回主线程
+                                           ▼ OnApplied / 更新 leader 缓存
+```
+- NuRaft 起来后**自治运行**:选举、心跳、复制都在它的 asio 线程内,libev 不管。
+- 下行(写):libev 线程调 `Propose`→`append_entries`(NuRaft 线程安全)。
+- 上行(apply/角色变化):NuRaft 线程 → `PostToEventLoop` → libev 线程(§6)。
+
+### 16.5 怎么选主
+
+```
+raft_params 调参(对应现状 center_beat=2s):
+  election_timeout_lower / upper = 随机区间(如 3000~5000ms)  ← 防同时竞选
+  heart_beat_interval            = 心跳间隔(如 1000ms)
+  leadership_expiry              = 失去多数派多久自动退位
+
+选举流程:
+  开机全是 Follower
+    → 谁选举超时先到(随机, 避免同时)→ 先 pre-vote 试探能否赢
+    → 能赢: term+1, 变 Candidate, 自投一票, 向 peer 发 RequestVote
+    → 拿到多数(2/3)→ 成 Leader → 开始发心跳
+  Leader 失去多数派联系(leadership expiry)→ 自动退位 Follower
+
+角色变化传回业务:
+  NuRaft 自己线程触发 cb_func(BecomeLeader / BecomeFollower)
+    → PostToEventLoop 投回 libev 线程
+    → 更新缓存 m_isLeader / m_leaderId / m_beLeaderTime
+  (业务查"是不是主"读缓存, 不跨线程问 NuRaft)
+```
+
+> 单节点(`m_raftSingleNode` 等价场景):集群只有 1 个 Center 时,多数 = 自己,启动即 Leader,无选举等待。
+
+> API 为示意(`raft_launcher` / `raft_params` / `add_srv` / `cb_func` / `append_entries`),具体签名以锁定的 NuRaft v3.0.0 头文件为准。
+
+---
+
 ## 附录: 关键代码索引(改动锚点)
 
 - node_id 分配点: `code/Center/src/SessionOnlineNodes.cpp:128`(`AllocNextNodeId`)
