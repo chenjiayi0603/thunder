@@ -1192,3 +1192,174 @@ code/
 ---
 
 > 本文档基于 Thunder 项目源码分析生成，版本对应 dev 分支 commit cc1fe18。
+
+---
+
+## 13. 连接监听与 S2S 路由 — 完整链路
+
+### 13.1 每个节点两个端口
+
+```
+每个 Thunder 节点监听两个端口:
+
+  inner_port (16068):    Server 间通信 (S2S)
+                        · Logic/Interface 互连
+                        · Center 的 Raft 心跳
+                        · 编解码: CODEC_PB_INTERNAL (ProtoCodec)
+
+  access_port (27006):   客户端接入 (C2S)
+                        · HTTP/HTTPS/WebSocket
+                        · 编解码: CODEC_HTTP/HTTPS/WS
+```
+
+配置:
+```json
+{
+  "inner_host": "127.0.0.1",
+  "inner_port": 16068,
+  "access_host": "127.0.0.1", 
+  "access_port": 27006,
+  "access_codec": 1
+}
+```
+
+### 13.2 节点注册流程
+
+```
+                 Manager                          Center
+                    │                                │
+  Step 1: 启动      │  CMD_REQ_NODE_REGISTER          │
+                    │  (node_type, node_ip, node_port) │
+                    │ ──────────────────────────────→ │
+                    │                                  │ 写入 SessionOnlineNodes
+                    │  CMD_RSP_NODE_REGISTER           │
+                    │  (node_id + route_snapshot)      │
+                    │ ←────────────────────────────── │
+                    │                                  │
+  Step 2: Manager   │  OnCenterEvent():                │
+          收到响应  │    node_id → SendToWorker        │
+                    │    route_snapshot → shm (共享内存)│
+                    │                                  │
+  Step 3: Worker   │  CheckShareMem():                 │
+          定时轮询  │    version 变化?                  │
+                    │    是 → 读 NodeNotice             │
+                    │         → 更新路由表              │
+```
+
+### 13.3 路由表同步机制
+
+```
+            Manager                  Worker
+               │                        │
+  Center → route_snapshot               │
+               │                        │
+               ▼                        │
+  ┌─────────────────────────┐           │
+  │  共享内存 (shm)          │           │
+  │  ┌───────────────────┐  │           │
+  │  │ blob (protobuf)    │  │  ev_idle│
+  │  │ len                │  │  回调   │
+  │  │ version++          │  │    │    │
+  │  └───────────────────┘  │    │    │
+  └──────────┬──────────────┘    │    │
+             │                   ▼    │
+             │    CheckShareMem()     │
+             │    比较 version        │
+             │    version 不同?       │
+             │    → 读共享内存        │
+             │    → 解析 NodeNotice   │
+             │    → 更新 mapNodeId    │
+```
+
+原子性保证:
+- Manager 先写 blob, 再写 len, 最后 version++ (原子递增)
+- Worker 先读 version, 再读 len, 再读 blob
+- 如果中途 Manager 在写, Worker 读到旧 version → 下次重试
+
+### 13.4 S2S 连接 — Interface 如何找到 Logic
+
+```
+Interface Worker 收到 HTTP 请求:
+  POST /Interface/gentoken {"option":"GenKey"}
+
+  ModuleInterface::AnyMessage():
+    1. 解析 JSON → option=GenKey
+    2. 查路由表: GetNodeIdentify("LOGIC") → "127.0.0.1:16068.0"
+    3. 检查是否已连接: m_mapInnerFd 里有 127.0.0.1:16068 的连接吗?
+       没有 → AutoConnect("127.0.0.1:16068.0")
+            → socket() + connect() + CreateFdAttr(iFd, CODEC_PB_INTERNAL)
+            → 注册到 mapFdAttr, 加 libev EV_READ 监听
+       有 → 直接用已有 fd
+
+    4. SendTo(identify, CMD_REQ_GEN_KEY, seq, body)
+       → ProtoCodec::Encode() → WriteFD → 发到 Logic
+
+  Logic Worker 收到:
+    RecvDataAndDispose → ProtoCodec::Decode → Dispose(MsgHead)
+    → mapSo[CMD_REQ_GEN_KEY] → CmdGetToken::AnyMessage()
+    → 生成 token+key → SendToClient → 发回 Interface
+
+  Interface 收到响应:
+    Dispose(MsgHead) → mapCallbackStep.find(seq)
+    → Step::Callback() → 协程恢复
+    → 构造 HTTP 200 JSON → SendToClient
+```
+
+### 13.5 连接管理
+
+```
+Worker 维护两套连接表:
+
+  mapFdAttr (所有连接):
+    key = fd, value = tagConnectionAttr (recv/send buffer, codec, seq)
+    用途: IO 事件到达时找到对应的连接属性
+
+  m_mapInnerFd (S2S 内部连接):
+    用途: 判断 "identify" 是否已有 TCP 连接
+          避免重复 connect
+
+  连接类型判断:
+    pConn->eCodecType == CODEC_PB_INTERNAL  → 内部 S2S (心跳保活, 不超时断开)
+    否则                                      → 外部客户端 (超时回收)
+
+  tagMsgShell:
+    {iFd, ulSeq} — 连接的"地址"
+    seq 是防重用的: fd 关闭后可能被新连接复用同一个 fd 号
+    seq 不匹配 → 丢弃旧事件
+```
+
+### 13.6 心跳与 Keepalive
+
+```
+内部连接 (CODEC_PB_INTERNAL):
+  dKeepAlive == 0 (长连接)
+  → 定时发送 CMD_REQ_BEAT
+  → 收不到响应 → CheckHeartBeat 标记断线
+  → 超时 → DestroyConnect
+
+外部连接 (客户端):
+  dKeepAlive > 0
+  → 超时未活动 → 回收连接
+  → dActiveTime 每次 IO 刷新
+```
+
+### 13.7 跟 CLB 的路由对比
+
+```
+CLB 路由:
+  请求 → 查后端表 → 选一个 → 转发
+  路由表: hash 表, O(1)
+  后端发现: 配置中心推送 (etcd/consul)
+  连接: 连接池复用
+
+Thunder 路由:
+  请求 → 查路由表 → AutoConnect → 转发
+  路由表: shm (Manager 写, Worker 读)
+  节点发现: Center Raft 集群
+  连接: S2S 长连接 + 心跳保活
+
+核心区别:
+  CLB 不做业务逻辑 (只转发)
+  Thunder S2S 是业务调用 (Interface → Logic 执行 GenKey)
+```
+

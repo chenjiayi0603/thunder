@@ -1,51 +1,50 @@
-# Thunder 工具集
+# Thunder 工具集 — DPDK 逐层验证
 
-## DPDK 数据面性能测试
+## 策略
 
-### 文件
+不在 Thunder 700 行里改。先写 150-300 行小例子，跑通一层再往 Thunder 搬。
 
-| 文件 | 说明 |
-|------|------|
-| `dpdk_perf_final.c` | DPDK ring 虚拟端口收发测试（功能/吞吐/延迟） |
-| `run_dpdk_perf_test.sh` | 一键编译运行脚本 |
+```
+Step 1: Ring PMD         → 验证 DPDK API 基线        ✅ 跑通
+Step 2: AF_PACKET L2     → 验证旁路协议栈可行         ✅ 跑通
+Step 3: F-Stack TCP Echo → 验证用户态 TCP 栈可行      ⏳ 等 F-Stack 安装
+Step 4: 集成到 Thunder   → 搬进 DpdkIoBackend         ⏳ 待 Step 3 跑通
+```
 
-### 前置条件
+## 文件
 
-需要 sudo 分配大页内存：
+| 文件 | 行 | 验证什么 | 依赖 |
+|------|-----|---------|------|
+| `dpdk_perf_final.c` | 100 | Ring PMD 虚拟端口收发 | DPDK |
+| `dpdk_afpacket_echo.c` | 150 | AF_PACKET L2 帧收发 | DPDK |
+| `dpdk_fstack_tcp_echo.c` | 277 | F-Stack TCP Echo (ff_socket/accept/read/write) | DPDK + F-Stack |
+
+## 运行
 
 ```bash
-echo 1024 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+# Step 1: Ring PMD
+sudo ./tools/run_dpdk_perf_test.sh
+
+# Step 2: AF_PACKET L2 Echo
+sudo ./tools/run_dpdk_afpacket_echo.sh
+
+# Step 3: F-Stack TCP Echo (需先装 F-Stack)
+gcc -DHAVE_FSTACK -o /tmp/fstack_echo tools/dpdk_fstack_tcp_echo.c \
+    -I/path/to/f-stack/lib/include -L/path/to/f-stack/lib -lfstack \
+    [DPDK flags...]
+sudo /tmp/fstack_echo --no-pci -l 0 -n 1 \
+    --vdev=net_af_packet0,iface=lo \
+    -d ${DPDK_PMD}/librte_mempool_ring.so \
+    -d ${DPDK_PMD}/librte_net_af_packet.so
+# curl http://127.0.0.1:9999 -d "hello"
 ```
 
-### 编译运行
-
-```bash
-./tools/run_dpdk_perf_test.sh
-```
-
-### 实测结果
+## 性能层级 (5 种)
 
 ```
-Thunder DPDK 数据面性能验证
-DPDK 25.11.0 | hp=1 | CPU=2918 MHz
-
-0→1: OK (recv=1)
-1→0: OK (recv=1)
-
-吞吐量 (0→1, 1024B, burst=32):
-  sent=10000 recv=10000 loss=0 Mbps=1222687 PPS=149253731
-
-延迟 (0→1 ping-pong, 128B):
-  2000/2000 | min=0us avg=0.0us max=1us
+真DPDK PMD > Ring PMD > AF_PACKET > 原生socket > TAP PMD
+  10-20x       ∞         3-5x        1x(基准)      0.5x
+需专用网卡   纯内存     任何网卡     当前ev        调试用
 ```
 
-| 指标 | 结果 |
-|------|------|
-| 功能 | ✅ 双向收发 OK |
-| 丢包 | 0 |
-| 延迟 | min=0us, avg=0.0us, max=1us |
-| 吞吐 (Mbps/PPS 为 ring 内存回环值，非真实网卡) | ~1222 Gbps / ~149M PPS |
-
-### 与项目关系
-
-Thunder 有 `DpdkIoBackend`（`code/Net/src/labor/DpdkIoBackend.cpp`），作为高性能 I/O 后端。此测试验证 DPDK 数据面可用——通过后可切换 `io_backend` 配置启用 DPDK 模式。
+详见 `docs/uring/DPDK+mTCP设计文档.md` 第 13 章。
