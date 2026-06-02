@@ -115,6 +115,13 @@ public:
     virtual bool SendTo(const tagMsgShell& stMsgShell,uint32 cmd,uint32 seq,const std::string & strBody)override;
     virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)override;
     virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)override;
+    struct AutoSendTarget {
+        std::string host;
+        int port = 0;
+        int workerIndex = 0;
+    };
+    bool ParseAutoSendTarget(const std::string& strIdentify, AutoSendTarget& target);
+    bool DoAutoConnect(const AutoSendTarget& target, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
     bool ReportToCenter(bool boRegister = false);// 向管理中心上报负载信息
     bool SendTo(tagConnectionAttr* pConn,uint32 cmd,uint32 seq,const std::string & strBody);
 	bool SendTo(tagConnectionAttr* pConn,const MsgHead& oMsgHead, const MsgBody& oMsgBody);
@@ -165,6 +172,13 @@ protected:
     /** @brief 写完成后的回收/重提/倒 pWaitForSendBuff 决策（Write 与 WriteNotif 共用） */
     bool FinishWriteAndDrain(tagConnectionAttr* pConn, int result);
     /**
+     * @brief 创建 IPC 通道并 fork Worker 子进程（CreateWorker/RestartWorker/GracefulRestartWorker 共用）
+     * @param workerIndex Worker 编号
+     * @param outAttr     [出参] 填充完整的 tagWorkerAttr（含 fd、shm queue、eventfd）
+     * @return >0 父进程得到的子进程 PID，子进程不会返回
+     */
+    pid_t SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr);
+    /**
 	 * @brief 连接创建与销毁
 	 */
     tagConnectionAttr* CreateFdAttr(int iFd, uint32 ulSeq);
@@ -203,6 +217,8 @@ protected:
     /**
    	 * @brief 数据接收处理
    	 */
+    bool ProcessMessages(tagConnectionAttr* pConn,
+                         std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter);
     bool DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataFromCenter(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
