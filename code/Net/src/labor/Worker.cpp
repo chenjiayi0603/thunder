@@ -284,13 +284,36 @@ Worker::~Worker()
 void Worker::Run()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    // libev 事件循环 — 每次迭代的执行顺序 (详见 libev/ev.c:ev_run):
-    //   [三路-1] ev_prepare 回调 → 投递 SQE + 抢先收割 CQE (AsioUringIoBackend::OnPrepare)
-    //   backend_poll (epoll_wait) → 阻塞等待 ring_fd/业务 fd/timer
-    //   [三路-2] ev_io 回调 → ring_fd 可读 → 接货 CQE (AsioUringIoBackend::OnRingReady)
-    //             + 其他就绪 fd 的 IoCallback / ShmReadCallback
-    //   [三路-3] ev_check 回调 → 补刀收割 CQE (AsioUringIoBackend::OnCheck)
-    ev_run (m_loop, 0);
+
+    // 通知 Manager: Worker 初始化完成 (优雅重启时 Manager 等待此消息)
+    {
+        MsgHead oHead;
+        MsgBody oBody;
+        oHead.set_cmd(CMD_WORKER_READY);
+        oHead.set_seq(GetSequence());
+        SendToParent(oHead, oBody);
+    }
+
+    while (true)
+    {
+        ev_run(m_loop, EVRUN_ONCE);
+
+        // 排空模式: 等所有在途请求完成后退出
+        if (m_bDraining)
+        {
+            if (IsDrainComplete())
+            {
+                LOG4_INFO("Worker %d drain complete, exiting", iWorkerIndex);
+                break;
+            }
+            if (time(nullptr) - m_drainStartTime > DRAIN_GRACE_PERIOD)
+            {
+                LOG4_WARN("Worker %d drain timeout %ds, force exit",
+                          iWorkerIndex, DRAIN_GRACE_PERIOD);
+                break;
+            }
+        }
+    }
 }
 
 void Worker::OnTerminated(struct ev_signal* watcher)
@@ -1012,6 +1035,11 @@ bool Worker::FdTransfer()
 
 bool Worker::AcceptClientConn(int iFd)
 {
+    if (m_bDraining || !m_bAccepting)
+    {
+        return true;  // 排空模式: 不accept新连接, SO_REUSEPORT下内核分发给其他Worker
+    }
+
     int iAcceptFd = -1;
 
     if (m_pIoBackend)
@@ -6015,6 +6043,72 @@ bool Worker::Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pR
 		LOG4_WARN("%s", m_pErrBuff);
 	}
 	return(true);
+}
+
+// ========== 优雅重启排空 ==========
+
+void Worker::EnterDrainMode()
+{
+    LOG4_INFO("Worker %d entering drain mode", iWorkerIndex);
+    m_bDraining = true;
+    m_bAccepting = false;
+    m_drainStartTime = time(nullptr);
+
+    // 关闭空闲连接 (无在途数据, 非 S2S)
+    for (auto it = mapFdAttr.begin(); it != mapFdAttr.end(); )
+    {
+        auto* pConn = it->second.get();
+        if (pConn->iFd == m_iC2SListenFd) { ++it; continue; }
+        if (pConn->eCodecType == util::CODEC_PB_INTERNAL) { ++it; continue; }
+        if (pConn->pRecvBuff->ReadableBytes() > 0) { ++it; continue; }
+        if (pConn->pSendBuff->ReadableBytes() > 0) { ++it; continue; }
+
+        LOG4_TRACE("drain: close idle fd %d", pConn->iFd);
+        if (m_pIoBackend)
+        {
+            m_pIoBackend->CancelFd(pConn->iFd);
+            m_pIoBackend->CloseFd(pConn->iFd);
+        }
+        else
+        {
+            close(pConn->iFd);
+        }
+        it = mapFdAttr.erase(it);
+    }
+
+    // 活跃连接: 发送 fd 给 Manager, 由 Manager 转发给 new Worker
+    for (auto it = mapFdAttr.begin(); it != mapFdAttr.end(); )
+    {
+        auto* pConn = it->second.get();
+        if (pConn->iFd == m_iC2SListenFd) { ++it; continue; }
+        if (pConn->eCodecType == util::CODEC_PB_INTERNAL) { ++it; continue; }
+
+        LOG4_TRACE("drain: transfer fd %d to manager", pConn->iFd);
+        send_fd_with_attr(iManagerDataFd, pConn->iFd,
+                          const_cast<char*>(pConn->szRemoteAddr), 32,
+                          static_cast<int>(pConn->eCodecType));
+        // fd 所有权转给 Manager, Worker 不再持有
+        it = mapFdAttr.erase(it);
+    }
+}
+
+bool Worker::IsDrainComplete()
+{
+    // 检查是否有在途数据
+    for (auto& [fd, conn] : mapFdAttr)
+    {
+        if (fd == m_iC2SListenFd) continue;
+        if (conn->eCodecType == util::CODEC_PB_INTERNAL) continue;
+        if (conn->pRecvBuff->ReadableBytes() > 0) return false;
+        if (conn->pSendBuff->ReadableBytes() > 0) return false;
+    }
+    // 检查是否有活跃 Step
+    if (!mapCallbackStep.empty()) return false;
+    for (auto& kv : mapHttpAttr)
+    {
+        if (!kv.second.empty()) return false;
+    }
+    return true;
 }
 
 } /* namespace net */

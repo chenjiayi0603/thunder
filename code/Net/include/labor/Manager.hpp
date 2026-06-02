@@ -48,6 +48,16 @@ struct tagManagerWaitExitWatcherData
     tagManagerWaitExitWatcherData() = default;
 };
 
+/** Worker 优雅重启生命周期 */
+struct WorkerLifecycle {
+    enum State { RUNNING, STARTING, DRAINING, NEW_ACTIVE };
+    State  state = RUNNING;
+    int    oldPid = -1;
+    int    newPid = -1;
+    time_t drainStartTime = 0;
+    static constexpr int DRAIN_TIMEOUT = 60;
+};
+
 /**
  * @brief 框架层管理者
  * @note 框架层管理者实现类，工作者包括Manager和Worker,Worker是子进程,Manager是父进程
@@ -88,6 +98,7 @@ public:
     bool FdTransfer(int iFd);
 	bool AcceptServerConn(int iFd);
 	bool RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher);
+    bool RecvFdFromWorker(int workerFd);
     bool ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct ev_timer* watcher);
 
 	bool SessionTimeout(Session* pSession, struct ev_timer* watcher);
@@ -127,6 +138,7 @@ protected:
     void AddCmd(Cmd* pCmd,int iCmd);
     void PreloadCmd();
     bool RestartWorker(int iDeathPid);
+    bool GracefulRestartWorker(int iWorkerIndex);
     /**
 	 * @brief io事件
 	 */
@@ -200,6 +212,7 @@ protected:
     void OnCenterEvent(const CenterEvent& ev);
 private:
     std::unique_ptr<CenterConnector> m_pCenterConnector;
+    std::unordered_map<int, WorkerLifecycle> m_workerLifecycle;
 };
 
 } /* namespace net */

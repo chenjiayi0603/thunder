@@ -120,12 +120,83 @@ cmake --build build -j1
 
 > 这是唯一的"改动后验证"清单，Agent 行为准则与测试规则均引用此处，勿在别处重复。
 
-#### 改 C++ 代码后
+#### 改 C++ 代码后 (Agent 自动判断回归范围)
 
-- [ ] `./deploy.sh build` — 编译 + 安装 (必须通过，零告警)
-- [ ] `./deploy.sh test unit` — C++ + Python 单元测试 (全部通过)
-- [ ] 涉及内存/并发改动：ASan + valgrind + TSan 必跑并贴报告 (见 [代码审查检查清单](#代码审查检查清单提交前))
-- [ ] (如涉及集成) `./deploy.sh test e2e` — Docker E2E (全部通过)
+> Agent 根据改动文件自动决定跑哪些测试，不是每次全量跑。
+> 回归范围映射表: `docs/reports/test_strategy.md` 第 11 章
+
+**Agent 自动执行流程:**
+
+```
+Step 1: git diff 看改了什么文件
+Step 2: 按映射表判断回归范围:
+  ├─ 只改了单个模块 .cpp (不改 .hpp) → ctest -R <模块> + pytest unit
+  ├─ 改了 .hpp                     → ctest 全量 (include 它的都得测)
+  ├─ 改了 Worker.cpp/Manager.cpp    → ctest 全量 + E2E 全量 + 冒烟
+  ├─ 改了 Proto                     → ctest 全量 + E2E 全量
+  ├─ 改了配置/脚本                  → Docker 重启 + 冒烟
+  └─ 新增文件                       → ctest 全量 (target 变了)
+Step 3: 执行回归 → 贴结果
+Step 4: 编译总检查: `cmake --build build -j1` 零告警
+```
+
+**提交前**: `./tests/regression.sh` (全量, 不管改了啥)
+
+**涉及内存/并发改动**: ASan + valgrind + TSan 必跑并贴报告
+
+#### 全功能回归测试（任何 C++/Proto/脚本改动后必跑）
+
+> 不是只测改动的模块，是测**所有**功能是否被破坏。
+
+```bash
+# === 第一步: 编译 + 安装 ===
+./deploy.sh build                                # 全量编译，零告警
+
+# === 第二步: 单元测试 (281 C++ + 60 Python = 341 cases) ===
+./deploy.sh test unit --skip-build               # 全部通过才继续
+
+# === 第三步: Docker 集群 E2E (8服务, 全协议链路) ===
+./deploy.sh test e2e --skip-build                # 全部 26+ cases 通过
+
+# === 第四步: 手动冒烟 (核心链路) ===
+docker compose -p thunder-test up -d              # 或 ./deploy.sh up
+sleep 20
+
+# HTTP Echo
+curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
+# 预期: {"code":0,"msg":"ok"}
+
+# HTTP PoolCpu (协程挂起/恢复验证)
+curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"TestHelloPoolCpu"}'
+# 预期: {"option":"TestHelloPoolCpu","checksum":786432}
+
+# Interface → Logic S2S 全链路
+curl -s http://127.0.0.1:27008/Interface/gentoken -d '{"option":"GenKey"}'
+# 预期: {"code":0,"token":"...","key":"...","msg":"success"}
+
+# Center Raft 集群状态 (3节点, 1 leader)
+curl -s http://127.0.0.1:26000/admin -d '{"cmd":"show","args":["center"]}'
+# 预期: data 数组有3个节点, 1个 leader=yes
+
+# 错误处理: 非法 token
+curl -s http://127.0.0.1:27008/Interface/gentoken -d '{"option":"VerifyKey","token":"bad","key":"bad"}'
+# 预期: {"code":1}  (业务错误, 非 crash)
+
+# WebSocket 握手 (E2E 已覆盖, 此处验证可达性)
+curl -sI -H "Upgrade: websocket" -H "Connection: Upgrade" \
+     -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+     http://127.0.0.1:27010/hello/shake 2>&1 | head -1
+# 预期: HTTP/1.1 101 Switching Protocols
+
+# === 第五步: 清理 ===
+./deploy.sh clean                                 # 可选, 释放 Docker 资源
+```
+
+- [ ] 281 C++ gtest 全部通过 (不得有 FAIL)
+- [ ] 60 Python pytest 全部通过
+- [ ] Docker E2E 全部通过
+- [ ] 手动冒烟 7 项全部返回预期值
+- [ ] 编译零告警 (`-Wall -Wextra`)
 
 #### 改 Proto 后
 
@@ -141,7 +212,6 @@ cmake --build build -j1
 #### 禁止
 
 - 改完代码不跑编译就提交
-- 只验证改动功能，不验证相关功能
 - 修改接口后不同步更新 Proto 和所有节点
 
 #### 测试后必须清理
@@ -484,3 +554,199 @@ Gitee：chenjiayi/thunder
 - 部分通过 = 未通过，要么全通要么明确列出未通过项及原因
 - 模拟测试通过 ≠ 测试通过，硬件限制的标注"当前环境无法测试"及原因
 - git add + commit + push 所有改动
+---
+
+## Worker 优雅重启 — 回归测试
+
+### 测试范围
+
+改动涉及 `Worker.cpp`, `Manager.cpp`, `CW.hpp`, 影响:
+- Worker 生命周期 (fork/exit)
+- Manager 子进程管理 (OnChildTerminated)
+- CMD 消息路由 (DisposeDataFromWorker)
+
+### 单元测试 (本地, 零依赖)
+
+```bash
+# 排空逻辑测试 (7 cases)
+cd build/code/test && ctest -R WorkerDrain --output-on-failure
+
+# 覆盖:
+#   WorkerDrain.IdleConnectionsClosedOnEnterDrain    — 空闲连接立即关闭
+#   WorkerDrain.ActiveConnectionsNotClosed           — 在途连接保留
+#   WorkerDrain.DrainCompleteWhenAllDone             — 全部完成=true
+#   WorkerDrain.S2SConnectionsSkipped                — S2S连接不排空
+#   WorkerDrain.NewConnectionsRejectedDuringDrain    — 排空拒绝新连接
+#   WorkerDrain.AcceptNormalWhenNotDraining          — 正常模式正常accept
+#   WorkerDrain.DrainTimeoutDetection                — 超时检测
+```
+
+### 集成测试 (需 Docker)
+
+```bash
+# 全链路 E2E (验证 Manager/Worker 未破坏)
+./deploy.sh test e2e --skip-build
+
+# 手动验证优雅重启流程:
+# 1. 确认 Worker 正常运行
+docker compose -p thunder-test exec hello ps aux | grep robot_W0
+
+# 2. 发 SIGTERM 给 Worker (模拟排空)
+docker compose -p thunder-test exec hello kill -TERM $(pgrep robot_W0)
+
+# 3. 等新 Worker 启动 (Manager 会自动 RestartWorker)
+sleep 5
+
+# 4. 确认新 Worker 在运行且服务正常
+docker compose -p thunder-test exec hello ps aux | grep robot_W0
+curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
+# 预期: {"code":0,"msg":"ok"}
+
+# 5. 确认 Manager 日志无 FATAL 错误
+docker compose -p thunder-test logs hello 2>&1 | grep -i "fatal\|error" | tail -5
+# 预期: 无新错误 (只有旧的启动日志)
+```
+
+### 两层回归
+
+```
+单功能快速回归 (改了什么测什么):
+  ctest -R WorkerDrain               ← 只跑排空测试, 5秒
+  ctest -R CenterRaft                ← 只跑 Raft 测试
+  python3 -m pytest tests/unit/test_token_verify.py  ← 只跑 token 测试
+
+全功能回归 (改任何代码后必跑):
+  ./deploy.sh build                  ← 编译
+  ./deploy.sh test unit --skip-build ← 341 单元测试
+  ./deploy.sh test e2e  --skip-build ← 26+ Docker E2E
+  手动冒烟 7 项                      ← 核心链路 curl
+```
+
+**单功能回归 = 快速验证改动没写错。全功能回归 = 验证改动没破坏其他模块。** 两个都要过。
+
+## 触发词：rearrange
+
+当用户说 **rearrange** 时，执行以下流程：
+
+### 适用场景
+某个目录下有一堆内容重叠、未分类的 `.md` 文件，需要按功能重组。
+
+### 核心原则
+- **新文件 = 速查笔记风格**：精炼、结构化、方便面试前快速翻阅
+- **有价值信息补回对应主题文件**：旧文件中的详细原理、完整示例、深入分析，不丢弃，直接补充到新文件对应章节中
+- 宁可使单文件变大，也不丢失原理和例子
+
+### 执行步骤
+
+1. **读取所有文件**：读取目标目录下所有 `.md` 文件的内容（注意大文件分段读取）
+
+2. **内容归类**：分析每份文件的主题和重叠点，设计功能分组方案
+
+3. **去重合并 + 提取有价值信息**：
+   - 同类内容合并，重复部分只保留最完整的一处
+   - **同时将以下内容提取出来**，等新文件创建后补回：
+     - 原理性长篇讲解（如"为什么这样设计"、"底层机制分析"）
+     - 完整的可运行代码示例（非片段）
+     - 对比分析（如 "A vs B 优缺点详解"）
+     - 面试深挖中可能问到的扩展知识点
+   - 新文件先只保留：核心结论 + 关键代码片段 + 对比表格 + 注意事项
+
+4. **创建新文件**：
+   - 创建 `00-总览.md` 作为索引总领文件（含文件地图、全景图、阅读路径）
+   - 按功能创建 `01-*.md` 到 `N-*.md`，每份文件自成体系（核心原理 + 关键代码 + 注意事项）
+   - 面试考点汇总到最后一篇
+
+5. **将提取的有价值信息补回对应文件**：
+   - 原理说明 → 补到对应主题文件的对应章节下
+   - 完整示例 → 补到对应主题文件的代码示例区
+   - 扩展知识点 → 补到对应文件的「深入理解」或「常见陷阱」章节
+   - 确保新文件内容充实，不依赖外部文档
+
+6. **旧文件清理**：确认新文件写完后，删除所有原始旧文件
+
+7. **更新 CLAUDE.md 目录结构**：将新的目录结构反映到本文档的仓库目录结构中
+
+### 文件命名规则
+
+重组后的文件使用 `{序号}-{技术栈前缀}-{主题}.md` 格式：
+
+```
+02-go-并发编程.md    # go 技术栈
+01-cpp-C++基础语法.md # cpp 技术栈
+```
+
+- **技术栈前缀**：当目录名称不能直接体现技术归属时（如 `go/` 目录下的文件在文件浏览器中可能脱离目录上下文），在序号后加技术栈前缀（如 `go`、`cpp`）
+- **不需要前缀**：如果目录名本身就是技术名（如 `cpp/`），且文件在目录内引用无歧义，可省略前缀
+- **一致性**：同一目录下所有文件保持统一的命名风格
+
+### 要点列举必须带示例
+
+列出多个技术要点时（如「六种逃逸场景」「五种实现方式」等），**每个要点必须附带独立代码示例**，不能用一行注释笼统带过。
+
+❌ 反例（只有名词，无代码）：
+```markdown
+**六种逃逸场景**：返回指针、interface 调用、闭包、channel 发指针、大对象、切片扩容。
+```
+
+✅ 正例（逐条展开，每项有独立代码）：
+```markdown
+**六种逃逸场景**（含示例）：
+
+```go
+// 1. 返回指针
+func escape1() *int {
+    x := 42
+    return &x  // x 逃逸到堆
+}
+
+// 2. interface 调用
+func escape2() {
+    x := 42
+    fmt.Println(x)  // x 逃逸（fmt 参数为 interface{}）
+}
+// ... 其余逐条列出
+```
+```
+
+**例外**：纯名词罗列（如文件列表、目录结构）不需要逐条代码。
+
+### 禁止「其他」兜底分类
+
+重构或增强文件时，**禁止**出现笼统的兜底章节（如 `### X.Y 其他重要特性` / `### X.Y 其他实用特性`），必须将杂项逐条拆解为**独立子节**（`#### X.Y.Z 具体名称`），每节包含：
+
+| 要素 | 说明 |
+|:----|:-----|
+| **解决的问题** | 为什么需要这个特性/概念，解决了什么痛点 |
+| **完整代码示例** | 含输入/输出/正反对比的可工作代码 |
+| **性能/注意事项** | 零开销保证、常见陷阱、选型建议 |
+
+❌ 反例（笼统堆砌）：
+```markdown
+### 1.5 其他重要特性（含示例）
+```cpp
+// nullptr —— 类型安全空指针
+// enum class —— 强类型枚举
+// constexpr —— 编译期计算
+```
+```
+
+✅ 正例（逐条展开）：
+```markdown
+### 1.5 类型安全与枚举增强
+
+#### 1.5.1 nullptr — 类型安全空指针
+
+**解决的问题**：`NULL` 本质是整数 `0`，重载解析中会意外匹配 `int` 版本。
+
+```cpp
+void foo(int);  void foo(char*);
+foo(NULL);      // 调用 foo(int) —— 危险！
+foo(nullptr);   // 调用 foo(char*) —— 正确
+```
+
+**性能**：零开销抽象，运行时就是 `0`。
+
+---
+```
+
+---

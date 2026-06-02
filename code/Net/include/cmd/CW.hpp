@@ -115,6 +115,11 @@ enum E_CMD
 
     CMD_REQ_SYS_ERROR                   = 999,     ///< 系统错误请求（无意义，不会被使用）
     CMD_RSP_SYS_ERROR                   = 1000,    ///< 系统错误响应
+
+    // Worker 优雅重启 (Manager ↔ Worker)
+    CMD_WORKER_READY                    = 520,     ///< Worker→Manager: 新Worker初始化完成
+    CMD_WORKER_DRAIN                    = 521,     ///< Manager→Worker: 开始排空已有连接
+    CMD_WORKER_DRAIN_DONE               = 522,     ///< Worker→Manager: 排空完成,即将退出
 };
 
 }   // namespace net

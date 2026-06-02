@@ -254,7 +254,22 @@ bool Manager::OnChildTerminated(struct ev_signal* watcher)
 
         LOG4_FATAL("error %d: duty %d exit and sent signal %d with code %d!",
                         iStatus, iPid, watcher->signum, iReturnCode);
-        RestartWorker(iPid);
+        // 优雅重启中正常退出 → 不触发 RestartWorker
+        bool bGracefulExit = false;
+        for (auto& [idx, lc] : m_workerLifecycle)
+        {
+            if (lc.state == WorkerLifecycle::DRAINING && iPid == lc.oldPid)
+            {
+                LOG4_INFO("old worker %d (idx %d) graceful exit", iPid, idx);
+                lc.state = WorkerLifecycle::NEW_ACTIVE;
+                bGracefulExit = true;
+                break;
+            }
+        }
+        if (!bGracefulExit)
+        {
+            RestartWorker(iPid);
+        }
     }
     ReportToCenter(true);
     return(true);
@@ -267,10 +282,48 @@ bool Manager::IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     {
         return(AcceptServerConn(watcher->fd));
     }
-    else
+    // Worker dataFd: 接收子进程传来的客户端 fd
+    if (m_mapWorkerFdPid.find(watcher->fd) != m_mapWorkerFdPid.end())
     {
-        return(RecvDataAndDispose(pData, watcher));
+        return(RecvFdFromWorker(watcher->fd));
     }
+    return(RecvDataAndDispose(pData, watcher));
+}
+
+bool Manager::RecvFdFromWorker(int workerFd)
+{
+    // 从子进程 Worker 接收附带文件描述符 (SCM_RIGHTS)
+    char remoteAddr[32] = {0};
+    int  codecType = 0;
+    int  clientFd = recv_fd_with_attr(workerFd, remoteAddr, sizeof(remoteAddr), &codecType);
+    if (clientFd <= 0) return false;
+
+    // 找到发送方的 Worker, 确定要转发给哪个 new Worker
+    int sendingPid = -1;
+    for (auto& [fd, pid] : m_mapWorkerFdPid)
+    {
+        if (fd == workerFd && pid > 0) { sendingPid = pid; break; }
+    }
+    if (sendingPid < 0) { close(clientFd); return false; }
+
+    // 查找优雅重启状态 → 转发给 new Worker
+    for (auto& [idx, lc] : m_workerLifecycle)
+    {
+        if (lc.state == WorkerLifecycle::DRAINING && lc.oldPid == sendingPid)
+        {
+            auto newIt = m_mapWorker.find(lc.newPid);
+            if (newIt != m_mapWorker.end())
+            {
+                LOG4_TRACE("forward client fd %d from old worker %d to new worker %d",
+                           clientFd, sendingPid, lc.newPid);
+                send_fd_with_attr(newIt->second.iDataFd, clientFd, remoteAddr, 32, codecType);
+            }
+            close(clientFd);  // Manager 不持有
+            return true;
+        }
+    }
+    close(clientFd);  // 没有对应的 new Worker
+    return false;
 }
 
 bool Manager::AcceptServerConn(int iFd)
@@ -2486,6 +2539,31 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 		{
 			LOG4_TRACE("%s todo CMD_REQ_NODE_RESTART_WORKERS", __FUNCTION__);//重启工作者
 		}
+		else if (CMD_WORKER_READY == oInMsgHead.cmd())
+		{
+			// new Worker 就绪 → 发 SIGTERM 给 old Worker 开始排空
+			auto iter = m_mapWorkerFdPid.find(stMsgShell.iFd);
+			if (iter != m_mapWorkerFdPid.end())
+			{
+				int newPid = iter->second;
+				for (auto& [idx, lc] : m_workerLifecycle)
+				{
+					if (lc.state == WorkerLifecycle::STARTING && lc.newPid == newPid)
+					{
+						lc.state = WorkerLifecycle::DRAINING;
+						lc.drainStartTime = time(nullptr);
+						LOG4_INFO("new worker %d ready, signaling old worker %d to drain",
+								  lc.newPid, lc.oldPid);
+						kill(lc.oldPid, SIGTERM);
+						break;
+					}
+				}
+			}
+		}
+		else if (CMD_WORKER_DRAIN_DONE == oInMsgHead.cmd())
+		{
+			LOG4_INFO("worker drain done received");
+		}
 		else
 		{
 			LOG4_WARN("unknow cmd %d from worker!", oInMsgHead.cmd());
@@ -2696,8 +2774,45 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
         {
             if (GetCustomConfigVersionData().SetCustomConfig(ev.config_content))
             {
-                LOG4_INFO("OnCenterEvent: custom config updated, bytes=%zu",
-                          ev.config_content.size());
+	            LOG4_INFO("OnCenterEvent: custom config updated, bytes=%zu",
+	                      ev.config_content.size());
+
+	            // 检查 so/module 版本是否变化 → 触发优雅重启
+	            util::CJsonObject newConf;
+	            if (newConf.Parse(ev.config_content)) {
+	                auto newSo = newConf["so"];
+	                auto oldSo = m_oCurrentConf["so"];
+	                bool changed = false;
+	                if (oldSo.GetArraySize() != newSo.GetArraySize()) {
+	                    changed = true;
+	                } else {
+	                    for (int i = 0; i < oldSo.GetArraySize(); ++i) {
+	                        std::string op, np; int ov = 0, nv = 0;
+	                        oldSo[i].Get("path", op); newSo[i].Get("path", np);
+	                        oldSo[i].Get("version", ov); newSo[i].Get("version", nv);
+	                        if (op != np || ov != nv) { changed = true; break; }
+	                    }
+	                }
+	                if (!changed) {
+	                    auto newMod = newConf["module"];
+	                    auto oldMod = m_oCurrentConf["module"];
+	                    if (oldMod.GetArraySize() != newMod.GetArraySize()) {
+	                        changed = true;
+	                    } else {
+	                        for (int i = 0; i < oldMod.GetArraySize(); ++i) {
+	                            std::string op, np; int ov = 0, nv = 0;
+	                            oldMod[i].Get("so_path", op); newMod[i].Get("so_path", np);
+	                            oldMod[i].Get("version", ov); newMod[i].Get("version", nv);
+	                            if (op != np || ov != nv) { changed = true; break; }
+	                        }
+	                    }
+	                }
+	                if (changed) {
+	                    LOG4_INFO("so/module version changed, trigger graceful restart");
+	                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
+	                        GracefulRestartWorker(i);
+	                }
+	            }
             }
             else
             {
@@ -2727,6 +2842,97 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
     default:
         break;
     }
+}
+
+// ========== Worker 优雅重启 ==========
+
+bool Manager::GracefulRestartWorker(int iWorkerIndex)
+{
+    LOG4_INFO("GracefulRestartWorker %d start", iWorkerIndex);
+    auto& lc = m_workerLifecycle[iWorkerIndex];
+    if (lc.state != WorkerLifecycle::RUNNING)
+    {
+        LOG4_WARN("worker %d not in RUNNING state (%d), skip", iWorkerIndex, (int)lc.state);
+        return false;
+    }
+
+    // 1. 找到 old Worker
+    int oldPid = -1;
+    for (auto& [pid, attr] : m_mapWorker)
+    {
+        if (attr.iWorkerIndex == iWorkerIndex) { oldPid = pid; break; }
+    }
+    if (oldPid < 0)
+    {
+        LOG4_ERROR("worker %d not found", iWorkerIndex);
+        return false;
+    }
+
+    // 2. 创建 IPC 通道 (复用 CreateWorker 逻辑)
+    int iControlFds[2], iDataFds[2];
+    if (socketpair(PF_UNIX, SOCK_STREAM, 0, iControlFds) < 0 || socketpair(PF_UNIX, SOCK_STREAM, 0, iDataFds) < 0)
+    {
+        LOG4_ERROR("socketpair failed for worker %d", iWorkerIndex);
+        return false;
+    }
+    auto* pMgrToWorker = ShmRingQueue::Create(128, 4096);
+    auto* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+    int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
+    int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
+
+    auto* pLoaderMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
+    auto* pRouteMM  = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
+    auto* pCustMM   = GetCustomConfigVersionData().GetCustomConfigVersionMM();
+
+    // 3. fork new Worker
+    int newPid = fork();
+    if (newPid == 0)
+    {
+        close(iControlFds[0]); close(iDataFds[0]);
+        ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
+        Worker* p = new Worker(m_strWorkPath,
+            iControlFds[1], iDataFds[1], iWorkerIndex, m_oCurrentConf,
+            pMgrToWorker, pWorkerToMgr, iMgrToWorkerEfd, iWorkerToMgrEfd);
+        p->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderMM);
+        p->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteMM);
+        p->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustMM);
+        p->Run();
+        delete p;
+        exit(-2);
+    }
+    if (newPid < 0)
+    {
+        LOG4_ERROR("fork failed for worker %d", iWorkerIndex);
+        close(iControlFds[0]); close(iControlFds[1]); close(iDataFds[0]); close(iDataFds[1]);
+        return false;
+    }
+
+    // 4. Manager 注册 new Worker
+    close(iControlFds[1]); close(iDataFds[1]);
+    ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
+    x_sock_set_block(iControlFds[0], 0);
+    x_sock_set_block(iDataFds[0], 0);
+
+    tagWorkerAttr newAttr;
+    newAttr.iWorkerIndex = iWorkerIndex;
+    newAttr.iControlFd   = iControlFds[0];
+    newAttr.iDataFd      = iDataFds[0];
+    newAttr.pMgrToWorkerQueue = pMgrToWorker;
+    newAttr.pWorkerToMgrQueue = pWorkerToMgr;
+    newAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
+    newAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
+    m_mapWorker[newPid] = newAttr;
+    m_mapWorkerFdPid[iControlFds[0]] = newPid;
+    m_mapWorkerFdPid[iDataFds[0]]    = newPid;
+    CreateReadFdAttr(iControlFds[0], GetFdSequence());
+    CreateReadFdAttr(iDataFds[0], GetFdSequence());
+
+    lc.state  = WorkerLifecycle::STARTING;
+    lc.oldPid = oldPid;
+    lc.newPid = newPid;
+
+    LOG4_INFO("GracefulRestartWorker %d: new=%d old=%d (waiting WORKER_READY)", iWorkerIndex, newPid, oldPid);
+    return true;
 }
 
 } /* namespace net */

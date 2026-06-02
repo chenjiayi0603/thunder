@@ -248,13 +248,15 @@ bool Worker::AcceptClientConn(int iFd) {
 ```
 触发优雅重启的场景:
 
-  1. so 配置变更 (热重载 .so 插件)
+  1. so 版本变更 (so_path 相同 但 version 不同)
      Manager::OnCenterEvent(ConfigUpdated):
-       if (so 字段变了) → GracefulRestartWorker()
+       比较新旧 so 配置的 version 字段
+       → 有差异才 GracefulRestartWorker()
 
-  2. module 配置变更
+  2. module 版本变更
      Manager::OnCenterEvent(ConfigUpdated):
-       if (module 字段变了) → GracefulRestartWorker()
+       比较新旧 module 配置的 version 字段
+       → 有差异才 GracefulRestartWorker()
 
   3. 手动触发 (运维)
      Center Admin API:
@@ -266,7 +268,50 @@ bool Worker::AcceptClientConn(int iFd) {
 
 ## 四、So/Module 热重载流程对比
 
-### 现在 (in-place dlopen)
+### 4.1 配置格式
+
+```json
+{
+  "so": [
+    {"cmd": 101, "path": "plugins/CmdHello.so", "version": 1},
+    {"cmd": 102, "path": "plugins/CmdGetToken.so", "version": 3}
+  ],
+  "module": [
+    {"url_path": "/hello/hello", "so_path": "plugins/ModuleHello.so", "version": 2}
+  ]
+}
+```
+
+version 字段表示 .so 文件的版本号。so_path 相同但 version 不同 → 文件内容变更 → 需要优雅重启。
+
+### 4.2 版本比较逻辑
+
+```cpp
+bool Manager::HasSoVersionChanged(const util::CJsonObject& oldConf,
+                                   const util::CJsonObject& newConf)
+{
+    // 比较 so 数组里每个条目的 (path, version) 对
+    auto oldSo = oldConf["so"];
+    auto newSo = newConf["so"];
+
+    if (oldSo.GetArraySize() != newSo.GetArraySize()) return true;
+
+    for (int i = 0; i < oldSo.GetArraySize(); ++i)
+    {
+        std::string oldPath, newPath;
+        int oldVer = 0, newVer = 0;
+        oldSo[i].Get("path", oldPath);
+        newSo[i].Get("path", newPath);
+        oldSo[i].Get("version", oldVer);
+        newSo[i].Get("version", newVer);
+
+        if (oldPath != newPath || oldVer != newVer) return true;
+    }
+    return false;
+}
+```
+
+### 4.3 现在 (in-place dlopen)
 
 ```
 配置变更 → Worker::CheckShareMem()
@@ -274,17 +319,21 @@ bool Worker::AcceptClientConn(int iFd) {
   → dlopen(RTLD_NODELETE)  ← 旧 .so 泄漏
   → mapSo[cmd] = new
   ❌ 旧 .so 内存永不释放
+  ❌ 不管 version 是否真的变了, 都是 force reload
 ```
 
-### 优雅重启后
+### 4.4 优雅重启后
 
 ```
 配置变更 → Manager::OnCenterEvent()
-  → GracefulRestartWorker(0)
-  → fork new Worker (加载新 .so)
-  → old Worker SIGTERM → 排空 → exit
-  → 旧进程退出 → OS 回收全部内存
-  ✅ .so 干净卸载
+  → HasSoVersionChanged(old, new)?
+     否 → 跳过 (version 没变, 不需要重启)
+     是 → GracefulRestartWorker(0)
+           → fork new Worker (加载新版 .so)
+           → old Worker SIGTERM → 排空 → exit
+           → OS 回收旧进程全部内存
+           ✅ .so 干净卸载
+           ✅ 只有版本真正不同才重启
 ```
 
 ---

@@ -48,6 +48,9 @@ public:
            int iMgrToWorkerEfd = -1, int iWorkerToMgrEfd = -1);
     ~Worker();
     void Run();
+    // === 优雅重启排空 ===
+    void EnterDrainMode();
+    bool IsDrainComplete();
     /**
 	* @brief libev异步回调函数
 	* @param loop libev循环对象
@@ -360,6 +363,12 @@ private:
 
     // 抽取 SendTo 中 write-to-fd 逻辑为公共 helper, 供 Fast path 复用
     bool FlushSendBuf(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter);
+
+    // 优雅重启排空状态
+    std::atomic<bool> m_bDraining{false};
+    std::atomic<bool> m_bAccepting{true};
+    time_t m_drainStartTime = 0;
+    static constexpr int DRAIN_GRACE_PERIOD = 30;
 };
 
 } /* namespace net */
