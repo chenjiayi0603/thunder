@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Project:  Net
  * @file     EtcdCenterConnector.hpp
- * @brief    CenterConnector 的 etcd 实现（Phase 1：注册 + node_id 分配）
+ * @brief    CenterConnector 的 etcd 实现（Phase 2：注册 + node_id 分配 + watch）
  * @author   cjy
  * @date:    2026年6月3日
  * @note
@@ -10,6 +10,13 @@
  *     - ReportNodeStatus() → 解析 NodeReport，执行槽位占位注册或幂等续期
  *     - Destroy()          → 撤销租约，停止定时器
  *     - ev_timer KeepAlive（每 3 秒续租）
+ *
+ *   Phase 2 新增：
+ *     - watch 线程        → libcurl streaming POST /v3/watch 监听 /thunder/registry/ 前缀
+ *     - WatchEvent 队列   → watch 线程生产，ev_async 通知 libev 线程消费
+ *     - OnWatchAsync()    → libev 线程消费队列，组装 NodeNotice，发射 RouteUpdated
+ *     - DoRegister()      → registry value 改为 JSON（含 node_type/node_ip/node_port）
+ *     - QueryRegistry()   → 同步解析 JSON value
  *
  *   注册算法：
  *     1. 申请租约 (TTL=10s)
@@ -23,9 +30,13 @@
 #ifndef ETCD_CENTER_CONNECTOR_HPP_
 #define ETCD_CENTER_CONNECTOR_HPP_
 
-#include <string>
-#include <cstdint>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 #include "labor/CenterConnector.hpp"
 #include "util/json/CJsonObject.hpp"
 #include "util/encrypt/base64.h"
@@ -154,7 +165,8 @@ private:
     std::string BuildSlotTxn(int slot,
                               const std::string& slotKey,
                               const std::string& registryKey,
-                              const std::string& ipPort);
+                              const std::string& ipPort,
+                              const std::string& nodeType);
 
     /**
      * @brief 尝试原子占位单个槽位
@@ -167,7 +179,8 @@ private:
     bool TryClaimSlot(int slot,
                       const std::string& slotKey,
                       const std::string& registryKey,
-                      const std::string& ipPort);
+                      const std::string& ipPort,
+                      const std::string& nodeType);
 
     // ---- KeepAlive 定时器 ----
 
@@ -180,6 +193,45 @@ private:
      * @brief 每 3 秒执行一次续租，失败则 emit ConnectionLost
      */
     void OnKeepAliveTimer();
+
+    // ---- Watch 功能（Phase 2） ----
+
+    /**
+     * @brief 启动 watch 线程和 ev_async（Init 中调用）
+     */
+    void StartWatch();
+
+    /**
+     * @brief 停止 watch 线程并清理 ev_async（Destroy 中调用）
+     */
+    void StopWatch();
+
+    /**
+     * @brief watch 线程主函数：长连接 streaming POST /v3/watch
+     *        断线后自动重连（m_watchStop 为 false 时循环）
+     */
+    void WatchThreadFunc();
+
+    /**
+     * @brief libcurl streaming write callback（静态），调用 OnWatchChunk()
+     */
+    static size_t WatchWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
+
+    /**
+     * @brief 解析 watch 响应 chunk，提取事件写入队列，并唤醒 libev 线程
+     * @param chunk  curl 接收的原始文本块（可能是多行 JSON）
+     */
+    void OnWatchChunk(const std::string& chunk);
+
+    /**
+     * @brief ev_async 静态回调，转发给 OnWatchAsync()
+     */
+    static void WatchAsyncCallback(struct ev_loop* loop, ev_async* w, int revents);
+
+    /**
+     * @brief libev 线程中消费 WatchEvent 队列，组装 NodeNotice，发射 RouteUpdated
+     */
+    void OnWatchAsync();
 
     // ---- 工具函数 ----
 
@@ -221,6 +273,27 @@ private:
 
     ev_timer            m_keepAliveTimer{};     ///< 值成员，无需 new/delete
     bool                m_keepAliveTimerStarted = false;
+
+    // ---- watch 相关（Phase 2） ----
+
+    /**
+     * @brief watch 事件（watch 线程 → libev 线程的跨线程传递单元）
+     */
+    struct WatchEvent
+    {
+        std::string type;   ///< "PUT" 或 "DELETE"
+        std::string key;    ///< base64 解码后的 etcd key
+        std::string value;  ///< base64 解码后的 etcd value（JSON 格式）
+    };
+
+    std::thread              m_watchThread;
+    std::atomic<bool>        m_watchStop{false};
+    ev_async                 m_watchAsync{};
+    bool                     m_watchAsyncStarted = false;
+    int64_t                  m_lastRevision      = 0;   ///< 断线续看：上次消费到的 mod_revision
+
+    std::mutex               m_watchQueueMutex;
+    std::vector<WatchEvent>  m_watchQueue;              ///< watch 线程生产，libev 线程消费
 };
 
 } /* namespace net */
