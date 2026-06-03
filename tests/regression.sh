@@ -2,6 +2,8 @@
 # Thunder 全量回归 (提交前必跑)
 # 自动检测: 单元测试总是跑, E2E/冒烟需集群在运行
 set -e
+if [ "${1:-}" = "--build" ]; then
+  echo "=== 构建 ==="; cmake --build build -j1; shift; fi
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
