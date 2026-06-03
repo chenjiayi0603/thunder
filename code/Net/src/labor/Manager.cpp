@@ -14,6 +14,7 @@
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
 #include "labor/TcpCenterConnector.hpp"
+#include "labor/EtcdCenterConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
@@ -2559,8 +2560,10 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
 
 std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
 {
-    std::string connectorType = "tcp";
-    m_oCurrentConf.Get("center.connector", connectorType);
+    std::string connectorType;
+    util::CJsonObject centerSub = m_oCurrentConf["center"];
+    centerSub.Get("connector", connectorType);
+    if (connectorType.empty()) connectorType = "tcp";
 
     if (connectorType == "tcp" || connectorType.empty())
     {
@@ -2572,6 +2575,26 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
                          m_strGateway, m_iGatewayPort,
                          m_uiWorkerNum);
         return p;
+    }
+
+    if (connectorType == "etcd")
+    {
+        // 创建 etcd 后端：如果 center 配置不含 etcd_endpoints，从顶层注入
+        util::CJsonObject centerConf = m_oCurrentConf["center"];
+        std::string eps;
+        centerConf.Get("etcd_endpoints", eps);
+        if (eps.empty())
+        {
+            m_oCurrentConf.Get("etcd_endpoints", eps);
+            if (!eps.empty())
+            {
+                // 注意: center 在 JSON 中可能是个纯字符串(如 "127.0.0.1:27000")，
+                // CJsonObject[\"center\"] 在那种情况下会返回包含该字符串的对象，
+                // Add 操作不应破坏原有值
+                centerConf.Add("etcd_endpoints", eps);
+            }
+        }
+        return std::make_unique<EtcdCenterConnector>(centerConf);
     }
 
     LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());

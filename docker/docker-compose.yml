@@ -107,41 +107,39 @@ services:
       retries: 30
       start_period: 35s
 
-  center:
-    <<: [*thunder-node, *thunder-ulimits]
-    working_dir: /thunder/deploy/Center
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.21
+    network_mode: host
     command:
-      - bash
-      - -c
-      - |
-        set -e
-        chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
-        exec tail -f /dev/null
+      - etcd
+      - --name=etcd1
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://127.0.0.1:2379
+      - --advertise-client-urls=http://127.0.0.1:2379
+      - --enable-v2=false
+      - --auto-compaction-mode=periodic
+      - --auto-compaction-retention=1
+    volumes:
+      - ./data/etcd:/etcd-data
     deploy:
       resources:
         limits:
-          cpus: "6.00"
-          memory: 4G
+          cpus: "0.50"
+          memory: 256M
         reservations:
-          memory: 512M
+          memory: 64M
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "ss -tln | grep -q ':27000 ' && ss -tln | grep -q ':27022 ' && ss -tln | grep -q ':27032 '",
-        ]
-      interval: 5s
-      timeout: 10s
-      retries: 30
-      start_period: 40s
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:2379/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
 
   logic:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Logic
     depends_on:
-      center:
-        condition: service_healthy
     command:
       - bash
       - -c
@@ -168,8 +166,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttp
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -194,8 +190,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloWs
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -226,8 +220,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttps
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -259,8 +251,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Interface
     depends_on:
-      center:
-        condition: service_healthy
       logic:
         condition: service_healthy
     command:
