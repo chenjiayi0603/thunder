@@ -1,0 +1,151 @@
+# Plan: 去掉 Center，接入 etcd（单例 + 集群）
+
+**关联评估**: `docs/architecture/etcd_as_center_evaluation.md`
+**复杂度**: MEDIUM-HIGH
+**状态**: 待确认 / 未开始
+
+---
+
+## Summary
+
+去掉自研 Center(Raft/注册/在线表/Admin),业务节点改接 etcd。通过现有 `CenterConnector` 抽象新增 `EtcdCenterConnector`,业务逻辑零改。客户端走 curl HTTPS + HTTP gateway(长连接 watch + 短请求 KV),不引 gRPC 运行时。node_id 用槽位占位 + lease 续期。
+
+---
+
+## 决策(已定)
+
+| 项 | 决定 |
+|---|---|
+| 客户端协议 | **curl HTTPS + HTTP gateway**(长连接 watch / 短请求 KV);不引 gRPC |
+| Admin 替代 | **etcdctl 过渡**,后续可加薄 HTTP 接口 |
+| node_id 策略 | **槽位占位 + 续期**:ip:port 已有 lease → KeepAlive 续期;不存在 → 抢槽位 txn |
+
+---
+
+## etcd 数据模型
+
+```
+/thunder/slot/{i}            # i=1..255, node_id 槽位, 绑 lease; 崩溃 lease 过期自动删
+/thunder/registry/{ip:port}  # → {node_id, node_type, ...}, 在线表; 绑同一 lease
+/thunder/config/{path}       # → 配置内容, mod_revision 即版本号
+```
+
+---
+
+## Patterns to Mirror
+
+| 类别 | 源 | 模式 |
+|---|---|---|
+| 客户端策略 | `code/Net/include/labor/CenterConnector.hpp` | 新增 `EtcdCenterConnector` 实现接口,仿 `TcpCenterConnector` |
+| 事件回调 | `CenterEvent`(Registered/RouteUpdated/ConfigUpdated/ConnectionLost) | etcd 操作映射成这些事件 |
+| 跨线程投递 | `code/Net/src/labor/Labor.cpp:660` `PostToEventLoop` | watch/KeepAlive 在 curl 线程 → ev_async 投回 libev |
+| shm 下发 | version++ / 先 blob 后 len / 半包保护 | **完全不动**,只换上游来源 |
+| 测试 | `tests/e2e`(pytest) | E2E 加 etcd 容器,单/集群两套 |
+
+---
+
+## Files to Change
+
+| 文件 | 操作 | 原因 |
+|---|---|---|
+| `code/Net/include/labor/CenterConnector.hpp` | UPDATE | 增加 `etcd` 类型注释/工厂分支 |
+| `code/Net/src/labor/EtcdCenterConnector.{hpp,cpp}` | CREATE | etcd 客户端实现(注册/watch/keepalive) |
+| `deploy/docker-compose*.yml` | UPDATE | 加 etcd 服务(单节点开发 / 3 节点生产) |
+| `deploy/Center/` | DELETE(Phase 6) | 下线自研 Center |
+| `code/Center/` | DELETE(Phase 6) | 下线自研 Center 代码 |
+| 各业务节点 `*Cmd.json` | UPDATE | 加 `etcd_endpoints` 配置,去掉 `centers` |
+
+---
+
+## Tasks
+
+### Phase 0 — 骨架 + 数据模型(纯隔离,零行为变化)
+- 新增 `EtcdCenterConnector` 空骨架(Init/Destroy/Name/ReportNodeStatus/IsConnected)
+- `center_backend: tcp|etcd` 配置开关,工厂选实例
+- 定义 etcd key schema(`/thunder/slot/*/registry/*/config/`)
+- **验证**: 配 `tcp` 时 `ctest 全量 + E2E` 全绿
+
+### Phase 1 — 注册 + node_id 分配
+- `Init`:连 etcd endpoints(单/多),`LeaseGrant(TTL=10s)`
+- `Register`:
+  1. 幂等查 `registry/{ip:port}`
+     - 存在(lease 活):直接 `KeepAlive` 续期,取回 node_id → `Registered` 事件
+     - 不存在:抢槽位 txn(从 ip:port 哈希位置起扫,防惊群)→ 写 slot+registry → `Registered` 事件
+  2. 后台 curl 定时器每 ~3s `POST /v3/lease/keepalive`
+- **长连接 watch**: `POST /v3/watch` 开常驻连接;KV 操作走 HTTP keep-alive 复用同一 TLS
+- **验证**: 并发注册零碰撞;杀进程 → lease 过期 → 槽位释放可复用;重连续期不重新分配
+
+### Phase 2 — 路由发现(watch → RouteUpdated → shm)
+- watch `/thunder/registry/` 前缀长连接 → 收事件 → 按 `node_type` 过滤组装 `NodeNotice` → `RouteUpdated` → **现有 shm 写入链路不动**
+- 记 `last_revision`,断线按 revision 重连补漏(不丢事件)
+- `PostToEventLoop` 把 watch 回调从 curl 线程投回 libev 线程写 shm
+- **验证**: 节点 A 上线,节点 B watch 到,shm 更新;断网重连不丢事件
+
+### Phase 3 — 配置(watch → ConfigUpdated → shm)
+- watch `/thunder/config/` 前缀 → `ConfigUpdated` → 现有配置 shm 路径不动
+- 配置写入改为 etcdctl / 薄 admin 写 etcd key(替代 `StepSetConfig`)
+- **验证**: 写 etcd 配置 key → Worker shm 感知新版本
+
+### Phase 4 — 部署替换(单例 + 集群)
+- `docker-compose`:**单节点 etcd**(开发)+ **3 节点 etcd**(生产,替换 3 个 Center 容器)
+- 业务节点配置 `etcd_endpoints:["127.0.0.1:2379"]` or 3 个 endpoint;连接失败自动轮换
+- **验证**: E2E 单节点 etcd 全通;E2E 3 节点 etcd 全通;杀 1 个 etcd 节点集群仍可用
+
+### Phase 5 — Admin 替代(etcdctl 过渡)
+- 文档化常用 etcdctl 命令(查在线表/配置/节点)替代 Center Admin 页
+- 可选:一个薄 HTTP admin endpoint 读 etcd registry/config 渲染 JSON
+- **验证**: 能查集群在线表,能改配置
+
+### Phase 6 — 下线 Center + 全回归
+- 删 `code/Center/`、`deploy/Center/`、`CmdRaft*`、自研 Raft 相关
+- `center_backend` 默认 `etcd`,移除 `tcp` 分支(或保留兼容期)
+- **验证**: 全功能回归(单元 + E2E 单/集群 + 冒烟 7 项);TSan(watch 回调跨线程)
+
+---
+
+## Validation
+
+```bash
+# 每阶段
+./deploy.sh build && ./deploy.sh test unit --skip-build
+
+# Phase 2/3/4/6
+./deploy.sh test e2e --skip-build
+
+# Phase 1 专项
+# 并发注册零碰撞: 多节点同时注册, 验证 node_id 不重复
+# 续期验证: 节点重连, 拿到原 node_id, lease 续上
+# 崩溃回收: kill 节点, TTL 后槽位释放, 新节点可抢到同号
+
+# Phase 4 专项
+# 单节点 etcd: docker-compose up → E2E 全通
+# 3 节点 etcd: docker-compose up → E2E 全通 → kill 1 节点 → 集群仍可用
+
+# Phase 6
+# TSan: 并发注册 + watch 回调 → PostToEventLoop → 写 shm
+```
+
+---
+
+## Risks
+
+| 风险 | 可能性 | 缓解 |
+|---|---|---|
+| watch 长连接 + revision 续看要自己写 | 高 | 封装在 connector ~50 行;先单测断线续看 |
+| KeepAlive 定时器在 curl 线程,续租失败处理 | 中 | TTL=10s,每 3s 续;失败重试;超时 → ConnectionLost 事件 |
+| 快速重连 vs lease 未过期的幂等边界 | 中 | registry 幂等逻辑 Phase 1 专项测 |
+| Center 有隐藏职责未迁移 | 低 | Phase 6 前 grep 确认业务侧只依赖 `CenterConnector` |
+| 3 节点 etcd 运维新增负担 | 低 | etcd 运维成熟,docker-compose 标准化 |
+| watch 收敛延迟 vs 现状推送 | 中 | Phase 2 测收敛延迟,与现状对比 |
+
+---
+
+## Acceptance
+
+- [ ] Phase 0: `tcp` 行为零变化,E2E 全绿
+- [ ] Phase 1: 并发注册零碰撞;续期不重新分配;崩溃 TTL 后回收
+- [ ] Phase 2: watch 路由 shm 更新;断线不丢事件
+- [ ] Phase 3: etcd 配置写入 → shm 感知
+- [ ] Phase 4: 单/3 节点 E2E 全通;3 节点容 1 故障
+- [ ] Phase 5: 能查在线表/配置
+- [ ] Phase 6: 全回归通过;Center 代码彻底下线;TSan 干净
