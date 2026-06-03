@@ -76,6 +76,90 @@ txn:
 
 > **结论**: gossip 评估里"只有静态预分配(放弃弹性)或换 ID 方案(大工程)才能去掉组件"的两难，在 etcd 下**不存在**——既保留 snowflake、又保留运行时弹性分配、又强一致零碰撞。这是 etcd 相对 gossip 最大的价值点。
 
+### 3.2 谁发起分配 —— 业务节点自己 txn 抢,不再需要 leader
+
+**关键变化**: Center 模型下 node_id 由 **leader 发号**(业务节点要找主、被重定向);etcd 下**业务节点自己对 etcd 发一次 txn 就抢到了**,etcd 的线性一致 txn 就是裁判,**不需要任何 leader 角色**。
+
+```
+Center 模型(现状/NuRaft):          etcd 模型:
+ 业务 → 找主 → 主分配 → 回 node_id    业务 → 直接对 etcd 发 txn 抢槽位 → 拿到 node_id
+ (要重定向/换主重试)                  (etcd 内部转发到主, 业务无感; CAS 保证唯一)
+```
+
+**接入路径**(走前面 §8 的 `EtcdCenterConnector`):
+```
+业务节点启动 → EtcdCenterConnector.Register()
+  ① 对 etcd 发 txn(方式 B): CAS 抢一个空闲槽位 i, 绑本节点 lease
+       (HTTP gateway: POST /v3/kv/txn)
+  ② 成功 → node_id = i, 之后 KeepAlive 续租保持占用
+  ③ 失败(槽位被占)→ 换下一个 i 重试
+  → 通过现有 CenterEvent::Registered 把 node_id 交给业务(接口不变)
+```
+
+- **零碰撞**: etcd txn 线性一致,两个节点抢同一槽位只有一个成功;分区少数派无 quorum 写不进,物理上杜绝双分配。
+- **崩溃自动回收**: node_id 绑 lease,节点崩 → 租约过期 → 槽位释放,**别的节点可复用**(对应 §3.1 方式 B)。
+- **业务侧无感**: 仍通过现有 `CenterConnector` 的 `Registered` 事件拿 node_id,业务代码不变;变的只是 `EtcdCenterConnector` 内部从"找主要号"变成"自己 txn 抢号"。
+
+> 对比:Center 模型把 node_id 唯一性押在"选主 + 单写者";etcd 模型把它押在"txn 线性一致",**省掉了整个 leader/重定向链路**——这也是 §8 说的"找主 dance 消失"在 node_id 这条线上的体现。
+
+### 3.3 完整实现 recipe(可照写)
+
+需求就两条: **每个 ip:port 一个 node_id + 不跟别的重复**。etcd 实现 = **两个 key + 一个 lease + 一个 txn**。
+
+**概念**: node_id 只占 snowflake 的 7~8 bit → 只有 **1~255 共 255 个号(槽位)**。"抢槽位" = 从 255 个号里**原子地挑一个没被占的**标记成自己的;挑的过程保证不撞、节点死了号能回收。
+
+**数据布局**:
+```
+/thunder/slot/{i}              # i=1..255, 存在=该号被占; 绑 lease
+/thunder/registry/{ip:port}    # → node_id, 幂等映射; 绑 lease
+lease                          # 每节点一个租约(TTL=10s), 后台 KeepAlive
+                               # 两 key 绑同一 lease → 节点崩, 两者一起自动删 → 号回收
+```
+
+**注册算法**:
+```
+1. leaseId = LeaseGrant(TTL=10s)
+
+2. existing = Get("/thunder/registry/{ip:port}")
+   if existing: return existing        // 幂等: 重连不重新分配
+
+3. for i in 1..255:                     // 从随机/哈希位置起, 避免惊群
+     ok = Txn(
+       compare: CreateRevision("/thunder/slot/{i}") == 0   // 该号从没建过 = 空
+       success: [
+         Put("/thunder/slot/{i}", "{ip:port}", lease=leaseId)
+         Put("/thunder/registry/{ip:port}", i, lease=leaseId)
+       ])
+     if ok.succeeded: { node_id = i; break }   // 抢到; 否则换下一个 i
+
+4. 后台周期 KeepAlive(leaseId) 保活
+```
+> 第 3 步的 txn 是**一个原子请求**("查 i 空 + 占 slot + 写 registry"一次做完),两个节点抢同一个 i 只有一个 success → **零碰撞就靠这个**。
+
+**HTTP gateway 实际请求**(走 curl;gateway 的 key/value 需 base64):
+```
+① POST /v3/lease/grant   {"TTL":10}                  → {"ID":"7587848"}
+② POST /v3/kv/range      {"key": b64("/thunder/registry/10.0.0.5:9001")}
+③ POST /v3/kv/txn   (抢 2 号, 一个原子请求)
+   { "compare":[{ "key":b64("/thunder/slot/2"),
+                  "target":"CREATE","result":"EQUAL","create_revision":"0" }],
+     "success":[
+       {"request_put":{"key":b64("/thunder/slot/2"),
+                       "value":b64("10.0.0.5:9001"),"lease":"7587848"}},
+       {"request_put":{"key":b64("/thunder/registry/10.0.0.5:9001"),
+                       "value":b64("2"),"lease":"7587848"}}]}
+   → {"succeeded":true}        # false 就换 3 号重发
+④ POST /v3/lease/keepalive {"ID":"7587848"}           # 每 ~3s
+```
+
+**崩溃回收(自动,不用管)**:
+```
+活: KeepAlive 续租 → slot/2 + registry 在 → 占着 2 号
+崩: 停续 → 10s 租约过期 → etcd 自动删 slot/2 + registry → 2 号空出 → 新节点可抢复用
+```
+
+> 没有 leader、没有重定向,几十行 connector 代码搞定。与方式 A(纯自增计数器)相比,槽位占位天然支持**回收复用**,适配 255 稀缺槽位。
+
 ---
 
 ## 4. 其余职责的 etcd 映射
