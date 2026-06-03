@@ -32,8 +32,6 @@
 
 #include <ev.h>
 
-struct ev_loop;
-
 namespace net
 {
 
@@ -51,6 +49,11 @@ public:
      */
     explicit EtcdCenterConnector(const util::CJsonObject& conf);
     ~EtcdCenterConnector() override;
+
+    EtcdCenterConnector(const EtcdCenterConnector&)            = delete;
+    EtcdCenterConnector& operator=(const EtcdCenterConnector&) = delete;
+    EtcdCenterConnector(EtcdCenterConnector&&)                 = delete;
+    EtcdCenterConnector& operator=(EtcdCenterConnector&&)      = delete;
 
     // ---- 生命周期 ----
 
@@ -132,6 +135,40 @@ private:
      */
     void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
 
+    /**
+     * @brief 查询 /v3/kv/range，返回已存在的 node_id（0 表示不存在）
+     * @param registryKey  etcd key，如 /thunder/registry/ip:port
+     * @param outNodeId    成功时写入 node_id
+     * @return true 表示 key 存在且解析成功
+     */
+    bool QueryRegistry(const std::string& registryKey, uint32_t& outNodeId);
+
+    /**
+     * @brief 构建单次槽位抢占的 txn JSON 字符串
+     * @param slot         槽位序号 [1..255]
+     * @param slotKey      /thunder/slot/<slot>
+     * @param registryKey  /thunder/registry/ip:port
+     * @param ipPort       "ip:port" 字符串（写入 slot value）
+     * @return JSON 字符串，供 EtcdPost("/v3/kv/txn") 使用
+     */
+    std::string BuildSlotTxn(int slot,
+                              const std::string& slotKey,
+                              const std::string& registryKey,
+                              const std::string& ipPort);
+
+    /**
+     * @brief 尝试原子占位单个槽位
+     * @param slot         槽位序号
+     * @param slotKey      /thunder/slot/<slot>
+     * @param registryKey  /thunder/registry/ip:port
+     * @param ipPort       "ip:port" 字符串
+     * @return true 表示占位成功（txn succeeded）
+     */
+    bool TryClaimSlot(int slot,
+                      const std::string& slotKey,
+                      const std::string& registryKey,
+                      const std::string& ipPort);
+
     // ---- KeepAlive 定时器 ----
 
     /**
@@ -162,7 +199,7 @@ private:
     static size_t CurlWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
 
     /**
-     * @brief 发射事件到 Manager 回调
+     * @brief 发射事件到 Manager 回调（ev 按值传入，支持 std::move）
      */
     void Emit(CenterEventType type, CenterEvent ev = {});
 

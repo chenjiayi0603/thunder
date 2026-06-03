@@ -19,6 +19,7 @@
 
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -29,6 +30,31 @@
 
 #include <log4cplus/logger.h>
 #include <log4cplus/loggingmacros.h>
+
+// ---- curl RAII 包装（避免 EtcdPost 中的提前返回导致资源泄漏） ----
+namespace
+{
+
+struct CurlHandle
+{
+    CURL* h;
+    CurlHandle() : h(curl_easy_init()) {}
+    ~CurlHandle() { if (h) curl_easy_cleanup(h); }
+    CurlHandle(const CurlHandle&)            = delete;
+    CurlHandle& operator=(const CurlHandle&) = delete;
+    operator CURL*() const { return h; }  // NOLINT(google-explicit-constructor)
+};
+
+struct SlistHandle
+{
+    curl_slist* s = nullptr;
+    SlistHandle()  = default;
+    ~SlistHandle() { curl_slist_free_all(s); }
+    SlistHandle(const SlistHandle&)            = delete;
+    SlistHandle& operator=(const SlistHandle&) = delete;
+};
+
+}  // namespace
 
 // ---- 日志宏（独立 category，避免依赖 GetLabor() 上下文） ----
 namespace
@@ -47,11 +73,11 @@ log4cplus::Logger& GetEtcdLogger()
 #define ETCD_LOG_ERROR(msg) LOG4CPLUS_ERROR(GetEtcdLogger(), msg)
 
 // ---- etcd key 命名空间 ----
-static constexpr const char* kSlotPrefix     = "/thunder/slot/";
-static constexpr const char* kRegistryPrefix = "/thunder/registry/";
-static constexpr int         kMaxSlot        = 255;
-static constexpr int         kLeaseTTL       = 10;   ///< 秒
-static constexpr double      kKeepAliveInterval = 3.0; ///< 秒
+static constexpr const char*    kSlotPrefix        = "/thunder/slot/";
+static constexpr const char*    kRegistryPrefix    = "/thunder/registry/";
+static constexpr uint32_t       kMaxSlot           = 255;
+static constexpr int            kLeaseTTL          = 10;   ///< 秒
+static constexpr double         kKeepAliveInterval = 3.0;  ///< 秒
 
 namespace net
 {
@@ -243,8 +269,8 @@ size_t EtcdCenterConnector::CurlWriteCallback(void* ptr, size_t size,
 std::string EtcdCenterConnector::EtcdPost(const std::string& path,
                                            const std::string& body)
 {
-    CURL* curl = curl_easy_init();
-    if (!curl)
+    CurlHandle curl;
+    if (!curl.h)
     {
         ETCD_LOG_WARN("EtcdPost — curl_easy_init() 失败");
         return {};
@@ -253,24 +279,23 @@ std::string EtcdCenterConnector::EtcdPost(const std::string& path,
     const std::string url = m_endpoint + path;
     std::string response;
 
-    struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    SlistHandle hdrs;
+    hdrs.s = curl_slist_append(hdrs.s, "Content-Type: application/json");
 
-    curl_easy_setopt(curl, CURLOPT_URL,                url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POST,               1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,         body.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,      static_cast<long>(body.size()));
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER,         headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,      CurlWriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA,          &response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,         2000L);   // etcd 故障时最多阻塞 2s
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,  1000L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,     0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST,     0L);
+    curl_easy_setopt(curl, CURLOPT_URL,               url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST,              1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,        body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,     static_cast<long>(body.size()));
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER,        hdrs.s);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,     CurlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA,         &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,        2000L);  // etcd 故障时最多阻塞 2s
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 1000L);
+    // 注意：不设置 CURLOPT_SSL_VERIFYPEER/VERIFYHOST。
+    //   当前 etcd 端点为 http://，无需 TLS；
+    //   若未来切换到 https://，应正确配置 CA 而非禁用验证（防 MITM）。
 
     CURLcode res = curl_easy_perform(curl);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
 
     if (res != CURLE_OK)
     {
@@ -380,168 +405,171 @@ void EtcdCenterConnector::LeaseRevoke()
 // 注册核心逻辑
 // ============================================================
 
+bool EtcdCenterConnector::QueryRegistry(const std::string& registryKey,
+                                         uint32_t& outNodeId)
+{
+    util::CJsonObject oReq;
+    oReq.Add("key", B64(registryKey));
+
+    const std::string resp = EtcdPost("/v3/kv/range", oReq.ToString());
+    if (resp.empty()) return false;
+
+    util::CJsonObject oResp;
+    if (!oResp.Parse(resp)) return false;
+
+    // count 字段是字符串形式，如 "1"
+    std::string countStr;
+    int count = 0;
+    if (oResp.Get("count", countStr) && !countStr.empty())
+    {
+        try { count = std::stoi(countStr); }
+        catch (...) { count = 0; }
+    }
+    if (count <= 0) return false;
+
+    util::CJsonObject oKvs;
+    if (!oResp.Get("kvs", oKvs) || !oKvs.IsArray()) return false;
+
+    util::CJsonObject oKv;
+    if (!oKvs.Get(0, oKv)) return false;
+
+    std::string valueB64;
+    if (!oKv.Get("value", valueB64)) return false;
+
+    const std::string valueStr = B64Dec(valueB64);
+    try
+    {
+        outNodeId = static_cast<uint32_t>(std::stoul(valueStr));
+        return true;
+    }
+    catch (...)
+    {
+        ETCD_LOG_WARN("QueryRegistry — value 解析失败: " << valueStr);
+        return false;
+    }
+}
+
+std::string EtcdCenterConnector::BuildSlotTxn(int slot,
+                                               const std::string& slotKey,
+                                               const std::string& registryKey,
+                                               const std::string& ipPort)
+{
+    util::CJsonObject oTxn;
+
+    // compare: slot/i 的 create_revision == 0（key 不存在）
+    util::CJsonObject oCompare;
+    util::CJsonObject oCmp;
+    oCmp.Add("key",             B64(slotKey));
+    oCmp.Add("target",          std::string("CREATE"));
+    oCmp.Add("result",          std::string("EQUAL"));
+    oCmp.Add("create_revision", std::string("0"));
+    oCompare.Add(oCmp);
+    oTxn.Add("compare", oCompare);
+
+    // success: put slot/i = ip:port，put registry/ip:port = slotIdx
+    util::CJsonObject oSuccess;
+
+    util::CJsonObject oPutSlot;
+    util::CJsonObject oPutSlotKV;
+    oPutSlotKV.Add("key",   B64(slotKey));
+    oPutSlotKV.Add("value", B64(ipPort));
+    oPutSlotKV.Add("lease", std::to_string(m_leaseId));
+    oPutSlot.Add("request_put", oPutSlotKV);
+    oSuccess.Add(oPutSlot);
+
+    util::CJsonObject oPutReg;
+    util::CJsonObject oPutRegKV;
+    oPutRegKV.Add("key",   B64(registryKey));
+    oPutRegKV.Add("value", B64(std::to_string(slot)));
+    oPutRegKV.Add("lease", std::to_string(m_leaseId));
+    oPutReg.Add("request_put", oPutRegKV);
+    oSuccess.Add(oPutReg);
+
+    oTxn.Add("success", oSuccess);
+
+    // failure: range slot/i（满足协议格式，结果不使用）
+    util::CJsonObject oFailure;
+    util::CJsonObject oRangeFail;
+    util::CJsonObject oRangeFailKV;
+    oRangeFailKV.Add("key", B64(slotKey));
+    oRangeFail.Add("request_range", oRangeFailKV);
+    oFailure.Add(oRangeFail);
+    oTxn.Add("failure", oFailure);
+
+    return oTxn.ToString();
+}
+
+bool EtcdCenterConnector::TryClaimSlot(int slot,
+                                        const std::string& slotKey,
+                                        const std::string& registryKey,
+                                        const std::string& ipPort)
+{
+    const std::string txnBody = BuildSlotTxn(slot, slotKey, registryKey, ipPort);
+    const std::string resp    = EtcdPost("/v3/kv/txn", txnBody);
+    if (resp.empty())
+    {
+        ETCD_LOG_WARN("TryClaimSlot — txn HTTP 失败 slot=" << slot);
+        return false;
+    }
+
+    util::CJsonObject oResp;
+    if (!oResp.Parse(resp))
+    {
+        ETCD_LOG_WARN("TryClaimSlot — txn 响应解析失败: " << resp);
+        return false;
+    }
+
+    bool succeeded = false;
+    oResp.Get("succeeded", succeeded);
+    return succeeded;
+}
+
 void EtcdCenterConnector::DoRegister(const std::string& ip,
                                       uint32_t port,
                                       const std::string& nodeType)
 {
     (void)nodeType;  // 当前注册不存储 nodeType 到 etcd，保留扩展
 
-    const std::string registryKey =
-        std::string(kRegistryPrefix) + ip + ":" + std::to_string(port);
+    const std::string ipPort      = ip + ":" + std::to_string(port);
+    const std::string registryKey = std::string(kRegistryPrefix) + ipPort;
 
     // ---- Step 1: 幂等查询 —— 已有 registry/ip:port 则续期返回 ----
+    uint32_t existingNodeId = 0;
+    if (QueryRegistry(registryKey, existingNodeId))
     {
-        util::CJsonObject oReq;
-        oReq.Add("key", B64(registryKey));
-
-        std::string resp = EtcdPost("/v3/kv/range", oReq.ToString());
-        if (!resp.empty())
-        {
-            util::CJsonObject oResp;
-            if (oResp.Parse(resp))
-            {
-                // count 字段是字符串形式，如 "1"
-                std::string countStr;
-                int count = 0;
-                if (oResp.Get("count", countStr) && !countStr.empty())
-                {
-                    try { count = std::stoi(countStr); }
-                    catch (...) { count = 0; }
-                }
-
-                if (count > 0)
-                {
-                    // 已注册：取出 node_id
-                    util::CJsonObject oKvs;
-                    if (oResp.Get("kvs", oKvs) && oKvs.IsArray())
-                    {
-                        util::CJsonObject oKv;
-                        if (oKvs.Get(0, oKv))
-                        {
-                            std::string valueB64;
-                            if (oKv.Get("value", valueB64))
-                            {
-                                std::string valueStr = B64Dec(valueB64);
-                                try
-                                {
-                                    m_nodeId     = static_cast<uint32_t>(std::stoul(valueStr));
-                                    m_registered = true;
-
-                                    // 续租一次，确保租约新鲜
-                                    KeepAlive();
-
-                                    ETCD_LOG_INFO("DoRegister — 已注册(幂等)，续期 nodeId="
-                                                  << m_nodeId);
-
-                                    CenterEvent ev;
-                                    ev.node_id = m_nodeId;
-                                    Emit(CenterEventType::Registered, ev);
-                                    return;
-                                }
-                                catch (...)
-                                {
-                                    ETCD_LOG_WARN("DoRegister — value 解析失败: " << valueStr);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        m_nodeId     = existingNodeId;
+        m_registered = true;
+        KeepAlive();  // 续租一次，确保租约新鲜
+        ETCD_LOG_INFO("DoRegister — 已注册(幂等)，续期 nodeId=" << m_nodeId);
+        CenterEvent ev;
+        ev.node_id = m_nodeId;
+        Emit(CenterEventType::Registered, std::move(ev));
+        return;
     }
 
     // ---- Step 2: 抢槽位 —— 从 hash(ip:port)%255+1 开始顺序扫描 ----
     // 简单哈希：对 ip+port 字符串按字节累加
-    std::string hashSrc = ip + std::to_string(port);
     uint32_t hashVal = 0;
-    for (unsigned char c : hashSrc) hashVal += c;
+    for (unsigned char c : ipPort) hashVal += c;
     const int startSlot = static_cast<int>(hashVal % kMaxSlot) + 1;  // [1..255]
 
-    for (int loop = 0; loop < kMaxSlot; ++loop)
+    for (uint32_t loop = 0; loop < kMaxSlot; ++loop)
     {
-        // 从 startSlot 开始循环扫，slot 范围 [1..255]
-        int slotIdx = ((startSlot - 1 + loop) % kMaxSlot) + 1;
-        const std::string slotKey =
-            std::string(kSlotPrefix) + std::to_string(slotIdx);
+        const int slotIdx = static_cast<int>((static_cast<uint32_t>(startSlot - 1) + loop) % kMaxSlot) + 1;
+        const std::string slotKey = std::string(kSlotPrefix) + std::to_string(slotIdx);
 
-        // 构建 txn：compare slot/i 的 create_revision == 0（即 key 不存在）
-        //   success: put slot/i = ip:port，put registry/ip:port = slotIdx
-        //   failure: range slot/i（查看当前值，不实际使用）
-        util::CJsonObject oTxn;
-
-        // compare 数组
-        util::CJsonObject oCompare;
-        util::CJsonObject oCmp;
-        oCmp.Add("key",             B64(slotKey));
-        oCmp.Add("target",          std::string("CREATE"));
-        oCmp.Add("result",          std::string("EQUAL"));
-        oCmp.Add("create_revision", std::string("0"));
-        oCompare.Add(oCmp);
-        oTxn.Add("compare", oCompare);
-
-        // success 数组：两个 put
-        util::CJsonObject oSuccess;
-
-        // put slot/i = ip:port
-        util::CJsonObject oPutSlot;
-        util::CJsonObject oPutSlotKV;
-        oPutSlotKV.Add("key",   B64(slotKey));
-        oPutSlotKV.Add("value", B64(ip + ":" + std::to_string(port)));
-        oPutSlotKV.Add("lease", std::to_string(m_leaseId));
-        oPutSlot.Add("request_put", oPutSlotKV);
-        oSuccess.Add(oPutSlot);
-
-        // put registry/ip:port = slotIdx（node_id）
-        util::CJsonObject oPutReg;
-        util::CJsonObject oPutRegKV;
-        oPutRegKV.Add("key",   B64(registryKey));
-        oPutRegKV.Add("value", B64(std::to_string(slotIdx)));
-        oPutRegKV.Add("lease", std::to_string(m_leaseId));
-        oPutReg.Add("request_put", oPutRegKV);
-        oSuccess.Add(oPutReg);
-
-        oTxn.Add("success", oSuccess);
-
-        // failure 数组：range slot/i（不关心结果，仅满足协议格式）
-        util::CJsonObject oFailure;
-        util::CJsonObject oRangeFail;
-        util::CJsonObject oRangeFailKV;
-        oRangeFailKV.Add("key", B64(slotKey));
-        oRangeFail.Add("request_range", oRangeFailKV);
-        oFailure.Add(oRangeFail);
-        oTxn.Add("failure", oFailure);
-
-        std::string resp = EtcdPost("/v3/kv/txn", oTxn.ToString());
-        if (resp.empty())
-        {
-            ETCD_LOG_WARN("DoRegister — txn HTTP 失败 slot=" << slotIdx);
-            continue;
-        }
-
-        util::CJsonObject oResp;
-        if (!oResp.Parse(resp))
-        {
-            ETCD_LOG_WARN("DoRegister — txn 响应解析失败: " << resp);
-            continue;
-        }
-
-        bool succeeded = false;
-        oResp.Get("succeeded", succeeded);  // bool 类型，CJsonObject 可直接取
-        if (succeeded)
+        if (TryClaimSlot(slotIdx, slotKey, registryKey, ipPort))
         {
             m_nodeId     = static_cast<uint32_t>(slotIdx);
             m_registered = true;
-
             ETCD_LOG_INFO("DoRegister — 注册成功 nodeId=" << m_nodeId
                           << " slot=" << slotKey
                           << " registryKey=" << registryKey);
-
             CenterEvent ev;
             ev.node_id = m_nodeId;
-            Emit(CenterEventType::Registered, ev);
+            Emit(CenterEventType::Registered, std::move(ev));
             return;
         }
-        // txn 失败（slot 已被占用），继续下一个 slot
         ETCD_LOG_DEBUG("DoRegister — slot=" << slotIdx << " 已占用，尝试下一个");
     }
 
@@ -550,7 +578,7 @@ void EtcdCenterConnector::DoRegister(const std::string& ip,
     CenterEvent ev;
     ev.errcode = 1;
     ev.errmsg  = "no slot available";
-    Emit(CenterEventType::Registered, ev);
+    Emit(CenterEventType::Registered, std::move(ev));
 }
 
 // ============================================================
@@ -598,6 +626,13 @@ void EtcdCenterConnector::OnKeepAliveTimer()
 std::string EtcdCenterConnector::B64(const std::string& s)
 {
     if (s.empty()) return {};
+
+    // 防止 size_t → int 截断溢出（Base64encode_len 参数为 int）
+    if (s.size() > static_cast<size_t>(std::numeric_limits<int>::max() / 2))
+    {
+        ETCD_LOG_WARN("B64 — 输入过大: " << s.size() << " 字节");
+        return {};
+    }
 
     int outLen = Base64encode_len(static_cast<int>(s.size()));
     std::vector<char> buf(outLen);
