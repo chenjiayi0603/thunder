@@ -1,38 +1,46 @@
 /*******************************************************************************
  * Project:  Net
  * @file     EtcdCenterConnector.hpp
- * @brief    CenterConnector 的 etcd 实现（Phase 0 骨架，全部空实现）
+ * @brief    CenterConnector 的 etcd 实现（Phase 1：注册 + node_id 分配）
  * @author   cjy
  * @date:    2026年6月3日
  * @note
- *   Phase 0：仅提供符合 CenterConnector 接口的骨架，所有方法均为空实现或
- *   最小返回值，不含任何真实的 etcd 通信逻辑。
+ *   Phase 1 实现：
+ *     - Init()             → 解析 etcd_endpoints，申请租约，启动 KeepAlive 定时器
+ *     - ReportNodeStatus() → 解析 NodeReport，执行槽位占位注册或幂等续期
+ *     - Destroy()          → 撤销租约，停止定时器
+ *     - ev_timer KeepAlive（每 3 秒续租）
  *
- *   Phase 1 开始填充：
- *     - Init()             → 解析 etcd endpoints 配置，创建 etcd 客户端
- *     - ReportNodeStatus() → 写 etcd 租约键，完成节点注册与心跳
- *     - Destroy()          → 撤销租约，关闭客户端
+ *   注册算法：
+ *     1. 申请租约 (TTL=10s)
+ *     2. 查 /thunder/registry/ip:port 是否已存在 → 存在则续期，返回 node_id
+ *     3. 不存在则从 hash(ip:port)%255+1 开始扫 /thunder/slot/i，原子 txn 占位
  *
  *   配置项（center.connector = "etcd" 时生效）：
  *     center.etcd_endpoints  — etcd 集群地址，如 "http://127.0.0.1:2379"
- *     center.etcd_dial_timeout_ms  — 连接超时（毫秒，默认 3000）
- *     center.etcd_lease_ttl_sec    — 租约 TTL（秒，默认 30）
+ *                              多节点用逗号分隔，Init 时取第一个
  ******************************************************************************/
 #ifndef ETCD_CENTER_CONNECTOR_HPP_
 #define ETCD_CENTER_CONNECTOR_HPP_
 
 #include <string>
+#include <cstdint>
 #include "labor/CenterConnector.hpp"
 #include "util/json/CJsonObject.hpp"
+#include "curl/CurlClient.hpp"
+#include "util/encrypt/base64.h"
+
+struct ev_loop;
+struct ev_timer;
 
 namespace net
 {
 
 /**
- * @brief CenterConnector 的 etcd 后端（Phase 0 骨架）
+ * @brief CenterConnector 的 etcd 后端（Phase 1）
  *
- * 所有接口方法均为空实现，编译通过即达到 Phase 0 目标。
- * Phase 1 起逐步填充真实的 etcd 注册、心跳、watch 逻辑。
+ * 通过 etcd HTTP v3 gateway 实现节点注册（租约 + 槽位抢占）与续期。
+ * 所有 etcd 请求在 libev 主线程同步执行（curl 阻塞调用，TTL=10s，超时<1s）。
  */
 class EtcdCenterConnector : public CenterConnector
 {
@@ -46,14 +54,12 @@ public:
     // ---- 生命周期 ----
 
     /**
-     * @brief 初始化（Phase 0 空实现，始终返回 true）
-     * @note  Phase 1 将在此处解析 etcd_endpoints 并创建 etcd 客户端
+     * @brief 初始化：解析 etcd_endpoints，申请租约，启动 KeepAlive 定时器
      */
     bool Init(struct ev_loop* loop, CenterEventCallback cb, void* user_data) override;
 
     /**
-     * @brief 销毁（Phase 0 空实现）
-     * @note  Phase 1 将在此处撤销租约、关闭 etcd 客户端
+     * @brief 销毁：撤销租约，停止定时器
      */
     void Destroy() override;
 
@@ -63,46 +69,116 @@ public:
     // ---- 节点注册 & 心跳 ----
 
     /**
-     * @brief 向 etcd 写注册键或更新心跳（Phase 0 空实现，始终返回 false）
-     * @note  Phase 1 将调用 etcd PUT with lease 实现
+     * @brief 解析 NodeReport，执行槽位占位注册或幂等续期
      */
     bool ReportNodeStatus(const std::string& node_report, bool is_register) override;
 
     // ---- Center 连接状态查询 ----
 
     /**
-     * @brief 是否已连接（Phase 0 始终返回 false）
-     * @note  etcd 后端无持久 TCP 连接概念，Phase 1 返回客户端就绪状态
+     * @brief 是否已注册（租约有效 + 已完成槽位占位）
      */
-    bool IsConnected() const override { return false; }
+    bool IsConnected() const override { return m_registered; }
 
     /**
-     * @brief Center 数量（Phase 0 始终返回 0）
-     * @note  etcd 后端不维护 Center 节点计数，此方法语义不适用
+     * @brief etcd 后端不维护 Center 节点计数，返回 0
      */
     size_t CenterCount() const override { return 0; }
 
     // ---- 连接管理（etcd 后端无 TCP 连接，全部返回 false / 空操作） ----
 
-    /**
-     * @brief 尝试消费 TCP 消息（etcd 不使用 TCP 消息，始终返回 false）
-     */
     bool TryConsumeMessage(int iFd, uint32_t ulSeq, const std::string& strIdentify,
                            uint32_t cmd, uint32_t seq, const std::string& body) override;
 
-    /**
-     * @brief 判断连接是否属于本插件（etcd 无 TCP 连接，始终返回 false）
-     */
     bool IsCenterConnection(const std::string& strIdentify) const override;
 
-    /**
-     * @brief 通知连接销毁（etcd 无 TCP 连接，空操作）
-     */
     void OnConnectionDestroy(const std::string& strIdentify, int iFd, uint32_t ulSeq) override;
 
 private:
-    // ---- Phase 0 保留，Phase 1 填充 ----
-    util::CJsonObject m_oConf;  ///< "center" 节点配置（保存供 Phase 1 使用）
+    // ---- etcd HTTP 基础操作 ----
+
+    /**
+     * @brief 向 etcd POST 一个请求，返回响应体；失败返回空字符串
+     * @param path  路径，如 "/v3/lease/grant"
+     * @param body  JSON 请求体
+     */
+    std::string EtcdPost(const std::string& path, const std::string& body);
+
+    /**
+     * @brief 申请租约（TTL=10s），成功后设置 m_leaseId
+     * @return 是否成功
+     */
+    bool LeaseGrant();
+
+    /**
+     * @brief 对 m_leaseId 执行一次续租
+     * @return 是否成功
+     */
+    bool KeepAlive();
+
+    /**
+     * @brief 撤销租约
+     */
+    void LeaseRevoke();
+
+    // ---- 注册核心逻辑 ----
+
+    /**
+     * @brief 注册算法入口：幂等查询 → 槽位占位 → emit Registered
+     * @param ip       节点 IP
+     * @param port     节点端口
+     * @param nodeType 节点类型
+     */
+    void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
+
+    // ---- KeepAlive 定时器 ----
+
+    /**
+     * @brief ev_timer 静态回调，转发给 OnKeepAliveTimer()
+     */
+    static void KeepAliveTimerCallback(struct ev_loop* loop, struct ev_timer* w, int revents);
+
+    /**
+     * @brief 每 3 秒执行一次续租，失败则 emit ConnectionLost
+     */
+    void OnKeepAliveTimer();
+
+    // ---- 工具函数 ----
+
+    /**
+     * @brief base64 编码（etcd gateway 要求 key/value 使用 base64）
+     */
+    static std::string B64(const std::string& s);
+
+    /**
+     * @brief base64 解码
+     */
+    static std::string B64Dec(const std::string& s);
+
+    /**
+     * @brief 发射事件到 Manager 回调
+     */
+    void Emit(CenterEventType type, CenterEvent ev = {});
+
+    // ---- 配置（构造时保存） ----
+    util::CJsonObject m_oConf;  ///< "center" 节点完整配置
+
+    // ---- 运行时状态 ----
+    struct ev_loop*     m_loop            = nullptr;
+    CenterEventCallback m_callback;
+    void*               m_user_data       = nullptr;
+
+    std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
+    int64_t             m_leaseId         = 0;
+    uint32_t            m_nodeId          = 0;
+    std::string         m_nodeIp;
+    uint32_t            m_nodePort        = 0;
+    std::string         m_nodeType;
+    bool                m_registered      = false;
+
+    ev_timer*           m_keepAliveTimer  = nullptr;
+
+    util::CurlClient    m_curl;            ///< curl 客户端（复用连接）
 };
 
 } /* namespace net */
