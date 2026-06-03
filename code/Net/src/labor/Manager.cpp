@@ -14,6 +14,7 @@
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
 #include "labor/TcpCenterConnector.hpp"
+#include "labor/EtcdCenterConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
@@ -2572,6 +2573,12 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
                          m_strGateway, m_iGatewayPort,
                          m_uiWorkerNum);
         return p;
+    }
+
+    if (connectorType == "etcd")
+    {
+        // Phase 0 骨架：创建 EtcdCenterConnector 空实现，Phase 1 起填充真实逻辑
+        return std::make_unique<EtcdCenterConnector>(m_oCurrentConf["center"]);
     }
 
     LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
