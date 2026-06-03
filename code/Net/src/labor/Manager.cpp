@@ -2577,8 +2577,22 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
 
     if (connectorType == "etcd")
     {
-        // Phase 0 骨架：创建 EtcdCenterConnector 空实现，Phase 1 起填充真实逻辑
-        return std::make_unique<EtcdCenterConnector>(m_oCurrentConf["center"]);
+        // 创建 etcd 后端：如果 center 配置不含 etcd_endpoints，从顶层注入
+        util::CJsonObject centerConf = m_oCurrentConf["center"];
+        std::string eps;
+        centerConf.Get("etcd_endpoints", eps);
+        if (eps.empty())
+        {
+            m_oCurrentConf.Get("etcd_endpoints", eps);
+            if (!eps.empty())
+            {
+                // 注意: center 在 JSON 中可能是个纯字符串(如 "127.0.0.1:27000")，
+                // CJsonObject[\"center\"] 在那种情况下会返回包含该字符串的对象，
+                // Add 操作不应破坏原有值
+                centerConf.Add("etcd_endpoints", eps);
+            }
+        }
+        return std::make_unique<EtcdCenterConnector>(centerConf);
     }
 
     LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());

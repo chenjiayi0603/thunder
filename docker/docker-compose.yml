@@ -107,6 +107,34 @@ services:
       retries: 30
       start_period: 35s
 
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.21
+    network_mode: host
+    command:
+      - etcd
+      - --name=etcd1
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://127.0.0.1:2379
+      - --advertise-client-urls=http://127.0.0.1:2379
+      - --enable-v2=false
+      - --auto-compaction-mode=periodic
+      - --auto-compaction-retention=1
+    volumes:
+      - ./data/etcd:/etcd-data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:2379/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
   center:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Center
