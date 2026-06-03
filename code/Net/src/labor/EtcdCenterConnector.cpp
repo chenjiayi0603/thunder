@@ -722,7 +722,9 @@ void EtcdCenterConnector::StopWatch()
 
 void EtcdCenterConnector::WatchThreadFunc()
 {
-    const std::string prefix    = kRegistryPrefix;             // "/thunder/registry/"
+    // watch /thunder/ 共同前缀（覆盖 registry 和 config）
+    static const std::string kWatcherPrefix = "/thunder/";
+    const std::string prefix    = kWatcherPrefix;
     std::string       rangeEnd  = prefix;
     if (!rangeEnd.empty())
     {
@@ -883,8 +885,32 @@ void EtcdCenterConnector::OnWatchAsync()
         events.swap(m_watchQueue);
     }
 
+    static const std::string kConfigPrefix("/thunder/config/");
+
     for (const auto& wev : events)
     {
+        // ---- config 变更（Phase 3） ----
+        if (wev.key.find(kConfigPrefix) == 0)
+        {
+            std::string configPath = wev.key.substr(kConfigPrefix.size());
+            CenterEvent cev;
+            cev.type = CenterEventType::ConfigUpdated;
+            if (wev.type == "PUT")
+            {
+                cev.config_content = wev.value;  // 配置内容
+                ETCD_LOG_DEBUG("Watch — CONFIG PUT " << configPath);
+            }
+            else
+            {
+                ETCD_LOG_DEBUG("Watch — CONFIG DELETE " << configPath
+                               << " (忽略删除事件)");
+                continue;  // 配置删除不触发 ConfigUpdated
+            }
+            m_callback(cev);
+            continue;
+        }
+
+        // ---- registry 变更（路由，Phase 2） ----
         // key 格式: /thunder/registry/ip:port
         if (wev.key.find(kRegistryPrefix) != 0) continue;
 
