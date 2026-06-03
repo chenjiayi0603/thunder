@@ -639,11 +639,28 @@ void EtcdCenterConnector::OnKeepAliveTimer()
 
     if (!m_registered)
     {
-        // 注册失败但租约仍存活：主动撤销，避免 etcd 侧资源泄漏
-        ETCD_LOG_WARN("OnKeepAliveTimer — 未注册状态发现残留 lease=" << m_leaseId
-                      << "，执行 LeaseRevoke");
-        LeaseRevoke();
-        m_leaseId = 0;
+        // etcd 断连后尝试自动恢复：先续租，成功则恢复 registered 状态
+        if (KeepAlive())
+        {
+            m_registered = true;
+            m_keepAliveFailCount = 0;
+            ETCD_LOG_INFO("OnKeepAliveTimer — etcd 恢复，续租成功 leaseId=" << m_leaseId);
+            Emit(CenterEventType::ConnectionRestored);
+            return;
+        }
+        ++m_keepAliveFailCount;
+        // 续租连续失败超过 10 次（~30s），lease 可能已过期，重注册
+        if (m_keepAliveFailCount >= 10)
+        {
+            ETCD_LOG_WARN("OnKeepAliveTimer — 续租连续失败 "
+                          << m_keepAliveFailCount << " 次, 撤销旧 lease=" << m_leaseId
+                          << " 尝试重注册");
+            LeaseRevoke();
+            m_leaseId = 0;
+            m_keepAliveFailCount = 0;
+            // 重注册：DoRegister 会重新 LeaseGrant + 幂等查 registry
+            DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+        }
         return;
     }
 
@@ -652,7 +669,12 @@ void EtcdCenterConnector::OnKeepAliveTimer()
         ETCD_LOG_WARN("OnKeepAliveTimer — 续租失败 leaseId=" << m_leaseId
                       << "，触发 ConnectionLost");
         m_registered = false;
+        m_keepAliveFailCount = 1;
         Emit(CenterEventType::ConnectionLost);
+    }
+    else
+    {
+        m_keepAliveFailCount = 0;
     }
 }
 

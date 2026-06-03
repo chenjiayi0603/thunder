@@ -270,6 +270,7 @@ private:
     uint32_t            m_nodePort        = 0;
     std::string         m_nodeType;
     bool                m_registered            = false;
+    int                 m_keepAliveFailCount    = 0;   ///< 续租连续失败次数, 用于 etcd 恢复后重注册
 
     ev_timer            m_keepAliveTimer{};     ///< 值成员，无需 new/delete
     bool                m_keepAliveTimerStarted = false;
