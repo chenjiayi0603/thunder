@@ -135,41 +135,11 @@ services:
       retries: 15
       start_period: 3s
 
-  center:
-    <<: [*thunder-node, *thunder-ulimits]
-    working_dir: /thunder/deploy/Center
-    command:
-      - bash
-      - -c
-      - |
-        set -e
-        chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start all
-        exec tail -f /dev/null
-    deploy:
-      resources:
-        limits:
-          cpus: "6.00"
-          memory: 4G
-        reservations:
-          memory: 512M
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "ss -tln | grep -q ':27000 ' && ss -tln | grep -q ':27022 ' && ss -tln | grep -q ':27032 '",
-        ]
-      interval: 5s
-      timeout: 10s
-      retries: 30
-      start_period: 40s
 
   logic:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Logic
     depends_on:
-      center:
-        condition: service_healthy
     command:
       - bash
       - -c
@@ -196,8 +166,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttp
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -222,8 +190,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloWs
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -254,8 +220,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttps
     depends_on:
-      center:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mysql:
@@ -287,8 +251,6 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Interface
     depends_on:
-      center:
-        condition: service_healthy
       logic:
         condition: service_healthy
     command:

@@ -21,9 +21,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(ThunderCommon)
 
-option(THUNDER_BUILD_CENTER "Build Center 可执行文件（定义 NODE_TYPE_CENTER）" ON)
+option(THUNDER_BUILD_CENTER "Build Center 可执行文件（定义 NODE_TYPE_CENTER）" OFF)
 option(THUNDER_BUILD_HELLO_PLUGINS "Build Hello ModuleHello.so 插件" ON)
-option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface/Center 节点 .so 插件（deploy/plugins/...）" ON)
+option(THUNDER_BUILD_NODE_PLUGINS "Build Logic/Interface 节点 .so 插件（deploy/plugins/...）" ON)
 option(THUNDER_DEPLOY_AUTO "编译成功后自动复制到 deploy/（见 cmake/ThunderDeploy.cmake）" ON)
 # 第三方库超级构建（code/3party/CMakeLists.txt），默认仅注册目标，不随主工程 all 一起编；见 target thirdparty_deploy
 option(THUNDER_INCLUDE_3PARTY "包含第三方库 CMake 目标（thunder_3party_all、thirdparty_deploy）" ON)
@@ -89,7 +89,6 @@ endif()
 if(THUNDER_BUILD_NODE_PLUGINS)
   add_subdirectory(code/Logic)
   add_subdirectory(code/Interface)
-  add_subdirectory(code/Center)
 endif()
 
 # cmake --install 与 POST_BUILD 复制布局一致（路径相对于安装前缀，默认 deploy/）
@@ -98,9 +97,6 @@ install(TARGETS Hello RUNTIME DESTINATION HelloWs/bin RENAME HelloWs)
 install(TARGETS Hello RUNTIME DESTINATION HelloHttps/bin RENAME HelloHttps)
 install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
 
-if(THUNDER_BUILD_CENTER AND TARGET Center)
-  install(TARGETS Center RUNTIME DESTINATION Center/bin)
-endif()
 
 if(THUNDER_BUILD_HELLO_PLUGINS AND TARGET ModuleHello)
   install(TARGETS ModuleHello LIBRARY DESTINATION HelloHttp/plugins)
@@ -113,10 +109,5 @@ if(THUNDER_BUILD_NODE_PLUGINS)
   endif()
   if(TARGET ModuleInterface)
     install(TARGETS ModuleInterface LIBRARY DESTINATION Interface/plugins)
-  endif()
-  if(TARGET CmdRaftRequestVote)
-    install(TARGETS
-      CmdRaftRequestVote CmdRaftAppendEntries CmdNodeDisconnect CmdNodeRegister CmdNodeReport ModuleAdmin
-      LIBRARY DESTINATION Center/plugins)
   endif()
 endif()
