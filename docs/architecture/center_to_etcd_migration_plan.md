@@ -16,8 +16,8 @@
 
 | 项 | 决定 |
 |---|---|
-| 客户端协议 | **curl HTTPS + HTTP gateway**(长连接 watch / 短请求 KV);不引 gRPC |
-| Admin 替代 | **etcdctl 过渡**,后续可加薄 HTTP 接口 |
+| 客户端协议 | **Thunder 已有 HTTPS 出站能力**,不引 gRPC:<br>短请求(注册/txn/keepalive): `HttpStep` / `CurlClient::PostHttps`<br>watch 长连接流式: libcurl `CURLOPT_WRITEFUNCTION` 回调(Thunder 已有 curl,加几十行封装) → `PostToEventLoop` → libev |
+| Admin 替代 | **Python/shell 脚本**查 etcd,替代 Center Admin 页 |
 | node_id 策略 | **槽位占位 + 续期**:ip:port 已有 lease → KeepAlive 续期;不存在 → 抢槽位 txn |
 
 ---
@@ -91,10 +91,15 @@
 - 业务节点配置 `etcd_endpoints:["127.0.0.1:2379"]` or 3 个 endpoint;连接失败自动轮换
 - **验证**: E2E 单节点 etcd 全通;E2E 3 节点 etcd 全通;杀 1 个 etcd 节点集群仍可用
 
-### Phase 5 — Admin 替代(etcdctl 过渡)
-- 文档化常用 etcdctl 命令(查在线表/配置/节点)替代 Center Admin 页
-- 可选:一个薄 HTTP admin endpoint 读 etcd registry/config 渲染 JSON
-- **验证**: 能查集群在线表,能改配置
+### Phase 5 — Admin 替代(Python/shell 脚本)
+- 写几个脚本替代 Center Admin 页,放 `deploy/scripts/`:
+  ```
+  admin_nodes.py   # 查在线表: GET /v3/kv/range prefix=/thunder/registry/, 格式化输出
+  admin_config.py  # 查/改配置: GET/PUT /v3/kv/range|put prefix=/thunder/config/
+  admin_status.sh  # 集群健康: curl /health + /v3/cluster/member/list
+  ```
+- 调用方式: `python3 admin_nodes.py` 或 `./admin_status.sh`,传 etcd endpoint 参数
+- **验证**: 能查集群在线表,能改配置,能看集群健康
 
 ### Phase 6 — 下线 Center + 全回归
 - 删 `code/Center/`、`deploy/Center/`、`CmdRaft*`、自研 Raft 相关
