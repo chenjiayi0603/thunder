@@ -11,6 +11,6 @@ if [ "${1:-}" = "--build" ]; then
 fi
 
 echo "=== 性能基准 ==="
-./deploy.sh test bench --skip-build 2>&1 | tail -30
+../deploy.sh test bench --skip-build 2>&1 | tail -30
 
 echo "=== 完成 ==="

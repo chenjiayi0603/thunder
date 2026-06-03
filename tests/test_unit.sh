@@ -14,6 +14,6 @@ echo "=== C++ 单元测试 ==="
 ctest --test-dir build -j1 --output-on-failure 2>&1 | tail -5
 
 echo "=== Python 单元测试 ==="
-python3 -m pytest tests/unit/ -v --tb=short 2>&1 | tail -20
+python3 -m pytest unit/ -v --tb=short 2>&1 | tail -20
 
 echo "=== 完成 ==="

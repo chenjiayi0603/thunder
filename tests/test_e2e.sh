@@ -11,9 +11,9 @@ if [ "${1:-}" = "--build" ]; then
 fi
 
 echo "=== Docker E2E ==="
-./deploy.sh test e2e --skip-build 2>&1 | tail -20
+../deploy.sh test e2e --skip-build 2>&1 | tail -20
 
 echo "=== etcd 回归 ==="
-bash tests/e2e/test_etcd_regression.sh 2>&1 | tail -15
+bash e2e/test_etcd_regression.sh 2>&1 | tail -15
 
 echo "=== 完成 ==="
