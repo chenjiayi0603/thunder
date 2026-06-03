@@ -2560,8 +2560,10 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
 
 std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
 {
-    std::string connectorType = "tcp";
-    m_oCurrentConf.Get("center.connector", connectorType);
+    std::string connectorType;
+    util::CJsonObject centerSub = m_oCurrentConf["center"];
+    centerSub.Get("connector", connectorType);
+    if (connectorType.empty()) connectorType = "tcp";
 
     if (connectorType == "tcp" || connectorType.empty())
     {

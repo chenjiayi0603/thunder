@@ -63,7 +63,7 @@ namespace
 log4cplus::Logger& GetEtcdLogger()
 {
     static log4cplus::Logger logger =
-        log4cplus::Logger::getInstance("EtcdCenterConnector");
+        log4cplus::Logger::getInstance("Logic_robot");
     return logger;
 }
 }  // namespace
@@ -223,9 +223,9 @@ bool EtcdCenterConnector::ReportNodeStatus(const std::string& node_report,
     m_nodePort = port;
     m_nodeType = type;
 
-    if (is_register)
+    if (is_register || !m_registered)
     {
-        // 注册流程：槽位占位 or 幂等续期
+        // 注册流程（首次或显式注册）：槽位占位 or 幂等续期
         DoRegister(ip, port, type);
     }
     else
