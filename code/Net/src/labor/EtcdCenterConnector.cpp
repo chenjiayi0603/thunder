@@ -23,8 +23,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include <ev.h>
-
+#include <curl/curl.h>
 #include "protocol/oss_sys.pb.h"
 #include "util/json/CJsonObject.hpp"
 
@@ -70,14 +69,10 @@ EtcdCenterConnector::EtcdCenterConnector(const util::CJsonObject& conf)
 EtcdCenterConnector::~EtcdCenterConnector()
 {
     // 确保析构时资源已释放（正常路径由 Destroy() 处理）
-    if (m_keepAliveTimer)
+    if (m_keepAliveTimerStarted && m_loop)
     {
-        if (m_loop)
-        {
-            ev_timer_stop(m_loop, m_keepAliveTimer);
-        }
-        delete m_keepAliveTimer;
-        m_keepAliveTimer = nullptr;
+        ev_timer_stop(m_loop, &m_keepAliveTimer);
+        m_keepAliveTimerStarted = false;
     }
 }
 
@@ -117,12 +112,12 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
         return false;
     }
 
-    // 启动 KeepAlive 定时器（每 kKeepAliveInterval 秒续租）
-    m_keepAliveTimer = new ev_timer();
-    m_keepAliveTimer->data = static_cast<void*>(this);
-    ev_timer_init(m_keepAliveTimer, KeepAliveTimerCallback,
+    // 启动 KeepAlive 定时器（每 kKeepAliveInterval 秒续租，值成员无需 new）
+    m_keepAliveTimer.data = static_cast<void*>(this);
+    ev_timer_init(&m_keepAliveTimer, KeepAliveTimerCallback,
                   kKeepAliveInterval, kKeepAliveInterval);
-    ev_timer_start(m_loop, m_keepAliveTimer);
+    ev_timer_start(m_loop, &m_keepAliveTimer);
+    m_keepAliveTimerStarted = true;
 
     ETCD_LOG_INFO("EtcdCenterConnector::Init — 成功，leaseId=" << m_leaseId);
     return true;
@@ -135,14 +130,10 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
 void EtcdCenterConnector::Destroy()
 {
     // 停止定时器
-    if (m_keepAliveTimer)
+    if (m_keepAliveTimerStarted && m_loop)
     {
-        if (m_loop)
-        {
-            ev_timer_stop(m_loop, m_keepAliveTimer);
-        }
-        delete m_keepAliveTimer;
-        m_keepAliveTimer = nullptr;
+        ev_timer_stop(m_loop, &m_keepAliveTimer);
+        m_keepAliveTimerStarted = false;
     }
 
     // 撤销租约（会级联删除所有关联的 key）
@@ -186,21 +177,24 @@ bool EtcdCenterConnector::ReportNodeStatus(const std::string& node_report,
     m_nodePort = port;
     m_nodeType = type;
 
-    if (is_register || !m_registered)
+    if (is_register)
     {
         // 注册流程：槽位占位 or 幂等续期
         DoRegister(ip, port, type);
     }
     else
     {
-        // 心跳：仅续租
-        if (!KeepAlive())
+        // 心跳：仅在已注册且 lease 有效时续租
+        if (m_registered && m_leaseId != 0)
         {
-            ETCD_LOG_WARN("EtcdCenterConnector::ReportNodeStatus — 心跳续租失败");
-            Emit(CenterEventType::ConnectionLost);
-            return false;
+            if (!KeepAlive())
+            {
+                ETCD_LOG_WARN("EtcdCenterConnector::ReportNodeStatus — 心跳续租失败");
+                Emit(CenterEventType::ConnectionLost);
+                return false;
+            }
+            ETCD_LOG_DEBUG("EtcdCenterConnector::ReportNodeStatus — 心跳成功 nodeId=" << m_nodeId);
         }
-        ETCD_LOG_DEBUG("EtcdCenterConnector::ReportNodeStatus — 心跳成功 nodeId=" << m_nodeId);
     }
 
     return true;
@@ -237,18 +231,51 @@ void EtcdCenterConnector::OnConnectionDestroy(const std::string& /*strIdentify*/
 // etcd HTTP 基础操作
 // ============================================================
 
+/*static*/
+size_t EtcdCenterConnector::CurlWriteCallback(void* ptr, size_t size,
+                                               size_t nmemb, void* userdata)
+{
+    auto* str = static_cast<std::string*>(userdata);
+    str->append(static_cast<char*>(ptr), size * nmemb);
+    return size * nmemb;
+}
+
 std::string EtcdCenterConnector::EtcdPost(const std::string& path,
                                            const std::string& body)
 {
+    CURL* curl = curl_easy_init();
+    if (!curl)
+    {
+        ETCD_LOG_WARN("EtcdPost — curl_easy_init() 失败");
+        return {};
+    }
+
     const std::string url = m_endpoint + path;
     std::string response;
-    // eContentType_json = 1
-    CURLcode code = m_curl.PostHttps(url, body, response,
-                                     "",  // no auth
-                                     util::CurlClient::eContentType_json);
-    if (code != CURLE_OK)
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL,                url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST,               1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,         body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,      static_cast<long>(body.size()));
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER,         headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,      CurlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA,          &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,         2000L);   // etcd 故障时最多阻塞 2s
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,  1000L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,     0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST,     0L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
     {
-        ETCD_LOG_WARN("EtcdPost failed url=" << url << " curl_code=" << code);
+        ETCD_LOG_WARN("EtcdPost failed url=" << url
+                      << " err=" << curl_easy_strerror(res));
         return {};
     }
     return response;
@@ -542,7 +569,17 @@ void EtcdCenterConnector::KeepAliveTimerCallback(struct ev_loop* /*loop*/,
 
 void EtcdCenterConnector::OnKeepAliveTimer()
 {
-    if (m_leaseId == 0 || !m_registered) return;
+    if (m_leaseId == 0) return;
+
+    if (!m_registered)
+    {
+        // 注册失败但租约仍存活：主动撤销，避免 etcd 侧资源泄漏
+        ETCD_LOG_WARN("OnKeepAliveTimer — 未注册状态发现残留 lease=" << m_leaseId
+                      << "，执行 LeaseRevoke");
+        LeaseRevoke();
+        m_leaseId = 0;
+        return;
+    }
 
     if (!KeepAlive())
     {

@@ -25,13 +25,14 @@
 
 #include <string>
 #include <cstdint>
+#include <cstddef>
 #include "labor/CenterConnector.hpp"
 #include "util/json/CJsonObject.hpp"
-#include "curl/CurlClient.hpp"
 #include "util/encrypt/base64.h"
 
+#include <ev.h>
+
 struct ev_loop;
-struct ev_timer;
 
 namespace net
 {
@@ -156,6 +157,11 @@ private:
     static std::string B64Dec(const std::string& s);
 
     /**
+     * @brief libcurl write callback（用于 EtcdPost 接收响应体）
+     */
+    static size_t CurlWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
+
+    /**
      * @brief 发射事件到 Manager 回调
      */
     void Emit(CenterEventType type, CenterEvent ev = {});
@@ -174,11 +180,10 @@ private:
     std::string         m_nodeIp;
     uint32_t            m_nodePort        = 0;
     std::string         m_nodeType;
-    bool                m_registered      = false;
+    bool                m_registered            = false;
 
-    ev_timer*           m_keepAliveTimer  = nullptr;
-
-    util::CurlClient    m_curl;            ///< curl 客户端（复用连接）
+    ev_timer            m_keepAliveTimer{};     ///< 值成员，无需 new/delete
+    bool                m_keepAliveTimerStarted = false;
 };
 
 } /* namespace net */
