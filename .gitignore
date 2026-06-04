@@ -78,3 +78,4 @@ deploy/HelloHttp/conf/Hello.json.bak
 deploy/HelloHttp/conf/Hello.json.bak_ev
 deploy/Logic/log/start_interfaceserver_logic.pid
 .claude/
+build-tsan/
