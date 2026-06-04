@@ -21,9 +21,9 @@
 
 ---
 
-## 🔴 #1 [阻塞] 全量构建失败 — `/usr/local/include/dirent.h` 被 DPDK 的 Windows 版遮蔽
+## ✅ #1 [已修复] 全量构建失败 — `/usr/local/include/dirent.h` 被 DPDK 的 Windows 版遮蔽
 
-**当前状态: 未处理 (需 root 权限,等确认)**
+**当前状态: ✅ 已修复 (2026-06-03)** — `sudo rm -f /usr/local/include/dirent.h` 已执行，构建免 CPATH 正常通过
 
 ### 现象
 `./deploy.sh build` 在编译 `code/Util/src/util/FileUtil.cpp` 时直接失败:
