@@ -4218,7 +4218,7 @@ bool Worker::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string
 bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
-    int iPosIpPortSeparator = strIdentify.find(':');
+    size_t iPosIpPortSeparator = strIdentify.find(':');
     if (iPosIpPortSeparator == std::string::npos)
     {
     	LOG4_ERROR("iPosIpPortSeparator == std::string::npos");
@@ -4231,7 +4231,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 		return false;
 	}
 
-    int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    size_t iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
     // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
     // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
     if (iPosPortWorkerIndexSeparator == std::string::npos
@@ -4525,13 +4525,13 @@ bool Worker::AutoMysqlCmd(MysqlStep* pMysqlStep)
 bool Worker::AutoConnect(const std::string& strIdentify)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
-    int iPosIpPortSeparator = strIdentify.find(':');
+    size_t iPosIpPortSeparator = strIdentify.find(':');
     if (iPosIpPortSeparator == std::string::npos)
     {
     	LOG4_ERROR("iPosIpPortSeparator == std::string::npos");
         return(false);
     }
-    int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    size_t iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
     // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
     // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
     if (iPosPortWorkerIndexSeparator == std::string::npos

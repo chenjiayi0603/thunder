@@ -252,7 +252,7 @@ FastPathResult RunDecode(const std::string& raw) {
         msg.body(),
         static_cast<int>(msg.http_major()),
         static_cast<int>(msg.http_minor()),
-        msg.params_size(),
+        static_cast<size_t>(msg.params_size()),
         msg.headers().find("Connection") != msg.headers().end(),
         msg.headers().find("Keep-Alive") != msg.headers().end()
     };

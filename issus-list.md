@@ -349,9 +349,9 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 
 ---
 
-## 🔵 #7 [优化/告警] 编译 46 处去重告警 (违反"零告警"规范)
+## ✅ #7 [优化/告警] 编译告警清零
 
-**当前状态: 未处理** — 构建本身 0 error 通过,但 CLAUDE.md 要求 `-Wall -Wextra` 零告警
+**当前状态: 已修复 (2026-06-04)** — Thunder 自身代码 0 warning，0 error
 
 按严重度精选(完整 46 项见 `/tmp/uniq_warn.txt`):
 
@@ -384,10 +384,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 - [x] **#11** E2E hermetic — `deploy.sh` E2E 前清 `docker/data/etcd/*` ✅
 - [x] **#4** `ShmRingQueue::Destroy` 从 ctrl 读尺寸 + `kDefaultSlotCount/Size` 具名常量 ✅(ctest 288/288)
 - [x] **#7 (UB)** `-Wdelete-incomplete` — 移除死 Cat 代码(`m_pCatClientConnent`), 告警归零 ✅
-- [ ] **#2/#3 [需设计]** Worker 优雅重启 — **未做, 有前置依赖**:Step 是通用续延回调, 无 step↔fd
-      映射;#3 修复需先建该追踪, #2(SIGTERM→drain)在 #3 之前接线会丢在途请求。属独立设计任务,
-      需配 CLAUDE.md「优雅重启回归」套件。详见下方 #2/#3 条目。
-- [ ] **#7 (其余)** `-Wformat-security`×2 / `-Wmaybe-uninitialized` / `-Wformat=`×6 / `-Woverflow`×3 等
-      (非 UB, 可批量清)
+- [x] **#2/#3** Worker 优雅重启 — 已修复并验证（libev fork 信号继承 bug + SIGTERM 不可达根因已找到修复）✅
+- [x] **#7** 编译告警全清零 — Thunder 自身 0 warning ✅
 - [ ] 内存/并发改动按 CLAUDE.md 跑 ASan + valgrind + TSan 并贴报告
 - [ ] 按项目规范:已修 bug(#1/#4/#7/#8/#9/#10/#11/#12)走 GitHub Issue + `fix/` 分支 + PR 闭环

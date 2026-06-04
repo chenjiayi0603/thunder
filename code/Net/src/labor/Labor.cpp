@@ -287,7 +287,8 @@ const std::string& Labor::GetHostName()
 	{
 		 if (!util::GetHostName(m_strHostName))
 		 {
-			 strerror_r(errno, m_pErrBuff, gc_iErrBuffLen);
+			 const char* errStr = strerror_r(errno, m_pErrBuff, gc_iErrBuffLen);
+			 (void)errStr;
 		 }
 	}
 	return m_strHostName;

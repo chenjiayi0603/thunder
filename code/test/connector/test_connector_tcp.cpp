@@ -29,7 +29,12 @@ namespace
 
 // ========== 辅助 ==========
 
-struct ev_loop* makeLoop() { return ev_loop_new(EVFLAG_FORKCHECK | EVBACKEND_EPOLL); }
+struct ev_loop* makeLoop() {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-enum-enum-conversion"
+    return ev_loop_new(EVFLAG_FORKCHECK | EVBACKEND_EPOLL);
+#pragma GCC diagnostic pop
+}
 void freeLoop(struct ev_loop* loop) { if (loop) ev_loop_destroy(loop); }
 
 // 构造一个最简的 center 配置 JSON

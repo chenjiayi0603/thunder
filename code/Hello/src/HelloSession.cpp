@@ -53,7 +53,7 @@ net::E_CMD_STATUS HelloSession::Timeout()
 	{
 		LoadConfig(conf);
 	}
-	LOG4_TRACE("program_get_rss %u",program_get_rss());
+	LOG4_TRACE("program_get_rss %zu",program_get_rss());
 	return net::STATUS_CMD_RUNNING;
 }
 
@@ -119,7 +119,7 @@ void HelloSession::TestLog()
 		g_oDataLogger = log4cplus::Logger::getInstance(strLogPreName);
 		g_oDataLogger.setLogLevel(iLogLevel);
 		g_oDataLogger.addAppender(file_append);
-		LOG4_INFO("data_max_log_file_size(%ld) data_log_schedule(%u) data_max_log_file_num(%d) "
+		LOG4_INFO("data_max_log_file_size(%lld) data_log_schedule(%u) data_max_log_file_num(%d) "
 				"data_log_level(%d) bCreateDirs(%d) bRollOnClose(%d) "
 				"iMaxHistory(%d)",
 				iMaxLogFileSize,iLogschedule,iMaxLogFileNum,

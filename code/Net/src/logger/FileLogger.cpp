@@ -182,7 +182,7 @@ int FileLogger::Vappend(int iLev, const char* szFileName, unsigned int uiFileLin
         << duration_in_ms.count() % 1000 << "][" << LogLevMsg[iLev] << "]["
         << szFileName << ":" << uiFileLine << "][" << szFunction << "] ";
 #endif
-    fprintf(m_fp, oss.str().c_str());
+    fputs(oss.str().c_str(), m_fp);
     //fprintf(m_fp, "[%s] [%s,%03d] ", std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S").c_str(), duration_in_ms.count() % 1000, Logger::LogLevMsg[iLev].c_str());
     vfprintf(m_fp, szLogStr, ap);
     fflush(m_fp);
@@ -230,7 +230,7 @@ int FileLogger::Vappend(const std::string& strTraceId, int iLev, const char* szF
         << duration_in_ms.count() % 1000 << "][" << LogLevMsg[iLev] << "]["
         << szFileName << ":" << uiFileLine << "][" << szFunction << "][" << strTraceId << "] ";
 #endif
-    fprintf(m_fp, oss.str().c_str());
+    fputs(oss.str().c_str(), m_fp);
     //fprintf(m_fp, "[%s] [%s,%03d] ", std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S").c_str(), duration_in_ms.count() % 1000, Logger::LogLevMsg[iLev].c_str());
     vfprintf(m_fp, szLogStr, ap);
     fflush(m_fp);

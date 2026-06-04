@@ -940,13 +940,13 @@ bool Manager::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::strin
 
 bool Manager::ParseAutoSendTarget(const std::string& strIdentify, AutoSendTarget& target)
 {
-    int iPosIpPortSeparator = strIdentify.find(':');
+    size_t iPosIpPortSeparator = strIdentify.find(':');
     if (iPosIpPortSeparator == std::string::npos)
     {
         LOG4_ERROR("iPosIpPortSeparator == std::string::npos");
         return false;
     }
-    int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    size_t iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
     // 当 identify 不含 .worker_index 后缀时，默认 worker_index=0
     if (iPosPortWorkerIndexSeparator == std::string::npos
         || iPosPortWorkerIndexSeparator < iPosIpPortSeparator)

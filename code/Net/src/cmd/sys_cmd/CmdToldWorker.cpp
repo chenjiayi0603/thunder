@@ -23,7 +23,7 @@ bool CmdToldWorker::AnyMessage(const tagMsgShell& stMsgShell,const MsgHead& oInM
 
 	if (oInTargetWorker.ParseFromString(oInMsgBody.body()))
 	{
-		LOG4_TRACE("AddMsgShell(%s, fd %d, seq %llu)!",oInTargetWorker.worker_identify().c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
+		LOG4_TRACE("AddMsgShell(%s, fd %d, seq %u)!",oInTargetWorker.worker_identify().c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
 		GetLabor()->AddMsgShell(oInTargetWorker.worker_identify(), stMsgShell);
 		GetLabor()->AddNodeIdentify(oInTargetWorker.node_type(), oInTargetWorker.worker_identify());
 		GetLabor()->AddInnerFd(stMsgShell);
