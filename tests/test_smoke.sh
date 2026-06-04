@@ -101,6 +101,21 @@ check "VerifyKey 非法 token → code:1" \
     'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"VerifyKey\",\"token\":\"bad\",\"key\":\"bad\"}"'
 
+# VerifyKey 正常链路：先 GenKey 拿 token，再验证（覆盖完整 Interface→Logic 往返）
+_GENKEY=$(curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+  -d '{"option":"GenKey"}' 2>/dev/null)
+_TOKEN=$(echo "$_GENKEY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+_KEY=$(echo   "$_GENKEY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))"   2>/dev/null)
+check "VerifyKey 有效 token → code:0" \
+    '"code":0' \
+    "curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+      -d '{\"option\":\"VerifyKey\",\"token\":\"${_TOKEN}\",\"key\":\"${_KEY}\"}'"
+
+check "VerifyKey 空 token → code:1" \
+    '"code":1' \
+    'curl -s --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+      -d "{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}"'
+
 # ── etcd ──────────────────────────────────────────────────────
 echo ""
 echo "--- etcd ---"
