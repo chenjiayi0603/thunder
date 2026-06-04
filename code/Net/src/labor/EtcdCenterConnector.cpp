@@ -57,21 +57,14 @@ struct SlistHandle
 
 }  // namespace
 
-// ---- 日志宏（独立 category，避免依赖 GetLabor() 上下文） ----
-namespace
-{
-log4cplus::Logger& GetEtcdLogger()
-{
-    static log4cplus::Logger logger =
-        log4cplus::Logger::getInstance("Logic_robot");
-    return logger;
-}
-}  // namespace
-
-#define ETCD_LOG_DEBUG(msg) LOG4CPLUS_DEBUG(GetEtcdLogger(), msg)
-#define ETCD_LOG_INFO(msg)  LOG4CPLUS_INFO(GetEtcdLogger(),  msg)
-#define ETCD_LOG_WARN(msg)  LOG4CPLUS_WARN(GetEtcdLogger(),  msg)
-#define ETCD_LOG_ERROR(msg) LOG4CPLUS_ERROR(GetEtcdLogger(), msg)
+// ---- 日志宏 ----
+// 使用实例成员 m_logger(由 Manager 经 SetLogger 注入本节点 logger),
+// 故所有 ETCD_LOG_* 必须在成员函数内调用。issus #12: 原先硬编码 "Logic_robot"
+// category 在非 Logic 节点上无 appender → etcd 日志全丢。
+#define ETCD_LOG_DEBUG(msg) LOG4CPLUS_DEBUG(m_logger, msg)
+#define ETCD_LOG_INFO(msg)  LOG4CPLUS_INFO(m_logger,  msg)
+#define ETCD_LOG_WARN(msg)  LOG4CPLUS_WARN(m_logger,  msg)
+#define ETCD_LOG_ERROR(msg) LOG4CPLUS_ERROR(m_logger, msg)
 
 // ---- etcd key 命名空间 ----
 static constexpr const char*    kSlotPrefix        = "/thunder/slot/";
@@ -222,6 +215,7 @@ bool EtcdCenterConnector::ReportNodeStatus(const std::string& node_report,
     m_nodeIp   = ip;
     m_nodePort = port;
     m_nodeType = type;
+    m_workerNum = report.worker_num();  // 写入 registry value, 供对端建路由 identify
 
     if (is_register || !m_registered)
     {
@@ -514,7 +508,8 @@ std::string EtcdCenterConnector::BuildSlotTxn(int slot,
     std::string regValue = "{\"node_id\":" + std::to_string(slot) +
         ",\"node_type\":\"" + nodeType + "\"" +
         ",\"node_ip\":\"" + ipPort.substr(0, ipPort.rfind(':')) + "\"" +
-        ",\"node_port\":" + ipPort.substr(ipPort.rfind(':') + 1) + "}";
+        ",\"node_port\":" + ipPort.substr(ipPort.rfind(':') + 1) +
+        ",\"worker_num\":" + std::to_string(m_workerNum > 0 ? m_workerNum : 1) + "}";
 
     util::CJsonObject oPutReg;
     util::CJsonObject oPutRegKV;
@@ -688,9 +683,9 @@ std::string EtcdCenterConnector::B64(const std::string& s)
     if (s.empty()) return {};
 
     // 防止 size_t → int 截断溢出（Base64encode_len 参数为 int）
+    // 注: static 工具函数无实例 logger; 该边界(>1GB)实际不会触发, 返回空由调用方处理。
     if (s.size() > static_cast<size_t>(std::numeric_limits<int>::max() / 2))
     {
-        ETCD_LOG_WARN("B64 — 输入过大: " << s.size() << " 字节");
         return {};
     }
 
@@ -756,6 +751,56 @@ void EtcdCenterConnector::WatchThreadFunc()
 
     while (!m_watchStop)
     {
+        // ── 全量快照 + 取 watch 起点 revision ──
+        // 关键修复:原先 m_lastRevision=0 → watch 从 start_revision=1 发起,
+        // 一旦 etcd 发生 compaction(自动/长跑必然),rev 1 < compact_revision,
+        // etcd 立即以 {"canceled":true,"compact_revision":N} 取消 watch,
+        // 客户端永远收不到事件 → 跨节点路由全断 (issus #9)。
+        // 正确做法:先 range 拉取现有 /thunder/ 全量,载入路由表(作为 PUT 事件),
+        // 并以 range 返回的 header.revision 作为 watch 起点,绕开 compaction。
+        // 每次(重)连都重做,保证断线/compaction 后自动重新同步。
+        {
+            util::CJsonObject oReq;
+            oReq.Add("key", B64(prefix));
+            oReq.Add("range_end", B64(rangeEnd));
+            const std::string snapResp = EtcdPost("/v3/kv/range", oReq.ToString());
+            util::CJsonObject oSnap;
+            if (!snapResp.empty() && oSnap.Parse(snapResp))
+            {
+                util::CJsonObject oHeader;
+                std::string revStr;
+                if (oSnap.Get("header", oHeader) &&
+                    oHeader.Get("revision", revStr) && !revStr.empty())
+                {
+                    try { m_lastRevision = std::stoll(revStr); } catch (...) {}
+                }
+                util::CJsonObject oKvs;
+                int loaded = 0;
+                if (oSnap.Get("kvs", oKvs) && oKvs.IsArray())
+                {
+                    const int n = oKvs.GetArraySize();
+                    for (int i = 0; i < n; ++i)
+                    {
+                        util::CJsonObject oKv;
+                        if (!oKvs.Get(i, oKv)) continue;
+                        std::string kB64, vB64;
+                        oKv.Get("key", kB64);
+                        oKv.Get("value", vB64);
+                        WatchEvent wev;
+                        wev.type  = "PUT";
+                        wev.key   = B64Dec(kB64);
+                        wev.value = B64Dec(vB64);
+                        {
+                            std::lock_guard<std::mutex> lock(m_watchQueueMutex);
+                            m_watchQueue.push_back(std::move(wev));
+                        }
+                        ++loaded;
+                    }
+                }
+                if (loaded > 0) ev_async_send(m_loop, &m_watchAsync);
+            }
+        }
+
         CurlHandle curl;
         if (!curl.h)
         {
@@ -937,50 +982,55 @@ void EtcdCenterConnector::OnWatchAsync()
         if (wev.key.find(kRegistryPrefix) != 0) continue;
 
         const std::string ipPort = wev.key.substr(strlen(kRegistryPrefix));
-        auto colon = ipPort.rfind(':');
-        if (colon == std::string::npos) continue;
+        if (ipPort.rfind(':') == std::string::npos) continue;
 
-        const std::string ip      = ipPort.substr(0, colon);
-        const uint32_t    port    = static_cast<uint32_t>(std::stoul(ipPort.substr(colon + 1)));
-
-        CenterEvent cev;
-        cev.type = CenterEventType::RouteUpdated;
-
-        if (wev.type == "PUT")
+        // 维护完整节点表后发"全量"快照 (issus #9 关键):
+        //   - etcd v3 grpc-gateway 对 PUT 事件 (EventType=0) 省略 type 字段,只有
+        //     DELETE 带 "type":"DELETE";故空 type 当作 PUT。
+        //   - 必须每次发全量而非单节点增量:路由 shm 只存最新版本、Worker 把每个
+        //     notice 当作"出现类型的完整在线集"来 prune+add,单节点增量会导致
+        //     Worker 只认到最后写入的那个节点 → 路由表残缺。
+        if (wev.type == "PUT" || wev.type.empty())
         {
-            // registry value 是 JSON: {"node_id":7,"node_type":"HELLO",...}
-            util::CJsonObject oVal;
-            oVal.Parse(wev.value);
-
-            int32_t  nid   = 0;
-            uint32_t wnum  = 0;
-            std::string ntype;
-            oVal.Get("node_id",   nid);
-            oVal.Get("node_type", ntype);
-
-            NodeNotice notice;
-            auto* nr = notice.add_node_arry_reg();
-            nr->set_node_ip(ip);
-            nr->set_node_port(port);
-            if (nid > 0) nr->set_node_id(static_cast<uint32_t>(nid));
-            if (!ntype.empty()) nr->set_node_type(ntype);
-            // 其他字段（worker_num、access_ip 等）按需扩展
-            cev.route_snapshot = notice.SerializeAsString();
-
-            ETCD_LOG_DEBUG("Watch — PUT " << ipPort
-                           << " nodeId=" << nid << " type=" << ntype);
+            m_nodeRegistry[ipPort] = wev.value;
         }
         else if (wev.type == "DELETE")
         {
-            // 节点下线：key 被删除（租约过期 / 主动注销）
-            NodeNotice notice;
-            auto* nr = notice.add_node_arry_exit();
-            nr->set_node_ip(ip);
-            nr->set_node_port(port);
-            cev.route_snapshot = notice.SerializeAsString();
-
-            ETCD_LOG_DEBUG("Watch — DELETE " << ipPort);
+            m_nodeRegistry.erase(ipPort);
         }
+        else
+        {
+            continue;
+        }
+
+        // 用全表组装完整 NodeNotice (全部走 node_arry_reg, 缺席即下线由 Worker prune)
+        NodeNotice notice;
+        for (const auto& kv : m_nodeRegistry)
+        {
+            const std::string& kvIpPort = kv.first;
+            auto c = kvIpPort.rfind(':');
+            if (c == std::string::npos) continue;
+            util::CJsonObject oVal;
+            if (!oVal.Parse(kv.second)) continue;
+
+            int32_t  nid  = 0;
+            uint32_t wnum = 0;
+            std::string ntype;
+            oVal.Get("node_id",    nid);
+            oVal.Get("node_type",  ntype);
+            oVal.Get("worker_num", wnum);
+
+            auto* nr = notice.add_node_arry_reg();
+            nr->set_node_ip(kvIpPort.substr(0, c));
+            nr->set_node_port(static_cast<uint32_t>(std::stoul(kvIpPort.substr(c + 1))));
+            if (nid > 0) nr->set_node_id(static_cast<uint32_t>(nid));
+            if (!ntype.empty()) nr->set_node_type(ntype);
+            nr->set_worker_num(wnum > 0 ? wnum : 1);  // 缺省至少 1 个 worker, 否则 Worker 不建 identify
+        }
+
+        CenterEvent cev;
+        cev.type           = CenterEventType::RouteUpdated;
+        cev.route_snapshot = notice.SerializeAsString();
 
         m_callback(cev);
     }

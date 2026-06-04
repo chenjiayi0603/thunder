@@ -92,7 +92,7 @@ bool GetAllHostInfo(std::string& hostName, std::vector<std::string> &vecIPs,bool
 	{
 		return false;
 	}
-	char *ptr, **pptr;
+	char **pptr;
 	char ipStr[32];
 	if ((AF_INET == host->h_addrtype && boNeedIpv6 == false) ||
 		((AF_INET == host->h_addrtype || AF_INET6 == host->h_addrtype) && boNeedIpv6 == true))

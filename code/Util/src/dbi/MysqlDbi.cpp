@@ -42,11 +42,11 @@ util::CMysqlDbi::CMysqlDbi(
 {
 	InitVariables();
 
-	strncpy(m_stDbConfDetail.m_stDbConnInfo.m_szDbCharSet, szCharacterSet, 16);
-	strncpy(m_stDbConfDetail.m_stDbConnInfo.m_szDbHost, szIp, 32);
-	strncpy(m_stDbConfDetail.m_stDbConnInfo.m_szDbUser, szUserName, 32);
-	strncpy(m_stDbConfDetail.m_stDbConnInfo.m_szDbPwd, szUserPwd, 32);
-	strncpy(m_stDbConfDetail.m_stDbConnInfo.m_szDbName, szDbName, 32);
+	snprintf(m_stDbConfDetail.m_stDbConnInfo.m_szDbCharSet, 16, "%s", szCharacterSet);
+	snprintf(m_stDbConfDetail.m_stDbConnInfo.m_szDbHost, 32, "%s", szIp);
+	snprintf(m_stDbConfDetail.m_stDbConnInfo.m_szDbUser, 32, "%s", szUserName);
+	snprintf(m_stDbConfDetail.m_stDbConnInfo.m_szDbPwd, 32, "%s", szUserPwd);
+	snprintf(m_stDbConfDetail.m_stDbConnInfo.m_szDbName, 32, "%s", szDbName);
 	m_stDbConfDetail.m_stDbConnInfo.m_uiDbPort = uiPort;
 	m_stDbConfDetail.m_ucDbType = util::MYSQL_DB;
 	m_stDbConfDetail.m_ucAccess = 1;	//直连

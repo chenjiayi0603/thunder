@@ -133,7 +133,12 @@ protected:
 	}
 	//设置重定位URL
 	bool SetRedirect(CURL* curl,bool re) {return curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,re) == CURLE_OK;}
-	bool SetMultipartForm(CURL* curl,struct HttpPost* post) {return curl_easy_setopt(curl, CURLOPT_HTTPPOST, post) == CURLE_OK;}
+	bool SetMultipartForm(CURL* curl,struct HttpPost* post) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+		return curl_easy_setopt(curl, CURLOPT_HTTPPOST, post) == CURLE_OK;
+#pragma GCC diagnostic pop
+	}
 	bool SSLVerifyPeer(CURL* curl,bool b) {return curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,b) == CURLE_OK;}
 	bool SSLVerifyHost(CURL* curl,bool b) {return curl_easy_setopt(curl,CURLOPT_SSL_VERIFYHOST,b) == CURLE_OK;}
 	///* Set the interface string to use as outgoing network interface */

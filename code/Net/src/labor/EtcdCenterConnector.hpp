@@ -33,10 +33,12 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+#include <log4cplus/logger.h>
 #include "labor/CenterConnector.hpp"
 #include "util/json/CJsonObject.hpp"
 #include "util/encrypt/base64.h"
@@ -65,6 +67,10 @@ public:
     EtcdCenterConnector& operator=(const EtcdCenterConnector&) = delete;
     EtcdCenterConnector(EtcdCenterConnector&&)                 = delete;
     EtcdCenterConnector& operator=(EtcdCenterConnector&&)      = delete;
+
+    /// 注入本节点 logger(由 Manager 在创建后调用)。否则 etcd 日志打到无 appender 的
+    /// 硬编码 category 被丢弃,非 Logic 节点完全看不到 etcd 连接/watch 日志(issus #12)。
+    void SetLogger(const log4cplus::Logger& logger) { m_logger = logger; }
 
     // ---- 生命周期 ----
 
@@ -263,13 +269,21 @@ private:
     CenterEventCallback m_callback;
     void*               m_user_data       = nullptr;
 
+    /// 本节点 logger(由 SetLogger 注入);默认值仅为兜底,正常会被 Manager 覆盖。
+    log4cplus::Logger   m_logger          = log4cplus::Logger::getInstance("etcd");
+
     std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
     int64_t             m_leaseId         = 0;
     uint32_t            m_nodeId          = 0;
     std::string         m_nodeIp;
     uint32_t            m_nodePort        = 0;
     std::string         m_nodeType;
+    uint32_t            m_workerNum       = 0;   ///< 本节点 worker 数, 注册时写入 registry value 供路由建 identify
     bool                m_registered            = false;
+
+    /// 发现到的全部在线节点 ip:port → registry value(JSON)。
+    /// 仅 libev 线程(OnWatchAsync)访问, 无需锁。用于每次变更发"全量"路由快照(issus #9)。
+    std::map<std::string, std::string> m_nodeRegistry;
     int                 m_keepAliveFailCount    = 0;   ///< 续租连续失败次数, 用于 etcd 恢复后重注册
 
     ev_timer            m_keepAliveTimer{};     ///< 值成员，无需 new/delete

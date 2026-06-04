@@ -208,6 +208,12 @@ cmd_test_e2e() {
     log "docker compose down (清场)..."
     ( cd "${DOCKER_DIR}" && docker compose down --remove-orphans 2>/dev/null ) || true
 
+    # 1b. 清 etcd bind-mount 残留 — 保证 E2E hermetic。
+    #     etcd registry/slot 跨运行累积会触发"no slot available"等假故障 (issus #11)。
+    #     只清 etcd: mariadb 清了要重新初始化(慢), redis 是缓存无需清。
+    log "清理 etcd bind-mount (hermetic)..."
+    rm -rf "${DOCKER_DIR}/data/etcd"/* 2>/dev/null || true
+
     # 2. Docker build
     log "docker compose build..."
     ( cd "${DOCKER_DIR}" && docker compose build ) || {

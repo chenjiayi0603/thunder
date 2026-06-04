@@ -28,7 +28,7 @@ TEST(ShmRingQueueUnit, CreateAndDestroy)
     EXPECT_TRUE(q->IsEmpty());
     EXPECT_FALSE(q->IsFull());
     EXPECT_EQ(q->Count(), 0u);
-    ShmRingQueue::Destroy(q, 128, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
@@ -53,7 +53,7 @@ TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
     EXPECT_STREQ(buf, "hello shm");
 
     EXPECT_TRUE(q->IsEmpty());
-    ShmRingQueue::Destroy(q, 8, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
@@ -66,7 +66,7 @@ TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
     EXPECT_FALSE(q->TryDequeue(cmd, seq, buf, out_len));
     EXPECT_EQ(out_len, 0u);
 
-    ShmRingQueue::Destroy(q, 8, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
@@ -89,7 +89,7 @@ TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
     EXPECT_FALSE(q->IsFull());
     EXPECT_TRUE(q->TryEnqueue(999, 1, body, sizeof(body)));
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, BodyTooLargeRejected)
@@ -100,7 +100,7 @@ TEST(ShmRingQueueUnit, BodyTooLargeRejected)
     char big[200] = {};
     EXPECT_FALSE(q->TryEnqueue(1, 1, big, sizeof(big)));
 
-    ShmRingQueue::Destroy(q, 8, 128);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, SingleProducerSingleConsumerThreaded)
@@ -156,7 +156,7 @@ TEST(ShmRingQueueUnit, SingleProducerSingleConsumerThreaded)
     EXPECT_EQ(consumed.load(), kMsgs);
     EXPECT_TRUE(q->IsEmpty());
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EventFdCreateClose)
@@ -235,8 +235,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
         while (!q_wkr_to_mgr->TryEnqueue(0xFFFF, static_cast<uint32_t>(received), "done", 4)) {}
         ShmRingQueue::NotifyEventFd(efd_wkr_to_mgr);
 
-        ShmRingQueue::Destroy(q_mgr_to_wkr, kSlots, 4096);
-        ShmRingQueue::Destroy(q_wkr_to_mgr, kSlots, 4096);
+        ShmRingQueue::Destroy(q_mgr_to_wkr);
+        ShmRingQueue::Destroy(q_wkr_to_mgr);
         ShmRingQueue::CloseEventFd(efd_mgr_to_wkr);
         ShmRingQueue::CloseEventFd(efd_wkr_to_mgr);
         _exit(0);
@@ -288,8 +288,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
         EXPECT_TRUE(WIFEXITED(status));
         EXPECT_EQ(WEXITSTATUS(status), 0);
 
-        ShmRingQueue::Destroy(q_mgr_to_wkr, kSlots, 4096);
-        ShmRingQueue::Destroy(q_wkr_to_mgr, kSlots, 4096);
+        ShmRingQueue::Destroy(q_mgr_to_wkr);
+        ShmRingQueue::Destroy(q_wkr_to_mgr);
         ShmRingQueue::CloseEventFd(efd_mgr_to_wkr);
         ShmRingQueue::CloseEventFd(efd_wkr_to_mgr);
     }
@@ -307,7 +307,7 @@ TEST(ShmRingQueueE2E, FallbackWhenQueueFull)
     EXPECT_TRUE(q->IsFull());
     EXPECT_FALSE(q->TryEnqueue(3, 300, body, sizeof(body)));
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueE2E, WorkerRestartSimulation)
@@ -317,7 +317,7 @@ TEST(ShmRingQueueE2E, WorkerRestartSimulation)
     ShmRingQueue* q1 = ShmRingQueue::Create(kSlots, 4096);
     ASSERT_NE(q1, nullptr);
     q1->TryEnqueue(1, 1, "old", 3);
-    ShmRingQueue::Destroy(q1, kSlots, 4096);
+    ShmRingQueue::Destroy(q1);
 
     ShmRingQueue* q2 = ShmRingQueue::Create(kSlots, 4096);
     ASSERT_NE(q2, nullptr);
@@ -332,5 +332,5 @@ TEST(ShmRingQueueE2E, WorkerRestartSimulation)
     EXPECT_EQ(out_len, 3u);
     EXPECT_EQ(memcmp(buf, "new", 3), 0);
 
-    ShmRingQueue::Destroy(q2, kSlots, 4096);
+    ShmRingQueue::Destroy(q2);
 }

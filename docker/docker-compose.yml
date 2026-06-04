@@ -140,6 +140,10 @@ services:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Logic
     depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     command:
       - bash
       - -c

@@ -54,65 +54,11 @@ cmake --build build -j1
 
 ## 三、冒烟测试
 
-> 确认 `./deploy.sh status` 里各节点端口已监听再执行。
-
-### 1. HTTP Echo
-
 ```bash
-curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
-# 预期: {"code":0,"msg":"ok"}
+./tests/test_smoke.sh
 ```
 
-### 2. 协程挂起/恢复验证
-
-```bash
-curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"TestHelloPoolCpu"}'
-# 预期: {"option":"TestHelloPoolCpu","checksum":786432}
-```
-
-### 3. Interface→Logic 全链路（POST）
-
-```bash
-curl -s http://127.0.0.1:27008/Interface/gentoken \
-  -d '{"option":"GenKey"}'
-# 预期: {"code":0,"token":"...","key":"...","msg":"success"}
-```
-
-### 4. Interface→Logic 全链路（GET）
-
-```bash
-curl -s -X GET http://127.0.0.1:27008/Interface/gentoken \
-  -H "Content-Type: application/json" \
-  -d '{"option":"GenKey"}'
-# 预期: {"code":0,"token":"...","key":"...","msg":"success"}
-```
-
-### 5. Token 校验（非法 token 应返回业务错误）
-
-```bash
-curl -s http://127.0.0.1:27008/Interface/gentoken \
-  -d '{"option":"VerifyKey","token":"bad","key":"bad"}'
-# 预期: {"code":1}
-```
-
-### 6. WebSocket 握手
-
-```bash
-curl -si \
-  -H "Upgrade: websocket" \
-  -H "Connection: Upgrade" \
-  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-  -H "Sec-WebSocket-Version: 13" \
-  http://127.0.0.1:27010/hello/shake --max-time 3 2>&1 | head -1
-# 预期: HTTP/1.1 101 Switching Protocols
-```
-
-### 7. HTTPS Echo
-
-```bash
-curl -sk https://127.0.0.1:27443/hello/hello -d '{"option":"Echo"}'
-# 预期: {"code":0,"msg":"ok"}
-```
+覆盖 HTTP / HTTPS / WebSocket / Interface→Logic 全链路（POST + GET）/ etcd，9 项全绿即通过。
 
 ---
 

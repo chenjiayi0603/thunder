@@ -221,7 +221,10 @@ CURLcode CurlClient::DownloadFile(const std::string & strUrl, const std::string 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnWriteFile);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
 	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, OnProgressCallback);//设置进度回调函数
+#pragma GCC diagnostic pop
 	curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, this);
 	//开始执行请求
 	CURLcode res = curl_easy_perform(curl);
