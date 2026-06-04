@@ -85,10 +85,20 @@ check "WebSocket 握手 101" \
 echo ""
 echo "--- Interface → Logic ---"
 
-check "GenKey (POST)" \
-    '"code":0' \
-    'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken -d "{\"option\":\"GenKey\"}"'
+# 请求 1：GenKey 生成 token（POST）
+_GENKEY_POST=$(curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+  -d '{"option":"GenKey"}' 2>/dev/null)
+check "GenKey (POST)" '"code":0' "echo '${_GENKEY_POST}'"
 
+# 请求 2：VerifyKey 验证上一步拿到的 token
+_TOKEN=$(echo "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+_KEY=$(echo   "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))"   2>/dev/null)
+check "VerifyKey 有效 token → code:0" \
+    '"code":0' \
+    "curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+      -d '{\"option\":\"VerifyKey\",\"token\":\"${_TOKEN}\",\"key\":\"${_KEY}\"}'"
+
+# 请求 3：GenKey（GET + JSON body）
 check "GenKey (GET + JSON body)" \
     '"code":0' \
     'curl -sf --max-time 5 -X GET \
@@ -100,16 +110,6 @@ check "VerifyKey 非法 token → code:1" \
     '"code":1' \
     'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"VerifyKey\",\"token\":\"bad\",\"key\":\"bad\"}"'
-
-# VerifyKey 正常链路：先 GenKey 拿 token，再验证（覆盖完整 Interface→Logic 往返）
-_GENKEY=$(curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
-  -d '{"option":"GenKey"}' 2>/dev/null)
-_TOKEN=$(echo "$_GENKEY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
-_KEY=$(echo   "$_GENKEY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))"   2>/dev/null)
-check "VerifyKey 有效 token → code:0" \
-    '"code":0' \
-    "curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
-      -d '{\"option\":\"VerifyKey\",\"token\":\"${_TOKEN}\",\"key\":\"${_KEY}\"}'"
 
 check "VerifyKey 空 token → code:1" \
     '"code":1' \
