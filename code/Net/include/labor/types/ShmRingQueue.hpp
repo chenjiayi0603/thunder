@@ -127,7 +127,8 @@ struct ShmRingQueue
     {
         uint64_t w = ctrl.write_index.load(std::memory_order_acquire);
         uint64_t r = ctrl.read_index.load(std::memory_order_acquire);
-        return (w - r) >= ctrl.slot_count;
+        // slot_count 在 Create 后不变，用 relaxed 省全序屏障
+        return (w - r) >= ctrl.slot_count.load(std::memory_order_relaxed);
     }
 
     bool IsEmpty() const
@@ -279,7 +280,11 @@ struct ShmRingQueue
     //
     // 分配大小 = sizeof(ShmRingQueue) + slot_count * slot_size
     // ═══════════════════════════════════════════════════════════════════════
-    static ShmRingQueue* Create(uint32_t slot_count = 128, uint32_t slot_size = 4096)
+    static constexpr uint32_t kDefaultSlotCount = 128;
+    static constexpr uint32_t kDefaultSlotSize  = 4096;
+
+    static ShmRingQueue* Create(uint32_t slot_count = kDefaultSlotCount,
+                                uint32_t slot_size  = kDefaultSlotSize)
     {
         size_t total = sizeof(ShmRingQueue) + static_cast<size_t>(slot_count) * slot_size;
         void* mem = mmap(nullptr, total, PROT_READ | PROT_WRITE,
@@ -297,11 +302,15 @@ struct ShmRingQueue
         return q;
     }
 
-    static void Destroy(ShmRingQueue* q, uint32_t slot_count = 128, uint32_t slot_size = 4096)
+    // 尺寸从控制块读回, 不再依赖调用方传参 —— 避免 Create/Destroy 尺寸不匹配
+    // 导致 munmap 长度错误(部分页泄漏或误解除相邻映射)。
+    static void Destroy(ShmRingQueue* q)
     {
         if (q)
         {
-            size_t total = sizeof(ShmRingQueue) + static_cast<size_t>(slot_count) * slot_size;
+            size_t total = sizeof(ShmRingQueue)
+                         + static_cast<size_t>(q->ctrl.slot_count.load(std::memory_order_relaxed))
+                         * q->ctrl.slot_size.load(std::memory_order_relaxed);
             munmap(q, total);
         }
     }

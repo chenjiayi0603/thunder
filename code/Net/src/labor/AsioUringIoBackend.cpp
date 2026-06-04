@@ -84,11 +84,14 @@ AsioUringIoBackend::~AsioUringIoBackend()
 // 扫描 /proc/self/fd 找到 ASIO io_uring_service 的 ring_fd。
 // 原因: ASIO 不暴露 ring_fd，只能通过 readlink 检查每个 fd 指向的 anon_inode
 //       是否为 [io_uring] 来定位。仅在 Init 时调用一次，之后缓存于 m_ringFd。
+// 安全性: 收集全部 [io_uring] fd，若有多个则取最大值（ASIO service fd 最后创建）
+//         并通过日志报告。这样即使进程已有其他 io_uring fd，行为也是确定的。
 int AsioUringIoBackend::FindIoUringRingFd()
 {
     DIR* dir = opendir("/proc/self/fd");
     if (!dir) return -1;
-    int found = -1;
+    int maxFd = -1;
+    int count = 0;
     struct dirent* e;
     while ((e = readdir(dir)) != nullptr)
     {
@@ -97,12 +100,15 @@ int AsioUringIoBackend::FindIoUringRingFd()
         ssize_t n = ::readlink(src, dst, sizeof(dst) - 1);
         if (n > 0 && strncmp(dst, "anon_inode:[io_uring]", 21) == 0)
         {
-            found = atoi(e->d_name);
-            break;
+            int fd = atoi(e->d_name);
+            if (fd > maxFd) maxFd = fd;
+            ++count;
         }
     }
     closedir(dir);
-    return found;
+    if (count > 1)
+        diag_log("[IODIAG AsioUring FindIoUringRingFd: found %d io_uring fds, using max=%d\n", count, maxFd);
+    return maxFd;
 }
 
 // ========== 按需启停三路-第 2 路 ring_fd 监听 ==========

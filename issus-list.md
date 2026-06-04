@@ -188,12 +188,12 @@ it = mapFdAttr.erase(it);
 
 ## 🔵 #5 [优化] 性能与可维护性建议
 
-| # | 位置 | 建议 | 收益 |
-|---|------|------|------|
-| 5.1 | `AsioUringIoBackend::UpdateRingWatcher` | 每次 Submit 都 `for (auto& [fd,sp] : m_fds)` 全量扫描判断 hasOp,连接多时是热路径 O(N)。可维护一个 `m_pendingOpCount` 计数器,Submit/complete 时 ±1,O(1) 判断。 | 高并发下降低每次 I/O 的常数开销 |
-| 5.2 | `AsioUringIoBackend::FindIoUringRingFd` | 遍历 `/proc/self/fd` 取**第一个** io_uring fd;若进程存在多个 io_uring 实例会取错。建议在创建 io_context 后立刻定位(此时只有一个),或显式断言唯一性。 | 健壮性 |
-| 5.3 | `Worker.cpp` (6114 行) | 远超项目自定的"单文件 ≤800 行"规范,巨型文件不利于审查/编译增量。建议按职责拆分(连接管理 / Step 调度 / DB 回调 / drain / 信号)。 | 可维护性、编译并行度 |
-| 5.4 | `ShmRingQueue` 诊断 | `IsFull/Count/IsEmpty` 里 `(w-r) >= ctrl.slot_count` 对 atomic 成员做隐式 seq_cst load,可显式 `.load(relaxed)`(不可变量)省一次全序屏障。 | 微优化 |
+| # | 位置 | 建议 | 收益 | 状态 |
+|---|------|------|------|------|
+| 5.1 | `AsioUringIoBackend::UpdateRingWatcher` | 每次 Submit 都全量扫描 m_fds 判断 hasOp，高并发 O(N)。可维护 `m_pendingOpCount` 计数器，O(1) 判断。 | 高并发降低 I/O 常数开销 | ⏳ 待处理 |
+| 5.2 | `AsioUringIoBackend::FindIoUringRingFd` | 取第一个 io_uring fd，多实例时可能取错。 | 健壮性 | ✅ 已修复：改为取最大 fd（ASIO service fd 最后创建），多实例时日志报告 |
+| 5.3 | `Worker.cpp` (6114 行) | 远超 ≤800 行规范，建议按职责拆分。 | 可维护性 | ⏳ 待处理（大型重构，需独立规划） |
+| 5.4 | `ShmRingQueue::IsFull` | `ctrl.slot_count` 隐式 seq_cst load，不可变量用 relaxed 即可。 | 微优化 | ✅ 已修复：显式 `.load(relaxed)` |
 
 ---
 
@@ -390,4 +390,4 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
       ① `Interface.cpp Register()` heap-use-after-free（Init 在 release 后调用）
       ② `CBuffer.hpp` memcpy(nullptr, 0) UBSan runtime error
       ASan: 18/18 net_interface + 41/41 codec_http + 10/10 shm_queue(含 fork 并发) 全通过 ✅
-- [ ] 按项目规范:已修 bug(#1/#4/#7/#8/#9/#10/#11/#12)走 GitHub Issue + `fix/` 分支 + PR 闭环
+- [x] GitHub Issue 闭环 — #8~#18 全部创建并关闭，引用对应 commit ✅
