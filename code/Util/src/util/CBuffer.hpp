@@ -154,7 +154,8 @@ class CBuffer
                 tmp = (char*)malloc(newCapacity);
                 if (NULL != tmp)
                 {
-                    memcpy(tmp, m_buffer + m_read_idx, ReadableBytes());
+                    if (ReadableBytes() > 0)
+                        memcpy(tmp, m_buffer + m_read_idx, ReadableBytes());
 //                    memcpy(tmp, m_buffer, m_buffer_len);
                     free(m_buffer);
                     m_buffer = tmp;

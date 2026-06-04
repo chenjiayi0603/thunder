@@ -50,13 +50,15 @@ bool LaunchCo(std::unique_ptr<StepCo20> pStep)
 
 bool Register(std::unique_ptr<MysqlStep> pStep,uint32 uiTimeOutMax,uint8 uiToRetry,double dTimeout)
 {
-	MysqlStep* pRaw = pStep.get();
+	if (!pStep)
+		return false;
+	// Init 在转移所有权前调用，防止 RegisterCallback 立即析构时的 UAF
+	pStep->Init(uiTimeOutMax,uiToRetry);
 	if (!GetLabor()->RegisterCallback(std::unique_ptr<Step>(pStep.release()),dTimeout))
 	{
 		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
 		return(false);
 	}
-	pRaw->Init(uiTimeOutMax,uiToRetry);
 	return true;
 }
 
