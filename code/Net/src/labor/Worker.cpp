@@ -314,16 +314,24 @@ void Worker::Run()
             }
         }
     }
+
+    // 排空完成或超时 → 优雅退出。Manager 通过 WIFEXITED 识别为优雅退出, 不重复重启。
+    LOG4_INFO("Worker %d drain loop done, destroy and exit", iWorkerIndex);
+    Destroy();
+    exit(0);
 }
 
 void Worker::OnTerminated(struct ev_signal* watcher)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     int iSignum = watcher->signum;
+    // 先从 libev 注销再释放 —— 不再立即 exit, 否则 loop 仍引用已 delete 的 watcher (UAF)。
+    ev_signal_stop(m_loop, watcher);
     delete watcher;
-    Destroy();
-    LOG4_FATAL("terminated by signal %d!", iSignum);
-    exit(iSignum);
+    LOG4_INFO("Worker %d got signal %d, graceful draining (grace %ds)",
+              iWorkerIndex, iSignum, DRAIN_GRACE_PERIOD);
+    // 不立即 Destroy/exit: 进入排空, 由 Run() 主循环等在途请求完成后再优雅退出。
+    EnterDrainMode();
 }
 
 bool Worker::CheckParent()// 向父进程上报当前进程负载
@@ -2557,7 +2565,6 @@ bool Worker::CreateEvents()
     signal(SIGPIPE, SIG_IGN);
     // 注册信号事件
     AddSignal(SIGINT,TerminatedCallback);
-	AddSignal(SIGKILL,TerminatedCallback);
 	AddSignal(SIGTERM,TerminatedCallback);
 
     AddPeriodicTaskEvent();
@@ -6049,47 +6056,21 @@ bool Worker::Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pR
 
 void Worker::EnterDrainMode()
 {
+    if (m_bDraining) return;  // 幂等: 重复信号不重置 grace 计时
     LOG4_INFO("Worker %d entering drain mode", iWorkerIndex);
-    m_bDraining = true;
+    m_bDraining  = true;
     m_bAccepting = false;
     m_drainStartTime = time(nullptr);
 
-    // 关闭空闲连接 (无在途数据, 非 S2S)
-    for (auto it = mapFdAttr.begin(); it != mapFdAttr.end(); )
-    {
-        auto* pConn = it->second.get();
-        if (pConn->iFd == m_iC2SListenFd) { ++it; continue; }
-        if (pConn->eCodecType == util::CODEC_PB_INTERNAL) { ++it; continue; }
-        if (pConn->pRecvBuff->ReadableBytes() > 0) { ++it; continue; }
-        if (pConn->pSendBuff->ReadableBytes() > 0) { ++it; continue; }
-
-        LOG4_TRACE("drain: close idle fd %d", pConn->iFd);
-        if (m_pIoBackend)
-        {
-            m_pIoBackend->CancelFd(pConn->iFd);
-            m_pIoBackend->CloseFd(pConn->iFd);
-        }
-        else
-        {
-            close(pConn->iFd);
-        }
-        it = mapFdAttr.erase(it);
-    }
-
-    // 活跃连接: 发送 fd 给 Manager, 由 Manager 转发给 new Worker
-    for (auto it = mapFdAttr.begin(); it != mapFdAttr.end(); )
-    {
-        auto* pConn = it->second.get();
-        if (pConn->iFd == m_iC2SListenFd) { ++it; continue; }
-        if (pConn->eCodecType == util::CODEC_PB_INTERNAL) { ++it; continue; }
-
-        LOG4_TRACE("drain: transfer fd %d to manager", pConn->iFd);
-        send_fd_with_attr(iManagerDataFd, pConn->iFd,
-                          const_cast<char*>(pConn->szRemoteAddr), 32,
-                          static_cast<int>(pConn->eCodecType));
-        // fd 所有权转给 Manager, Worker 不再持有
-        it = mapFdAttr.erase(it);
-    }
+    // 设计说明 (issus #2/#3): 进入排空后不主动关闭或转移任何已有连接。
+    //   - 新连接: Manager 已先拉起新 Worker, SO_REUSEPORT 下内核把新连接分发给它
+    //     (AcceptClientConn 在 m_bDraining 时不再 accept), 本 Worker 不再接新活。
+    //   - 在途请求: 已有连接上正在处理的请求 (含协程挂起等 DB/S2S 的) 留在本 Worker
+    //     跑完并把响应发出去, 不被打断。
+    //   - 为何不"关空闲连接": 仅凭收发缓冲是否为空无法区分"真空闲"与"请求已读完、
+    //     协程挂起、响应尚未生成"——后者缓冲也为空, 误关会丢在途请求 (响应发不出去)。
+    //   交由 Run() 主循环的 IsDrainComplete (缓冲空 + 无活跃 Step + 无 pending HTTP)
+    //   + DRAIN_GRACE_PERIOD 兜底自然排空, 排空/超时后在 Run() 末尾 Destroy() 统一关闭。
 }
 
 bool Worker::IsDrainComplete()

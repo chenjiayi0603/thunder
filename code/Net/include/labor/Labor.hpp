@@ -10,6 +10,7 @@
 #ifndef SRC_NodeLabor_HPP_
 #define SRC_NodeLabor_HPP_
 #include <deque>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -24,9 +25,6 @@
 #include "labor/types/CustomConfigVersionData.hpp"
 #include "storage/dataproxy.pb.h"
 #include "labor/IoBackend.hpp"
-namespace netcustomcat {
-	class CatClientConnent;
-}
 
 namespace net
 {
@@ -686,6 +684,8 @@ protected:
 	void AddEvent(ev_tstamp dTimeout,ev_timer* timer_watcher, timer_callback pFunc);
 
 	void AddSignal(int iSignum,signal_callback callback);
+	// fork 后在子进程中调用：停止所有 ev_signal watcher，清理 libev 全局 signals[] 并 unblock 信号
+	void StopAllSignals();
 	void AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback);
 	void AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callback);
 	/**
@@ -748,6 +748,7 @@ protected:
 	int32 m_iServerSocketBackLog = 100;         ///<对服务器 socket listen backlog
 
 	struct ev_loop* m_loop = nullptr;
+	std::vector<ev_signal*> m_signalWatchers;  // 跟踪所有已注册的 ev_signal，fork 后子进程调 StopAllSignals
 
 	ev_async m_evPostToLoop {};
 	std::mutex m_postToLoopMutex;
@@ -772,7 +773,6 @@ protected:
 	log4cplus::Logger m_oDataLogger;
 
 	bool m_bCatLogSystem = true;
-	netcustomcat::CatClientConnent* m_pCatClientConnent = nullptr;
 
 	LoaderConfigVersionData m_pLoaderConfigVersionData;
 	RouteNoticeVersionData m_pRouteNoticeVersionData;

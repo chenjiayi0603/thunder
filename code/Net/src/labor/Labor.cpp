@@ -146,7 +146,6 @@ Labor::Labor()
 
 Labor::~Labor()
 {
-	delete m_pCatClientConnent; m_pCatClientConnent = nullptr;
 }
 
 void  Labor::SetSocketAttr(int iFd,bool boNeedKeepInterval)
@@ -624,6 +623,24 @@ void Labor::AddSignal(int iSignum,signal_callback callback)
 	ev_signal* watcher = new ev_signal();
 	watcher->data = static_cast<void*>(this);
 	AddEvent(watcher,callback,iSignum);
+	m_signalWatchers.push_back(watcher);
+}
+
+void Labor::StopAllSignals()
+{
+	// fork 后子进程中调用（在 ev_loop_destroy 之前）。
+	// 1. 清零 libev 全局 signals[].head，防止 Worker 新 loop AddSignal 时看到悬空的父进程 watcher，
+	//    导致 !w->next == false 而跳过 sigaction 安装。
+	// 2. Unblock 父进程通过 signalfd 阻塞的信号，使 Worker 的 sigaction 能正常接收信号。
+	// 注意：不调用 ev_signal_stop，避免修改父子共享的 signalfd（否则破坏父进程 SIGCHLD 处理）。
+	ev_signal_reset_after_fork();
+
+	sigset_t unblockSet;
+	sigemptyset(&unblockSet);
+	for (auto* w : m_signalWatchers)
+		sigaddset(&unblockSet, w->signum);
+	sigprocmask(SIG_UNBLOCK, &unblockSet, nullptr);
+	m_signalWatchers.clear();
 }
 
 void Labor::AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback)

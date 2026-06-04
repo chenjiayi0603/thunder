@@ -1,3 +1,40 @@
+> ## ✅ 更新 2026-06-04 — 修复 Worker 优雅重启(#2/#3),以下 06-03 报告仍有效
+>
+> **2026-06-04 新增修复:**
+>
+> | 项 | 06-03 状态 | 06-04 修复后 |
+> |----|-----------|-----------|
+> | C++ gtest | 288/288 ✅ | **288/288** ✅ |
+> | Python unit | 60/60 ✅ | **60/60** ✅ |
+> | E2E 集成 | 19/19 ✅ | **全部通过** ✅ |
+> | Worker 优雅重启 | ❌ 死代码 / SIGTERM 完全无效 | ✅ 排空链路完整，日志验证 |
+>
+> - **issus #2/#3 根因**：libev 全局 `signals[]` 被 fork 父进程 watcher 污染 + SIGTERM 被 sigprocmask 阻塞，导致 Worker 永久无法接收 SIGTERM。
+> - **修复**：新增 `ev_signal_reset_after_fork()`（libev），`Labor::StopAllSignals()`，子进程 fork 后调用清零信号状态；`Worker::OnTerminated` 改为 `EnterDrainMode()` 替代硬 `exit()`；移除无效的 `AddSignal(SIGKILL)`。
+> - **验证**：SIGTERM → "graceful draining" → "drain complete" → Manager "restart successfully"，全程服务可用。
+>
+> ---
+>
+> ## ✅ 更新 2026-06-03 — 复测发现并修复了一个严重回归,下方 06-01 报告已过时
+>
+> 本次(2026-06-03)全量复测 + 修复结果,详见 `issus-list.md`:
+>
+> | 项 | 06-01 报告 | 06-03 修复后 |
+> |----|-----------|-----------|
+> | C++ gtest | 281, 100% | **288/288, 100%** ✅ |
+> | Python unit | 60, 100% | **60/60, 100%** ✅ |
+> | E2E 集成 | 29/29, 100% | **19/19 runnable 通过, 6 skip** ✅(修复后) |
+>
+> - **发现并修复严重回归(issus #9)**:`Phase 6 下线 Center` 后 etcd 节点发现完全失效,
+>   跨节点 S2S 路由全断(`genkey_verifykey_chain` 失败)。根因是 5 环 bug 链(watch 从 rev 1 被
+>   compaction 取消 / PUT 事件省略 type 被丢 / Manager 缺 `case RouteUpdated` / 单节点增量 vs 全量
+>   快照语义 / worker_num 未传递)。已全部修复,GenKey 拿回 token,E2E `genkey_verifykey_chain` 通过。
+> - 另修复 `docker-compose.yml logic.depends_on`(issus #8);构建环境污染用 `CPATH` 绕过(issus #1)。
+> - 6 个 skip 为 Center 下线后的 admin/failover 用例(预期)。
+> - 改动文件:`EtcdCenterConnector.{cpp,hpp}`、`Manager.cpp`、`docker-compose.yml`。
+>
+> ---
+
 # Thunder 框架端到端/单元/集群测试完整报告
 
 > **测试日期**: 2026-06-01

@@ -1250,12 +1250,12 @@ void Manager::Destroy()
         tagWorkerAttr& attr = kv.second;
         if (attr.pMgrToWorkerQueue)
         {
-            ShmRingQueue::Destroy(attr.pMgrToWorkerQueue, 128, 4096);
+            ShmRingQueue::Destroy(attr.pMgrToWorkerQueue);
             attr.pMgrToWorkerQueue = nullptr;
         }
         if (attr.pWorkerToMgrQueue)
         {
-            ShmRingQueue::Destroy(attr.pWorkerToMgrQueue, 128, 4096);
+            ShmRingQueue::Destroy(attr.pWorkerToMgrQueue);
             attr.pWorkerToMgrQueue = nullptr;
         }
         ShmRingQueue::CloseEventFd(attr.iMgrToWorkerEventFd);
@@ -1359,8 +1359,8 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
     }
 
     // 2. 创建共享内存队列
-    ShmRingQueue* pMgrToWorker = ShmRingQueue::Create(128, 4096);
-    ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create(128, 4096);
+    ShmRingQueue* pMgrToWorker = ShmRingQueue::Create();
+    ShmRingQueue* pWorkerToMgr = ShmRingQueue::Create();
     int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
     int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
 
@@ -1373,6 +1373,7 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
     if (iPid == 0)   // 子进程
     {
         StopPostToEventLoop();
+        StopAllSignals();  // 清理全局 signals[] 并 unblock 信号，让 Worker 能安装自己的 sigaction
         ev_loop_destroy(m_loop);
         CloseSocket(m_iS2SListenFd);
         close(iControlFds[0]);
@@ -1509,11 +1510,11 @@ bool Manager::RestartWorker(int iDeathPid)
         tagWorkerAttr& oldAttr = worker_iter->second;
         if (oldAttr.pMgrToWorkerQueue)
         {
-            ShmRingQueue::Destroy(oldAttr.pMgrToWorkerQueue, 128, 4096);
+            ShmRingQueue::Destroy(oldAttr.pMgrToWorkerQueue);
         }
         if (oldAttr.pWorkerToMgrQueue)
         {
-            ShmRingQueue::Destroy(oldAttr.pWorkerToMgrQueue, 128, 4096);
+            ShmRingQueue::Destroy(oldAttr.pWorkerToMgrQueue);
         }
         ShmRingQueue::CloseEventFd(oldAttr.iMgrToWorkerEventFd);
         ShmRingQueue::CloseEventFd(oldAttr.iWorkerToMgrEventFd);
@@ -2594,7 +2595,9 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
                 centerConf.Add("etcd_endpoints", eps);
             }
         }
-        return std::make_unique<EtcdCenterConnector>(centerConf);
+        auto p = std::make_unique<EtcdCenterConnector>(centerConf);
+        p->SetLogger(GetLogger());  // 注入本节点 logger, 否则 etcd 日志打到无 appender 的硬编码 category 被丢弃 (issus #12)
+        return p;
     }
 
     LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
@@ -2662,6 +2665,39 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
         {
             LOG4_WARN("OnCenterEvent: register failed, errcode=%d msg=%s",
                       ev.errcode, ev.errmsg.c_str());
+        }
+        break;
+
+    case CenterEventType::RouteUpdated:
+        // bug 修复 (issus #9): watch 发现的对端节点上线/下线快照 → 路由共享内存。
+        // 原先该处理只写在 case Registered 内,而 watch 事件 type 是 RouteUpdated,
+        // 没有对应 case → 落到 default 被丢弃 → 跨节点路由表永远拿不到对端节点。
+        if (!ev.route_snapshot.empty())
+        {
+            NodeNotice oSnapshot;
+            if (oSnapshot.ParseFromString(ev.route_snapshot))
+            {
+                NodeNotice oldSnapshot;
+                bool hasOld = GetRouteNoticeVersionData().GetNodeNotice(oldSnapshot);
+                std::string newSer = oSnapshot.SerializeAsString();
+                std::string oldSer;
+                if (hasOld) oldSer = oldSnapshot.SerializeAsString();
+
+                if (!hasOld || oldSer != newSer)
+                {
+                    if (GetRouteNoticeVersionData().SetNodeNotice(oSnapshot))
+                    {
+                        LOG4_INFO("OnCenterEvent: route mirror updated, version=%llu bytes=%zu",
+                                  static_cast<unsigned long long>(
+                                      GetRouteNoticeVersionData().GetNodeNoticeVersion()),
+                                  newSer.size());
+                    }
+                    else
+                    {
+                        LOG4_ERROR("OnCenterEvent: route mirror shm write failed");
+                    }
+                }
+            }
         }
         break;
 
