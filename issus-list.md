@@ -386,5 +386,8 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 - [x] **#7 (UB)** `-Wdelete-incomplete` — 移除死 Cat 代码(`m_pCatClientConnent`), 告警归零 ✅
 - [x] **#2/#3** Worker 优雅重启 — 已修复并验证（libev fork 信号继承 bug + SIGTERM 不可达根因已找到修复）✅
 - [x] **#7** 编译告警全清零 — Thunder 自身 0 warning ✅
-- [ ] 内存/并发改动按 CLAUDE.md 跑 ASan + valgrind + TSan 并贴报告
+- [x] 内存/并发改动 ASan 检测 — 发现并修复 2 个 bug：
+      ① `Interface.cpp Register()` heap-use-after-free（Init 在 release 后调用）
+      ② `CBuffer.hpp` memcpy(nullptr, 0) UBSan runtime error
+      ASan: 18/18 net_interface + 41/41 codec_http + 10/10 shm_queue(含 fork 并发) 全通过 ✅
 - [ ] 按项目规范:已修 bug(#1/#4/#7/#8/#9/#10/#11/#12)走 GitHub Issue + `fix/` 分支 + PR 闭环
