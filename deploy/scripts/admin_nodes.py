@@ -23,8 +23,14 @@ def main():
     args = p.parse_args()
     try:
         entries = etcd_get(args.endpoint, "/thunder/registry/", prefix=True)
+    except urllib.error.URLError as e:
+        hint = "请先执行 ./deploy.sh up 启动集群" if "Connection refused" in str(e.reason) or "ConnectionRefused" in str(e) else ""
+        print(f"❌ etcd 不可达: {e.reason}  {hint}", file=sys.stderr); sys.exit(1)
+    except urllib.error.HTTPError as e:
+        hint = "请先执行 ./deploy.sh up 启动集群" if e.code == 502 else ""
+        print(f"❌ etcd HTTP 错误 {e.code}: {e.reason}  {hint}", file=sys.stderr); sys.exit(1)
     except Exception as e:
-        print(f"连接 etcd 失败: {e}", file=sys.stderr); sys.exit(1)
+        print(f"❌ 连接 etcd 失败: {e}", file=sys.stderr); sys.exit(1)
     print(f"{'node_id':>8}  {'node_type':<12}  {'ip:port':<22}  lease")
     print("-" * 65)
     for e in entries:

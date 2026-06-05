@@ -83,9 +83,10 @@ show_help() {
     echo "  down          停止 Docker 环境并清理"
     echo "  restart       重启 Docker 栈"
     echo "  status        查看服务状态"
-    echo "  admin nodes   查看 etcd 在线节点"
-    echo "  admin status   查看 etcd 集群健康"
-    echo "  admin config   查改 etcd 配置"
+    echo "  admin nodes   查看在线节点"
+    echo "  admin routes  查看路由表"
+    echo "  admin status  etcd 集群健康"
+    echo "  admin config  查改配置"
     echo "  clean         清理 build/ + Docker + tmp"
     echo ""
     echo "Options:"
@@ -440,12 +441,7 @@ case "${CMD}" in
         cmd_status
         ;;
     admin)
-        case "${_ADMIN_SUB}" in
-            nodes)  python3 "${PROJECT_DIR}/deploy/scripts/admin_nodes.py" ;;
-            status) bash "${PROJECT_DIR}/deploy/scripts/admin_status.sh" ;;
-            config) python3 "${PROJECT_DIR}/deploy/scripts/admin_config.py" ;;
-            *) echo "用法: deploy.sh admin {nodes|status|config}"; exit 1 ;;
-        esac
+        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "$_ADMIN_SUB"
         ;;
     clean)
         cmd_clean
