@@ -59,28 +59,28 @@ check_warn() {
 echo ""
 echo "--- HTTP / Hello ---"
 
-check "HTTP Echo (POST)" \
+check "HTTP Echo (POST)                      [curl→Hello:27006]" \
     '"code":0' \
     'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"Echo\"}"'
 
-check "HTTP PoolCpu 协程挂起/恢复 (POST)" \
+check "HTTP PoolCpu 协程挂起/恢复 (POST)     [curl→Hello:27006]" \
     '"checksum":786432' \
     'curl -sf --max-time 10 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloPoolCpu\"}"'
 
-check "HTTPS Echo (POST)" \
+check "HTTPS Echo (POST)                     [curl→HelloHttps:27443]" \
     '"code":0' \
     'curl -skf --max-time 5 https://127.0.0.1:27443/hello/hello -d "{\"option\":\"Echo\"}"'
 
-check "Redis set/get (CoRedis)" \
+check "Redis set/get (CoRedis)               [curl→Hello:27006→Redis:6379]" \
     '"set_ok":1' \
     'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoRedis\"}"'
 
-check "MySQL create/insert/select (CoMysql)" \
+check "MySQL create/insert/select (CoMysql)   [curl→Hello:27006→MySQL:3306]" \
     '"select_ok":1' \
     'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoMysql\"}"'
 
 # WebSocket：-D - 把响应头输出到 stdout，不用 -f（101 非 2xx，-f 会失败）
-check "WebSocket 握手 101" \
+check "WebSocket 握手 101                    [curl→HelloWs:27010]" \
     '101 Switching Protocols' \
     'curl -s --max-time 3 -D - \
       -H "Upgrade: websocket" \
@@ -96,30 +96,30 @@ echo "--- Interface → Logic ---"
 # 请求 1：GenKey 生成 token（POST）
 _GENKEY_POST=$(curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
   -d '{"option":"GenKey"}' 2>/dev/null)
-check "GenKey (POST)" '"code":0' "echo '${_GENKEY_POST}'"
+check "GenKey (POST)                           [curl→Interface:27008→Logic:16068]" '"code":0' "echo '${_GENKEY_POST}'"
 
 # 请求 2：VerifyKey 验证上一步拿到的 token
 _TOKEN=$(echo "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
 _KEY=$(echo   "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))"   2>/dev/null)
-check "VerifyKey 有效 token → code:0" \
+check "VerifyKey 有效 token → code:0          [curl→Interface→Logic]" \
     '"code":0' \
     "curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d '{\"option\":\"VerifyKey\",\"token\":\"${_TOKEN}\",\"key\":\"${_KEY}\"}'"
 
 # 请求 3：GenKey（GET + JSON body）
-check "GenKey (GET + JSON body)" \
+check "GenKey (GET + JSON body)                [curl→Interface→Logic]" \
     '"code":0' \
     'curl -sf --max-time 5 -X GET \
       -H "Content-Type: application/json" \
       http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"GenKey\"}"'
 
-check "VerifyKey 非法 token → code:1" \
+check "VerifyKey 非法 token → code:1          [curl→Interface→Logic]" \
     '"code":1' \
     'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"VerifyKey\",\"token\":\"bad\",\"key\":\"bad\"}"'
 
-check "VerifyKey 空 token → code:1" \
+check "VerifyKey 空 token → code:1            [curl→Interface→Logic]" \
     '"code":1' \
     'curl -s --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}"'
@@ -127,6 +127,7 @@ check "VerifyKey 空 token → code:1" \
 # ── etcd ──────────────────────────────────────────────────────
 echo ""
 echo "--- etcd ---"
+echo "     Manager(各节点) ──HttpCodec──► etcd(:2379)"
 
 if ! curl -sf --max-time 3 http://127.0.0.1:2379/health >/dev/null 2>&1; then
     echo -e "  ${YELLOW}⚠️ ${NC} etcd :2379 不可达，跳过 etcd 段"
@@ -155,6 +156,15 @@ else
         FAIL=$((FAIL+1))
     fi
 fi
+
+# ── etcd 监控指令 ────────────────────────────────────────────
+echo ""
+echo "--- etcd 监控 ---"
+echo "  deploy.sh admin nodes    在线节点 + node_id"
+echo "  deploy.sh admin routes   路由表 (类型→节点映射)"
+echo "  deploy.sh admin status   etcd 集群健康/revision/members"
+echo "  deploy.sh admin config   配置查改"
+echo "  deploy.sh test smoke     本测试 (全链路 + 注册中心)"
 
 # ── 汇总 ─────────────────────────────────────────────────────
 echo ""

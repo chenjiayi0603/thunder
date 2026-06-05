@@ -441,7 +441,7 @@ case "${CMD}" in
         cmd_status
         ;;
     admin)
-        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "$_ADMIN_SUB"
+        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "$_ADMIN_SUB" "${@:2}"
         ;;
     clean)
         cmd_clean
