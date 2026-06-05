@@ -160,6 +160,56 @@ ReportNodeStatus()                                          [EtcdCenterConnector
 
 **CAS(Compare-And-Swap)**: 先检查"slot 是否空闲",如果空闲就占为己有。检查和抢占在同一个原子操作中完成。
 
+### CAS 怎么实现的
+
+etcd txn 请求就是一个三段的 JSON:
+
+```json
+{
+  "compare": [{"key": "/thunder/slot/247", "target": "CREATE",
+               "result": "EQUAL",            "create_revision": "0"}],
+  "success": [{"request_put": ...}, {"request_put": ...}],
+  "failure": [{"request_range": ...}]
+}
+```
+
+关键字段:
+
+| 字段 | 含义 | 值 |
+|------|------|----|
+| `compare.key` | 检查哪个 key | `/thunder/slot/247` |
+| `compare.target` | 检查什么属性 | `CREATE` — 该 key 的创建 revision |
+| `compare.result` | 比较方式 | `EQUAL` — 等于 |
+| `compare.create_revision` | 期望值 | `0` — key 从未被创建过 |
+
+翻译成人话: **"如果 slot/247 的 create_revision 等于 0(即 key 不存在),则执行 success 中的 PUT 操作;否则执行 failure"**。
+
+### etcd 内部怎么保证原子性
+
+```
+客户端 → POST /v3/kv/txn  (一段 JSON)
+         │
+         ▼
+    etcd Raft 层:
+    把整个 txn JSON 打包成一个 Raft log entry ──► 复制到多数节点
+         │
+         ▼
+    Raft 状态机 apply:
+    ① 读取 slot/247 的 create_revision
+    ② 和 compare.create_revision("0") 比较
+    ③ 如果相等 → 执行 success 里的所有 PUT
+    ④ 如果不相等 → 执行 failure
+    ⑤ 返回 {succeeded: true/false}
+```
+
+**原子性的来源**: 第①~④步在 etcd 的 Raft 状态机中作为一个**不可分割的 apply 单元**执行。Raft 保证:
+
+- 同一时刻只有一个 txn 在 apply(串行)
+- 所有 PUT 要么全做,要么全不做
+- 中间不会被其他请求打断
+
+所以这个 JSON 就是一个**无锁的分布式 CAS**——不需要应用层加锁,Raft 的串行 apply 本身就是锁。
+
 ```
 ┌──── 一次 txn 请求 ────┐
 │                        │
