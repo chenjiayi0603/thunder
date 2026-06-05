@@ -22,6 +22,8 @@
 #   ./deploy.sh down            停止并清理 Docker 环境
 #   ./deploy.sh restart         重启 Docker 栈
 #   ./deploy.sh status          查看服务状态
+#   ./deploy.sh admin nodes     查看 etcd 在线节点 (等效 admin_nodes.py)
+#   ./deploy.sh admin status    查看 etcd 集群健康 (等效 admin_status.sh)
 #   ./deploy.sh clean           清理 build/ + Docker + tmp
 #
 # === 选项 ===
@@ -49,6 +51,7 @@ err()  { echo -e "${RED}✘${NC} $*"; }
 
 # ─── 参数解析 ───────────────────────────────────
 CMD="${1:-help}"; shift || true
+_ADMIN_SUB="${1:-}"  # admin nodes/status/config 透传
 FORCE=false; SKIP_BUILD=false; KEEP_DOCKER=false; VERBOSE=false; MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -59,7 +62,7 @@ while [[ $# -gt 0 ]]; do
         --verbose) VERBOSE=true ;;
         --help|-h) CMD="help"; break ;;
         unit|e2e|bench|smoke|regression|perf) MODE="$1" ;;
-        *) warn "未知参数: $1"; exit 1 ;;
+        	*) ;;  # pass-through for admin/extra args
     esac
     shift
 done
@@ -80,6 +83,9 @@ show_help() {
     echo "  down          停止 Docker 环境并清理"
     echo "  restart       重启 Docker 栈"
     echo "  status        查看服务状态"
+    echo "  admin nodes   查看 etcd 在线节点"
+    echo "  admin status   查看 etcd 集群健康"
+    echo "  admin config   查改 etcd 配置"
     echo "  clean         清理 build/ + Docker + tmp"
     echo ""
     echo "Options:"
@@ -432,6 +438,14 @@ case "${CMD}" in
         ;;
     status)
         cmd_status
+        ;;
+    admin)
+        case "${_ADMIN_SUB}" in
+            nodes)  python3 "${PROJECT_DIR}/deploy/scripts/admin_nodes.py" ;;
+            status) bash "${PROJECT_DIR}/deploy/scripts/admin_status.sh" ;;
+            config) python3 "${PROJECT_DIR}/deploy/scripts/admin_config.py" ;;
+            *) echo "用法: deploy.sh admin {nodes|status|config}"; exit 1 ;;
+        esac
         ;;
     clean)
         cmd_clean
