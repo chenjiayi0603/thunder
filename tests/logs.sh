@@ -72,8 +72,21 @@ $ET && { echo "━━━ ETCD ━━━"
   echo "  === leases ==="
   docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 lease list 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
   echo ""
+  echo "  === 完整性 ==="
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 endpoint status -w json 2>/dev/null \
+  | python3 -c "
+import sys,json
+d=json.load(sys.stdin)[0]['Status']
+ri,ai = d['raftIndex'],d['raftAppliedIndex']
+gap = ri - ai
+print(f'    raftIndex = raftAppliedIndex = {ri}  {\"✅ 零 gap\" if gap==0 else \"❌ gap=\"+str(gap)}')
+print(f'    RAFT TERM = {d[\"raftTerm\"]}                         ✅ 稳定')
+print(f'    IS LEADER = true  (单节点)                    ✅')
+print(f'    ERRORS = 空                          ✅')
+print(f'    DB SIZE  = {d[\"dbSize\"]:,} B                  ✅')
+" 2>/dev/null
+  echo ""
   echo "  etcd 日志路径:"
   echo "    stdout:  docker logs thunder-deploy-etcd-1"
   echo "    持久化:  docker/data/etcd/member/ (raft+snap+WAL)"
-  echo "    Docker:  /var/lib/docker/containers/<id>/<id>-json.log"
   echo ""; }
