@@ -14,6 +14,17 @@ check() { local n="$1" cmd="$2" expect="${3:-0}"; local out
 echo "=============================================="
 echo "  Thunder etcd 混沌测试"
 echo "=============================================="
+echo ""
+echo "  ┌─────────────────────┬──────────────────────────────┬──────┐"
+echo "  │        场景         │             验证             │ 目标 │"
+echo "  ├─────────────────────┼──────────────────────────────┼──────┤"
+echo "  │ etcd 停止→恢复      │ 路由缓存续命 + 异步重注册    │ ✅   │"
+echo "  ├─────────────────────┼──────────────────────────────┼──────┤"
+echo "  │ etcd 重启(保留数据) │ 数据持久 + 快速恢复          │ ✅   │"
+echo "  ├─────────────────────┼──────────────────────────────┼──────┤"
+echo "  │ etcd 数据清空(灾难) │ 自动重建 lease+slot+registry │ ✅   │"
+echo "  └─────────────────────┴──────────────────────────────┴──────┘"
+echo ""
 
 # ── 0. 基线 ────────────────────────────────────
 echo ""
@@ -23,8 +34,9 @@ check "GenKey 正常"     'curl -sf --max-time 5 http://127.0.0.1:27008/Interfac
 check "registry 存在"  'curl -s --max-time 3 http://127.0.0.1:2379/v3/kv/range -d "{\"key\":\"L3RodW5kZXIvcmVnaXN0cnkv\",\"range_end\":\"L3RodW5kZXIvcmVnaXN0cnkw\"}" | python3 -c "import sys,json;print(json.load(sys.stdin).get(\"count\",0))"' '3'
 
 # ── 1. etcd 停 → 启 ───────────────────────────
+# 目标: 验证 etcd 短期不可达时, 路由缓存(shm)能续命, etcd 恢复后节点自动重注册
 echo ""
-echo "--- 1. etcd 停止 → 恢复 ---"
+echo "--- 1. etcd 停止 → 恢复 (目标: 路由缓存续命+异步重注册) ---"
 echo "  停止 etcd..."
 docker stop thunder-deploy-etcd-1 >/dev/null 2>&1
 sleep 3
@@ -40,16 +52,18 @@ check "registry 恢复"  'curl -s --max-time 3 http://127.0.0.1:2379/v3/kv/range
 check "GenKey 恢复"    'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken -d "{\"option\":\"GenKey\"}"' '"code":0'
 
 # ── 2. etcd 重启(保留数据) ─────────────────────
+# 目标: 验证 etcd 重启后数据不丢失, raft log 完整, 节点正常续租
 echo ""
-echo "--- 2. etcd 重启(保留数据) ---"
+echo "--- 2. etcd 重启(保留数据) (目标: 数据持久+快速恢复) ---"
 docker restart thunder-deploy-etcd-1 >/dev/null 2>&1
 sleep 5
 check "etcd 健康"      'curl -sf --max-time 3 http://127.0.0.1:2379/health' '"health":"true"'
 check "keys 仍在"      'curl -s --max-time 3 http://127.0.0.1:2379/v3/kv/range -d "{\"key\":\"L3RodW5kZXIvcmVnaXN0cnkv\",\"range_end\":\"L3RodW5kZXIvcmVnaXN0cnkw\"}" | python3 -c "import sys,json;print(json.load(sys.stdin).get(\"count\",0))"' '3'
 
 # ── 3. etcd 数据清空重置 ────────────────────────
+# 目标: 验证最坏情况(etcd 数据全部丢失), 节点能从零重建租约+slot+registry, 路由恢复
 echo ""
-echo "--- 3. etcd 数据清空(模拟灾难恢复) ---"
+echo "--- 3. etcd 数据清空(模拟灾难恢复) (目标: 从零重建注册表) ---"
 docker compose -p thunder-deploy -f "$(dirname "$0")/../docker/docker-compose.yml" stop etcd >/dev/null 2>&1
 docker run --rm -v "$(dirname "$0")/../docker/data/etcd:/d" alpine sh -c 'rm -rf /d/member' 2>/dev/null
 docker compose -p thunder-deploy -f "$(dirname "$0")/../docker/docker-compose.yml" start etcd >/dev/null 2>&1
