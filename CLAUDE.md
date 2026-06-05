@@ -127,7 +127,7 @@ cmake --build build -j1
 #### 改 C++ 代码后 (Agent 自动判断回归范围)
 
 > Agent 根据改动文件自动决定跑哪些测试，不是每次全量跑。
-> 回归范围映射表: `docs/reports/test_strategy.md` 第 11 章
+> 回归范围映射表: `docs/reports/01-test-strategy.md` 第 11 章
 
 **Agent 自动执行流程:**
 

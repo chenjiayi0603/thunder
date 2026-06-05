@@ -391,3 +391,80 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
       ② `CBuffer.hpp` memcpy(nullptr, 0) UBSan runtime error
       ASan: 18/18 net_interface + 41/41 codec_http + 10/10 shm_queue(含 fork 并发) 全通过 ✅
 - [x] GitHub Issue 闭环 — #8~#18 全部创建并关闭，引用对应 commit ✅
+
+
+---
+
+## 🔴 etcd 注册中心重写 — 问题清单 (2026-06-05)
+
+> 来源: code review + 冒烟测试 + Docker 部署验证
+
+### #19 注册中心实际为空 — 注册键随旧租约过期被删
+- **文件**: `code/Net/src/labor/EtcdCenterConnector.cpp`
+- **状态**: ✅ 已修复
+- **根因**: `DoRegister` 幂等分支无视租约归属; `[&]` lambda 捕获导致 async 回调 crash
+- **修复**: `DecideRegAction` + `RebindRegistration` + 按值捕获
+
+### #20 watch 每秒重连风暴 — 未处理 compact_revision
+- **状态**: ✅ 已修复  
+- **修复**: `EtcdWatcher` 替代 curl 线程 + 处理 compact_revision
+
+### #21 etcd 容器健康检查永远失败
+- **文件**: `docker/docker-compose.yml`
+- **状态**: ✅ 已修复
+- **修复**: `curl` → `etcdctl endpoint health`
+
+### #24 传输层 curl → Thunder 原生 HTTP(HttpCodec)
+- **状态**: ✅ 已修复 (PR #25)
+- **修复**: `EtcdHttpConn`(短请求) + `EtcdWatcher`(watch 流式)
+
+### #25 EtcdHttpConn 排队请求静默丢弃
+- **文件**: `code/Net/src/labor/EtcdHttpConn.cpp:58`
+- **状态**: ✅ 已修复
+- **修复**: `Close()` drain m_queue callbacks
+
+### #26 EtcdWatcher chunked parser 无缓冲区上限
+- **文件**: `code/Net/src/labor/EtcdWatcher.cpp:161`
+- **状态**: ✅ 已修复
+- **修复**: hex >1024 bytes → Reconnect
+
+### #27 异步注册链异常 m_regInProgress 永久 true
+- **文件**: `code/Net/src/labor/EtcdCenterConnector.cpp:428`
+- **状态**: ✅ 已修复
+- **修复**: m_regStuckTicks 30s 超时复位
+
+### #28 EtcdWatcher base64 每次重连重复编码
+- **状态**: ✅ 已修复
+- **修复**: m_b64Prefix/m_b64RangeEnd 缓存
+
+### #29 Fresh 路径 keepalive 失败不阻塞注册
+- **状态**: ✅ 已修复(设计注释)
+
+### #30 Manager bind Address already in use
+- **文件**: `code/Net/src/labor/Manager.cpp:1199`
+- **状态**: ✅ 已修复
+- **修复**: `setsockopt(SO_REUSEADDR)`
+
+### #31 unkonw cmd 7 from worker — WARN 级别过高
+- **文件**: `code/Net/src/labor/Manager.cpp:2444`
+- **状态**: ✅ 已修复
+- **修复**: `LOG4_WARN` → `LOG4_TRACE`
+
+### #32 node_id 分配日志不够显著
+- **文件**: `code/Net/src/labor/EtcdCenterConnector.cpp:522`
+- **状态**: ✅ 已修复
+- **修复**: `<<< node_id 分配完成: 247 (type=LOGIC addr=127.0.0.1:16068 lease=...) >>>`
+
+### #33 ParseFromArray failed — Worker 管道数据错位
+- **文件**: `code/Net/src/labor/Manager.cpp:2325`
+- **状态**: ✅ 已修复
+- **修复**: ERROR→WARN + SkipBytes 重试, 不再 DestroyConnect
+
+### #22 watch 退化为 2s 轮询
+- **状态**: ✅ 已完成
+- **原因**: bundled curl 不挂住 chunked 流, 换用 Thunder 原生 HTTP 后已解决
+
+### k8s 部署适配
+- **文件**: `docs/architecture/evaluations/thunder_on_k8s_evaluation.md`
+- **状态**: 📋 评估完成
+- **结论**: Interface 可放 k8s, Hello/Logic 留裸机

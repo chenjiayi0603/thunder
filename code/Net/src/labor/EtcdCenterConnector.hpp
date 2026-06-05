@@ -30,13 +30,12 @@
 #ifndef ETCD_CENTER_CONNECTOR_HPP_
 #define ETCD_CENTER_CONNECTOR_HPP_
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
-#include <mutex>
+#include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 #include <log4cplus/logger.h>
 #include "labor/CenterConnector.hpp"
@@ -45,14 +44,17 @@
 
 #include <ev.h>
 
+namespace net { class EtcdHttpConn; class EtcdWatcher; }
+
 namespace net
 {
 
 /**
- * @brief CenterConnector 的 etcd 后端（Phase 1）
+ * @brief CenterConnector 的 etcd 后端
  *
- * 通过 etcd HTTP v3 gateway 实现节点注册（租约 + 槽位抢占）与续期。
- * 所有 etcd 请求在 libev 主线程同步执行（curl 阻塞调用，TTL=10s，超时<1s）。
+ * 运行在 Manager 进程,在 Manager libev 主循环上自管一条到 etcd 的异步 HTTP 连接
+ * (EtcdHttpConn,框架 HttpCodec 编解码),实现节点注册(租约 + 槽位抢占)与续期。
+ * 无独立线程,无 libcurl 出站请求(仅 watch snapshot 遗留少量 curl,Phase C 替换)。
  */
 class EtcdCenterConnector : public CenterConnector
 {
@@ -119,54 +121,39 @@ private:
     // ---- etcd HTTP 基础操作 ----
 
     /**
-     * @brief 向 etcd POST 一个请求，返回响应体；失败返回空字符串
-     * @param path  路径，如 "/v3/lease/grant"
-     * @param body  JSON 请求体
-     */
-    std::string EtcdPost(const std::string& path, const std::string& body);
-
-    /**
-     * @brief 申请租约（TTL=10s），成功后设置 m_leaseId
-     * @return 是否成功
-     */
-    bool LeaseGrant();
-
-    /**
-     * @brief 对 m_leaseId 执行一次续租
-     * @return 是否成功
-     */
-    bool KeepAlive();
-
     /**
      * @brief 撤销租约
      */
     void LeaseRevoke();
 
-    // ---- 注册核心逻辑 ----
-
-    /**
-     * @brief 注册算法入口：幂等查询 → 槽位占位 → emit Registered
-     * @param ip       节点 IP
-     * @param port     节点端口
-     * @param nodeType 节点类型
-     */
-    void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
+    // ---- 异步 etcd 操作原语(Phase B: 走 EtcdHttpConn) ----
 
     /**
      * @brief 查询 /v3/kv/range，返回已存在的 node_id（0 表示不存在）
      * @param registryKey  etcd key，如 /thunder/registry/ip:port
      * @param outNodeId    成功时写入 node_id
+     * @param outLease     成功时写入该 key 绑定的 lease（无租约为 0），用于判断是否需重绑
      * @return true 表示 key 存在且解析成功
      */
-    bool QueryRegistry(const std::string& registryKey, uint32_t& outNodeId);
+    bool QueryRegistry(const std::string& registryKey, uint32_t& outNodeId, int64_t& outLease);
 
     /**
-     * @brief 构建单次槽位抢占的 txn JSON 字符串
-     * @param slot         槽位序号 [1..255]
-     * @param slotKey      /thunder/slot/<slot>
-     * @param registryKey  /thunder/registry/ip:port
-     * @param ipPort       "ip:port" 字符串（写入 slot value）
-     * @return JSON 字符串，供 EtcdPost("/v3/kv/txn") 使用
+     * @brief 无条件把 slot/registry 两个键重新 PUT 并绑定到【当前】m_leaseId（issus #19）。
+     *        用于重启换租约后，etcd 中残留的注册键还绑在旧（已失效）租约的场景：
+     *        旧租约过期会删键导致注册中心永久为空，必须重绑到活租约。
+     * @return 是否成功
+     */
+    bool RebindRegistration(uint32_t nodeId, const std::string& registryKey,
+                            const std::string& ipPort, const std::string& nodeType);
+
+    /**
+     * @brief 注册表自检对账（issus #19 监控）：查自身注册键是否仍存在且绑在当前租约，
+     *        缺失或租约不符则打 ERROR 告警并触发重注册。由 KeepAlive 定时器周期调用。
+     */
+    void SelfAuditRegistry();
+
+    /**
+     * @brief 构建单次槽位抢占的 txn JSON 字符串(纯逻辑,无 I/O)
      */
     std::string BuildSlotTxn(int slot,
                               const std::string& slotKey,
@@ -174,19 +161,32 @@ private:
                               const std::string& ipPort,
                               const std::string& nodeType);
 
-    /**
-     * @brief 尝试原子占位单个槽位
-     * @param slot         槽位序号
-     * @param slotKey      /thunder/slot/<slot>
-     * @param registryKey  /thunder/registry/ip:port
-     * @param ipPort       "ip:port" 字符串
-     * @return true 表示占位成功（txn succeeded）
-     */
-    bool TryClaimSlot(int slot,
-                      const std::string& slotKey,
-                      const std::string& registryKey,
-                      const std::string& ipPort,
-                      const std::string& nodeType);
+    // ---- 异步 etcd 操作原语(Phase B: 从 curl 同步→异步回调, 走 EtcdHttpConn) ----
+
+    void AsyncLeaseGrant(std::function<void(bool ok, int64_t leaseId)> cb);
+    void AsyncKeepAlive(std::function<void(bool ok)> cb);
+    void AsyncQueryRegistry(const std::string& registryKey,
+                            std::function<void(bool found, uint32_t nodeId, int64_t lease)> cb);
+    void AsyncTryClaimSlot(int slot, const std::string& slotKey,
+                           const std::string& registryKey,
+                           const std::string& ipPort, const std::string& nodeType,
+                           std::function<void(bool ok)> cb);
+    void AsyncRebindRegistration(uint32_t nodeId, const std::string& registryKey,
+                                 const std::string& ipPort, const std::string& nodeType,
+                                 std::function<void(bool ok)> cb);
+
+    // ---- 异步注册延续链(替代原 DoRegister 同步流程) ----
+
+    /// 入口:确保有 lease(L1) → 查 registry(L2) → 决策 Fresh/Rebind/Claim(L3)
+    void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
+    /// L1: 无 lease 则补领
+    void OnRegEnsureLease();
+    /// L2: 查注册键,决策
+    void OnRegQuery();
+    /// L3: 槽位扫描
+    void OnRegScan();
+    /// 完成注册:设置状态 + emit Registered / 失败
+    void OnRegDone(bool ok, const std::string& errmsg);
 
     // ---- KeepAlive 定时器 ----
 
@@ -200,43 +200,17 @@ private:
      */
     void OnKeepAliveTimer();
 
-    // ---- Watch 功能（Phase 2） ----
+    // ---- Watch 功能（Phase C: EtcdWatcher 替代 curl 线程 + ev_async）----
 
-    /**
-     * @brief 启动 watch 线程和 ev_async（Init 中调用）
-     */
+    /// 启动 EtcdWatcher(异步,无线程) + 初始 snapshot 取 revision
     void StartWatch();
-
-    /**
-     * @brief 停止 watch 线程并清理 ev_async（Destroy 中调用）
-     */
     void StopWatch();
 
-    /**
-     * @brief watch 线程主函数：长连接 streaming POST /v3/watch
-     *        断线后自动重连（m_watchStop 为 false 时循环）
-     */
-    void WatchThreadFunc();
-
-    /**
-     * @brief libcurl streaming write callback（静态），调用 OnWatchChunk()
-     */
-    static size_t WatchWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
-
-    /**
-     * @brief 解析 watch 响应 chunk，提取事件写入队列，并唤醒 libev 线程
-     * @param chunk  curl 接收的原始文本块（可能是多行 JSON）
-     */
-    void OnWatchChunk(const std::string& chunk);
-
-    /**
-     * @brief ev_async 静态回调，转发给 OnWatchAsync()
-     */
-    static void WatchAsyncCallback(struct ev_loop* loop, ev_async* w, int revents);
-
-    /**
-     * @brief libev 线程中消费 WatchEvent 队列，组装 NodeNotice，发射 RouteUpdated
-     */
+    /// period snapshot: 取当前 revision + 全量 registry, 刷新路由/起点
+    void DoWatchSnapshot();
+    /// watcher 馈入一行 JSON(事件/created/canceled)
+    void ProcessWatchLine(const std::string& line);
+    /// 消费事件队列, 组装 NodeNotice, 发射 RouteUpdated(单线,无需 ev_async)
     void OnWatchAsync();
 
     // ---- 工具函数 ----
@@ -250,11 +224,6 @@ private:
      * @brief base64 解码
      */
     static std::string B64Dec(const std::string& s);
-
-    /**
-     * @brief libcurl write callback（用于 EtcdPost 接收响应体）
-     */
-    static size_t CurlWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
 
     /**
      * @brief 发射事件到 Manager 回调（ev 按值传入，支持 std::move）
@@ -273,6 +242,12 @@ private:
     log4cplus::Logger   m_logger          = log4cplus::Logger::getInstance("etcd");
 
     std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
+
+    /// 异步 HTTP 客户端(Phase B: 替代 curl 短请求)
+    std::unique_ptr<EtcdHttpConn> m_http;
+    /// watch 长连接(Phase C: 替代 curl 线程 + ev_async)
+    std::unique_ptr<EtcdWatcher> m_watcher;
+
     int64_t             m_leaseId         = 0;
     uint32_t            m_nodeId          = 0;
     std::string         m_nodeIp;
@@ -280,6 +255,11 @@ private:
     std::string         m_nodeType;
     uint32_t            m_workerNum       = 0;   ///< 本节点 worker 数, 注册时写入 registry value 供路由建 identify
     bool                m_registered            = false;
+
+    // 异步注册延续链上下文 (issus #24 Phase B)
+    bool   m_regInProgress  = false;    ///< 防止 re-entrancy(定时器/心跳同时触发注册)
+    int    m_regSlot        = 0;        ///< 槽位扫描位置(1..255; 0=未开始)
+    int    m_regStuckTicks  = 0;        ///< #27 注册卡住超时计数(~3s/tick,>10=复位)
 
     /// 发现到的全部在线节点 ip:port → registry value(JSON)。
     /// 仅 libev 线程(OnWatchAsync)访问, 无需锁。用于每次变更发"全量"路由快照(issus #9)。
@@ -291,24 +271,19 @@ private:
 
     // ---- watch 相关（Phase 2） ----
 
-    /**
-     * @brief watch 事件（watch 线程 → libev 线程的跨线程传递单元）
-     */
-    struct WatchEvent
-    {
-        std::string type;   ///< "PUT" 或 "DELETE"
-        std::string key;    ///< base64 解码后的 etcd key
-        std::string value;  ///< base64 解码后的 etcd value（JSON 格式）
-    };
+    struct WatchEvent { std::string type, key, value; };
+    std::vector<WatchEvent>  m_watchQueue;          ///< 事件队列(单线,无锁)
 
-    std::thread              m_watchThread;
-    std::atomic<bool>        m_watchStop{false};
-    ev_async                 m_watchAsync{};
-    bool                     m_watchAsyncStarted = false;
-    int64_t                  m_lastRevision      = 0;   ///< 断线续看：上次消费到的 mod_revision
+    int64_t                  m_lastRevision      = 0;
 
-    std::mutex               m_watchQueueMutex;
-    std::vector<WatchEvent>  m_watchQueue;              ///< watch 线程生产，libev 线程消费
+    // ---- 监控指标（单线程, 无 atomic 需要——watcher/connector 都在 m_loop 上）----
+    uint64_t    m_metricKeepAliveOk{0};
+    uint64_t    m_metricKeepAliveFail{0};
+    uint64_t    m_metricWatchReconnect{0};
+    uint64_t    m_metricWatchCompactCancel{0};
+    uint64_t    m_metricRegistryRebind{0};
+    uint64_t    m_metricSelfAuditFail{0};
+    int                      m_auditTick = 0;                ///< 自检节流计数（KeepAlive 定时器内）
 };
 
 } /* namespace net */

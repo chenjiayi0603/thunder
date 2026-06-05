@@ -6,17 +6,24 @@
 #   ./deploy.sh test unit      最快   C++ gtest + Python unit   ~45s (零外部依赖)
 #   ./deploy.sh test           默认   unit + Docker E2E          ~3min
 #   ./deploy.sh test e2e       E2E    Docker 集成测试             ~3min
-#   ./deploy.sh test bench     性能   wrk 压测                   ~1min
+#   ./deploy.sh test smoke     冒烟   核心链路 + etcd 注册中心     ~5s (需集群)
+#   ./deploy.sh test regression 回归   全量自动化回归 (提交前必跑) ~5min
+#   ./deploy.sh test perf      性能   wrk 压测                   ~1min
 #
 # === 常用命令 ===
 #   ./deploy.sh build           cmake configure + build + install
 #   ./deploy.sh test unit       C++ 单元测试 + Python 单元测试
 #   ./deploy.sh test e2e        Docker 集成测试
+#   ./deploy.sh test smoke      冒烟测试 (核心链路 + etcd 注册中心)
+#   ./deploy.sh test regression 全量回归 (提交前必跑)
+#   ./deploy.sh test perf       wrk 性能测试
 #   ./deploy.sh test            全部测试 (unit + e2e)
 #   ./deploy.sh up              启动 Docker 开发环境
 #   ./deploy.sh down            停止并清理 Docker 环境
 #   ./deploy.sh restart         重启 Docker 栈
 #   ./deploy.sh status          查看服务状态
+#   ./deploy.sh admin nodes     查看 etcd 在线节点 (等效 admin_nodes.py)
+#   ./deploy.sh admin status    查看 etcd 集群健康 (等效 admin_status.sh)
 #   ./deploy.sh clean           清理 build/ + Docker + tmp
 #
 # === 选项 ===
@@ -44,6 +51,7 @@ err()  { echo -e "${RED}✘${NC} $*"; }
 
 # ─── 参数解析 ───────────────────────────────────
 CMD="${1:-help}"; shift || true
+_ADMIN_SUB="${1:-}"  # admin nodes/status/config 透传
 FORCE=false; SKIP_BUILD=false; KEEP_DOCKER=false; VERBOSE=false; MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -53,8 +61,8 @@ while [[ $# -gt 0 ]]; do
         --keep-docker) KEEP_DOCKER=true ;;
         --verbose) VERBOSE=true ;;
         --help|-h) CMD="help"; break ;;
-        unit|e2e|bench) MODE="$1" ;;
-        *) warn "未知参数: $1"; exit 1 ;;
+        unit|e2e|bench|smoke|regression|perf) MODE="$1" ;;
+        	*) ;;  # pass-through for admin/extra args
     esac
     shift
 done
@@ -68,11 +76,18 @@ show_help() {
     echo "  test          全部测试 (unit + e2e)"
     echo "  test unit     C++ + Python 单元测试 (零外部依赖, ~45s)"
     echo "  test e2e      Docker 集成测试 (~3min)"
-    echo "  test bench    wrk 性能测试"
+    echo "  test smoke    冒烟测试 (核心链路 + etcd 注册中心, 需集群)"
+    echo "  test regression 全量回归 (提交前必跑, ~5min)"
+    echo "  test perf/bench wrk 性能测试"
     echo "  up            启动 Docker 开发环境"
     echo "  down          停止 Docker 环境并清理"
     echo "  restart       重启 Docker 栈"
     echo "  status        查看服务状态"
+    echo "  admin nodes   查看在线节点"
+    echo "  admin routes  查看路由表"
+    echo "  admin status  etcd 集群健康"
+    echo "  admin config  查改配置"
+    echo "  logs          查看所有节点最近日志 (需集群)
     echo "  clean         清理 build/ + Docker + tmp"
     echo ""
     echo "Options:"
@@ -83,7 +98,9 @@ show_help() {
     echo ""
     echo "Speed tiers (fast → slow):"
     echo "  test unit      ~45s  零外部依赖"
+    echo "  test smoke     ~5s   需 Docker 集群"
     echo "  test e2e       ~3min 需 Docker"
+    echo "  test regression ~5min 需 Docker (提交前必跑)"
     echo "  test           ~4min unit + e2e"
 }
 
@@ -270,6 +287,38 @@ cmd_test_e2e() {
     fi
 }
 
+# ─── Smoke ───────────────────────────────────────
+cmd_test_smoke() {
+    local smoke_script="${PROJECT_DIR}/tests/test_smoke.sh"
+    if [[ ! -r "${smoke_script}" ]]; then
+        err "冒烟脚本不存在: ${smoke_script}"
+        return 1
+    fi
+    echo "=== 冒烟测试 (核心链路 + etcd 注册中心) ==="
+    if bash "${smoke_script}" "$@"; then
+        ok "冒烟测试: 全部通过"
+    else
+        warn "冒烟测试: 有失败项"
+        return 1
+    fi
+}
+
+# ─── Regression ──────────────────────────────────
+cmd_test_regression() {
+    local reg_script="${PROJECT_DIR}/tests/regression.sh"
+    if [[ ! -r "${reg_script}" ]]; then
+        err "回归脚本不存在: ${reg_script}"
+        return 1
+    fi
+    echo "=== 全量回归 (提交前必跑) ==="
+    if bash "${reg_script}" "$@"; then
+        ok "全量回归: 全部通过"
+    else
+        warn "全量回归: 有失败项"
+        return 1
+    fi
+}
+
 # ─── Bench ──────────────────────────────────────
 cmd_bench() {
     echo ""
@@ -363,7 +412,13 @@ case "${CMD}" in
             e2e)
                 cmd_test_e2e
                 ;;
-            bench)
+            smoke)
+                cmd_test_smoke
+                ;;
+            regression)
+                cmd_test_regression
+                ;;
+            perf|bench)
                 cmd_bench
                 ;;
             *)
@@ -385,6 +440,9 @@ case "${CMD}" in
         ;;
     status)
         cmd_status
+        ;;
+    admin)
+        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "$_ADMIN_SUB" "${@:2}"
         ;;
     clean)
         cmd_clean

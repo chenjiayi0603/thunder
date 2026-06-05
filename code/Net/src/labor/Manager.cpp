@@ -1196,6 +1196,7 @@ bool Manager::Init()
 		exit(iErrno);
 	}
 	m_iS2SListenFd = iFd;
+    int reuse = 1; setsockopt(m_iS2SListenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     if (bind(m_iS2SListenFd, &addr, sizeof(addr)) < 0)
     {
         LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
@@ -2322,9 +2323,10 @@ bool Manager::ProcessMessages(tagConnectionAttr* pConn,
         MsgHead oInMsgHead;
         if (!oInMsgHead.ParseFromArray(pConn->pRecvBuff->GetRawReadBuffer(), gc_uiMsgHeadSize))
         {
-            LOG4_ERROR("oInMsgHead.ParseFromArray() failed from fd %d, close it!", iFd);
-            DestroyConnect(conn_iter);
-            return false;
+            // #33: Worker 重启/初始化阶段管道数据可能错位, 跳 1 字节重试而非摧毁连接
+            LOG4_WARN("oInMsgHead.ParseFromArray() failed fd=%d, skip 1 byte retry", iFd);
+            pConn->pRecvBuff->SkipBytes(1);
+            continue;
         }
 
         if (pConn->pRecvBuff->ReadableBytes() < gc_uiMsgHeadSize + oInMsgHead.msgbody_len())
@@ -2339,9 +2341,9 @@ bool Manager::ProcessMessages(tagConnectionAttr* pConn,
                 oInMsgHead.msgbody_len());
         if (!bBodyOk)
         {
-            LOG4_ERROR("oInMsgBody.ParseFromArray() failed from fd %d, close it!", iFd);
-            DestroyConnect(conn_iter);
-            return false;
+            LOG4_WARN("oInMsgBody.ParseFromArray() failed fd=%d, skip message", iFd);
+            pConn->pRecvBuff->SkipBytes(gc_uiMsgHeadSize + oInMsgHead.msgbody_len());
+            continue;
         }
 
         pConn->dActiveTime = ev_now(m_loop);
@@ -2441,7 +2443,7 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 		}
 		else
 		{
-			LOG4_WARN("unknow cmd %d from worker!", oInMsgHead.cmd());
+			LOG4_TRACE("unknow cmd %d from worker (ignored)", oInMsgHead.cmd());
 		}
 	}
     return(true);

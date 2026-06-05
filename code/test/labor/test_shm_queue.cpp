@@ -14,17 +14,21 @@
 #include <unistd.h>
 #include "labor/types/ShmRingQueue.hpp"
 
+// 具名常量,替代硬编码 4096/128 (#4: 尺寸参数去重复)
+static constexpr uint32_t kSlotSize = ShmRingQueue::kDefaultSlotSize;
+static constexpr uint32_t kSlotCnt  = ShmRingQueue::kDefaultSlotCount;
+
 // ==========================================================================
 // Unit tests — single-process, multi-thread SPSC correctness
 // ==========================================================================
 
 TEST(ShmRingQueueUnit, CreateAndDestroy)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(128, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlotCnt, kSlotSize);
     ASSERT_NE(q, nullptr);
     EXPECT_EQ(q->ctrl.magic, 0x53484D51u);
-    EXPECT_EQ(q->ctrl.slot_size, 4096u);
-    EXPECT_EQ(q->ctrl.slot_count, 128u);
+    EXPECT_EQ(q->ctrl.slot_size, kSlotSize);
+    EXPECT_EQ(q->ctrl.slot_count, kSlotCnt);
     EXPECT_TRUE(q->IsEmpty());
     EXPECT_FALSE(q->IsFull());
     EXPECT_EQ(q->Count(), 0u);
@@ -33,7 +37,7 @@ TEST(ShmRingQueueUnit, CreateAndDestroy)
 
 TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(8, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     const char* msg = "hello shm";
@@ -58,7 +62,7 @@ TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
 
 TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(8, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     uint32_t cmd, seq, out_len;
@@ -72,7 +76,7 @@ TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
 TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
 {
     constexpr uint32_t kSlots = 4;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     char body[1024] = {};
@@ -92,9 +96,23 @@ TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
     ShmRingQueue::Destroy(q);
 }
 
+TEST(ShmRingQueueUnit, CreateDestroyNonDefaultSize)
+{
+    // #4 验证: 非默认尺寸 Create → Destroy 从 ctrl 读尺寸正确 munmap,不崩溃不泄漏
+    constexpr uint32_t kNonDefSlots = 16;
+    constexpr uint32_t kNonDefSize  = 2048;
+    ShmRingQueue* q = ShmRingQueue::Create(kNonDefSlots, kNonDefSize);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->ctrl.slot_count, kNonDefSlots);
+    EXPECT_EQ(q->ctrl.slot_size,  kNonDefSize);
+    EXPECT_NE(q->ctrl.slot_size,  kSlotSize);  // 证明不是默认值
+    ShmRingQueue::Destroy(q);
+}
+
 TEST(ShmRingQueueUnit, BodyTooLargeRejected)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 128);
+    constexpr uint32_t kTinySlotSize = 128;
+    ShmRingQueue* q = ShmRingQueue::Create(8, kTinySlotSize);
     ASSERT_NE(q, nullptr);
 
     char big[200] = {};
@@ -107,7 +125,7 @@ TEST(ShmRingQueueUnit, SingleProducerSingleConsumerThreaded)
 {
     constexpr uint32_t kSlots = 128;
     constexpr uint32_t kMsgs  = 100000;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     std::atomic<bool> producer_done{false};
@@ -184,8 +202,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     constexpr uint32_t kSlots = 64;
     constexpr uint32_t kMsgs  = 5000;
 
-    ShmRingQueue* q_mgr_to_wkr = ShmRingQueue::Create(kSlots, 4096);
-    ShmRingQueue* q_wkr_to_mgr = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q_mgr_to_wkr = ShmRingQueue::Create(kSlots, kSlotSize);
+    ShmRingQueue* q_wkr_to_mgr = ShmRingQueue::Create(kSlots, kSlotSize);
     int efd_mgr_to_wkr = ShmRingQueue::CreateEventFd();
     int efd_wkr_to_mgr = ShmRingQueue::CreateEventFd();
 
@@ -298,7 +316,7 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
 TEST(ShmRingQueueE2E, FallbackWhenQueueFull)
 {
     constexpr uint32_t kSlots = 2;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     char body[1024] = {};
@@ -314,12 +332,12 @@ TEST(ShmRingQueueE2E, WorkerRestartSimulation)
 {
     constexpr uint32_t kSlots = 8;
 
-    ShmRingQueue* q1 = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q1 = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q1, nullptr);
     q1->TryEnqueue(1, 1, "old", 3);
     ShmRingQueue::Destroy(q1);
 
-    ShmRingQueue* q2 = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q2 = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q2, nullptr);
     EXPECT_TRUE(q2->IsEmpty());
     EXPECT_EQ(q2->Count(), 0u);
