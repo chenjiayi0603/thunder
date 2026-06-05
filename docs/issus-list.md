@@ -105,3 +105,9 @@
 - **状态**: ✅ 已修复
 - **问题**: OnRegDone 只打 `注册成功 nodeId=247`, 缺少 node_type/ip:port/lease 上下文
 - **修复**: `<<< node_id 分配完成: 247 (type=LOGIC addr=127.0.0.1:16068 lease=...) >>>`
+
+### #33 ParseFromArray failed from fd 8 — Worker 管道数据错位
+- **文件**: `code/Net/src/labor/Manager.cpp:2325`
+- **状态**: ✅ 已修复
+- **问题**: Worker 重启/初始化时管道二进制数据可能错位, MsgHead 解析失败 → 旧代码 DestroyConnect(摧毁 Manager-Worker 连接) → 需全进程重启才恢复
+- **修复**: `LOG4_ERROR→WARN`; 不再 DestroyConnect, 改为 `SkipBytes(1)` 重试(MsgHead 失败) / `SkipBytes(header+body)` 跳过(MsgBody 失败)。逻辑:管道数据错位是瞬态的,跳字节后下次消息会对齐
