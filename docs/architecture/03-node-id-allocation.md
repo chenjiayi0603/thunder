@@ -5,12 +5,114 @@
 
 ---
 
-## 1. 设计目标
+## 1. 设计原理
 
-每个 Thunder 节点需要一个 **唯一 node_id (1-255)** 用于:
-- 路由标识(Worker 根据 node_id 建立 connection identity)
-- 槽位索引(slot/N 指向该节点的 ip:port)
-- 重启后尽量复用原 node_id(lease 未过期)
+### 为什么需要 node_id
+
+Thunder 多节点集群中,每个节点(Logic/Hello/Interface)需要全局唯一的标识符。Worker 进程根据 node_id 建立 S2S 连接的 identity(`node_type + node_id = "LOGIC.247"`),路由表用 node_id 索引目标节点的 ip:port。
+
+### 为什么用 etcd 槽位(1-255)
+
+```
+槽位 = node_id = 全局唯一序号, 1~255
+
+好处:
+  · 自增序号 → Worker identity 简短, 不需要 UUID
+  · etcd 原子 txn → 并发抢 slot 不会碰撞
+  · lease 绑定 → 崩溃自动回收(lease TTL=10s 过期,etcd 删 key)
+  · 重启复用 → lease 未过期时直接用原 node_id
+  · 无需中心发号器 → Center 可彻底下线
+```
+
+### 为什么用 hash 起始 + 顺序扫描
+
+```
+hash(ip:port) % 255 + 1 → 起始槽位
+
+好处:
+  · 不同 ip:port 散布到不同起始位 → 降低同时注册的碰撞概率
+  · 简单字节累加 → 零内存, 纯计算
+  · 顺序扫描 → 最坏 O(255), 但实际集群只有 3~10 个节点, 平均 O(1)
+```
+
+### 为什么用 lease 绑定而非永久占用
+
+```
+PUT slot/N + PUT registry/ip:port → 同时绑定 lease(10s TTL)
+KeepAlive 每 3s 续租一次
+
+好处:
+  · 进程崩溃 → lease 不续 → etcd 10s 后自动删 key → slot 释放
+  · 重启回来 → lease 还没过期 → Fresh路径 直接复用原 node_id
+  · 重启晚了 → lease 已过期 → Claim路径 重新抢占(可能换号)
+```
+
+---
+
+## 2. 实现过程
+
+### 2.1 初始化: 异步申请租约
+
+```
+Manager::Run()
+  └→ EtcdCenterConnector::Init()
+       ├→ AsyncLeaseGrant(TTL=10s)   // fire-and-forget, 不阻塞循环
+       ├→ StartKeepAliveTimer(3s)    // 启动续租定时器
+       └→ StartWatch()               // 启动 etcd watch 长连接
+```
+
+节点启动时不等租约——`AsyncLeaseGrant` 发出 HTTP 请求后立即返回,callback 中设置 `m_leaseId`。若 etcd 暂不可达,`OnKeepAliveTimer` 会在 3s 后重试补领。
+
+### 2.2 注册流程: 三层决策
+
+```
+Manager 定时心跳 → ReportNodeStatus(m_nodeIp, m_nodePort, m_nodeType)
+  └→ DoRegister(ip, port, type)
+       │
+       ├─ L1 确保 lease ──────────────────► AsyncLeaseGrant → m_leaseId
+       │   (OnRegEnsureLease)                 若 m_leaseId==0 → 补领
+       │                                       成功则继续,L2; 失败则 OnRegDone(false)
+       │
+       ├─ L2 查 registry ─────────────────► AsyncQueryRegistry(/thunder/registry/ip:port)
+       │   (OnRegQuery)                       etcd range 查询该 ip:port 是否已有注册键
+       │    │
+       │    ├─ Fresh: 键存在 + lease 匹配当前 → m_nodeId=原值, OnRegDone(true)
+       │    │   场景: 重启且在 TTL 内回来
+       │    │
+       │    ├─ Rebind: 键存在 + lease 不匹配 → AsyncRebindRegistration
+       │    │   场景: 重启, etcd 里残留旧进程的注册键(绑在旧 lease)
+       │    │   动作: PUT slot/N + PUT registry/ip:port, 绑定【当前新 lease】
+       │    │
+       │    └─ Claim: 键不存在             → L3 槽位扫描
+       │        场景: 全新节点或旧 lease 已过期被 etcd 删除
+       │
+       └─ L3 槽位扫描 ─────────────────────► 从 hash(ip:port)%255+1 开始,顺序找空槽
+            (OnRegScan)                      每个槽位: AsyncTryClaimSlot(txn)
+                 │
+                 └→ etcd txn: compare slot/N 不存在 → PUT slot+registry → OK
+                      OK  → m_nodeId=N, OnRegDone(true)
+                      占用 → N++, 继续扫描(最坏 255 次)
+```
+
+### 2.3 续租: KeepAlive 定时器
+
+```
+OnKeepAliveTimer() — 每 3s 触发一次
+  ├─ m_leaseId==0         → 补领 lease → DoRegister  # etcd 恢复后自愈
+  ├─ !m_registered        → 续租 → 成功恢复; 连续失败 10 次 → 重新注册
+  └─ 正常                  → 续租 → 失败 → ConnectionLost → 重新注册
+```
+
+### 2.4 完成: 路由下发
+
+```
+OnRegDone(true)
+  → Emit(CenterEventType::Registered, node_id=m_nodeId)
+  → Manager::OnCenterEvent
+       → m_uiNodeId = node_id         // Worker 建 identity
+       → route mirror → shm 写入      // 跨节点 S2S 路由表更新
+       → Worker 读取 shm → 建立 S2S 连接
+```
 
 ---
 
@@ -112,7 +214,28 @@ return "所有槽位已满"
 
 **一致性约束**: slot/N 和 registry/ip:port 的 lease 必须相同(同一个 txn 写入); slot/N 的 value = registry 的 key 后缀(ip:port); registry 的 node_id = N。
 
-### 6.1 操作指令
+### 6.1 客户端查询指令
+
+```bash
+# ① 查看所有在线节点(node_id/type/ip/port/lease)
+python3 deploy/scripts/admin.py nodes
+
+# ② 查看路由表(哪个 type 对应哪个 node_id)
+python3 deploy/scripts/admin.py routes
+
+# ③ 查看 etcd 注册表原始数据
+./tests/logs.sh --etcd
+
+# ④ 从业务日志查看 node_id 分配日志
+./tests/logs.sh --logic 1 "node_id 分配"
+# 输出: <<< node_id 分配完成: 247 (type=LOGIC addr=127.0.0.1:16068 lease=...) >>>
+
+# ⑤ 冒烟测试一键验证
+./tests/test_smoke.sh --etcd          # 只看 etcd 段
+./tests/test_smoke.sh                 # 全量 12 项
+```
+
+### 6.2 操作指令(底层 curl)
 
 ```bash
 # 查看全量注册表
@@ -130,7 +253,7 @@ python3 deploy/scripts/admin.py nodes
 ./tests/logs.sh --etcd
 ```
 
-### 6.2 代码位置
+### 6.3 代码位置
 
 | 操作 | 文件 | 行 |
 |------|------|----|
