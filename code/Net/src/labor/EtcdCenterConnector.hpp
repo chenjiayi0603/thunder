@@ -33,7 +33,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -45,14 +47,17 @@
 
 #include <ev.h>
 
+namespace net { class EtcdHttpConn; }
+
 namespace net
 {
 
 /**
- * @brief CenterConnector 的 etcd 后端（Phase 1）
+ * @brief CenterConnector 的 etcd 后端
  *
- * 通过 etcd HTTP v3 gateway 实现节点注册（租约 + 槽位抢占）与续期。
- * 所有 etcd 请求在 libev 主线程同步执行（curl 阻塞调用，TTL=10s，超时<1s）。
+ * 运行在 Manager 进程,在 Manager libev 主循环上自管一条到 etcd 的异步 HTTP 连接
+ * (EtcdHttpConn,框架 HttpCodec 编解码),实现节点注册(租约 + 槽位抢占)与续期。
+ * 无独立线程,无 libcurl 出站请求(仅 watch snapshot 遗留少量 curl,Phase C 替换)。
  */
 class EtcdCenterConnector : public CenterConnector
 {
@@ -145,14 +150,6 @@ private:
     // ---- 注册核心逻辑 ----
 
     /**
-     * @brief 注册算法入口：幂等查询 → 槽位占位 → emit Registered
-     * @param ip       节点 IP
-     * @param port     节点端口
-     * @param nodeType 节点类型
-     */
-    void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
-
-    /**
      * @brief 查询 /v3/kv/range，返回已存在的 node_id（0 表示不存在）
      * @param registryKey  etcd key，如 /thunder/registry/ip:port
      * @param outNodeId    成功时写入 node_id
@@ -177,12 +174,7 @@ private:
     void SelfAuditRegistry();
 
     /**
-     * @brief 构建单次槽位抢占的 txn JSON 字符串
-     * @param slot         槽位序号 [1..255]
-     * @param slotKey      /thunder/slot/<slot>
-     * @param registryKey  /thunder/registry/ip:port
-     * @param ipPort       "ip:port" 字符串（写入 slot value）
-     * @return JSON 字符串，供 EtcdPost("/v3/kv/txn") 使用
+     * @brief 构建单次槽位抢占的 txn JSON 字符串(纯逻辑,无 I/O)
      */
     std::string BuildSlotTxn(int slot,
                               const std::string& slotKey,
@@ -190,19 +182,32 @@ private:
                               const std::string& ipPort,
                               const std::string& nodeType);
 
-    /**
-     * @brief 尝试原子占位单个槽位
-     * @param slot         槽位序号
-     * @param slotKey      /thunder/slot/<slot>
-     * @param registryKey  /thunder/registry/ip:port
-     * @param ipPort       "ip:port" 字符串
-     * @return true 表示占位成功（txn succeeded）
-     */
-    bool TryClaimSlot(int slot,
-                      const std::string& slotKey,
-                      const std::string& registryKey,
-                      const std::string& ipPort,
-                      const std::string& nodeType);
+    // ---- 异步 etcd 操作原语(Phase B: 从 curl 同步→异步回调, 走 EtcdHttpConn) ----
+
+    void AsyncLeaseGrant(std::function<void(bool ok, int64_t leaseId)> cb);
+    void AsyncKeepAlive(std::function<void(bool ok)> cb);
+    void AsyncQueryRegistry(const std::string& registryKey,
+                            std::function<void(bool found, uint32_t nodeId, int64_t lease)> cb);
+    void AsyncTryClaimSlot(int slot, const std::string& slotKey,
+                           const std::string& registryKey,
+                           const std::string& ipPort, const std::string& nodeType,
+                           std::function<void(bool ok)> cb);
+    void AsyncRebindRegistration(uint32_t nodeId, const std::string& registryKey,
+                                 const std::string& ipPort, const std::string& nodeType,
+                                 std::function<void(bool ok)> cb);
+
+    // ---- 异步注册延续链(替代原 DoRegister 同步流程) ----
+
+    /// 入口:确保有 lease(L1) → 查 registry(L2) → 决策 Fresh/Rebind/Claim(L3)
+    void DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType);
+    /// L1: 无 lease 则补领
+    void OnRegEnsureLease();
+    /// L2: 查注册键,决策
+    void OnRegQuery();
+    /// L3: 槽位扫描
+    void OnRegScan();
+    /// 完成注册:设置状态 + emit Registered / 失败
+    void OnRegDone(bool ok, const std::string& errmsg);
 
     // ---- KeepAlive 定时器 ----
 
@@ -289,6 +294,10 @@ private:
     log4cplus::Logger   m_logger          = log4cplus::Logger::getInstance("etcd");
 
     std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
+
+    /// 异步 HTTP 客户端(Phase B: 替代 curl 短请求; Phase C: watch 也迁过来)
+    std::unique_ptr<EtcdHttpConn> m_http;
+
     int64_t             m_leaseId         = 0;
     uint32_t            m_nodeId          = 0;
     std::string         m_nodeIp;
@@ -296,6 +305,10 @@ private:
     std::string         m_nodeType;
     uint32_t            m_workerNum       = 0;   ///< 本节点 worker 数, 注册时写入 registry value 供路由建 identify
     bool                m_registered            = false;
+
+    // 异步注册延续链上下文 (issus #24 Phase B)
+    bool   m_regInProgress = false;    ///< 防止 re-entrancy(定时器/心跳同时触发注册)
+    int    m_regSlot       = 0;        ///< 槽位扫描位置(1..255; 0=未开始)
 
     /// 发现到的全部在线节点 ip:port → registry value(JSON)。
     /// 仅 libev 线程(OnWatchAsync)访问, 无需锁。用于每次变更发"全量"路由快照(issus #9)。

@@ -16,6 +16,7 @@
  *         需要 std::stoll / std::stoi 转换。
  ******************************************************************************/
 #include "EtcdCenterConnector.hpp"
+#include "EtcdHttpConn.hpp"
 #include "EtcdParse.hpp"
 
 #include <algorithm>
@@ -130,12 +131,33 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
 
     ETCD_LOG_INFO("EtcdCenterConnector::Init — endpoint=" << m_endpoint);
 
-    // 申请租约
-    if (!LeaseGrant())
+    // 解析 host:port, 创建异步 HTTP 连接(在 m_loop 上, 用框架 HttpCodec)
     {
-        ETCD_LOG_ERROR("EtcdCenterConnector::Init — LeaseGrant 失败");
-        return false;
+        auto protoEnd = m_endpoint.find("://");
+        std::string hostPort = (protoEnd != std::string::npos)
+                                   ? m_endpoint.substr(protoEnd + 3) : m_endpoint;
+        auto colon = hostPort.rfind(':');
+        if (colon == std::string::npos)
+        {
+            ETCD_LOG_ERROR("EtcdCenterConnector::Init — 端点格式错误: " << m_endpoint);
+            return false;
+        }
+        std::string host = hostPort.substr(0, colon);
+        int port = 0;
+        try { port = std::stoi(hostPort.substr(colon + 1)); } catch (...) {}
+        if (port <= 0)
+        {
+            ETCD_LOG_ERROR("EtcdCenterConnector::Init — 端口解析失败: " << m_endpoint);
+            return false;
+        }
+        m_http = std::make_unique<EtcdHttpConn>(m_loop, host, port, m_logger);
     }
+
+    // 租约申请改为 fire-and-forget: queue 异步请求, 不阻塞 Init。
+    // 若 etcd 即时可达则秒级拿到 lease; 若不可达, OnKeepAliveTimer 会补领。
+    AsyncLeaseGrant([this](bool ok, int64_t leaseId) {
+        if (ok) m_leaseId = leaseId;
+    });
 
     // 启动 KeepAlive 定时器（每 kKeepAliveInterval 秒续租，值成员无需 new）
     m_keepAliveTimer.data = static_cast<void*>(this);
@@ -180,14 +202,17 @@ void EtcdCenterConnector::Destroy()
         m_watchAsyncStarted = false;
     }
 
-    // 撤销租约（会级联删除所有关联的 key）
+    // 撤销租约 fire-and-forget（不阻塞;lease 自身 TTL 到期也会清理）
     if (m_leaseId != 0)
     {
-        LeaseRevoke();
+        m_http->Post("/v3/lease/revoke",
+                      R"({"ID":")" + std::to_string(m_leaseId) + R"("})",
+                      [](bool, int, const std::string&){});
         m_leaseId    = 0;
         m_registered = false;
     }
 
+    m_http->Close();
     ETCD_LOG_INFO("EtcdCenterConnector::Destroy — 完成");
 }
 
@@ -229,16 +254,10 @@ bool EtcdCenterConnector::ReportNodeStatus(const std::string& node_report,
     }
     else
     {
-        // 心跳：仅在已注册且 lease 有效时续租
+        // 心跳：已注册且 lease 有效 → 异步续租, 结果由定时器汇总
         if (m_registered && m_leaseId != 0)
         {
-            if (!KeepAlive())
-            {
-                ETCD_LOG_WARN("EtcdCenterConnector::ReportNodeStatus — 心跳续租失败");
-                Emit(CenterEventType::ConnectionLost);
-                return false;
-            }
-            ETCD_LOG_DEBUG("EtcdCenterConnector::ReportNodeStatus — 心跳成功 nodeId=" << m_nodeId);
+            AsyncKeepAlive([](bool){});
         }
     }
 
@@ -325,179 +344,82 @@ std::string EtcdCenterConnector::EtcdPost(const std::string& path,
     return response;
 }
 
-bool EtcdCenterConnector::LeaseGrant()
+void EtcdCenterConnector::AsyncLeaseGrant(std::function<void(bool, int64_t)> cb)
 {
-    // 构建请求体 {"TTL": 10}
     util::CJsonObject oReq;
     oReq.Add("TTL", static_cast<int32_t>(kLeaseTTL));
-
-    std::string resp = EtcdPost("/v3/lease/grant", oReq.ToString());
-    if (resp.empty())
-    {
-        ETCD_LOG_ERROR("LeaseGrant — HTTP 请求失败");
-        return false;
-    }
-
-    util::CJsonObject oResp;
-    if (!oResp.Parse(resp))
-    {
-        ETCD_LOG_ERROR("LeaseGrant — 响应 JSON 解析失败: " << resp);
-        return false;
-    }
-
-    // etcd gateway 返回 ID 为字符串形式的 int64
-    std::string leaseIdStr;
-    if (!oResp.Get("ID", leaseIdStr) || leaseIdStr.empty())
-    {
-        ETCD_LOG_ERROR("LeaseGrant — 响应中无 ID 字段: " << resp);
-        return false;
-    }
-
-    try
-    {
-        m_leaseId = std::stoll(leaseIdStr);
-    }
-    catch (const std::exception& e)
-    {
-        ETCD_LOG_ERROR("LeaseGrant — ID 转换失败: " << leaseIdStr << " err=" << e.what());
-        return false;
-    }
-
-    ETCD_LOG_INFO("LeaseGrant — leaseId=" << m_leaseId);
-    return true;
+    m_http->Post("/v3/lease/grant", oReq.ToString(),
+        [this, cb = std::move(cb)](bool ok, int, const std::string& resp)
+        {
+            if (!ok || resp.empty()) { ETCD_LOG_ERROR("AsyncLeaseGrant — 请求失败"); cb(false, 0); return; }
+            util::CJsonObject o;
+            std::string idStr;
+            if (!o.Parse(resp) || !o.Get("ID", idStr) || idStr.empty())
+            { ETCD_LOG_ERROR("AsyncLeaseGrant — 解析失败: " << resp); cb(false, 0); return; }
+            try { int64_t id = std::stoll(idStr); ETCD_LOG_INFO("AsyncLeaseGrant — ok leaseId=" << id); cb(true, id); }
+            catch (...) { cb(false, 0); }
+        });
 }
 
-bool EtcdCenterConnector::KeepAlive()
+void EtcdCenterConnector::AsyncKeepAlive(std::function<void(bool)> cb)
 {
-    if (m_leaseId == 0) return false;
-
-    // {"ID": "<leaseId>"}
-    util::CJsonObject oReq;
-    oReq.Add("ID", std::to_string(m_leaseId));
-
-    std::string resp = EtcdPost("/v3/lease/keepalive", oReq.ToString());
-    if (resp.empty())
-    {
-        ETCD_LOG_WARN("KeepAlive — HTTP 请求失败 leaseId=" << m_leaseId);
-        ++m_metricKeepAliveFail;
-        return false;
-    }
-
-    // 响应格式: {"result":{"ID":"...","TTL":"10"}}
-    util::CJsonObject oResp;
-    if (!oResp.Parse(resp))
-    {
-        ETCD_LOG_WARN("KeepAlive — 响应解析失败: " << resp);
-        ++m_metricKeepAliveFail;
-        return false;
-    }
-
-    util::CJsonObject oResult;
-    if (!oResp.Get("result", oResult))
-    {
-        ETCD_LOG_WARN("KeepAlive — 响应无 result 字段: " << resp);
-        ++m_metricKeepAliveFail;
-        return false;
-    }
-
-    // 必须校验 TTL > 0：etcd 对【已过期/不存在】的 lease 也回 200，但 TTL=0。
-    // 旧代码只看 result 存在 → 把死租约误判为续租成功，掩盖注册丢失 (issus #19)。
-    int64_t ttl = 0;
-    if (!etcd_parse::GetGatewayInt64(oResult, "TTL", ttl) || ttl <= 0)
-    {
-        ETCD_LOG_WARN("KeepAlive — 租约已失效(TTL=" << ttl << ") leaseId=" << m_leaseId);
-        ++m_metricKeepAliveFail;
-        return false;
-    }
-
-    ++m_metricKeepAliveOk;
-    ETCD_LOG_DEBUG("KeepAlive — 成功 leaseId=" << m_leaseId << " ttl=" << ttl);
-    return true;
+    if (m_leaseId == 0) { if (cb) cb(false); return; }
+    m_http->Post("/v3/lease/keepalive", R"({"ID":")" + std::to_string(m_leaseId) + R"("})",
+        [this, cb = std::move(cb)](bool ok, int, const std::string& resp)
+        {
+            util::CJsonObject o, r;
+            int64_t ttl = 0;
+            if (!ok || resp.empty() || !o.Parse(resp) || !o.Get("result", r)
+                || !etcd_parse::GetGatewayInt64(r, "TTL", ttl) || ttl <= 0)
+            { ETCD_LOG_WARN("AsyncKeepAlive — 失败 leaseId=" << m_leaseId); ++m_metricKeepAliveFail; if (cb) cb(false); return; }
+            ++m_metricKeepAliveOk;
+            ETCD_LOG_DEBUG("AsyncKeepAlive — ok leaseId=" << m_leaseId << " ttl=" << ttl);
+            if (cb) cb(true);
+        });
 }
 
 void EtcdCenterConnector::LeaseRevoke()
 {
     if (m_leaseId == 0) return;
-
-    util::CJsonObject oReq;
-    oReq.Add("ID", std::to_string(m_leaseId));
-
-    std::string resp = EtcdPost("/v3/lease/revoke", oReq.ToString());
-    if (resp.empty())
-    {
-        ETCD_LOG_WARN("LeaseRevoke — 失败（忽略），leaseId=" << m_leaseId);
-    }
-    else
-    {
-        ETCD_LOG_INFO("LeaseRevoke — 成功 leaseId=" << m_leaseId);
-    }
+    m_http->Post("/v3/lease/revoke", R"({"ID":")" + std::to_string(m_leaseId) + R"("})",
+        [this](bool, int, const std::string&){ /* fire-and-forget */ });
 }
 
 // ============================================================
-// 注册核心逻辑
+// 异步 etcd 操作原语 + 延续链注册 (Phase B)
 // ============================================================
 
-bool EtcdCenterConnector::QueryRegistry(const std::string& registryKey,
-                                         uint32_t& outNodeId, int64_t& outLease)
+void EtcdCenterConnector::AsyncQueryRegistry(const std::string& registryKey,
+    std::function<void(bool, uint32_t, int64_t)> cb)
 {
-    outNodeId = 0;
-    outLease  = 0;
-
     util::CJsonObject oReq;
     oReq.Add("key", B64(registryKey));
-
-    const std::string resp = EtcdPost("/v3/kv/range", oReq.ToString());
-    if (resp.empty()) return false;
-
-    util::CJsonObject oResp;
-    if (!oResp.Parse(resp)) return false;
-
-    // count 字段是字符串形式，如 "1"
-    std::string countStr;
-    int count = 0;
-    if (oResp.Get("count", countStr) && !countStr.empty())
-    {
-        try { count = std::stoi(countStr); }
-        catch (...) { count = 0; }
-    }
-    if (count <= 0) return false;
-
-    util::CJsonObject oKvs;
-    if (!oResp.Get("kvs", oKvs) || !oKvs.IsArray()) return false;
-
-    util::CJsonObject oKv;
-    if (!oKvs.Get(0, oKv)) return false;
-
-    // 取出该 key 绑定的 lease（gateway int64 字符串，无租约为 "0"/缺省）。
-    // issus #19 关键：据此判断键是否还绑在【当前】租约上。
-    etcd_parse::GetGatewayInt64(oKv, "lease", outLease);
-
-    std::string valueB64;
-    if (!oKv.Get("value", valueB64)) return false;
-
-    const std::string valueStr = B64Dec(valueB64);
-    // registry value 是 JSON 格式：{"node_id":7, "node_type":"HELLO", ...}
-    util::CJsonObject oVal;
-    if (oVal.Parse(valueStr))
-    {
-        int32_t nid = 0;
-        if (oVal.Get("node_id", nid) && nid > 0 && nid <= static_cast<int32_t>(kMaxSlot))
+    m_http->Post("/v3/kv/range", oReq.ToString(),
+        [this, registryKey, cb = std::move(cb)](bool ok, int, const std::string& resp)
         {
-            outNodeId = static_cast<uint32_t>(nid);
-            return true;
-        }
-    }
-    // 兼容旧格式：value 是纯数字字符串
-    try
-    {
-        outNodeId = static_cast<uint32_t>(std::stoul(valueStr));
-        return true;
-    }
-    catch (...)
-    {
-        ETCD_LOG_WARN("QueryRegistry — value 解析失败: " << valueStr);
-        return false;
-    }
+            if (!ok || resp.empty()) { cb(false, 0, 0); return; }
+            util::CJsonObject o;
+            if (!o.Parse(resp)) { cb(false, 0, 0); return; }
+            int64_t count = 0;
+            if (!etcd_parse::GetGatewayInt64(o, "count", count) || count <= 0) { cb(false, 0, 0); return; }
+            util::CJsonObject kvs, kv;
+            if (!o.Get("kvs", kvs) || !kvs.IsArray() || !kvs.Get(0, kv)) { cb(false, 0, 0); return; }
+            int64_t lease = 0; etcd_parse::GetGatewayInt64(kv, "lease", lease);
+            std::string vB64; uint32_t nid = 0;
+            if (kv.Get("value", vB64))
+            {
+                const std::string valueStr = B64Dec(vB64);
+                util::CJsonObject val;
+                if (val.Parse(valueStr))
+                {
+                    int64_t id = 0;
+                    if (etcd_parse::GetGatewayInt64(val, "node_id", id) && id > 0 && id <= kMaxSlot)
+                        nid = static_cast<uint32_t>(id);
+                }
+                if (nid == 0) { try { nid = static_cast<uint32_t>(std::stoul(valueStr)); } catch (...) {} }
+            }
+            cb(true, nid, lease);
+        });
 }
 
 // registry value 的统一构造（slot 抢占与重绑共用，避免格式漂移；watch 依赖此格式解析）。
@@ -566,194 +488,170 @@ std::string EtcdCenterConnector::BuildSlotTxn(int slot,
     return oTxn.ToString();
 }
 
-bool EtcdCenterConnector::TryClaimSlot(int slot,
-                                        const std::string& slotKey,
-                                        const std::string& registryKey,
-                                        const std::string& ipPort,
-                                        const std::string& nodeType)
+void EtcdCenterConnector::AsyncTryClaimSlot(int slot, const std::string& slotKey,
+    const std::string& registryKey, const std::string& ipPort, const std::string& nodeType,
+    std::function<void(bool)> cb)
 {
     const std::string txnBody = BuildSlotTxn(slot, slotKey, registryKey, ipPort, nodeType);
-    const std::string resp    = EtcdPost("/v3/kv/txn", txnBody);
-    if (resp.empty())
-    {
-        ETCD_LOG_WARN("TryClaimSlot — txn HTTP 失败 slot=" << slot);
-        return false;
-    }
-
-    util::CJsonObject oResp;
-    if (!oResp.Parse(resp))
-    {
-        ETCD_LOG_WARN("TryClaimSlot — txn 响应解析失败: " << resp);
-        return false;
-    }
-
-    bool succeeded = false;
-    oResp.Get("succeeded", succeeded);
-    return succeeded;
+    m_http->Post("/v3/kv/txn", txnBody,
+        [this, slot, cb = std::move(cb)](bool ok, int, const std::string& resp)
+        {
+            if (!ok || resp.empty()) { ETCD_LOG_WARN("AsyncTryClaimSlot — HTTP 失败 slot=" << slot); cb(false); return; }
+            util::CJsonObject o; bool succ = false;
+            if (o.Parse(resp)) o.Get("succeeded", succ);
+            cb(succ);
+        });
 }
 
-void EtcdCenterConnector::DoRegister(const std::string& ip,
-                                      uint32_t port,
-                                      const std::string& nodeType)
+// ============================================================
+// 异步注册延续链 (issus #24 Phase B)
+// DoRegister → OnRegEnsureLease → OnRegQuery → Fresh/Rebind/OnRegScan → OnRegDone
+// ============================================================
+
+void EtcdCenterConnector::DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType)
 {
-    // 必须持有有效租约才能写注册键，否则写出 lease=0 的孤儿键：永不过期、跨重启累积
-    // 占满槽位 → "所有槽位已满" → 路由失效。etcd 重启瞬间 Init 的 LeaseGrant 可能失败
-    // 导致 m_leaseId=0，这里兜底重试一次；仍失败则放弃本轮，交由 KeepAlive 定时器重试。
-    if (m_leaseId == 0 && !LeaseGrant())
-    {
-        ETCD_LOG_ERROR("DoRegister — 无有效 lease 且补领失败，放弃本次注册（待定时器重试）");
-        return;
-    }
+    if (m_regInProgress) { ETCD_LOG_DEBUG("DoRegister — 已有注册进行中,跳过"); return; }
+    m_regInProgress = true;
+    m_regSlot       = 0;
+    // 参数已在 ReportNodeStatus 存入 m_nodeIp/m_nodePort/m_nodeType, 此处仅防遗漏
+    if (m_nodeIp.empty()) { m_nodeIp = ip; m_nodePort = port; m_nodeType = nodeType; }
+    OnRegEnsureLease();
+}
 
-    const std::string ipPort      = ip + ":" + std::to_string(port);
+void EtcdCenterConnector::OnRegEnsureLease()
+{
+    if (m_leaseId != 0) { OnRegQuery(); return; }
+    ETCD_LOG_INFO("OnRegEnsureLease — 无 lease, 补领...");
+    AsyncLeaseGrant([this](bool ok, int64_t id) {
+        if (!ok) { OnRegDone(false, "lease grant 失败"); return; }
+        m_leaseId = id;
+        OnRegQuery();
+    });
+}
+
+void EtcdCenterConnector::OnRegQuery()
+{
+    const std::string ipPort      = m_nodeIp + ":" + std::to_string(m_nodePort);
     const std::string registryKey = std::string(kRegistryPrefix) + ipPort;
+    ETCD_LOG_DEBUG("OnRegQuery — key=" << registryKey);
+    AsyncQueryRegistry(registryKey, [this, ipPort, registryKey](bool found, uint32_t nid, int64_t lease) {
+        const auto action = etcd_parse::DecideRegAction(found, lease, m_leaseId);
+        if (action == etcd_parse::RegAction::Fresh)
+        {
+            m_nodeId = nid;
+            AsyncKeepAlive([this, nid](bool ok) {
+                (void)ok; // 续租一次, 失败不阻塞注册完成
+                m_registered = true;
+                OnRegDone(true, "");
+            });
+        }
+        else if (action == etcd_parse::RegAction::Rebind)
+        {
+            ETCD_LOG_INFO("OnRegQuery — 旧租约残留(lease=" << lease << "), 重绑 nid=" << nid);
+            m_nodeId = nid;
+            AsyncRebindRegistration(nid, registryKey, ipPort, m_nodeType,
+                [this](bool ok) {
+                    if (ok) { ++m_metricRegistryRebind; m_registered = true; OnRegDone(true, ""); }
+                    else { ETCD_LOG_WARN("OnRegQuery — 重绑失败, 回退槽位抢占"); OnRegScan(); }
+                });
+        }
+        else { OnRegScan(); }
+    });
+}
 
-    // ---- Step 1: 幂等查询 + 租约归属判定（issus #19） ----
-    // 老 bug：只要 registry/ip:port 存在就当"已注册"返回，不管它绑在哪个租约。
-    // 重启换新租约后，etcd 里残留的是【旧租约】绑的键；旧租约一过期 etcd 就删键，
-    // 而本进程 m_registered=true 永不重注册 → 注册中心永久为空。
-    // 正解：键绑在当前租约才算 Fresh；绑在别的(旧/失效)租约必须 Rebind 到当前租约。
-    uint32_t existingNodeId = 0;
-    int64_t  existingLease  = 0;
-    const bool found = QueryRegistry(registryKey, existingNodeId, existingLease);
-    const auto action = etcd_parse::DecideRegAction(found, existingLease, m_leaseId);
-
-    if (action == etcd_parse::RegAction::Fresh)
+void EtcdCenterConnector::OnRegScan()
+{
+    const std::string ipPort = m_nodeIp + ":" + std::to_string(m_nodePort);
+    // 计算起始槽位(首次进入)
+    if (m_regSlot == 0)
     {
-        m_nodeId     = existingNodeId;
-        m_registered = true;
-        KeepAlive();  // 续租一次，确保租约新鲜
-        ETCD_LOG_INFO("DoRegister — 已注册(幂等,租约一致)，续期 nodeId=" << m_nodeId
-                      << " lease=" << m_leaseId);
-        CenterEvent ev;
-        ev.node_id = m_nodeId;
-        Emit(CenterEventType::Registered, std::move(ev));
+        uint32_t hashVal = 0;
+        for (unsigned char c : ipPort) hashVal += c;
+        m_regSlot = static_cast<int>(hashVal % kMaxSlot) + 1;
+    }
+    if (m_regSlot > static_cast<int>(kMaxSlot))
+    {
+        OnRegDone(false, "所有槽位已满(max=" + std::to_string(kMaxSlot) + ")");
         return;
     }
-    if (action == etcd_parse::RegAction::Rebind)
-    {
-        ETCD_LOG_WARN("DoRegister — 注册键残留在旧租约(existingLease=" << existingLease
-                      << " != 当前 lease=" << m_leaseId << ")，重绑到当前租约 nodeId="
-                      << existingNodeId);
-        m_nodeId = existingNodeId;
-        if (RebindRegistration(existingNodeId, registryKey, ipPort, nodeType))
-        {
-            m_registered = true;
-            ++m_metricRegistryRebind;
-            CenterEvent ev;
-            ev.node_id = m_nodeId;
-            Emit(CenterEventType::Registered, std::move(ev));
-            return;
-        }
-        ETCD_LOG_ERROR("DoRegister — 重绑失败，回退到槽位抢占");
-        // 重绑失败则继续走 Step 2 抢占（兜底）
-    }
+    const int         slotIdx = m_regSlot;
+    const std::string slotKey = std::string(kSlotPrefix) + std::to_string(slotIdx);
+    const std::string regKey  = std::string(kRegistryPrefix) + ipPort;
+    ETCD_LOG_DEBUG("OnRegScan — slot=" << slotIdx);
+    AsyncTryClaimSlot(slotIdx, slotKey, regKey, ipPort, m_nodeType,
+        [this, slotIdx, slotKey, regKey](bool ok) {
+            if (ok) { m_nodeId = static_cast<uint32_t>(slotIdx); m_registered = true; OnRegDone(true, ""); }
+            else { ++m_regSlot; OnRegScan(); }
+        });
+}
 
-    // ---- Step 2: 抢槽位 —— 从 hash(ip:port)%255+1 开始顺序扫描 ----
-    // 简单哈希：对 ip+port 字符串按字节累加
-    uint32_t hashVal = 0;
-    for (unsigned char c : ipPort) hashVal += c;
-    const int startSlot = static_cast<int>(hashVal % kMaxSlot) + 1;  // [1..255]
-
-    for (uint32_t loop = 0; loop < kMaxSlot; ++loop)
-    {
-        const int slotIdx = static_cast<int>((static_cast<uint32_t>(startSlot - 1) + loop) % kMaxSlot) + 1;
-        const std::string slotKey = std::string(kSlotPrefix) + std::to_string(slotIdx);
-
-        if (TryClaimSlot(slotIdx, slotKey, registryKey, ipPort, nodeType))
-        {
-            m_nodeId     = static_cast<uint32_t>(slotIdx);
-            m_registered = true;
-            ETCD_LOG_INFO("DoRegister — 注册成功 nodeId=" << m_nodeId
-                          << " slot=" << slotKey
-                          << " registryKey=" << registryKey);
-            CenterEvent ev;
-            ev.node_id = m_nodeId;
-            Emit(CenterEventType::Registered, std::move(ev));
-            return;
-        }
-        ETCD_LOG_DEBUG("DoRegister — slot=" << slotIdx << " 已占用，尝试下一个");
-    }
-
-    // 所有槽位已满
-    ETCD_LOG_ERROR("DoRegister — 所有槽位已满（max=" << kMaxSlot << "）");
+void EtcdCenterConnector::OnRegDone(bool ok, const std::string& errmsg)
+{
+    m_regInProgress = false;
     CenterEvent ev;
-    ev.errcode = 1;
-    ev.errmsg  = "no slot available";
+    if (ok)
+    {
+        ev.node_id = m_nodeId;
+        ETCD_LOG_INFO("OnRegDone — 注册成功 nodeId=" << m_nodeId);
+    }
+    else
+    {
+        ev.errcode = 1; ev.errmsg = errmsg;
+        ETCD_LOG_ERROR("OnRegDone — 注册失败: " << errmsg);
+    }
     Emit(CenterEventType::Registered, std::move(ev));
 }
 
-bool EtcdCenterConnector::RebindRegistration(uint32_t nodeId,
-                                             const std::string& registryKey,
-                                             const std::string& ipPort,
-                                             const std::string& nodeType)
+void EtcdCenterConnector::AsyncRebindRegistration(uint32_t nodeId,
+                                                   const std::string& registryKey,
+                                                   const std::string& ipPort,
+                                                   const std::string& nodeType,
+                                                   std::function<void(bool)> cb)
 {
     if (m_leaseId == 0)
     {
-        ETCD_LOG_ERROR("RebindRegistration — 当前无 lease，无法重绑");
-        return false;
+        ETCD_LOG_ERROR("AsyncRebindRegistration — 当前无 lease");
+        if (cb) cb(false); return;
     }
     const std::string slotKey = std::string(kSlotPrefix) + std::to_string(nodeId);
-
-    // 无条件 PUT，把 key 重新绑定到【当前】m_leaseId（PUT 带 lease 会覆盖旧的 lease 绑定）。
-    auto putKv = [&](const std::string& key, const std::string& val) -> bool {
+    const std::string regValue = BuildRegistryValueJson(static_cast<int>(nodeId), ipPort,
+                                                        nodeType, m_workerNum);
+    // 串行 PUT slot → PUT registry
+    auto putKv = [&](const std::string& key, const std::string& val,
+                     std::function<void(bool)> next) {
         util::CJsonObject o;
         o.Add("key",   B64(key));
         o.Add("value", B64(val));
         o.Add("lease", std::to_string(m_leaseId));
-        return !EtcdPost("/v3/kv/put", o.ToString()).empty();
+        m_http->Post("/v3/kv/put", o.ToString(),
+            [key, next = std::move(next)](bool ok, int, const std::string&) {
+                if (next) next(ok);
+            });
     };
-
-    if (!putKv(slotKey, ipPort))
-    {
-        ETCD_LOG_ERROR("RebindRegistration — slot PUT 失败 slotKey=" << slotKey);
-        return false;
-    }
-    const std::string regValue = BuildRegistryValueJson(static_cast<int>(nodeId), ipPort,
-                                                        nodeType, m_workerNum);
-    if (!putKv(registryKey, regValue))
-    {
-        ETCD_LOG_ERROR("RebindRegistration — registry PUT 失败 key=" << registryKey);
-        return false;
-    }
-    ETCD_LOG_INFO("RebindRegistration — 已重绑 slot+registry 到 lease=" << m_leaseId
-                  << " nodeId=" << nodeId);
-    return true;
+    putKv(slotKey, ipPort, [&, cb = std::move(cb)](bool ok1) {
+        if (!ok1) { cb(false); return; }
+        putKv(registryKey, regValue, [cb = std::move(cb), nodeId, this](bool ok2) {
+            if (ok2) ETCD_LOG_INFO("AsyncRebind — ok nodeId=" << nodeId << " lease=" << m_leaseId);
+            else     ETCD_LOG_ERROR("AsyncRebind — registry PUT 失败");
+            cb(ok2);
+        });
+    });
 }
 
 void EtcdCenterConnector::SelfAuditRegistry()
 {
-    // 自检对账（issus #19 监控）：注册状态下，自身注册键必须存在且绑在当前租约。
-    if (!m_registered || m_leaseId == 0 || m_nodeIp.empty()) return;
-
+    if (!m_registered || m_leaseId == 0 || m_nodeIp.empty() || m_regInProgress) return;
     const std::string ipPort      = m_nodeIp + ":" + std::to_string(m_nodePort);
     const std::string registryKey = std::string(kRegistryPrefix) + ipPort;
-
-    uint32_t nid   = 0;
-    int64_t  lease = 0;
-    const bool found = QueryRegistry(registryKey, nid, lease);
-    if (found && lease == m_leaseId)
-    {
-        return;  // 健康
-    }
-
-    ++m_metricSelfAuditFail;
-    if (!found)
-    {
-        ETCD_LOG_ERROR("SelfAudit — 注册键已从 etcd 消失(注册中心将失效!) key=" << registryKey
-                       << "，立即重绑 lease=" << m_leaseId);
-    }
-    else
-    {
-        ETCD_LOG_ERROR("SelfAudit — 注册键绑在错误租约(lease=" << lease
-                       << " != 当前=" << m_leaseId << ") key=" << registryKey << "，立即重绑");
-    }
-    // 自愈：重绑到当前租约。nodeId 取已知 m_nodeId（找到则用 etcd 里的）。
-    const uint32_t useNodeId = found && nid > 0 ? nid : m_nodeId;
-    if (RebindRegistration(useNodeId, registryKey, ipPort, m_nodeType))
-    {
-        ++m_metricRegistryRebind;
-    }
+    // fire-and-forget: 异步查 + 需要时异步重绑
+    AsyncQueryRegistry(registryKey, [this, registryKey, ipPort](bool found, uint32_t nid, int64_t lease) {
+        if (found && lease == m_leaseId) return;  // 健康
+        ++m_metricSelfAuditFail;
+        ETCD_LOG_ERROR("SelfAudit — 注册键异常(found=" << found << " lease=" << lease << "),立即自愈");
+        const uint32_t useNodeId = found && nid > 0 ? nid : m_nodeId;
+        AsyncRebindRegistration(useNodeId, registryKey, ipPort, m_nodeType,
+            [this](bool ok) { if (ok) ++m_metricRegistryRebind; });
+    });
 }
 
 // ============================================================
@@ -772,70 +670,50 @@ void EtcdCenterConnector::KeepAliveTimerCallback(struct ev_loop* /*loop*/,
 
 void EtcdCenterConnector::OnKeepAliveTimer()
 {
+    if (m_regInProgress) return;  // 注册进行中,本轮跳过(避免 re-entrancy 竞态)
+
     if (m_leaseId == 0)
     {
-        // 启动时 etcd 不可用 → lease 未建立。持续补领并重注册，直到成功（自愈）。
-        // 否则节点永远不会注册到 etcd（旧代码此处直接 return，永不重试）。
-        if (!m_nodeIp.empty() && LeaseGrant())
-        {
-            ETCD_LOG_INFO("OnKeepAliveTimer — 补领 lease 成功，重新注册 leaseId=" << m_leaseId);
-            DoRegister(m_nodeIp, m_nodePort, m_nodeType);
-        }
+        if (m_nodeIp.empty()) return;
+        AsyncLeaseGrant([this](bool ok, int64_t id) {
+            if (ok) { m_leaseId = id; DoRegister(m_nodeIp, m_nodePort, m_nodeType); }
+        });
         return;
     }
 
     if (!m_registered)
     {
-        // etcd 断连后尝试自动恢复：先续租，成功则恢复 registered 状态
-        if (KeepAlive())
-        {
-            m_registered = true;
-            m_keepAliveFailCount = 0;
-            ETCD_LOG_INFO("OnKeepAliveTimer — etcd 恢复，续租成功 leaseId=" << m_leaseId);
-            Emit(CenterEventType::ConnectionRestored);
-            return;
-        }
-        ++m_keepAliveFailCount;
-        // 续租连续失败超过 10 次（~30s），lease 可能已过期，重注册
-        if (m_keepAliveFailCount >= 10)
-        {
-            ETCD_LOG_WARN("OnKeepAliveTimer — 续租连续失败 "
-                          << m_keepAliveFailCount << " 次, 撤销旧 lease=" << m_leaseId
-                          << " 尝试重注册");
-            LeaseRevoke();
-            m_leaseId = 0;
-            m_keepAliveFailCount = 0;
-            // 重注册：DoRegister 会重新 LeaseGrant + 幂等查 registry
-            DoRegister(m_nodeIp, m_nodePort, m_nodeType);
-        }
+        AsyncKeepAlive([this](bool ok) {
+            if (ok) { m_registered = true; m_keepAliveFailCount = 0; Emit(CenterEventType::ConnectionRestored); }
+            else {
+                ++m_keepAliveFailCount;
+                if (m_keepAliveFailCount >= 10)
+                {
+                    LeaseRevoke(); m_leaseId = 0; m_keepAliveFailCount = 0;
+                    DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+                }
+            }
+        });
         return;
     }
 
-    if (!KeepAlive())
-    {
-        ETCD_LOG_WARN("OnKeepAliveTimer — 续租失败 leaseId=" << m_leaseId
-                      << "，触发 ConnectionLost");
-        m_registered = false;
-        m_keepAliveFailCount = 1;
-        Emit(CenterEventType::ConnectionLost);
-        return;
-    }
-    m_keepAliveFailCount = 0;
+    AsyncKeepAlive([this](bool ok) {
+        if (ok) { m_keepAliveFailCount = 0; }
+        else {
+            ETCD_LOG_WARN("OnKeepAliveTimer — 续租失败, ConnectionLost");
+            m_registered = false; m_keepAliveFailCount = 1;
+            Emit(CenterEventType::ConnectionLost);
+        }
+    });
 
-    // ---- 监控（issus #19/#20）：注册表自检对账 + 周期性指标汇总 ----
-    // KeepAlive 定时器约每 3s 触发；自检每 ~30s 一次（10 拍）即可，避免额外 etcd 压力。
-    if (++m_auditTick >= 10)
-    {
-        m_auditTick = 0;
-        SelfAuditRegistry();
-        ETCD_LOG_INFO("EtcdMetrics — keepalive ok=" << m_metricKeepAliveOk.load()
-                      << " fail=" << m_metricKeepAliveFail.load()
-                      << " watchReconnect=" << m_metricWatchReconnect.load()
-                      << " watchCompactCancel=" << m_metricWatchCompactCancel.load()
-                      << " registryRebind=" << m_metricRegistryRebind.load()
-                      << " selfAuditFail=" << m_metricSelfAuditFail.load()
-                      << " lease=" << m_leaseId << " nodeId=" << m_nodeId);
-    }
+    if (++m_auditTick >= 10) { m_auditTick = 0; SelfAuditRegistry(); }
+    ETCD_LOG_INFO("EtcdMetrics — keepalive ok=" << m_metricKeepAliveOk.load()
+                  << " fail=" << m_metricKeepAliveFail.load()
+                  << " watchReconnect=" << m_metricWatchReconnect.load()
+                  << " watchCompactCancel=" << m_metricWatchCompactCancel.load()
+                  << " registryRebind=" << m_metricRegistryRebind.load()
+                  << " selfAuditFail=" << m_metricSelfAuditFail.load()
+                  << " lease=" << m_leaseId << " nodeId=" << m_nodeId);
 }
 
 // ============================================================
