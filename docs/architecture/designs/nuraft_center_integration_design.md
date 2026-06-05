@@ -824,5 +824,5 @@ raft_params 调参(对应现状 center_beat=2s):
 - 异步协程范式(复用): `code/Net/include/coro/ThreadPoolAwaitable.hpp`(`RunOnThreadPool`)
 - 客户端侧抽象(不动): `code/Net/include/labor/CenterConnector.hpp`
 - 库链接参考(动态链): `cmake/ThunderCommon.cmake:146`(`ev` → 同列加 `nuraft`)
-- 选型依据: `docs/architecture/center_raft_implementation_options.md`
-- 被替代的自研设计: `docs/architecture/raft_leader_lease_design.md`(NuRaft 接管后作废)
+- 选型依据: `docs/architecture/evaluations/center_raft_implementation_options.md`
+- 被替代的自研设计: `docs/architecture/designs/raft_leader_lease_design.md`(NuRaft 接管后作废)

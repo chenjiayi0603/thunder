@@ -390,6 +390,6 @@ etcd 黄金客户端是 **Go**(clientv3);Thunder 是 C++,两条路:
 - 控制面抽象: `code/Net/include/labor/CenterConnector.hpp`(新增 `EtcdCenterConnector` 的落点)
 - 在线表 / 订阅路由: `code/Center/src/SessionOnlineNodes.hpp`
 - 注册 / 上报: `code/Center/src/CmdNodeRegister/`, `code/Center/src/CmdNodeReport/`
-- Raft / leader lease(待外包消除): `docs/architecture/center_stagement.md`, `docs/architecture/raft_leader_lease_design.md`
-- shm 直推优势拆解: `docs/architecture/center_vs_nacos_evaluation.md` §3.1
-- 平行方案(去中心化): `docs/architecture/gossip_decentralization_evaluation.md`
+- Raft / leader lease(待外包消除): `docs/architecture/center_stagement.md`, `docs/architecture/designs/raft_leader_lease_design.md`
+- shm 直推优势拆解: `docs/architecture/evaluations/center_vs_nacos_evaluation.md` §3.1
+- 平行方案(去中心化): `docs/architecture/evaluations/gossip_decentralization_evaluation.md`

@@ -97,7 +97,7 @@ ConfigMap 变更 → pod 内 Loader watch 到 → 写 shm → Worker 本地读(�
 
 ## 附录: 关键对照
 
-- node_id 唯一性要求: `docs/architecture/gossip_decentralization_evaluation.md` §3(全局唯一 + 密集稀缺)
-- etcd 发号/lease/watch 能力: `docs/architecture/etcd_as_center_evaluation.md` §3/§4/§8
-- shm 零跳: `docs/architecture/center_vs_nacos_evaluation.md` §3.1
-- 现状 Center 职责盘点: `docs/architecture/gossip_decentralization_evaluation.md` §2
+- node_id 唯一性要求: `docs/architecture/evaluations/gossip_decentralization_evaluation.md` §3(全局唯一 + 密集稀缺)
+- etcd 发号/lease/watch 能力: `docs/architecture/evaluations/etcd_as_center_evaluation.md` §3/§4/§8
+- shm 零跳: `docs/architecture/evaluations/center_vs_nacos_evaluation.md` §3.1
+- 现状 Center 职责盘点: `docs/architecture/evaluations/gossip_decentralization_evaluation.md` §2

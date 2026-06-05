@@ -1,6 +1,6 @@
 # Plan: 去掉 Center，接入 etcd（单例 + 集群）
 
-**关联评估**: `docs/architecture/etcd_as_center_evaluation.md`
+**关联评估**: `docs/architecture/evaluations/etcd_as_center_evaluation.md`
 **复杂度**: MEDIUM-HIGH
 **状态**: 待确认 / 未开始
 

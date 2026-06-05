@@ -144,5 +144,5 @@ Center 数据集**极小**(在线表 + node_id + 一点配置)。完整 Raft 是
 - 控制面抽象: `code/Net/include/labor/CenterConnector.hpp`(嵌库/etcd 实现的落点)
 - node_id 生成 / 使用: `code/Util/src/util/CommonUtils.hpp`, `code/Net/include/labor/Labor.hpp`
 - 在线表 / 订阅路由: `code/Center/src/SessionOnlineNodes.hpp`
-- Raft / leader lease(待替换): `docs/architecture/center_stagement.md`, `docs/architecture/raft_leader_lease_design.md`
-- shm 直推优势拆解: `docs/architecture/center_vs_nacos_evaluation.md` §3.1
+- Raft / leader lease(待替换): `docs/architecture/center_stagement.md`, `docs/architecture/designs/raft_leader_lease_design.md`
+- shm 直推优势拆解: `docs/architecture/evaluations/center_vs_nacos_evaluation.md` §3.1
