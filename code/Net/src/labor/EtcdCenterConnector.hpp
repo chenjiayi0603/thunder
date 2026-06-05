@@ -30,15 +30,12 @@
 #ifndef ETCD_CENTER_CONNECTOR_HPP_
 #define ETCD_CENTER_CONNECTOR_HPP_
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 #include <log4cplus/logger.h>
 #include "labor/CenterConnector.hpp"
@@ -124,30 +121,12 @@ private:
     // ---- etcd HTTP 基础操作 ----
 
     /**
-     * @brief 向 etcd POST 一个请求，返回响应体；失败返回空字符串
-     * @param path  路径，如 "/v3/lease/grant"
-     * @param body  JSON 请求体
-     */
-    std::string EtcdPost(const std::string& path, const std::string& body);
-
-    /**
-     * @brief 申请租约（TTL=10s），成功后设置 m_leaseId
-     * @return 是否成功
-     */
-    bool LeaseGrant();
-
-    /**
-     * @brief 对 m_leaseId 执行一次续租
-     * @return 是否成功
-     */
-    bool KeepAlive();
-
     /**
      * @brief 撤销租约
      */
     void LeaseRevoke();
 
-    // ---- 注册核心逻辑 ----
+    // ---- 异步 etcd 操作原语(Phase B: 走 EtcdHttpConn) ----
 
     /**
      * @brief 查询 /v3/kv/range，返回已存在的 node_id（0 表示不存在）
@@ -245,11 +224,6 @@ private:
      * @brief base64 解码
      */
     static std::string B64Dec(const std::string& s);
-
-    /**
-     * @brief libcurl write callback（用于 EtcdPost 接收响应体）
-     */
-    static size_t CurlWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
 
     /**
      * @brief 发射事件到 Manager 回调（ev 按值传入，支持 std::move）

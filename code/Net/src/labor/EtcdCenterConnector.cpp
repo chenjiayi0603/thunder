@@ -29,37 +29,11 @@
 #include <stdexcept>
 #include <vector>
 
-#include <curl/curl.h>
 #include "protocol/oss_sys.pb.h"
 #include "util/json/CJsonObject.hpp"
 
 #include <log4cplus/logger.h>
 #include <log4cplus/loggingmacros.h>
-
-// ---- curl RAII 包装（避免 EtcdPost 中的提前返回导致资源泄漏） ----
-namespace
-{
-
-struct CurlHandle
-{
-    CURL* h;
-    CurlHandle() : h(curl_easy_init()) {}
-    ~CurlHandle() { if (h) curl_easy_cleanup(h); }
-    CurlHandle(const CurlHandle&)            = delete;
-    CurlHandle& operator=(const CurlHandle&) = delete;
-    operator CURL*() const { return h; }  // NOLINT(google-explicit-constructor)
-};
-
-struct SlistHandle
-{
-    curl_slist* s = nullptr;
-    SlistHandle()  = default;
-    ~SlistHandle() { curl_slist_free_all(s); }
-    SlistHandle(const SlistHandle&)            = delete;
-    SlistHandle& operator=(const SlistHandle&) = delete;
-};
-
-}  // namespace
 
 // ---- 日志宏 ----
 // 使用实例成员 m_logger(由 Manager 经 SetLogger 注入本节点 logger),
@@ -283,54 +257,6 @@ void EtcdCenterConnector::OnConnectionDestroy(const std::string& /*strIdentify*/
 // etcd HTTP 基础操作
 // ============================================================
 
-/*static*/
-size_t EtcdCenterConnector::CurlWriteCallback(void* ptr, size_t size,
-                                               size_t nmemb, void* userdata)
-{
-    auto* str = static_cast<std::string*>(userdata);
-    str->append(static_cast<char*>(ptr), size * nmemb);
-    return size * nmemb;
-}
-
-std::string EtcdCenterConnector::EtcdPost(const std::string& path,
-                                           const std::string& body)
-{
-    CurlHandle curl;
-    if (!curl.h)
-    {
-        ETCD_LOG_WARN("EtcdPost — curl_easy_init() 失败");
-        return {};
-    }
-
-    const std::string url = m_endpoint + path;
-    std::string response;
-
-    SlistHandle hdrs;
-    hdrs.s = curl_slist_append(hdrs.s, "Content-Type: application/json");
-
-    curl_easy_setopt(curl, CURLOPT_URL,               url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POST,              1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,        body.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,     static_cast<long>(body.size()));
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER,        hdrs.s);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,     CurlWriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA,         &response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,        2000L);  // etcd 故障时最多阻塞 2s
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 1000L);
-    // 注意：不设置 CURLOPT_SSL_VERIFYPEER/VERIFYHOST。
-    //   当前 etcd 端点为 http://，无需 TLS；
-    //   若未来切换到 https://，应正确配置 CA 而非禁用验证（防 MITM）。
-
-    CURLcode res = curl_easy_perform(curl);
-
-    if (res != CURLE_OK)
-    {
-        ETCD_LOG_WARN("EtcdPost failed url=" << url
-                      << " err=" << curl_easy_strerror(res));
-        return {};
-    }
-    return response;
-}
 
 void EtcdCenterConnector::AsyncLeaseGrant(std::function<void(bool, int64_t)> cb)
 {
