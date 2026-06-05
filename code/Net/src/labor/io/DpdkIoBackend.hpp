@@ -52,7 +52,7 @@
 #ifndef DPDKIOBACKEND_HPP_
 #define DPDKIOBACKEND_HPP_
 
-#include "labor/IoBackend.hpp"
+#include "labor/io/IoBackend.hpp"
 #include "libev/ev.h"
 #include <cstdint>
 #include <memory>

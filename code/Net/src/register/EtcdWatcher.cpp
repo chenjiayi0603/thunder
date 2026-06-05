@@ -1,4 +1,4 @@
-#include "EtcdWatcher.hpp"
+#include "register/EtcdWatcher.hpp"
 
 #include "util/encrypt/base64.h"
 

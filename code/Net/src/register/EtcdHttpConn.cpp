@@ -2,7 +2,7 @@
  * @file  EtcdHttpConn.cpp
  * @brief 自管异步 HTTP 短请求连接实现（issus #24）
  */
-#include "EtcdHttpConn.hpp"
+#include "register/EtcdHttpConn.hpp"
 
 #include <fcntl.h>
 #include <netdb.h>

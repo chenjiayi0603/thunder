@@ -17,13 +17,13 @@
 
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
-#include "EvIoBackend.hpp"
-#include "NativeUringIoBackend.hpp"
+#include "labor/io/EvIoBackend.hpp"
+#include "labor/io/NativeUringIoBackend.hpp"
 #ifdef THUNDER_IO_ASIO_URING
-#include "AsioUringIoBackend.hpp"
+#include "labor/io/AsioUringIoBackend.hpp"
 #endif
 #ifdef THUNDER_IO_DPDK
-#include "DpdkIoBackend.hpp"
+#include "labor/io/DpdkIoBackend.hpp"
 #endif
 
 //每个进程只有一个labor，使用单例模式

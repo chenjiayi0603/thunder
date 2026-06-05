@@ -24,7 +24,7 @@
 #include "labor/types/RouteNoticeVersionData.hpp"
 #include "labor/types/CustomConfigVersionData.hpp"
 #include "storage/dataproxy.pb.h"
-#include "labor/IoBackend.hpp"
+#include "labor/io/IoBackend.hpp"
 
 namespace net
 {

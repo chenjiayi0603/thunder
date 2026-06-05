@@ -9,7 +9,7 @@
  */
 #include <gtest/gtest.h>
 
-#include "labor/EtcdParse.hpp"
+#include "register/EtcdParse.hpp"
 
 using namespace net::etcd_parse;
 
