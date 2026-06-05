@@ -156,9 +156,25 @@ private:
      * @brief 查询 /v3/kv/range，返回已存在的 node_id（0 表示不存在）
      * @param registryKey  etcd key，如 /thunder/registry/ip:port
      * @param outNodeId    成功时写入 node_id
+     * @param outLease     成功时写入该 key 绑定的 lease（无租约为 0），用于判断是否需重绑
      * @return true 表示 key 存在且解析成功
      */
-    bool QueryRegistry(const std::string& registryKey, uint32_t& outNodeId);
+    bool QueryRegistry(const std::string& registryKey, uint32_t& outNodeId, int64_t& outLease);
+
+    /**
+     * @brief 无条件把 slot/registry 两个键重新 PUT 并绑定到【当前】m_leaseId（issus #19）。
+     *        用于重启换租约后，etcd 中残留的注册键还绑在旧（已失效）租约的场景：
+     *        旧租约过期会删键导致注册中心永久为空，必须重绑到活租约。
+     * @return 是否成功
+     */
+    bool RebindRegistration(uint32_t nodeId, const std::string& registryKey,
+                            const std::string& ipPort, const std::string& nodeType);
+
+    /**
+     * @brief 注册表自检对账（issus #19 监控）：查自身注册键是否仍存在且绑在当前租约，
+     *        缺失或租约不符则打 ERROR 告警并触发重注册。由 KeepAlive 定时器周期调用。
+     */
+    void SelfAuditRegistry();
 
     /**
      * @brief 构建单次槽位抢占的 txn JSON 字符串
@@ -307,8 +323,22 @@ private:
     bool                     m_watchAsyncStarted = false;
     int64_t                  m_lastRevision      = 0;   ///< 断线续看：上次消费到的 mod_revision
 
+    /// watch 被 etcd 以 compaction 取消时回传的 compact_revision（watch 线程写，
+    /// 同线程读）。下一次重连前据此把 m_lastRevision 抬到 compaction 之上，
+    /// 否则 start_revision ≤ compact_revision 会被立即取消 → 每秒重连风暴 (issus #20)。
+    int64_t                  m_watchCompactRevision = 0;
+
     std::mutex               m_watchQueueMutex;
     std::vector<WatchEvent>  m_watchQueue;              ///< watch 线程生产，libev 线程消费
+
+    // ---- 监控指标（issus #19/#20；watch 计数由 watch 线程写，主线程读，用 atomic） ----
+    std::atomic<uint64_t>    m_metricKeepAliveOk{0};
+    std::atomic<uint64_t>    m_metricKeepAliveFail{0};
+    std::atomic<uint64_t>    m_metricWatchReconnect{0};      ///< watch 重连次数
+    std::atomic<uint64_t>    m_metricWatchCompactCancel{0};  ///< 被 compaction 取消次数
+    std::atomic<uint64_t>    m_metricRegistryRebind{0};      ///< 注册键重绑次数
+    std::atomic<uint64_t>    m_metricSelfAuditFail{0};       ///< 自检发现注册键丢失/租约不符次数
+    int                      m_auditTick = 0;                ///< 自检节流计数（KeepAlive 定时器内）
 };
 
 } /* namespace net */

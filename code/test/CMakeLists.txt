@@ -139,6 +139,29 @@ target_link_libraries(thunder_test_util_json PRIVATE
 )
 gtest_discover_tests(thunder_test_util_json)
 
+# ---- EtcdParse 纯解析/决策逻辑 (issus #19 / #20) ----
+add_executable(thunder_test_etcd_parse
+  labor/test_etcd_parse.cpp
+)
+target_include_directories(thunder_test_etcd_parse PRIVATE
+  "${THUNDER_NET_SRC}"
+  "${THUNDER_UTIL}/src"
+)
+target_compile_features(thunder_test_etcd_parse PRIVATE cxx_std_20)
+target_link_directories(thunder_test_etcd_parse PRIVATE
+  "${THUNDER_3PARTY}/lib"
+)
+target_link_libraries(thunder_test_etcd_parse PRIVATE
+  GTest::gtest_main
+  Util
+  mariadb
+  hiredis_vip
+  curl
+  Threads::Threads
+)
+set_target_properties(thunder_test_etcd_parse PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_etcd_parse)
+
 # ---- ThreadPool 线程池 ----
 add_executable(thunder_test_util_threadpool
   util/test_util_threadpool.cpp
