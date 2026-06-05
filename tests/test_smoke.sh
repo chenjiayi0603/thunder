@@ -124,89 +124,28 @@ if ! curl -sf --max-time 3 http://127.0.0.1:2379/health >/dev/null 2>&1; then
     echo -e "  ${YELLOW}⚠️ ${NC} etcd :2379 不可达，跳过 etcd 段"
     SKIP=$((SKIP+1))
 else
-    check "etcd health" \
-        '"health":"true"' \
-        'curl -sf --max-time 3 http://127.0.0.1:2379/health'
-
-    # ── 路由下发 + node_id 分配验证 ──
-    # 一次 range 拉取 /thunder/registry/ prefix, Python 解析出:
-    #   count | orphans | types | node_ids_csv | node_id_ok
-    # node_id_ok=1 当且仅当: 所有 node_id 在 [1,255], 唯一无重复, slot/registry 一一对应
+    _KEY=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/registry/').decode())")
+    _END=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/registry0').decode())")
     _REG=$(curl -sf --max-time 3 http://127.0.0.1:2379/v3/kv/range \
-        -d "$(python3 -c "import base64;
-print('{\"key\":\"%s\",\"range_end\":\"%s\"}' % (
-    base64.b64encode(b'/thunder/registry/').decode(),
-    base64.b64encode(b'/thunder/registry0').decode()))")" 2>/dev/null)
-
-    # 同时拉 slot prefix 做交叉校验
+        -d "{\"key\":\"$_KEY\",\"range_end\":\"$_END\"}" 2>/dev/null)
+    _SKEY=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/slot/').decode())")
+    _SEND=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/slot0').decode())")
     _SLOT=$(curl -sf --max-time 3 http://127.0.0.1:2379/v3/kv/range \
-        -d "$(python3 -c "import base64;
-print('{\"key\":\"%s\",\"range_end\":\"%s\"}' % (
-    base64.b64encode(b'/thunder/slot/').decode(),
-    base64.b64encode(b'/thunder/slot0').decode()))")" 2>/dev/null)
+        -d "{\"key\":\"$_SKEY\",\"range_end\":\"$_SEND\"}" 2>/dev/null)
 
-    # stdin: registry JSON + '\\n===SLOT===\\n' + slot JSON, Python 按分隔符切分
-    _REG_VALUES=$(printf '%s\n===SLOT===\n%s\n' "$_REG" "$_SLOT" | python3 -c "
-import sys,json,base64
-raw=sys.stdin.read()
-parts=raw.split('\n===SLOT===\n',1)
-try:
-    reg_d=json.loads(parts[0].strip()) if parts[0].strip() else {}
-    slot_d=json.loads(parts[1].strip()) if len(parts)>1 and parts[1].strip() else {}
-    kvs=reg_d.get('kvs',[])
-    count=int(reg_d.get('count','0'))
-    orphans=sum(1 for kv in kvs if kv.get('lease','0')=='0')
-    types=set(); node_ids=[]
-    for kv in kvs:
-        key=base64.b64decode(kv['key']).decode()
-        val=json.loads(base64.b64decode(kv.get('value','')))
-        nid=int(val.get('node_id',0))
-        node_ids.append(nid)
-        types.add(val.get('node_type',''))
-    # node_id 校验
-    nid_ok=1
-    if len(node_ids) > len(set(node_ids)): nid_ok=0  # 重复
-    for nid in node_ids:
-        if nid < 1 or nid > 255: nid_ok=0; break
-    # slot↔registry 交叉校验
-    slot_ips=set()
-    for kv in slot_d.get('kvs',[]):
-        slot_ips.add(base64.b64decode(kv.get('value','')).decode())
-    reg_ips=set()
-    for kv in kvs:
-        key=base64.b64decode(kv['key']).decode()
-        reg_ips.add(key.replace('/thunder/registry/',''))
-    if slot_ips and reg_ips and slot_ips != reg_ips: nid_ok=0
-    print('%d %d %s %s %d' % (count, orphans, ','.join(sorted(types)),
-          ','.join(str(n) for n in sorted(node_ids)), nid_ok))
-except Exception as e: print('0 0 - - 0', file=sys.stderr); print('0 0')
-" 2>/dev/null)
+    _STATUS=$(printf '%s\n===SLOT===\n%s\n' "$_REG" "$_SLOT" | python3 "$ROOT/tests/smoke_etcd_parse.py" 2>/dev/null)
+    _OK=$(echo "$_STATUS" | head -1 | grep -o 'OK=[01]' | cut -d= -f2)
 
-    _REG_COUNT=$(echo "$_REG_VALUES" | awk '{print $1}')
-    _REG_ORPHAN=$(echo "$_REG_VALUES" | awk '{print $2}')
-    _REG_TYPES=$(echo  "$_REG_VALUES" | awk '{print $3}')
-    _REG_NIDS=$(echo   "$_REG_VALUES" | awk '{print $4}')
-    _REG_NIDOK=$(echo  "$_REG_VALUES" | awk '{print $5}')
-
-    check "registry 注册键数 (≥3, LOGIC+HELLO+INTERFACE)" \
-        "3" \
-        "echo $_REG_COUNT | awk '\$1>=3{print 3}'"
-
-    check "注册键 lease 全非 0(无孤儿键, #19 回归)" \
-        "0" \
-        "echo $_REG_ORPHAN"
-
-    check "路由下发: LOGIC+HELLO+INTERFACE 均已注册" \
-        "YES" \
-        "echo $_REG_TYPES | grep -q 'INTERFACE' && echo $_REG_TYPES | grep -q 'HELLO' && echo $_REG_TYPES | grep -q 'LOGIC' && echo YES"
-
-    check "node_id 分配: 唯一, 范围[1,255], slot 对应" \
-        "1" \
-        "echo $_REG_NIDOK"
-
-    check "node_id: $_REG_NIDS" \
-        "$_REG_NIDS" \
-        "echo $_REG_NIDS"
+    if [ "$_OK" = "1" ]; then
+        _SUMMARY=$(echo "$_STATUS" | head -1 | sed 's/OK=1 //')
+        echo -e "  ${GREEN}✅${NC} 注册中心健康  $_SUMMARY"
+        echo "$_STATUS" | tail -n +2
+        PASS=$((PASS+1))
+    else
+        echo -e "  ${RED}❌${NC} 注册中心异常!"
+        echo "$_STATUS"
+        FAIL=$((FAIL+1))
+    fi
 fi
 
 # ── 汇总 ─────────────────────────────────────────────────────
