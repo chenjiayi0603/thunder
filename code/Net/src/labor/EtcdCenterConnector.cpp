@@ -18,6 +18,7 @@
 #include "EtcdCenterConnector.hpp"
 #include "EtcdHttpConn.hpp"
 #include "EtcdParse.hpp"
+#include "EtcdWatcher.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -166,16 +167,10 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
     ev_timer_start(m_loop, &m_keepAliveTimer);
     m_keepAliveTimerStarted = true;
 
-    // Phase 2: 注册 ev_async，用于 watch 线程 → libev 线程的跨线程唤醒
-    m_watchAsync.data = static_cast<void*>(this);
-    ev_async_init(&m_watchAsync, WatchAsyncCallback);
-    ev_async_start(m_loop, &m_watchAsync);
-    m_watchAsyncStarted = true;
-
-    // Phase 2: 启动 watch 线程（在 libev 线程之外运行 libcurl 长连接）
+    // Phase C: 启动 EtcdWatcher(主循环) + 初始 snapshot 取 revision
     StartWatch();
 
-    ETCD_LOG_INFO("EtcdCenterConnector::Init — 成功，leaseId=" << m_leaseId);
+    ETCD_LOG_INFO("EtcdCenterConnector::Init — 成功");
     return true;
 }
 
@@ -192,15 +187,8 @@ void EtcdCenterConnector::Destroy()
         m_keepAliveTimerStarted = false;
     }
 
-    // 停止 watch 线程
+    // 停止 watcher(Phase C)
     StopWatch();
-
-    // 注销 watch 用的 ev_async
-    if (m_watchAsyncStarted && m_loop)
-    {
-        ev_async_stop(m_loop, &m_watchAsync);
-        m_watchAsyncStarted = false;
-    }
 
     // 撤销租约 fire-and-forget（不阻塞;lease 自身 TTL 到期也会清理）
     if (m_leaseId != 0)
@@ -707,12 +695,12 @@ void EtcdCenterConnector::OnKeepAliveTimer()
     });
 
     if (++m_auditTick >= 10) { m_auditTick = 0; SelfAuditRegistry(); }
-    ETCD_LOG_INFO("EtcdMetrics — keepalive ok=" << m_metricKeepAliveOk.load()
-                  << " fail=" << m_metricKeepAliveFail.load()
-                  << " watchReconnect=" << m_metricWatchReconnect.load()
-                  << " watchCompactCancel=" << m_metricWatchCompactCancel.load()
-                  << " registryRebind=" << m_metricRegistryRebind.load()
-                  << " selfAuditFail=" << m_metricSelfAuditFail.load()
+    ETCD_LOG_INFO("EtcdMetrics — keepalive ok=" << m_metricKeepAliveOk
+                  << " fail=" << m_metricKeepAliveFail
+                  << " watchReconnect=" << m_metricWatchReconnect
+                  << " watchCompactCancel=" << m_metricWatchCompactCancel
+                  << " registryRebind=" << m_metricRegistryRebind
+                  << " selfAuditFail=" << m_metricSelfAuditFail
                   << " lease=" << m_leaseId << " nodeId=" << m_nodeId);
 }
 
@@ -762,362 +750,143 @@ void EtcdCenterConnector::Emit(CenterEventType type, CenterEvent ev)
 }
 
 // ============================================================
-// Watch 功能（Phase 2）
+// ============================================================
+// Watch 功能（Phase C: EtcdWatcher 替代 curl 线程 + ev_async, issus #24）
 // ============================================================
 
 void EtcdCenterConnector::StartWatch()
 {
-    m_lastRevision = 0;
-    m_watchStop    = false;
-    m_watchThread  = std::thread([this]{ WatchThreadFunc(); });
-    ETCD_LOG_INFO("Watch — 线程已启动");
+    if (!m_http) return;
+    // 创建 EtcdWatcher: 读 host:port 从 m_endpoint
+    auto protoEnd = m_endpoint.find("://");
+    std::string hp = (protoEnd != std::string::npos) ? m_endpoint.substr(protoEnd + 3) : m_endpoint;
+    auto colon = hp.rfind(':');
+    if (colon == std::string::npos) { ETCD_LOG_ERROR("StartWatch — 端点格式错误"); return; }
+    std::string host = hp.substr(0, colon);
+    int port = 0; try { port = std::stoi(hp.substr(colon + 1)); } catch (...) {}
+    if (port <= 0) { ETCD_LOG_ERROR("StartWatch — 端口解析失败"); return; }
+
+    m_watcher = std::make_unique<EtcdWatcher>(m_loop, host, port, "/thunder/", m_logger,
+        [this](const std::string& line) { ProcessWatchLine(line); });
+    DoWatchSnapshot();  // 先取 snapshot 拿到 revision, 再 Start watcher
+    ETCD_LOG_INFO("Watch — watcher 已启动(主循环,无线程)");
 }
 
 void EtcdCenterConnector::StopWatch()
 {
-    m_watchStop = true;
-    if (m_watchThread.joinable()) m_watchThread.join();
-    ETCD_LOG_INFO("Watch — 线程已停止");
+    if (m_watcher) { m_watcher->Stop(); m_watcher.reset(); }
+    ETCD_LOG_INFO("Watch — watcher 已停止");
 }
 
-void EtcdCenterConnector::WatchThreadFunc()
+void EtcdCenterConnector::DoWatchSnapshot()
 {
-    // watch /thunder/ 共同前缀（覆盖 registry 和 config）
-    static const std::string kWatcherPrefix = "/thunder/";
-    const std::string prefix    = kWatcherPrefix;
-    std::string       rangeEnd  = prefix;
-    if (!rangeEnd.empty())
-    {
-        // etcd prefix watch: range_end = prefix 的最后一个字节 +1
-        rangeEnd.back() = static_cast<char>(static_cast<unsigned char>(rangeEnd.back()) + 1);
-    }
-
-    int errBackoffSec = 1;  // etcd 真·故障时的递增退避（上限 8s），正常路径不使用
-
-    while (!m_watchStop)
-    {
-        // ── 全量快照 + 取 watch 起点 revision ──
-        // 关键修复:原先 m_lastRevision=0 → watch 从 start_revision=1 发起,
-        // 一旦 etcd 发生 compaction(自动/长跑必然),rev 1 < compact_revision,
-        // etcd 立即以 {"canceled":true,"compact_revision":N} 取消 watch,
-        // 客户端永远收不到事件 → 跨节点路由全断 (issus #9)。
-        // 正确做法:先 range 拉取现有 /thunder/ 全量,载入路由表(作为 PUT 事件),
-        // 并以 range 返回的 header.revision 作为 watch 起点,绕开 compaction。
-        // 每次(重)连都重做,保证断线/compaction 后自动重新同步。
-        {
-            util::CJsonObject oReq;
-            oReq.Add("key", B64(prefix));
-            oReq.Add("range_end", B64(rangeEnd));
-            const std::string snapResp = EtcdPost("/v3/kv/range", oReq.ToString());
-            util::CJsonObject oSnap;
-            if (!snapResp.empty() && oSnap.Parse(snapResp))
-            {
-                util::CJsonObject oHeader;
-                int64_t snapRev = 0;
-                if (oSnap.Get("header", oHeader) &&
-                    etcd_parse::GetGatewayInt64(oHeader, "revision", snapRev) && snapRev > 0)
-                {
-                    m_lastRevision = snapRev;
+    if (!m_http) return;
+    std::string pfx  = "/thunder/";
+    std::string rend = pfx; if (!rend.empty()) rend.back() = static_cast<char>(static_cast<unsigned char>(rend.back()) + 1);
+    util::CJsonObject oReq;
+    oReq.Add("key", B64(pfx));
+    oReq.Add("range_end", B64(rend));
+    m_http->Post("/v3/kv/range", oReq.ToString(),
+        [this, pfx, rend](bool ok, int, const std::string& resp) {
+            if (!ok || resp.empty()) { return; }
+            util::CJsonObject oSnap; if (!oSnap.Parse(resp)) return;
+            util::CJsonObject oHeader; int64_t snapRev = 0;
+            if (oSnap.Get("header", oHeader) && etcd_parse::GetGatewayInt64(oHeader, "revision", snapRev) && snapRev > 0) {
+                if (snapRev > m_lastRevision) m_lastRevision = snapRev;
+            }
+            // 加载全量 kvs 作为 PUT 事件
+            util::CJsonObject kvs;
+            if (oSnap.Get("kvs", kvs) && kvs.IsArray()) {
+                int n = kvs.GetArraySize();
+                for (int i = 0; i < n; ++i) {
+                    util::CJsonObject kv; if (!kvs.Get(i, kv)) continue;
+                    std::string kB64, vB64; kv.Get("key", kB64); kv.Get("value", vB64);
+                    m_watchQueue.push_back(WatchEvent{"PUT", B64Dec(kB64), B64Dec(vB64)});
                 }
-                util::CJsonObject oKvs;
-                int loaded = 0;
-                if (oSnap.Get("kvs", oKvs) && oKvs.IsArray())
-                {
-                    const int n = oKvs.GetArraySize();
-                    for (int i = 0; i < n; ++i)
-                    {
-                        util::CJsonObject oKv;
-                        if (!oKvs.Get(i, oKv)) continue;
-                        std::string kB64, vB64;
-                        oKv.Get("key", kB64);
-                        oKv.Get("value", vB64);
-                        WatchEvent wev;
-                        wev.type  = "PUT";
-                        wev.key   = B64Dec(kB64);
-                        wev.value = B64Dec(vB64);
-                        {
-                            std::lock_guard<std::mutex> lock(m_watchQueueMutex);
-                            m_watchQueue.push_back(std::move(wev));
-                        }
-                        ++loaded;
-                    }
-                }
-                if (loaded > 0) ev_async_send(m_loop, &m_watchAsync);
             }
-        }
-
-        CurlHandle curl;
-        if (!curl.h)
-        {
-            ETCD_LOG_WARN("Watch — curl_easy_init 失败，3s 后重试");
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            continue;
-        }
-
-        const std::string basePrefix   = B64(prefix);
-        const std::string baseRangeEnd = B64(rangeEnd);
-
-        std::ostringstream body;
-        body << "{\"create_request\":{"
-             << "\"key\":\""          << basePrefix   << "\","
-             << "\"range_end\":\""    << baseRangeEnd << "\","
-             << "\"start_revision\":" << (m_lastRevision + 1)
-             << "}}";
-
-        const std::string url = m_endpoint + "/v3/watch";
-
-        SlistHandle hdrs;
-        hdrs.s = curl_slist_append(hdrs.s, "Content-Type: application/json");
-
-        curl_easy_setopt(curl, CURLOPT_URL,               url.c_str());
-        curl_easy_setopt(curl, CURLOPT_POST,              1L);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS,        body.str().c_str());
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,     static_cast<long>(body.str().size()));
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER,        hdrs.s);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,     WatchWriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA,         this);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT,           0L);
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 2000L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE,     1L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE,      30L);
-
-        m_watchCompactRevision = 0;       // 本轮若被 compaction 取消, OnWatchChunk 会写入
-        ++m_metricWatchReconnect;
-        CURLcode res = curl_easy_perform(curl);
-
-        // 说明（issus #20）：bundled libcurl 8.21 对 etcd HTTP gateway 的 chunked watch 流，
-        // 收到首个 created 响应后即返回 CURLE_OK（实测 0ms，不挂住；system curl 同请求可挂住）。
-        // 因此本循环实际是"快照 resync 轮询"：每轮 range 全量拉取保证路由表新鲜，
-        // watch 仅在能挂住时顺带捕获增量事件。真·长连接 watch 见后续 issue。
-        // 仍保留 compaction 取消处理：一旦将来 watch 能挂住、被 compaction 取消时，
-        // 把起点抬到 compact_revision 之上，避免起点低于 compaction 反复被取消。
-        if (m_watchCompactRevision > m_lastRevision)
-        {
-            ++m_metricWatchCompactCancel;
-            ETCD_LOG_INFO("Watch — 被 compaction 取消, 起点 " << m_lastRevision
-                          << " → " << m_watchCompactRevision << " 重新同步");
-            m_lastRevision = m_watchCompactRevision;
-            errBackoffSec = 1;
-        }
-        else if (res != CURLE_OK)
-        {
-            // 真·网络错误（etcd 故障/断网）才告警 + 递增退避
-            ETCD_LOG_WARN("Watch — 连接异常 url=" << url
-                          << " code=" << static_cast<int>(res)
-                          << " msg=" << curl_easy_strerror(res));
-        }
-        else
-        {
-            errBackoffSec = 1;  // 正常 resync，无需告警（避免历史上的每秒 WARN 风暴）
-        }
-
-        if (!m_watchStop)
-        {
-            const int waitSec = (res == CURLE_OK) ? kWatchResyncIntervalSec : errBackoffSec;
-            if (res != CURLE_OK) errBackoffSec = std::min(errBackoffSec * 2, 8);
-            std::this_thread::sleep_for(std::chrono::seconds(waitSec));
-        }
-    }
-
-    ETCD_LOG_INFO("Watch — 线程退出");
+            if (!m_watchQueue.empty()) OnWatchAsync();
+            if (m_watcher) m_watcher->Start(m_lastRevision);
+        });
 }
 
-/*static*/
-size_t EtcdCenterConnector::WatchWriteCallback(void* ptr, size_t size,
-                                                size_t nmemb, void* userdata)
+void EtcdCenterConnector::ProcessWatchLine(const std::string& line)
 {
-    auto* self = static_cast<EtcdCenterConnector*>(userdata);
-    if (!self->m_watchStop)
-    {
-        self->OnWatchChunk(std::string(static_cast<char*>(ptr), size * nmemb));
+    if (line.empty() || line[0] != '{') return;
+    util::CJsonObject o;
+    if (!o.Parse(line)) return;
+    util::CJsonObject result;
+    if (!o.Get("result", result)) return;
+
+    bool created = false, canceled = false;
+    result.Get("created", created); result.Get("canceled", canceled);
+    if (canceled) {
+        ++m_metricWatchCompactCancel;
+        int64_t cr = 0;
+        if (etcd_parse::GetGatewayInt64(result, "compact_revision", cr) && cr > m_lastRevision)
+            m_lastRevision = cr;
+        // compaction 取消 → 重做 snapshot + restart watcher
+        DoWatchSnapshot();
+        return;
     }
-    return size * nmemb;
-}
+    if (created) return;
 
-void EtcdCenterConnector::OnWatchChunk(const std::string& chunk)
-{
-    // etcd watch 长连接的响应是每行一个 JSON 对象（JSON lines）
-    // 每行格式: {"result":{"events":[...],"created":bool}}
-    // 可能一次收到多行
-    std::istringstream stream(chunk);
-    std::string line;
-    bool hasEvents = false;
-
-    while (std::getline(stream, line))
-    {
-        if (line.empty() || line[0] != '{') continue;
-
-        util::CJsonObject oResp;
-        if (!oResp.Parse(line)) continue;
-
-        util::CJsonObject oResult;
-        if (!oResp.Get("result", oResult)) continue;
-
-        // 控制信息（created/canceled/compact_revision 均在 result 子对象内）。
-        // 旧代码从顶层 oResp 取 created（取不到，恒 false）—— 顺手修正。
-        bool created = false, canceled = false;
-        oResult.Get("created", created);
-        oResult.Get("canceled", canceled);
-        if (canceled)
-        {
-            // 被 etcd compaction 取消：记录 compact_revision，交由 WatchThreadFunc 抬升起点
-            // （本回调与 WatchThreadFunc 同在 watch 线程，无需加锁）(issus #20)。
-            int64_t cr = 0;
-            if (etcd_parse::GetGatewayInt64(oResult, "compact_revision", cr) && cr > 0)
-            {
-                m_watchCompactRevision = cr;
-            }
-            continue;
-        }
-        if (created) continue;  // watch 刚建立，无事件
-
-        util::CJsonObject oEvents;
-        if (!oResult.Get("events", oEvents) || !oEvents.IsArray()) continue;
-        int evCount = oEvents.GetArraySize();
-        for (int i = 0; i < evCount; ++i)
-        {
-            util::CJsonObject oEv;
-            if (!oEvents.Get(i, oEv)) continue;
-
-            std::string evType;
-            oEv.Get("type", evType);  // "PUT" / "DELETE"
-
-            util::CJsonObject oKv;
-            if (!oEv.Get("kv", oKv)) continue;
-
-            std::string keyB64, valueB64, revStr;
-            oKv.Get("key", keyB64);
-            oKv.Get("value", valueB64);
-            oKv.Get("mod_revision", revStr);
-
-            // 更新 revision（断线续看用）
-            if (!revStr.empty())
-            {
-                int64_t rev = std::stoll(revStr);
-                if (rev > m_lastRevision) m_lastRevision = rev;
-            }
-
-            WatchEvent wev;
-            wev.type  = evType;
-            wev.key   = B64Dec(keyB64);
-            wev.value = B64Dec(valueB64);
-
-            {
-                std::lock_guard<std::mutex> lock(m_watchQueueMutex);
-                m_watchQueue.push_back(std::move(wev));
-            }
-            hasEvents = true;
-        }
+    util::CJsonObject events;
+    if (!result.Get("events", events) || !events.IsArray()) return;
+    int n = events.GetArraySize();
+    for (int i = 0; i < n; ++i) {
+        util::CJsonObject ev; if (!events.Get(i, ev)) continue;
+        std::string evType; ev.Get("type", evType);
+        util::CJsonObject kv; if (!ev.Get("kv", kv)) continue;
+        std::string keyB64, valueB64; kv.Get("key", keyB64); kv.Get("value", valueB64);
+        m_watchQueue.push_back(WatchEvent{evType, B64Dec(keyB64), B64Dec(valueB64)});
     }
-
-    // 有事件则唤醒 libev 线程消费
-    if (hasEvents)
-    {
-        ev_async_send(m_loop, &m_watchAsync);
-    }
-}
-
-/*static*/
-void EtcdCenterConnector::WatchAsyncCallback(struct ev_loop* /*loop*/,
-                                              ev_async* w,
-                                              int /*revents*/)
-{
-    if (!w || !w->data) return;
-    auto* self = static_cast<EtcdCenterConnector*>(w->data);
-    self->OnWatchAsync();
+    if (!m_watchQueue.empty()) OnWatchAsync();
 }
 
 void EtcdCenterConnector::OnWatchAsync()
 {
-    // libev 线程执行，消费跨线程队列
-    std::vector<WatchEvent> events;
-    {
-        std::lock_guard<std::mutex> lock(m_watchQueueMutex);
-        events.swap(m_watchQueue);
-    }
-
+    std::vector<WatchEvent> events; events.swap(m_watchQueue);  // 单线,无需锁
     static const std::string kConfigPrefix("/thunder/config/");
 
-    for (const auto& wev : events)
-    {
-        // ---- config 变更（Phase 3） ----
-        if (wev.key.find(kConfigPrefix) == 0)
-        {
+    for (const auto& wev : events) {
+        if (wev.key.find(kConfigPrefix) == 0) {
             std::string configPath = wev.key.substr(kConfigPrefix.size());
-            CenterEvent cev;
-            cev.type = CenterEventType::ConfigUpdated;
-            if (wev.type == "PUT")
-            {
-                cev.config_content = wev.value;  // 配置内容
-                ETCD_LOG_DEBUG("Watch — CONFIG PUT " << configPath);
-            }
-            else
-            {
-                ETCD_LOG_DEBUG("Watch — CONFIG DELETE " << configPath
-                               << " (忽略删除事件)");
-                continue;  // 配置删除不触发 ConfigUpdated
-            }
-            m_callback(cev);
-            continue;
+            CenterEvent cev; cev.type = CenterEventType::ConfigUpdated;
+            if (wev.type == "PUT") { cev.config_content = wev.value; }
+            else { ETCD_LOG_DEBUG("Watch — CONFIG DELETE " << configPath << " (忽略)"); continue; }
+            m_callback(cev); continue;
         }
-
-        // ---- registry 变更（路由，Phase 2） ----
-        // key 格式: /thunder/registry/ip:port
         if (wev.key.find(kRegistryPrefix) != 0) continue;
-
         const std::string ipPort = wev.key.substr(strlen(kRegistryPrefix));
         if (ipPort.rfind(':') == std::string::npos) continue;
-
-        // 维护完整节点表后发"全量"快照 (issus #9 关键):
-        //   - etcd v3 grpc-gateway 对 PUT 事件 (EventType=0) 省略 type 字段,只有
-        //     DELETE 带 "type":"DELETE";故空 type 当作 PUT。
-        //   - 必须每次发全量而非单节点增量:路由 shm 只存最新版本、Worker 把每个
-        //     notice 当作"出现类型的完整在线集"来 prune+add,单节点增量会导致
-        //     Worker 只认到最后写入的那个节点 → 路由表残缺。
-        if (wev.type == "PUT" || wev.type.empty())
-        {
-            m_nodeRegistry[ipPort] = wev.value;
-        }
-        else if (wev.type == "DELETE")
-        {
-            m_nodeRegistry.erase(ipPort);
-        }
-        else
-        {
-            continue;
-        }
-
-        // 用全表组装完整 NodeNotice (全部走 node_arry_reg, 缺席即下线由 Worker prune)
-        NodeNotice notice;
-        for (const auto& kv : m_nodeRegistry)
-        {
-            const std::string& kvIpPort = kv.first;
-            auto c = kvIpPort.rfind(':');
-            if (c == std::string::npos) continue;
-            util::CJsonObject oVal;
-            if (!oVal.Parse(kv.second)) continue;
-
-            int32_t  nid  = 0;
-            uint32_t wnum = 0;
-            std::string ntype;
-            oVal.Get("node_id",    nid);
-            oVal.Get("node_type",  ntype);
-            oVal.Get("worker_num", wnum);
-
-            auto* nr = notice.add_node_arry_reg();
-            nr->set_node_ip(kvIpPort.substr(0, c));
-            nr->set_node_port(static_cast<uint32_t>(std::stoul(kvIpPort.substr(c + 1))));
-            if (nid > 0) nr->set_node_id(static_cast<uint32_t>(nid));
-            if (!ntype.empty()) nr->set_node_type(ntype);
-            nr->set_worker_num(wnum > 0 ? wnum : 1);  // 缺省至少 1 个 worker, 否则 Worker 不建 identify
-        }
-
-        CenterEvent cev;
-        cev.type           = CenterEventType::RouteUpdated;
-        cev.route_snapshot = notice.SerializeAsString();
-
-        m_callback(cev);
+        // 维护注册表后发全量路由快照(issus #9)
+        std::string evType = wev.type;
+        if (evType.empty()) evType = "PUT";  // grpc-gateway 省略 type → 默认 PUT
+        if (evType == "PUT") { m_nodeRegistry[ipPort] = wev.value; }
+        else { m_nodeRegistry.erase(ipPort); }
     }
+    if (events.empty()) return;
+
+    // 构造全量 NodeNotice
+    NodeNotice notice;
+    for (const auto& kv : m_nodeRegistry) {
+        const std::string& kvIpPort = kv.first;
+        auto c = kvIpPort.rfind(':');
+        if (c == std::string::npos) continue;
+        util::CJsonObject oVal;
+        if (!oVal.Parse(kv.second)) continue;
+        int32_t nid = 0; uint32_t wnum = 0; std::string ntype;
+        oVal.Get("node_id", nid); oVal.Get("node_type", ntype); oVal.Get("worker_num", wnum);
+        auto* nr = notice.add_node_arry_reg();
+        nr->set_node_ip(kvIpPort.substr(0, c));
+        nr->set_node_port(static_cast<uint32_t>(std::stoul(kvIpPort.substr(c + 1))));
+        if (nid > 0) nr->set_node_id(static_cast<uint32_t>(nid));
+        if (!ntype.empty()) nr->set_node_type(ntype);
+        nr->set_worker_num(wnum > 0 ? wnum : 1);
+    }
+    CenterEvent cev; cev.type = CenterEventType::RouteUpdated;
+    cev.route_snapshot = notice.SerializeAsString();
+    m_callback(cev);
 }
 
 } /* namespace net */

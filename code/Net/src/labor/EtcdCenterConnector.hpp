@@ -47,7 +47,7 @@
 
 #include <ev.h>
 
-namespace net { class EtcdHttpConn; }
+namespace net { class EtcdHttpConn; class EtcdWatcher; }
 
 namespace net
 {
@@ -221,43 +221,17 @@ private:
      */
     void OnKeepAliveTimer();
 
-    // ---- Watch 功能（Phase 2） ----
+    // ---- Watch 功能（Phase C: EtcdWatcher 替代 curl 线程 + ev_async）----
 
-    /**
-     * @brief 启动 watch 线程和 ev_async（Init 中调用）
-     */
+    /// 启动 EtcdWatcher(异步,无线程) + 初始 snapshot 取 revision
     void StartWatch();
-
-    /**
-     * @brief 停止 watch 线程并清理 ev_async（Destroy 中调用）
-     */
     void StopWatch();
 
-    /**
-     * @brief watch 线程主函数：长连接 streaming POST /v3/watch
-     *        断线后自动重连（m_watchStop 为 false 时循环）
-     */
-    void WatchThreadFunc();
-
-    /**
-     * @brief libcurl streaming write callback（静态），调用 OnWatchChunk()
-     */
-    static size_t WatchWriteCallback(void* ptr, size_t size, size_t nmemb, void* userdata);
-
-    /**
-     * @brief 解析 watch 响应 chunk，提取事件写入队列，并唤醒 libev 线程
-     * @param chunk  curl 接收的原始文本块（可能是多行 JSON）
-     */
-    void OnWatchChunk(const std::string& chunk);
-
-    /**
-     * @brief ev_async 静态回调，转发给 OnWatchAsync()
-     */
-    static void WatchAsyncCallback(struct ev_loop* loop, ev_async* w, int revents);
-
-    /**
-     * @brief libev 线程中消费 WatchEvent 队列，组装 NodeNotice，发射 RouteUpdated
-     */
+    /// period snapshot: 取当前 revision + 全量 registry, 刷新路由/起点
+    void DoWatchSnapshot();
+    /// watcher 馈入一行 JSON(事件/created/canceled)
+    void ProcessWatchLine(const std::string& line);
+    /// 消费事件队列, 组装 NodeNotice, 发射 RouteUpdated(单线,无需 ev_async)
     void OnWatchAsync();
 
     // ---- 工具函数 ----
@@ -295,8 +269,10 @@ private:
 
     std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
 
-    /// 异步 HTTP 客户端(Phase B: 替代 curl 短请求; Phase C: watch 也迁过来)
+    /// 异步 HTTP 客户端(Phase B: 替代 curl 短请求)
     std::unique_ptr<EtcdHttpConn> m_http;
+    /// watch 长连接(Phase C: 替代 curl 线程 + ev_async)
+    std::unique_ptr<EtcdWatcher> m_watcher;
 
     int64_t             m_leaseId         = 0;
     uint32_t            m_nodeId          = 0;
@@ -320,37 +296,18 @@ private:
 
     // ---- watch 相关（Phase 2） ----
 
-    /**
-     * @brief watch 事件（watch 线程 → libev 线程的跨线程传递单元）
-     */
-    struct WatchEvent
-    {
-        std::string type;   ///< "PUT" 或 "DELETE"
-        std::string key;    ///< base64 解码后的 etcd key
-        std::string value;  ///< base64 解码后的 etcd value（JSON 格式）
-    };
+    struct WatchEvent { std::string type, key, value; };
+    std::vector<WatchEvent>  m_watchQueue;          ///< 事件队列(单线,无锁)
 
-    std::thread              m_watchThread;
-    std::atomic<bool>        m_watchStop{false};
-    ev_async                 m_watchAsync{};
-    bool                     m_watchAsyncStarted = false;
-    int64_t                  m_lastRevision      = 0;   ///< 断线续看：上次消费到的 mod_revision
+    int64_t                  m_lastRevision      = 0;
 
-    /// watch 被 etcd 以 compaction 取消时回传的 compact_revision（watch 线程写，
-    /// 同线程读）。下一次重连前据此把 m_lastRevision 抬到 compaction 之上，
-    /// 否则 start_revision ≤ compact_revision 会被立即取消 → 每秒重连风暴 (issus #20)。
-    int64_t                  m_watchCompactRevision = 0;
-
-    std::mutex               m_watchQueueMutex;
-    std::vector<WatchEvent>  m_watchQueue;              ///< watch 线程生产，libev 线程消费
-
-    // ---- 监控指标（issus #19/#20；watch 计数由 watch 线程写，主线程读，用 atomic） ----
-    std::atomic<uint64_t>    m_metricKeepAliveOk{0};
-    std::atomic<uint64_t>    m_metricKeepAliveFail{0};
-    std::atomic<uint64_t>    m_metricWatchReconnect{0};      ///< watch 重连次数
-    std::atomic<uint64_t>    m_metricWatchCompactCancel{0};  ///< 被 compaction 取消次数
-    std::atomic<uint64_t>    m_metricRegistryRebind{0};      ///< 注册键重绑次数
-    std::atomic<uint64_t>    m_metricSelfAuditFail{0};       ///< 自检发现注册键丢失/租约不符次数
+    // ---- 监控指标（单线程, 无 atomic 需要——watcher/connector 都在 m_loop 上）----
+    uint64_t    m_metricKeepAliveOk{0};
+    uint64_t    m_metricKeepAliveFail{0};
+    uint64_t    m_metricWatchReconnect{0};
+    uint64_t    m_metricWatchCompactCancel{0};
+    uint64_t    m_metricRegistryRebind{0};
+    uint64_t    m_metricSelfAuditFail{0};
     int                      m_auditTick = 0;                ///< 自检节流计数（KeepAlive 定时器内）
 };
 
