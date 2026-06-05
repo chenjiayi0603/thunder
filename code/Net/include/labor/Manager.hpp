@@ -222,7 +222,6 @@ protected:
     bool DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataFromCenter(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
-    // UpdateRaftLeaderHintFromNodeReportRsp — 已迁移至 TcpCenterConnector 插件
     // ---- CenterConnector 插件集成 ----
     std::unique_ptr<CenterConnector> CreateCenterConnector();
     void OnCenterEvent(const CenterEvent& ev);

@@ -325,16 +325,8 @@ target_link_libraries(thunder_test_shm_queue PRIVATE GTest::gtest_main Threads::
 gtest_discover_tests(thunder_test_shm_queue)
 
 # ---- TcpCenterConnector 单元测试 ----
-add_executable(thunder_test_connector_tcp
-  connector/test_connector_tcp.cpp
   $<TARGET_OBJECTS:thunder_net_sources_for_test>
 )
-target_compile_features(thunder_test_connector_tcp PRIVATE cxx_std_20)
-thunder_target_include_net(thunder_test_connector_tcp)
-thunder_link_thirdparty_shared(thunder_test_connector_tcp)
-target_link_libraries(thunder_test_connector_tcp PRIVATE GTest::gtest_main)
-set_target_properties(thunder_test_connector_tcp PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
-gtest_discover_tests(thunder_test_connector_tcp DISCOVERY_MODE PRE_TEST)
 
 # ---- E2E 容器烟雾测试 (需 THUNDER_E2E_ENABLED=1) ----
 add_executable(thunder_test_e2e_smoke

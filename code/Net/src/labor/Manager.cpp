@@ -13,7 +13,6 @@
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
-#include "labor/TcpCenterConnector.hpp"
 #include "register/EtcdCenterConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
@@ -2560,25 +2559,31 @@ bool Manager::DisposeDataFromCenter(const MsgHead& oInMsgHead,const MsgBody& oIn
     }
     return true;
 }
-
 std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
 {
     std::string connectorType;
     util::CJsonObject centerSub = m_oCurrentConf["center"];
     centerSub.Get("connector", connectorType);
-    if (connectorType.empty()) connectorType = "tcp";
 
-    if (connectorType == "tcp" || connectorType.empty())
+    if (connectorType != "etcd")
     {
-        auto p = std::make_unique<TcpCenterConnector>(m_oCurrentConf["center"]);
-        auto* tcp = static_cast<TcpCenterConnector*>(p.get());
-        tcp->SetNodeInfo(m_strNodeType,
-                         m_strHostForServer, m_iPortForServer,
-                         m_strHostForClient, m_iPortForClient,
-                         m_strGateway, m_iGatewayPort,
-                         m_uiWorkerNum);
-        return p;
+        LOG4_WARN("CreateCenterConnector: tcp center 已移除, 仅支持 etcd. 强制使用 etcd");
     }
+
+    util::CJsonObject centerConf = m_oCurrentConf["center"];
+    std::string eps;
+    centerConf.Get("etcd_endpoints", eps);
+    if (eps.empty())
+    {
+        m_oCurrentConf.Get("etcd_endpoints", eps);
+        if (!eps.empty())
+            centerConf.Add("etcd_endpoints", eps);
+    }
+    auto p = std::make_unique<EtcdCenterConnector>(centerConf);
+    p->SetLogger(GetLogger());
+    return p;
+}
+
 
     if (connectorType == "etcd")
     {

@@ -6,12 +6,11 @@
  * @date:    2026年5月24日
  * @note
  *   类似于 IoBackend 的策略模式，将 Manager 与注册中心(Center)之间的通信
- *   抽象为可替换的插件。内置实现为 TcpCenterConnector（兼容现有基于 TCP +
+ *   抽象为可替换的插件。内置实现为 EtcdCenterConnector
  *   Protobuf 的协议），可扩展 HTTP、Etcd、Consul 等后端。
  *
  *   角色关系:
  *     Manager (业务) → CenterConnector (策略接口)
- *           → TcpCenterConnector  — 现有 TCP + Protobuf 协议
  *           → (未来) HttpCenterConnector
  *           → (未来) EtcdCenterConnector
  ******************************************************************************/
