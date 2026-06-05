@@ -8,7 +8,7 @@
 
 ## Summary
 
-去掉自研 Center(Raft/注册/在线表/Admin),业务节点改接 etcd。通过现有 `CenterConnector` 抽象新增 `EtcdCenterConnector`,业务逻辑零改。客户端走 curl HTTPS + HTTP gateway(长连接 watch + 短请求 KV),不引 gRPC 运行时。node_id 用槽位占位 + lease 续期。
+去掉自研 Center(Raft/注册/在线表/Admin),业务节点改接 etcd。通过现有 `CenterConnector` 抽象新增 `EtcdCenterConnector`,业务逻辑零改。`EtcdCenterConnector` 运行在 **Manager 进程**(Manager 负责连注册中心)。客户端**用 Thunder 原生 HTTP(框架已有 `HttpCodec`),不引 libcurl、不引 gRPC 运行时**:在 Manager 的 libev 事件循环上自管一条到 etcd 的连接,经 HTTP gateway 做长连接 watch + 短请求 KV。node_id 用槽位占位 + lease 续期。
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 项 | 决定 |
 |---|---|
-| 客户端协议 | **Thunder 已有 HTTPS 出站能力**,不引 gRPC:<br>短请求(注册/txn/keepalive): `HttpStep` / `CurlClient::PostHttps`<br>watch 长连接流式: libcurl `CURLOPT_WRITEFUNCTION` 回调(Thunder 已有 curl,加几十行封装) → `PostToEventLoop` → libev |
+| 客户端协议 | **用 Thunder 原生 HTTP,不用 libcurl、不引 gRPC**:<br>`EtcdCenterConnector`(运行在 **Manager**)在 Manager 的 libev 主循环上自管一条到 etcd 的 TCP 连接,收发用框架 `HttpCodec`(`Encode(HttpMsg,CBuffer)`/`Decode(CBuffer,HttpMsg)`,独立于 Worker)。<br>短请求(注册/txn/keepalive/range): 请求-响应<br>watch 长连接流式: 同一套 `HttpCodec` **增量解 chunked**,事件直接在主循环回调——**无独立线程、无 `ev_async` 跨线程投递**(去掉原 libcurl + curl 线程方案) |
 | Admin 替代 | **Python/shell 脚本**查 etcd,替代 Center Admin 页 |
 | node_id 策略 | **槽位占位 + 续期**:ip:port 已有 lease → KeepAlive 续期;不存在 → 抢槽位 txn |
 
@@ -38,7 +38,7 @@
 |---|---|---|
 | 客户端策略 | `code/Net/include/labor/CenterConnector.hpp` | 新增 `EtcdCenterConnector` 实现接口,仿 `TcpCenterConnector` |
 | 事件回调 | `CenterEvent`(Registered/RouteUpdated/ConfigUpdated/ConnectionLost) | etcd 操作映射成这些事件 |
-| 跨线程投递 | `code/Net/src/labor/Labor.cpp:660` `PostToEventLoop` | watch/KeepAlive 在 curl 线程 → ev_async 投回 libev |
+| 单线程模型 | Manager 的 libev 主循环 | 注册/watch/KeepAlive 全在 Manager 主循环上跑,**无独立线程、无跨线程投递**(替代原 curl 线程 + `PostToEventLoop`/ev_async 方案) |
 | shm 下发 | version++ / 先 blob 后 len / 半包保护 | **完全不动**,只换上游来源 |
 | 测试 | `tests/e2e`(pytest) | E2E 加 etcd 容器,单/集群两套 |
 
@@ -71,14 +71,14 @@
   1. 幂等查 `registry/{ip:port}`
      - 存在(lease 活):直接 `KeepAlive` 续期,取回 node_id → `Registered` 事件
      - 不存在:抢槽位 txn(从 ip:port 哈希位置起扫,防惊群)→ 写 slot+registry → `Registered` 事件
-  2. 后台 curl 定时器每 ~3s `POST /v3/lease/keepalive`
-- **长连接 watch**: `POST /v3/watch` 开常驻连接;KV 操作走 HTTP keep-alive 复用同一 TLS
+  2. libev 定时器(Manager 主循环)每 ~3s `POST /v3/lease/keepalive`
+- **长连接 watch**: `POST /v3/watch` 常驻连接,`HttpCodec` 增量解 chunked;短 KV 操作可复用同一 keep-alive 连接
 - **验证**: 并发注册零碰撞;杀进程 → lease 过期 → 槽位释放可复用;重连续期不重新分配
 
 ### Phase 2 — 路由发现(watch → RouteUpdated → shm)
 - watch `/thunder/registry/` 前缀长连接 → 收事件 → 按 `node_type` 过滤组装 `NodeNotice` → `RouteUpdated` → **现有 shm 写入链路不动**
 - 记 `last_revision`,断线按 revision 重连补漏(不丢事件)
-- `PostToEventLoop` 把 watch 回调从 curl 线程投回 libev 线程写 shm
+- watch 回调就在 Manager 主循环上,直接写 shm(无跨线程投递)
 - **验证**: 节点 A 上线,节点 B watch 到,shm 更新;断网重连不丢事件
 
 ### Phase 3 — 配置(watch → ConfigUpdated → shm)
@@ -96,7 +96,7 @@
   ```
   admin_nodes.py   # 查在线表: GET /v3/kv/range prefix=/thunder/registry/, 格式化输出
   admin_config.py  # 查/改配置: GET/PUT /v3/kv/range|put prefix=/thunder/config/
-  admin_status.sh  # 集群健康: curl /health + /v3/cluster/member/list
+  admin_status.sh  # 集群健康: etcdctl endpoint health + endpoint status
   ```
 - 调用方式: `python3 admin_nodes.py` 或 `./admin_status.sh`,传 etcd endpoint 参数
 - **验证**: 能查集群在线表,能改配置,能看集群健康
@@ -127,7 +127,7 @@
 # 3 节点 etcd: docker-compose up → E2E 全通 → kill 1 节点 → 集群仍可用
 
 # Phase 6
-# TSan: 并发注册 + watch 回调 → PostToEventLoop → 写 shm
+# 单线程模型: 注册/watch/keepalive 全在 Manager 主循环, 不再有 curl 线程跨线程写 shm
 ```
 
 ---
@@ -137,7 +137,7 @@
 | 风险 | 可能性 | 缓解 |
 |---|---|---|
 | watch 长连接 + revision 续看要自己写 | 高 | 封装在 connector ~50 行;先单测断线续看 |
-| KeepAlive 定时器在 curl 线程,续租失败处理 | 中 | TTL=10s,每 3s 续;失败重试;超时 → ConnectionLost 事件 |
+| KeepAlive 定时器(Manager 主循环),续租失败处理 | 中 | TTL=10s,每 3s 续;失败重试;超时 → ConnectionLost 事件 |
 | 快速重连 vs lease 未过期的幂等边界 | 中 | registry 幂等逻辑 Phase 1 专项测 |
 | Center 有隐藏职责未迁移 | 低 | Phase 6 前 grep 确认业务侧只依赖 `CenterConnector` |
 | 3 节点 etcd 运维新增负担 | 低 | etcd 运维成熟,docker-compose 标准化 |
