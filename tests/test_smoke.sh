@@ -1,7 +1,10 @@
 #!/bin/bash
 # 冒烟测试 — 核心链路快速验证（需 Docker 集群已运行）
 # 用法:
-#   ./tests/test_smoke.sh              # 直接跑
+#   ./tests/test_smoke.sh              # 全部
+#   ./tests/test_smoke.sh --hello      # 仅 Hello(HTTP/HTTPS/WS/Redis/MySQL)
+#   ./tests/test_smoke.sh --interface  # 仅 Interface→Logic
+#   ./tests/test_smoke.sh --etcd       # 仅 etcd 注册中心
 #   ./tests/test_smoke.sh --build      # 先重编再跑
 set -euo pipefail
 
@@ -11,10 +14,21 @@ cd "$ROOT"
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; NC='\033[0m'
 PASS=0; FAIL=0; SKIP=0
 
-# ── 可选：先构建 ─────────────────────────────────────────────
-if [ "${1:-}" = "--build" ]; then
-    echo "=== 构建 ==="
-    cmake --build build -j1 && cmake --install build
+# ── 参数解析 ─────────────────────────────────────────────
+RUN_HELLO=false; RUN_INTERFACE=false; RUN_ETCD=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --build) echo "=== 构建 ==="; cmake --build build -j1 && cmake --install build ;;
+        --hello) RUN_HELLO=true ;;
+        --interface) RUN_INTERFACE=true ;;
+        --etcd) RUN_ETCD=true ;;
+        *) RUN_HELLO=true; RUN_INTERFACE=true; RUN_ETCD=true; break ;;
+    esac
+    shift
+done
+# 无参数 → 全部
+if ! $RUN_HELLO && ! $RUN_INTERFACE && ! $RUN_ETCD; then
+    RUN_HELLO=true; RUN_INTERFACE=true; RUN_ETCD=true
 fi
 
 # ── 检查集群是否已启动 ────────────────────────────────────────
@@ -56,6 +70,7 @@ check_warn() {
 }
 
 # ── HTTP / Hello ──────────────────────────────────────────────
+if $RUN_HELLO; then
 echo ""
 echo "--- HTTP / Hello ---"
 
@@ -89,7 +104,10 @@ check "WebSocket 握手 101                    [curl→HelloWs:27010]" \
       -H "Sec-WebSocket-Version: 13" \
       http://127.0.0.1:27010/hello/shake'
 
+fi  # RUN_HELLO
+
 # ── Interface → Logic 全链路 ──────────────────────────────────
+if $RUN_INTERFACE; then
 echo ""
 echo "--- Interface → Logic ---"
 
@@ -124,7 +142,10 @@ check "VerifyKey 空 token → code:1            [curl→Interface→Logic]" \
     'curl -s --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
       -d "{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}"'
 
+fi  # RUN_INTERFACE
+
 # ── etcd ──────────────────────────────────────────────────────
+if $RUN_ETCD; then
 echo ""
 echo "--- etcd ---"
 echo "     Manager(各节点) ──HttpCodec──► etcd(:2379)"
@@ -172,6 +193,7 @@ if [ -f "$_ADMIN" ] && curl -sf --max-time 2 http://127.0.0.1:2379/health >/dev/
     echo "  === status ==="
     python3 "$_ADMIN" status 2>/dev/null | sed 's/^/  /'
 fi
+fi  # RUN_ETCD
 
 # ── 汇总 ─────────────────────────────────────────────────────
 echo ""
