@@ -542,12 +542,21 @@ void EtcdCenterConnector::AsyncRebindRegistration(uint32_t nodeId,
                 if (next) next(ok);
             });
     };
-    putKv(slotKey, ipPort, [&, cb = std::move(cb)](bool ok1) {
+    // issue: [&] 捕获 regValue/registryKey 引用 → async 回调时栈已销毁 → dangling ref crash
+    const int            nid     = static_cast<int>(nodeId);
+    const std::string    leaseS  = std::to_string(m_leaseId);
+    putKv(slotKey, ipPort,
+        [this, registryKey, regValue, nid, leaseS, cb = std::move(cb)](bool ok1) {
         if (!ok1) { cb(false); return; }
-        putKv(registryKey, regValue, [cb = std::move(cb), nodeId, this](bool ok2) {
-            if (ok2) ETCD_LOG_INFO("AsyncRebind — ok nodeId=" << nodeId << " lease=" << m_leaseId);
-            else     ETCD_LOG_ERROR("AsyncRebind — registry PUT 失败");
-            cb(ok2);
+        util::CJsonObject o;
+        o.Add("key",   B64(registryKey));
+        o.Add("value", B64(regValue));
+        o.Add("lease", leaseS);
+        m_http->Post("/v3/kv/put", o.ToString(),
+            [cb = std::move(cb), nid, this](bool ok, int, const std::string&) {
+            if (ok) ETCD_LOG_INFO("AsyncRebind — ok nodeId=" << nid << " lease=" << m_leaseId);
+            else    ETCD_LOG_ERROR("AsyncRebind — registry PUT 失败");
+            cb(ok);
         });
     });
 }
