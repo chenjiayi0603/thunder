@@ -157,14 +157,21 @@ else
     fi
 fi
 
-# ── etcd 监控指令 ────────────────────────────────────────────
-echo ""
-echo "--- etcd 监控 ---"
-echo "  deploy.sh admin nodes    在线节点 + node_id"
-echo "  deploy.sh admin routes   路由表 (类型→节点映射)"
-echo "  deploy.sh admin status   etcd 集群健康/revision/members"
-echo "  deploy.sh admin config   配置查改"
-echo "  deploy.sh test smoke     本测试 (全链路 + 注册中心)"
+# ── etcd 监控 ──────────────────────────────────────────────────
+_ADMIN="${ROOT}/deploy/scripts/admin.py"
+if [ -f "$_ADMIN" ] && curl -sf --max-time 2 http://127.0.0.1:2379/health >/dev/null 2>&1; then
+    echo ""
+    echo "--- etcd 监控 ---"
+    echo ""
+    echo "  === nodes ==="
+    python3 "$_ADMIN" nodes 2>/dev/null | sed 's/^/  /'
+    echo ""
+    echo "  === routes ==="
+    python3 "$_ADMIN" routes 2>/dev/null | sed 's/^/  /'
+    echo ""
+    echo "  === status ==="
+    python3 "$_ADMIN" status 2>/dev/null | sed 's/^/  /'
+fi
 
 # ── 汇总 ─────────────────────────────────────────────────────
 echo ""
