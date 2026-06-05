@@ -71,6 +71,14 @@ check "HTTPS Echo (POST)" \
     '"code":0' \
     'curl -skf --max-time 5 https://127.0.0.1:27443/hello/hello -d "{\"option\":\"Echo\"}"'
 
+check "Redis set/get (CoRedis)" \
+    '"set_ok":1' \
+    'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoRedis\"}"'
+
+check "MySQL create/insert/select (CoMysql)" \
+    '"select_ok":1' \
+    'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoMysql\"}"'
+
 # WebSocket：-D - 把响应头输出到 stdout，不用 -f（101 非 2xx，-f 会失败）
 check "WebSocket 握手 101" \
     '101 Switching Protocols' \
