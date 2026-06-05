@@ -47,5 +47,12 @@ $HH && { echo "━━━ HELLO_HTTPS (HelloHttps/Hello_https_robot.log) ━━�
   echo ""; }
 
 $ET && { echo "━━━ ETCD ━━━"
+  echo "  === health ==="
   docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null | sed 's/^/  /'
+  echo "  === registry ==="
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/registry/ -w simple 2>/dev/null | sed 's/^/  /'
+  echo "  === slot ==="
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/slot/ -w simple 2>/dev/null | sed 's/^/  /'
+  echo "  === leases ==="
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 lease list 2>/dev/null | sed 's/^/  /'
   echo ""; }
