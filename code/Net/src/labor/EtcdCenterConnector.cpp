@@ -519,7 +519,8 @@ void EtcdCenterConnector::OnRegDone(bool ok, const std::string& errmsg)
     if (ok)
     {
         ev.node_id = m_nodeId;
-        ETCD_LOG_INFO("OnRegDone — 注册成功 nodeId=" << m_nodeId);
+        ETCD_LOG_INFO("<<< node_id 分配完成: " << m_nodeId << " (type=" << m_nodeType
+                      << " addr=" << m_nodeIp << ":" << m_nodePort << " lease=" << m_leaseId << ") >>>");
     }
     else
     {

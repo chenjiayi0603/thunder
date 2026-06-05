@@ -83,3 +83,25 @@
 - **文件**: `docs/architecture/evaluations/thunder_on_k8s_evaluation.md`
 - **状态**: 📋 评估完成,未实施
 - **结论**: Interface 可放 k8s, Hello/Logic 应留裸机
+
+---
+
+## 🟡 后端日志异常 (2026-06-05 冒烟后发现)
+
+### #30 Manager bind Address already in use — 重启竞态
+- **文件**: `code/Net/src/labor/Manager.cpp:1199`
+- **状态**: ✅ 已修复
+- **问题**: Docker compose restart 时旧进程未完全释放端口 → `bind()` fail → exit
+- **修复**: `setsockopt(SO_REUSEADDR)` 在 bind 前设置端口重用
+
+### #31 unkonw cmd 7 from worker — WARN 级别过高
+- **文件**: `code/Net/src/labor/Manager.cpp:2444`
+- **状态**: ✅ 已修复
+- **问题**: Manager 不识别 Worker 发来的 cmd 7, 每次打 WARN 刷日志
+- **修复**: `LOG4_WARN` → `LOG4_TRACE` (未处理命令打 TRACE 即可)
+
+### #32 node_id 分配日志不够显著
+- **文件**: `code/Net/src/labor/EtcdCenterConnector.cpp:522`
+- **状态**: ✅ 已修复
+- **问题**: OnRegDone 只打 `注册成功 nodeId=247`, 缺少 node_type/ip:port/lease 上下文
+- **修复**: `<<< node_id 分配完成: 247 (type=LOGIC addr=127.0.0.1:16068 lease=...) >>>`

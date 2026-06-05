@@ -1196,6 +1196,7 @@ bool Manager::Init()
 		exit(iErrno);
 	}
 	m_iS2SListenFd = iFd;
+    int reuse = 1; setsockopt(m_iS2SListenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     if (bind(m_iS2SListenFd, &addr, sizeof(addr)) < 0)
     {
         LOG4_ERROR("error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
@@ -2441,7 +2442,7 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 		}
 		else
 		{
-			LOG4_WARN("unknow cmd %d from worker!", oInMsgHead.cmd());
+			LOG4_TRACE("unknow cmd %d from worker (ignored)", oInMsgHead.cmd());
 		}
 	}
     return(true);
