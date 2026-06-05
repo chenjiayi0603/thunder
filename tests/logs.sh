@@ -1,6 +1,22 @@
 #!/bin/bash
-# 打印 Thunder 节点最近日志
+# Thunder 服务日志查看
 # 用法: ./tests/logs.sh [--logic|--etcd] [行数] [过滤词]
+
+# ── 日志路径 ─────────────────────────────────────
+# 业务节点(文件日志):
+#   Logic:      /thunder/deploy/Logic/log/Logic_robot.log        容器:thunder-deploy-logic-1
+#   Interface:  /thunder/deploy/Interface/log/Interface_robot.log 容器:thunder-deploy-interface-1
+#   Hello:      /thunder/deploy/HelloHttp/log/Hello_robot.log    容器:thunder-deploy-hello-1
+#   HelloWs:    /thunder/deploy/HelloWs/log/Hello_ws_robot.log   容器:thunder-deploy-hello_ws-1
+#   HelloHttps: /thunder/deploy/HelloHttps/log/Hello_https_robot.log 容器:thunder-deploy-hello_https-1
+# etcd (stdout, 无文件日志):
+#   docker logs thunder-deploy-etcd-1
+# etcd 持久化数据:
+#   docker/data/etcd/member/ (raft log + snapshot + WAL)
+# Docker json log (宿主机):
+#   /var/lib/docker/containers/<id>/<id>-json.log
+# ──────────────────────────────────────────────────
+
 LINES=10; FILTER=""
 LG=false; IF=false; HL=false; HW=false; HH=false; ET=false
 
@@ -48,11 +64,16 @@ $HH && { echo "━━━ HELLO_HTTPS (HelloHttps/Hello_https_robot.log) ━━�
 
 $ET && { echo "━━━ ETCD ━━━"
   echo "  === health ==="
-  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null | sed 's/^/  /'
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
   echo "  === registry ==="
-  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/registry/ -w simple 2>/dev/null | sed 's/^/  /'
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/registry/ -w simple 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
   echo "  === slot ==="
-  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/slot/ -w simple 2>/dev/null | sed 's/^/  /'
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/slot/ -w simple 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
   echo "  === leases ==="
-  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 lease list 2>/dev/null | sed 's/^/  /'
+  docker exec thunder-deploy-etcd-1 etcdctl --endpoints=http://127.0.0.1:2379 lease list 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
+  echo ""
+  echo "  etcd 日志路径:"
+  echo "    stdout:  docker logs thunder-deploy-etcd-1"
+  echo "    持久化:  docker/data/etcd/member/ (raft+snap+WAL)"
+  echo "    Docker:  /var/lib/docker/containers/<id>/<id>-json.log"
   echo ""; }
