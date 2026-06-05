@@ -221,6 +221,25 @@ etcd txn 请求就是一个三段的 JSON。以 Logic 节点(`127.0.0.1:16068`)�
 
 如果另一个 Interface 节点(`127.0.0.1:27009`)正好也发 `/thunder/slot/244`,两个 JSON 的 key 不同,互相不冲突——Raft 日志中先后执行,各拿各的 slot。
 
+### `create_revision: "0"` 是谁提供的? 是否合理?
+
+**谁提供的**: `BuildSlotTxn` 中硬编码为 `"0"`——由注册节点自己设置,不是 etcd 返回的。
+
+**含义**: 在 etcd 中,每个 key 创建时会被赋予一个全局递增的 `create_revision`(例如第 4 次写入创建了 slot/247,则 `create_revision=4`)。`"0"` 是一个**永不出现的合法 revision**(revision 从 1 开始递增),所以 `create_revision==0` 等价于 **"这个 key 不存在"**。
+
+**是否合理**: ✅ 完全合理。
+
+```
+slot 未被创建时 → 在 etcd keyspace 中无此 key → 没有 create_revision
+compare 用 "0" 去匹配一个不存在的字段 → etcd 视为 "相等"
+slot 已被创建时 → create_revision=实际值(如 4)
+compare 用 "0" 去匹配 "4" → etcd 返回 false → 走 failure 分支
+```
+
+**是否有租期**: `create_revision` 本身没有租期——它是 key 的元数据,随 key 存在而存在。但当 key 因 lease 过期被 etcd 删除后,`create_revision` 也随之消失。新节点再次创建同名 key 时会获得一个新的 `create_revision`,旧值永不复用。
+
+**为什么不直接用"key 是否存在"**: etcd txn API 没有 `key_exists` 这种 compare target。用 `create_revision==0` 是 etcd 提供的最直接的"检查 key 不存在"方式。
+
 关键字段:
 
 | 字段 | 含义 | 值 |
