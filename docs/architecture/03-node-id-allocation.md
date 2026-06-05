@@ -147,19 +147,63 @@ ReportNodeStatus()                                          [EtcdCenterConnector
 
 **关键成员**: `m_regInProgress`(`[EtcdCenterConnector.hpp#L260](../../code/Net/src/register/EtcdCenterConnector.hpp#L260)`), `m_regSlot`(`:261`), `m_regStuckTicks`(`:262`)
 
-## 3. 槽位抢占(txn)原理
+## 3. 槽位抢占原理 — CAS + 双键原子写入
+
+### 要解决的问题
+
+多个节点同时启动,都需要分配 node_id。如何保证:
+
+1. **不重复** — 任意两个节点不会拿到同一个 node_id
+2. **不遗漏** — slot 和 registry 双向记录一致,不会出现"slot 指向的节点查不到 registry"
+
+### 方案: 以一个 etcd txn 做 CAS
+
+**CAS(Compare-And-Swap)**: 先检查"slot 是否空闲",如果空闲就占为己有。检查和抢占在同一个原子操作中完成。
 
 ```
-[`AsyncTryClaimSlot`](../../code/Net/src/register/EtcdCenterConnector.cpp)(N) → BuildSlotTxn(N, slotKey, registryKey, ipPort)
-→ POST /v3/kv/txn {
-    compare:   slot/N 的 create_revision == 0 (key 不存在)
-    success:   PUT slot/N=ip:port  +  PUT registry/ip:port=JSON{node_id:N,...}
-               (both with lease=m_leaseId)
-    failure:   range slot/N (协议格式,结果不用)
-  }
-
-原子性: etcd txn 保证 compare AND success 原子——两个节点不会抢到同一 slot。
+┌──── 一次 txn 请求 ────┐
+│                        │
+│  ① Compare:            │
+│     slot/247 从来没被   │
+│     创建过吗?           │
+│         │              │
+│    ┌────┴────┐         │
+│    │ YES     │ NO      │
+│    ▼         ▼         │
+│  ② Write    ③ Skip    │
+│  PUT slot   (空操作)    │
+│  PUT reg               │
+│                        │
+└────────────────────────┘
 ```
+
+etcd 的 Raft 日志保证: 所有 txn 请求串行执行。节点 A 和 B 同时抢 slot/247:
+
+```
+Raft 日志顺序:
+  entry_1: A 的 txn → compare 通过 → slot/247 被 A 创建
+  entry_2: B 的 txn → compare 失败 → slot/247 已存在 → B 返回 false
+
+结果: A=247, B 自动扫描下一个槽位(248)
+```
+
+**不需要分布式锁,不需要协调者**——Raft 的串行 apply 本身就是天然的互斥。
+
+### 为什么一次写两个 key
+
+slot 和 registry 必须在同一 txn 中创建:
+
+```
+slot/247    → "127.0.0.1:16068"               ← 反向索引: slot号→IP
+registry/127.0.0.1:16068 → {node_id:247,...}   ← 正向索引: IP→node_id
+
+如果分两次 PUT:
+  slot 写成功 + registry 写失败 → slot 永久指向一个"幽灵节点"
+  
+一次 txn 保证: 两个 key 要么都创建, 要么都不创建。
+```
+
+---
 
 ## 4. 关键边界
 
