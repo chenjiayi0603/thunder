@@ -162,16 +162,64 @@ ReportNodeStatus()                                          [EtcdCenterConnector
 
 ### CAS 怎么实现的
 
-etcd txn 请求就是一个三段的 JSON:
+etcd txn 请求就是一个三段的 JSON。以 Logic 节点(`127.0.0.1:16068`)抢 slot/247 为例,实际发出的请求:
 
 ```json
 {
-  "compare": [{"key": "/thunder/slot/247", "target": "CREATE",
-               "result": "EQUAL",            "create_revision": "0"}],
-  "success": [{"request_put": ...}, {"request_put": ...}],
-  "failure": [{"request_range": ...}]
+  "compare": [{
+    "key":              "L3RodW5kZXIvc2xvdC8yNDc=",
+    "target":           "CREATE",
+    "result":           "EQUAL",
+    "create_revision":  "0"
+  }],
+  "success": [
+    {
+      "request_put": {
+        "key":   "L3RodW5kZXIvc2xvdC8yNDc=",
+        "value": "MTI3LjAuMC4xOjE2MDY4",
+        "lease": "7587895322829403153"
+      }
+    },
+    {
+      "request_put": {
+        "key":   "L3RodW5kZXIvcmVnaXN0cnkvMTI3LjAuMC4xOjE2MDY4",
+        "value": "eyJub2RlX2lkIjoyNDcsIm5vZGVfdHlwZSI6IkxPR0lDIiwibm...",
+        "lease": "7587895322829403153"
+      }
+    }
+  ],
+  "failure": [{
+    "request_range": {
+      "key": "L3RodW5kZXIvc2xvdC8yNDc="
+    }
+  }]
 }
 ```
+
+解码后:
+
+| 段 | base64 值 | 解码后 | 含义 |
+|----|-----------|--------|------|
+| compare.key | `L3RodW5kZXIvc2xvdC8yNDc=` | `/thunder/slot/247` | 检查这个 slot |
+| compare.create_revision | `"0"` | 0 | key 从未创建过? |
+| success[0].value | `MTI3LjAuMC4xOjE2MDY4` | `127.0.0.1:16068` | slot→IP 映射 |
+| success[1].key | `...cmVnaXN0cnkvMTI3...` | `/thunder/registry/127.0.0.1:16068` | registry key |
+| success[1].value | `eyJub2RlX2lkIjoyNDcs...` | `{"node_id":247,"node_type":"LOGIC","node_ip":"127.0.0.1","node_port":16068}` | 节点完整信息 |
+| success[*].lease | `758789...` | 相同值 | 两个 key 绑同一个租约 |
+| failure.key | `L3RodW5kZXIvc2xvdC8yNDc=` | `/thunder/slot/247` | 失败时空查(仅满足协议) |
+
+**执行流程**:
+
+```
+① curl POST /v3/kv/txn 发送上述 JSON
+② etcd 原子执行:
+   - 读 /thunder/slot/247 的 create_revision
+   - 等于 0? → 执行 success: 创建 slot/247 + registry/127.0.0.1:16068(同 lease)
+   - 不等于 0? → 执行 failure: 仅 range(结果忽略)
+③ 返回 {"succeeded": true}  或  {"succeeded": false}
+```
+
+如果另一个 Interface 节点(`127.0.0.1:27009`)正好也发 `/thunder/slot/244`,两个 JSON 的 key 不同,互相不冲突——Raft 日志中先后执行,各拿各的 slot。
 
 关键字段:
 
