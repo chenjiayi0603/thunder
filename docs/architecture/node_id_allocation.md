@@ -1,7 +1,7 @@
 # node_id 分配设计
 
 > 日期: 2026-06-05
-> 涉及: `EtcdCenterConnector`, `BuildSlotTxn`, `AsyncTryClaimSlot`
+> 涉及: `EtcdCenterConnector`, `BuildSlotTxn`, `[`AsyncTryClaimSlot`](../../code/Net/src/labor/EtcdCenterConnector.cpp)`
 
 ---
 
@@ -17,38 +17,38 @@
 ## 2. 分配流程
 
 ```
-ReportNodeStatus()                                          EtcdCenterConnector.cpp:220
-  └→ DoRegister(ip, port, type)                             EtcdCenterConnector.cpp:425
+ReportNodeStatus()                                          [EtcdCenterConnector.cpp#L220](../../code/Net/src/labor/EtcdCenterConnector.cpp#L220)
+  └→ DoRegister(ip, port, type)                             [EtcdCenterConnector.cpp#L425](../../code/Net/src/labor/EtcdCenterConnector.cpp#L425)
        │
-       ├─ L1 确保 lease                                      EtcdCenterConnector.cpp:443
-       │    └→ AsyncLeaseGrant → m_leaseId                  EtcdCenterConnector.cpp:261
+       ├─ L1 确保 lease                                      [EtcdCenterConnector.cpp#L443](../../code/Net/src/labor/EtcdCenterConnector.cpp#L443)
+       │    └→ [`AsyncLeaseGrant`](../../code/Net/src/labor/EtcdCenterConnector.cpp) → m_leaseId                  [EtcdCenterConnector.cpp#L261](../../code/Net/src/labor/EtcdCenterConnector.cpp#L261)
        │
-       ├─ L2 查 registry                                     EtcdCenterConnector.cpp:454
-       │    └→ AsyncQueryRegistry                            EtcdCenterConnector.cpp:306
+       ├─ L2 查 registry                                     [EtcdCenterConnector.cpp#L454](../../code/Net/src/labor/EtcdCenterConnector.cpp#L454)
+       │    └→ [`AsyncQueryRegistry`](../../code/Net/src/labor/EtcdCenterConnector.cpp)                            [EtcdCenterConnector.cpp#L306](../../code/Net/src/labor/EtcdCenterConnector.cpp#L306)
        │         │
-       │         ├─ Fresh (键存在 + lease 匹配)              EtcdCenterConnector.cpp:464
-       │         │    └→ m_nodeId=原值, OnRegDone(true)     EtcdCenterConnector.cpp:514
+       │         ├─ Fresh (键存在 + lease 匹配)              [EtcdCenterConnector.cpp#L464](../../code/Net/src/labor/EtcdCenterConnector.cpp#L464)
+       │         │    └→ m_nodeId=原值, OnRegDone(true)     [EtcdCenterConnector.cpp#L514](../../code/Net/src/labor/EtcdCenterConnector.cpp#L514)
        │         │
-       │         ├─ Rebind (键存在 + lease 不匹配)           EtcdCenterConnector.cpp:476
-       │         │    └→ AsyncRebindRegistration             EtcdCenterConnector.cpp:533
+       │         ├─ Rebind (键存在 + lease 不匹配)           [EtcdCenterConnector.cpp#L476](../../code/Net/src/labor/EtcdCenterConnector.cpp#L476)
+       │         │    └→ [`AsyncRebindRegistration`](../../code/Net/src/labor/EtcdCenterConnector.cpp)             [EtcdCenterConnector.cpp#L533](../../code/Net/src/labor/EtcdCenterConnector.cpp#L533)
        │         │         └→ PUT slot+registry → OnRegDone
        │         │
-       │         └─ Claim (键不存在) → L3                    EtcdCenterConnector.cpp:488
+       │         └─ Claim (键不存在) → L3                    [EtcdCenterConnector.cpp#L488](../../code/Net/src/labor/EtcdCenterConnector.cpp#L488)
        │
-       └─ L3 槽位扫描                                        EtcdCenterConnector.cpp:488
-            └→ AsyncTryClaimSlot(slot=N)                    EtcdCenterConnector.cpp:405
-                 └→ BuildSlotTxn                            EtcdCenterConnector.cpp:351
+       └─ L3 槽位扫描                                        [EtcdCenterConnector.cpp#L488](../../code/Net/src/labor/EtcdCenterConnector.cpp#L488)
+            └→ [`AsyncTryClaimSlot`](../../code/Net/src/labor/EtcdCenterConnector.cpp)(slot=N)                    [EtcdCenterConnector.cpp#L405](../../code/Net/src/labor/EtcdCenterConnector.cpp#L405)
+                 └→ BuildSlotTxn                            [EtcdCenterConnector.cpp#L351](../../code/Net/src/labor/EtcdCenterConnector.cpp#L351)
                       │
                       ├─ OK    → m_nodeId=N, OnRegDone
                       └─ 占用  → N++, OnRegScan 递归
 ```
 
-**关键成员**: `m_regInProgress`(`EtcdCenterConnector.hpp:260`), `m_regSlot`(`:261`), `m_regStuckTicks`(`:262`)
+**关键成员**: `m_regInProgress`(`[EtcdCenterConnector.hpp#L260](../../code/Net/src/labor/EtcdCenterConnector.hpp#L260)`), `m_regSlot`(`:261`), `m_regStuckTicks`(`:262`)
 
 ## 3. 槽位抢占(txn)原理
 
 ```
-AsyncTryClaimSlot(N) → BuildSlotTxn(N, slotKey, registryKey, ipPort)
+[`AsyncTryClaimSlot`](../../code/Net/src/labor/EtcdCenterConnector.cpp)(N) → BuildSlotTxn(N, slotKey, registryKey, ipPort)
 → POST /v3/kv/txn {
     compare:   slot/N 的 create_revision == 0 (key 不存在)
     success:   PUT slot/N=ip:port  +  PUT registry/ip:port=JSON{node_id:N,...}
@@ -63,14 +63,14 @@ AsyncTryClaimSlot(N) → BuildSlotTxn(N, slotKey, registryKey, ipPort)
 
 | 边界 | 处理 | 代码 |
 |------|------|------|
-| **并发抢同一 slot** | etcd txn atomic | `EtcdCenterConnector.cpp:405` |
-| **重启 lease 未过期** | Fresh 路径直接复用 | `EtcdCenterConnector.cpp:464` |
-| **重启 lease 已过期** | Claim 路径重新抢占 | `EtcdCenterConnector.cpp:488` |
-| **255 槽位全满** | OnRegDone(false) | `EtcdCenterConnector.cpp:514` |
-| **m_regInProgress 死锁** | 30s 超时复位(#27) | `EtcdCenterConnector.cpp:425` |
-| **dangling ref crash** | [&]→按值捕获(#19) | `EtcdCenterConnector.cpp:545` |
-| **绑定端口竞态** | SO_REUSEADDR(#30) | `Manager.cpp:1199` |
-| **管道数据错位** | SkipBytes 重试(#33) | `Manager.cpp:2325` |
+| **并发抢同一 slot** | etcd txn atomic | `[EtcdCenterConnector.cpp#L405](../../code/Net/src/labor/EtcdCenterConnector.cpp#L405)` |
+| **重启 lease 未过期** | Fresh 路径直接复用 | `[EtcdCenterConnector.cpp#L464](../../code/Net/src/labor/EtcdCenterConnector.cpp#L464)` |
+| **重启 lease 已过期** | Claim 路径重新抢占 | `[EtcdCenterConnector.cpp#L488](../../code/Net/src/labor/EtcdCenterConnector.cpp#L488)` |
+| **255 槽位全满** | OnRegDone(false) | `[EtcdCenterConnector.cpp#L514](../../code/Net/src/labor/EtcdCenterConnector.cpp#L514)` |
+| **m_regInProgress 死锁** | 30s 超时复位(#27) | `[EtcdCenterConnector.cpp#L425](../../code/Net/src/labor/EtcdCenterConnector.cpp#L425)` |
+| **dangling ref crash** | [&]→按值捕获(#19) | `[EtcdCenterConnector.cpp#L545](../../code/Net/src/labor/EtcdCenterConnector.cpp#L545)` |
+| **绑定端口竞态** | SO_REUSEADDR(#30) | `[Manager.cpp#L1199](../../code/Net/src/labor/Manager.cpp#L1199)` |
+| **管道数据错位** | SkipBytes 重试(#33) | `[Manager.cpp#L2325](../../code/Net/src/labor/Manager.cpp#L2325)` |
 
 ## 5. 分配算法细节
 
@@ -81,7 +81,7 @@ uint32_t hashVal = 0;
 for (unsigned char c : ipPort) hashVal += c;
 const int startSlot = static_cast<int>(hashVal % kMaxSlot) + 1;  // [1..255]
 ```
-`EtcdCenterConnector.cpp:488` — 简单字节累加哈希,打散不同 ip:port 的起始位。
+`[EtcdCenterConnector.cpp#L488](../../code/Net/src/labor/EtcdCenterConnector.cpp#L488)` — 简单字节累加哈希,打散不同 ip:port 的起始位。
 
 ### 5.2 扫描策略
 
@@ -92,12 +92,12 @@ for (uint32_t loop = 0; loop < kMaxSlot; ++loop) {
 }
 return "所有槽位已满"
 ```
-`EtcdCenterConnector.cpp:488-510` — 保证每个槽位只尝试一次,255次内必然找到空槽。
+`[EtcdCenterConnector.cpp#L488](../../code/Net/src/labor/EtcdCenterConnector.cpp#L488)-510` — 保证每个槽位只尝试一次,255次内必然找到空槽。
 
 ### 5.3 Lease 绑定
 
 每个 PUT 操作绑定 `m_leaseId`(异步申请,`kLeaseTTL=10s`)。续租间隔 `kKeepAliveInterval=3s`,失败累计超过阈值触发 reconnect。
-参见 `EtcdCenterConnector.cpp:261`(AsyncLeaseGrant), `EtcdCenterConnector.cpp:278`(AsyncKeepAlive)。
+参见 `[EtcdCenterConnector.cpp#L261](../../code/Net/src/labor/EtcdCenterConnector.cpp#L261)`([`AsyncLeaseGrant`](../../code/Net/src/labor/EtcdCenterConnector.cpp)), `[EtcdCenterConnector.cpp#L278](../../code/Net/src/labor/EtcdCenterConnector.cpp#L278)`([`AsyncKeepAlive`](../../code/Net/src/labor/EtcdCenterConnector.cpp))。
 
 ## 6. 注册表数据结构
 
@@ -146,16 +146,16 @@ HELLO       127.0.0.1:27011      237        237        1
 
 ```
 Init()
-  └→ AsyncLeaseGrant("/v3/lease/grant")                     # L1: 申请租约
+  └→ [`AsyncLeaseGrant`](../../code/Net/src/labor/EtcdCenterConnector.cpp)("/v3/lease/grant")                     # L1: 申请租约
       └→ callback: m_leaseId = id → DoRegister(ip,port,type)
 
 DoRegister()
   └→ OnRegEnsureLease()                                     # 确保有 lease(无则补领)
       └→ OnRegQuery()                                       # L2: 查 registry/ip:port
-          ├─ Fresh: 键存在 + lease 匹配 → AsyncKeepAlive → OnRegDone
-          ├─ Rebind: 键存在 + lease 不匹配 → AsyncRebindRegistration(PUT slot+registry) → OnRegDone
+          ├─ Fresh: 键存在 + lease 匹配 → [`AsyncKeepAlive`](../../code/Net/src/labor/EtcdCenterConnector.cpp) → OnRegDone
+          ├─ Rebind: 键存在 + lease 不匹配 → [`AsyncRebindRegistration`](../../code/Net/src/labor/EtcdCenterConnector.cpp)(PUT slot+registry) → OnRegDone
           └─ Claim: 键不存在 → OnRegScan()
-                └→ AsyncTryClaimSlot(txn: compare+PUT)       # L3: 槽位抢占
+                └→ [`AsyncTryClaimSlot`](../../code/Net/src/labor/EtcdCenterConnector.cpp)(txn: compare+PUT)       # L3: 槽位抢占
                     ├─ ok → OnRegDone(node_id=slot)
                     └─ fail → next slot → OnRegScan(递归)
 
@@ -166,10 +166,10 @@ OnRegDone()
 ```
 
 **关键文件**:
-- `EtcdCenterConnector.cpp:425-530` — 注册延续链
-- `EtcdCenterConnector.cpp:533-557` — AsyncRebindRegistration
-- `EtcdCenterConnector.cpp:398-414` — AsyncTryClaimSlot
-- `EtcdCenterConnector.cpp:492-498` — BuildSlotTxn(txn JSON)
+- `[EtcdCenterConnector.cpp#L425](../../code/Net/src/labor/EtcdCenterConnector.cpp#L425)-530` — 注册延续链
+- `[EtcdCenterConnector.cpp#L533](../../code/Net/src/labor/EtcdCenterConnector.cpp#L533)-557` — [`AsyncRebindRegistration`](../../code/Net/src/labor/EtcdCenterConnector.cpp)
+- `[EtcdCenterConnector.cpp#L398](../../code/Net/src/labor/EtcdCenterConnector.cpp#L398)-414` — [`AsyncTryClaimSlot`](../../code/Net/src/labor/EtcdCenterConnector.cpp)
+- `[EtcdCenterConnector.cpp#L492](../../code/Net/src/labor/EtcdCenterConnector.cpp#L492)-498` — BuildSlotTxn(txn JSON)
 
 **关键保护**:
 - `m_regInProgress` — 防 re-entrancy(定时器+心跳同时触发注册)
