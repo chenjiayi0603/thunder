@@ -57,6 +57,10 @@ void EtcdHttpConn::Post(const std::string& path, const std::string& body, RespCa
 
 void EtcdHttpConn::Close()
 {
+    // #25: 排队请求静默丢弃 — Close() 时通知所有在途 callback 失败
+    std::deque<Pending> q; q.swap(m_queue);
+    for (auto& p : q) { if (p.cb) p.cb(false, 0, ""); }
+    m_inflight = false;
     Reset();
 }
 

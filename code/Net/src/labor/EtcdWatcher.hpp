@@ -51,6 +51,7 @@ private:
     struct ev_loop* m_loop;
     std::string     m_host; int m_port;
     std::string     m_prefix, m_rangeEnd;
+    std::string     m_b64Prefix, m_b64RangeEnd;  // #28 缓存 base64,避免每次重连计算
     log4cplus::Logger m_logger;
     LineCb          m_onLine;
     int             m_fd = -1;

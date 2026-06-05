@@ -424,7 +424,15 @@ void EtcdCenterConnector::AsyncTryClaimSlot(int slot, const std::string& slotKey
 
 void EtcdCenterConnector::DoRegister(const std::string& ip, uint32_t port, const std::string& nodeType)
 {
-    if (m_regInProgress) { ETCD_LOG_DEBUG("DoRegister — 已有注册进行中,跳过"); return; }
+    // #27: 异步链异常 m_regInProgress 永久 true 兜底: 30s 超时自动复位
+    if (m_regInProgress) {
+        if (++m_regStuckTicks > 10) {  // ~30s (keepalive timer 每 3s)
+            ETCD_LOG_WARN("DoRegister — 注册卡住 >30s, 强制复位");
+            m_regInProgress = false; m_regStuckTicks = 0;
+        }
+        return;
+    }
+    m_regStuckTicks  = 0;
     m_regInProgress = true;
     m_regSlot       = 0;
     // 参数已在 ReportNodeStatus 存入 m_nodeIp/m_nodePort/m_nodeType, 此处仅防遗漏
@@ -453,8 +461,12 @@ void EtcdCenterConnector::OnRegQuery()
         if (action == etcd_parse::RegAction::Fresh)
         {
             m_nodeId = nid;
+            // #29: Fresh 路径续租失败不阻塞注册——注册键已存在且 lease 匹配,
+            // 续租是"添花"(确保 TTL 新鲜),失败不影响"已注册"这一事实。
+            // 定时器 OnKeepAliveTimer 会在 ~3s 后再次续租, 连续失败自有
+            // ConnectionLost 路径处理。
             AsyncKeepAlive([this, nid](bool ok) {
-                (void)ok; // 续租一次, 失败不阻塞注册完成
+                (void)ok;
                 m_registered = true;
                 OnRegDone(true, "");
             });
@@ -501,7 +513,8 @@ void EtcdCenterConnector::OnRegScan()
 
 void EtcdCenterConnector::OnRegDone(bool ok, const std::string& errmsg)
 {
-    m_regInProgress = false;
+    m_regInProgress  = false;
+    m_regStuckTicks  = 0;
     CenterEvent ev;
     if (ok)
     {

@@ -33,7 +33,23 @@ EtcdWatcher::EtcdWatcher(struct ev_loop* loop, std::string host, int port,
 
 EtcdWatcher::~EtcdWatcher() { Stop(); }
 
-void EtcdWatcher::Start(int64_t rev) { m_lastRevision = rev; m_stopping = false; Connect(); }
+void EtcdWatcher::Start(int64_t rev)
+{
+    m_lastRevision = rev; m_stopping = false;
+    // #28: 缓存 base64, 避免每次重连重复计算
+    if (m_b64Prefix.empty())
+    {
+        auto b64 = [](const std::string& s) {
+            int len = Base64encode_len(static_cast<int>(s.size()));
+            std::vector<char> buf(len);
+            Base64encode(buf.data(), s.data(), static_cast<int>(s.size()));
+            return std::string(buf.data(), len - 1);  // strip \0
+        };
+        m_b64Prefix   = b64(m_prefix);
+        m_b64RangeEnd = b64(m_rangeEnd);
+    }
+    Connect();
+}
 
 void EtcdWatcher::Stop()
 {
@@ -73,13 +89,9 @@ void EtcdWatcher::OnWritable()
         int err = 0; socklen_t len = sizeof(err);
         if (getsockopt(m_fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0)
         { Reconnect(); return; }
-        // Build watch request
-        int outLen = Base64encode_len(static_cast<int>(m_prefix.size()));
-        std::vector<char> bp(outLen); Base64encode(bp.data(), m_prefix.data(), static_cast<int>(m_prefix.size()));
-        std::string bPrefix(bp.data(), outLen - 1); // strip \0
-        outLen = Base64encode_len(static_cast<int>(m_rangeEnd.size()));
-        std::vector<char> br(outLen); Base64encode(br.data(), m_rangeEnd.data(), static_cast<int>(m_rangeEnd.size()));
-        std::string bRange(br.data(), outLen - 1);
+        // Build watch request (base64 cached in m_b64Prefix/m_b64RangeEnd)
+        const std::string& bPrefix = m_b64Prefix;
+        const std::string& bRange  = m_b64RangeEnd;
         std::ostringstream body;
         body << "{\"create_request\":{\"key\":\"" << bPrefix << "\",\"range_end\":\"" << bRange
              << "\",\"start_revision\":" << (m_lastRevision + 1) << "}}";
@@ -161,6 +173,8 @@ void EtcdWatcher::ParseChunks()
             if (ch == '\n' && !m_chunkBuf.empty() && m_chunkBuf.back() == '\r')
             {
                 m_chunkBuf.pop_back();
+                // #26: hex 尺寸行无长度上限 → Reconnect 防止 OOM
+                if (m_chunkBuf.size() > 1024) { Reconnect(); return; }
                 m_chunkRemaining = std::strtoll(m_chunkBuf.c_str(), nullptr, 16);
                 m_chunkBuf.clear();
                 if (m_chunkRemaining == 0) { Reconnect(); return; }

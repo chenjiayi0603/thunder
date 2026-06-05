@@ -257,8 +257,9 @@ private:
     bool                m_registered            = false;
 
     // 异步注册延续链上下文 (issus #24 Phase B)
-    bool   m_regInProgress = false;    ///< 防止 re-entrancy(定时器/心跳同时触发注册)
-    int    m_regSlot       = 0;        ///< 槽位扫描位置(1..255; 0=未开始)
+    bool   m_regInProgress  = false;    ///< 防止 re-entrancy(定时器/心跳同时触发注册)
+    int    m_regSlot        = 0;        ///< 槽位扫描位置(1..255; 0=未开始)
+    int    m_regStuckTicks  = 0;        ///< #27 注册卡住超时计数(~3s/tick,>10=复位)
 
     /// 发现到的全部在线节点 ip:port → registry value(JSON)。
     /// 仅 libev 线程(OnWatchAsync)访问, 无需锁。用于每次变更发"全量"路由快照(issus #9)。
