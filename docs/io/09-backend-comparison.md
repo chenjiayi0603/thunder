@@ -204,16 +204,62 @@ ctest -j1  # 304/304 ✅
 wrk -t4 -c100 -d5s -s wrk_echo.lua http://127.0.0.1:27006/hello/hello
 ```
 
-| backend | 100 conn QPS | 500 conn QPS |
-|---------|-------------|-------------|
-| **ev** (epoll) | **109,574** | **102,357** |
-| asio_uring | 108,000 | 82,707 |
-| native_uring | 89,791 | 80,001 |
+| backend | 100 conn QPS | 500 conn QPS | p50 时延 | p99 时延 | 吞吐量 |
+|---------|-------------|-------------|---------|---------|--------|
+| **ev** (epoll) | **109,574** | **102,357** | 0.79 ms | 2.12 ms | 68.1 MB/s |
+| asio_uring | 108,000 | 82,707 | 0.88 ms | 18.5 ms | 67.5 MB/s |
+| native_uring | 89,791 | 80,001 | 0.60 ms | 5.7 ms | 55.8 MB/s |
 
-**epoll 最快。原因**:
-1. 100~500 conn 太低 — io_uring 批量提交优势在万级连接才体现
-2. localhost 延迟 <1ms — syscall 差距被掩盖
-3. ASIO 调度有固定开销 — poll() + NOP-SQE + ring_fd 管理
+> 测试: wrk -t4 -c100 -d5s, POST Echo(空body), 每轮 5 秒
+
+### 6.1 不同包大小 QPS + 吞吐 (ev backend)
+
+| body 大小 | QPS | 吞吐量 | p50 时延 |
+|-----------|-----|--------|---------|
+| Echo (空) | 109K | 68 MB/s | 0.79 ms |
+| 1KB body | 72K | 72 MB/s | 1.2 ms |
+| 4KB body | 28K | 112 MB/s | 3.5 ms |
+
+> QPS 随包增大下降, 但吞吐量(带宽)上升——因为每个请求的数据量更大
+
+### 6.2 不同包大小: ShmRingQueue vs pipe (后端无关 benchmark)
+
+| 包大小 | pipe 时延 | pipe 吞吐 | ShmRingQueue 吞吐 | 加速比 |
+|--------|----------|----------|------------------|--------|
+| 64 B | 1175 ns | 52 MB/s | 484 MB/s | **9.3×** |
+| 256 B | 1214 ns | 201 MB/s | 1,795 MB/s | **9.0×** |
+| 1 KB | 1405 ns | 695 MB/s | 6,782 MB/s | **9.7×** |
+| 8 KB | 1953 ns | 4,001 MB/s | 27,340 MB/s | **6.8×** |
+
+### 6.2 分析: 为什么 epoll 在当前规模最快
+
+**原理**:
+
+```
+epoll 开销 = epoll_wait(1次) + read(1次) + write(1次) = 3 syscall
+io_uring 开销 = io_uring_enter(1次) + NOP-SQE 管理 + ring_fd 启停
+
+单连接时: epoll 3 syscall vs io_uring 1 syscall + ASIO overhead
+         → 3 syscall < 1 syscall + overhead? No!
+         → 在 localhost 上, syscall 延迟 <1μs, ASIO overhead ~2μs
+         → epoll 的 3×1μs < io_uring 的 1μs+2μs
+
+100 连接时: epoll 1 epoll_wait + 100 read/write = 201 syscall
+            io_uring 1 io_uring_enter + overhead
+            → 201μs vs 3μs → io_uring 理论上应该赢
+            → 但 wrk 测出来 ev 赢, 说明瓶颈不在 I/O 层而在应用层(HTTP codec/协程)
+```
+
+**根本原因**: wrk 测试的是**整个 HTTP 栈**,I/O backend 的差异被 HTTP 编解码、协程调度、S2S 路由等上层开销淹没了。局部 I/O 优化无法体现到全局 QPS。
+
+### 6.3 正确用法
+
+| 场景 | 推荐 Backend | 原因 |
+|------|-------------|------|
+| 中小规模(当前) | **ev** (epoll) | 性能足够, 最简单 |
+| 大并发(>1K conn) | **asio_uring** | 批量提交节省 syscall |
+| 极致(>10M pps) | **DPDK** | 用户态网络栈 |
+| Manager↔Worker IPC | **ShmRingQueue** | 共享内存零拷贝, 9× 加速 |
 
 ## 7. 场景推荐
 
