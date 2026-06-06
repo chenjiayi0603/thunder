@@ -415,3 +415,20 @@ Interface/Hello/HelloWS 三个服务都直接对客户端。暴露方式不影�
 
 
 **不需要 Ingress**。DNS 指向 Node IP, NodePort 直接到 Pod, 零额外跳转。和 docker-compose 一样, 只是 k8s 管 Pod 生命周期。
+
+
+---
+
+## 10. 为什么用 etcd 而不是 CoreDNS
+
+k8s 原生的服务发现是 CoreDNS (service-name.namespace.svc → ClusterIP)。Thunder 不用它:
+
+
+
+**优势**:
+1. **零 DNS 依赖** — 不需要维护 Service/ClusterIP/DNS 记录
+2. **跨环境一致** — docker-compose 和 k8s 用同一套 etcd 注册逻辑
+3. **直连低延迟** — 不经过 kube-proxy iptables 跳转
+4. **混部友好** — k8s 上的 Interface 可以直接连裸机上的 Logic(只要 etcd 可达)
+
+**etcd 仍然需要 Service** — 仅用于 etcd 本身的发现(StatefulSet Headless Service: )。业务节点之间的发现走 etcd registry,不走 CoreDNS。
