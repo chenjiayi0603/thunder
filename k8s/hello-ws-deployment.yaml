@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-hello-ws
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-hello-ws
+  template:
+    metadata:
+      labels:
+        app: thunder-hello-ws
+    spec:
+      containers:
+      - name: hello-ws
+        image: thunder-hello-ws:latest
+        command: ["./node.sh", "start"]
+        workingDir: /thunder/deploy/HelloWs
+        ports:
+        - containerPort: 27010
+        volumeMounts:
+        - name: thunder-repo
+          mountPath: /thunder
+      volumes:
+      - name: thunder-repo
+        hostPath:
+          path: /home/tommychen/thunder
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-hello-ws
+  namespace: thunder
+spec:
+  type: NodePort
+  ports:
+  - port: 27010
+    nodePort: 30010
+  selector:
+    app: thunder-hello-ws

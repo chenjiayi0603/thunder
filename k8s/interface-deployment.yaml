@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-interface
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-interface
+  template:
+    metadata:
+      labels:
+        app: thunder-interface
+    spec:
+      containers:
+      - name: interface
+        image: thunder-interface:latest
+        command: ["./node.sh", "start"]
+        workingDir: /thunder/deploy/Interface
+        ports:
+        - containerPort: 27008
+        - containerPort: 27009
+        volumeMounts:
+        - name: thunder-repo
+          mountPath: /thunder
+      volumes:
+      - name: thunder-repo
+        hostPath:
+          path: /home/tommychen/thunder
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-interface
+  namespace: thunder
+spec:
+  type: NodePort
+  ports:
+  - port: 27008
+    nodePort: 30008
+  selector:
+    app: thunder-interface

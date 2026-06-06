@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-logic
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-logic
+  template:
+    metadata:
+      labels:
+        app: thunder-logic
+    spec:
+      containers:
+      - name: logic
+        image: thunder-logic:latest
+        command: ["./node.sh", "start"]
+        workingDir: /thunder/deploy/Logic
+        ports:
+        - containerPort: 16068
+        volumeMounts:
+        - name: thunder-repo
+          mountPath: /thunder
+      volumes:
+      - name: thunder-repo
+        hostPath:
+          path: /home/tommychen/thunder
