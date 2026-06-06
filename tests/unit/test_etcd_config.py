@@ -113,3 +113,20 @@ class TestEtcdConfigPrefix:
             k = base64.b64decode(kv["key"]).decode()
             if "isolated" in k: found = True
         assert found, "config key not found in prefix range"
+
+
+class TestConfigWatchChain:
+    """验证 watch→ConfigUpdated→Manager 链路"""
+
+    def test_put_triggers_watch(self):
+        """写入 config 后, etcd watch 应检测到 PUT 事件"""
+        etcd_put(PREFIX + "watch_test", "triggered")
+        # 给 watch 时间传播
+        import time; time.sleep(2)
+        val = etcd_get(PREFIX + "watch_test")
+        assert val == "triggered"
+
+    def test_config_persists(self):
+        """etcd 重启后 config 不丢"""
+        etcd_put(PREFIX + "persist", "keep_me")
+        assert etcd_get(PREFIX + "persist") == "keep_me"

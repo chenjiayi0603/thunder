@@ -782,3 +782,9 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 - 对比测试要保证只有一个变量不同 (如 body 大小变化、其他条件一致)
 - 每次改 backend 配置后等 5 秒让服务重启完成
 - 结果直接写入对应文档, 别存脑子里
+
+### 🚫 禁止回退
+- **禁止 git reset/rebase 丢弃代码** — 除非用户明确要求
+- **禁止 git checkout 覆盖修改** — 所有文件变动必须经过确认
+- **禁止 rebase skip** — 冲突时合并解决, 不跳过有效提交
+- **禁止 revert file moves/refactors** — 原因: 上次 rebase skip 导致 io/ register/ 目录丢失
