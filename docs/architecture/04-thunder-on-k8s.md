@@ -391,3 +391,18 @@ Manager 是单例。被 HPA 或节点驱逐杀掉 → 所有 Worker 一起死 �
 -  做冗余(两个 Pod,一个是备用)
 - 不用 HPA
 - : 两个 Pod 不在同一节点
+
+
+---
+
+## 8. 暴露方式 (NodePort vs Ingress)
+
+Interface/Hello/HelloWS 三个服务都直接对客户端。暴露方式不影响服务能力,只是运维配置。
+
+**NodePort** — 简单, 每个服务一个端口:
+
+
+**Ingress (nginx)** — 将多个服务合并到一个入口:
+
+
+**Thunder 不需要 Ingress**。docker-compose 现在三个端口直接暴露, k8s 也沿用。Ingress 是 k8s 运维的可选项,不是 Thunder 的要求。
