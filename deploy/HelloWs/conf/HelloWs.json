@@ -1,13 +1,13 @@
 {
     "node_type": "HELLO",
-    "access_host": "127.0.0.1",
+    "access_host": "0.0.0.0",
     "access_port": 27010,
     "access_codec": 5,
-    "inner_host": "127.0.0.1",
+    "inner_host": "0.0.0.0",
     "inner_port": 27011,
     "center": {
         "connector": "etcd",
-        "etcd_endpoints": "http://127.0.0.1:2379"
+        "etcd_endpoints": "http://thunder-etcd.thunder:2379"
     },
     "server_name": "Hello_ws_robot",
     "process_num": 1,
