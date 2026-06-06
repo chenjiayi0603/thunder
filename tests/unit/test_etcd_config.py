@@ -21,7 +21,7 @@ def etcd_get(key):
     d = json.loads(r.stdout)
     kvs = d.get("kvs", [])
     if not kvs: return None
-    return base64.b64decode(kvs[0]["value"]).decode()
+    return base64.b64decode(kvs[0].get("value", "")).decode()
 
 @pytest.fixture(autouse=True)
 def check_etcd():
@@ -70,7 +70,7 @@ class TestEtcdConfigFormat:
     def test_empty_value(self):
         etcd_put(PREFIX + "empty", "")
         val = etcd_get(PREFIX + "empty")
-        # etcd may omit value field for empty values
+        assert val is None or val == ""  # etcd omits empty value field
         assert val is None or val == ""
         etcd_put(PREFIX + "empty", "")
         val = etcd_get(PREFIX + "empty"); assert val == "" or val is None  # etcd may omit empty value field
