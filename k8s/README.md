@@ -56,3 +56,16 @@ kubectl apply -f k8s/interface-deployment.yaml
 kubectl apply -f k8s/hello-deployment.yaml
 kubectl apply -f k8s/hello-ws-deployment.yaml
 ```
+
+## 冒烟测试结果 (2026-06-07)
+
+| 测试 | 结果 | 备注 |
+|------|------|------|
+| Hello Echo | ✅ code:0 | |
+| Hello PoolCpu | ✅ checksum=786432 | |
+| HelloWS 握手 | ✅ 101 | |
+| etcd health | ✅ | |
+| etcd registry | ✅ 3 nodes | |
+| Hello Redis | ❌ | K8s Service DNS 未注入 Hello 配置 |
+| Hello MySQL | ❌ | 同上 |
+| Interface GenKey | ❌ | 进程正常,HTTP 无响应 |
