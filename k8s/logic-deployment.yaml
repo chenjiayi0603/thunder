@@ -14,7 +14,7 @@ spec:
         app: thunder-logic
     spec:
       containers:
-      - name: logic
+      - name: app
         image: thunder-node:latest
         imagePullPolicy: Never
         env:
@@ -22,9 +22,18 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        command: ["./node.sh", "start"]
-            - -c
-        workingDir: /thunder/deploy/Logic
+        - name: LD_LIBRARY_PATH
+          value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
+        command:
+        - bash
+        - -c
+        - |
+          chmod +x ./node.sh 2>/dev/null || true
+          for conf in $(find /thunder/deploy -path '*/conf/*.json' 2>/dev/null); do
+            sed -i "s|\"inner_host\": \"[0-9.]*\"|\"inner_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
+          done
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH ./node.sh start
+          exec tail -f /dev/null
         ports:
         - containerPort: 16068
         volumeMounts:
