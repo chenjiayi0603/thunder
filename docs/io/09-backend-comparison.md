@@ -197,6 +197,33 @@ python3 -c "import os,time; r,w=os.pipe(); ..."
 
 # 全量回归
 ctest -j1  # 304/304 ✅
+
+## 6. wrk HTTP 全链路压测 (实测 2026-06-06)
+
+```bash
+wrk -t4 -c100 -d5s -s wrk_echo.lua http://127.0.0.1:27006/hello/hello
+```
+
+| backend | 100 conn QPS | 500 conn QPS |
+|---------|-------------|-------------|
+| **ev** (epoll) | **109,574** | **102,357** |
+| asio_uring | 108,000 | 82,707 |
+| native_uring | — | 80,001 |
+
+**epoll 最快。原因**:
+1. 100~500 conn 太低 — io_uring 批量提交优势在万级连接才体现
+2. localhost 延迟 <1ms — syscall 差距被掩盖
+3. ASIO 调度有固定开销 — poll() + NOP-SQE + ring_fd 管理
+
+## 7. 场景推荐
+
+| 场景 | conn | 推荐 | 原因 |
+|------|------|------|------|
+| 开发调试 | <100 | ev | 最简单 |
+| 中小规模 | 100~1K | ev | 实测最快 |
+| 大规模并发 | 1K~10K | asio_uring | 批量优势 |
+| 极大规模 | >10K | DPDK | 零 syscall |
+| Manager↔Worker IPC | — | ShmRingQueue | 零拷贝 |
 ```
 
 ### 4.8 Backend 对等实测 (2026-06-06)
