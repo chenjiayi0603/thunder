@@ -422,3 +422,62 @@ TEST(ShmRingQueuePerf, Latency_SingleMessage)
     EXPECT_LT(avg_ns, 5000.0);  // < 5us per round-trip
     ShmRingQueue::Destroy(q);
 }
+
+// ==========================================================================
+// Performance benchmarks — 不同包大小吞吐+QPS
+// ==========================================================================
+
+static void RunThroughputTest(uint32_t bodySize, const char* label)
+{
+    constexpr uint32_t kSlots = 256;
+    constexpr uint32_t kMsgs  = 500000;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    ASSERT_NE(q, nullptr);
+
+    std::vector<char> body(bodySize, 'x');
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> produced{0}, consumed{0};
+
+    std::thread producer([&]() {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (uint32_t i = 0; i < kMsgs; ++i) {
+            while (!q->TryEnqueue(1, i, body.data(), bodySize)) {
+                std::this_thread::yield();
+            }
+            produced.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread consumer([&]() {
+        uint32_t cmd, seq, out_len;
+        std::vector<char> buf(bodySize + 256);
+        while (!start.load(std::memory_order_acquire)) {}
+        uint64_t local = 0;
+        while (local < kMsgs) {
+            if (q->TryDequeue(cmd, seq, buf.data(), out_len)) { ++local; }
+            else { std::this_thread::yield(); }
+        }
+        consumed.store(local, std::memory_order_relaxed);
+    });
+
+    auto t0 = std::chrono::steady_clock::now();
+    start.store(true, std::memory_order_release);
+    producer.join(); consumer.join();
+    auto t1 = std::chrono::steady_clock::now();
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    double qps = (kMsgs / 1000000.0) / (ms / 1000.0);       // M msgs/sec
+    double bw  = (qps * 1e6 * bodySize) / (1024*1024);      // MB/s
+
+    EXPECT_EQ(produced.load(), kMsgs);
+    EXPECT_EQ(consumed.load(), kMsgs);
+    std::cout << "[perf] " << label << " " << bodySize << "B: "
+              << ms << "ms, " << qps << " M QPS, " << bw << " MB/s" << std::endl;
+    EXPECT_GT(qps, 1.0);  // > 1M QPS
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueuePerf, QPS_64B)   { RunThroughputTest(64,   "QPS"); }
+TEST(ShmRingQueuePerf, QPS_256B)  { RunThroughputTest(256,  "QPS"); }
+TEST(ShmRingQueuePerf, QPS_1K)    { RunThroughputTest(1024, "QPS"); }
+TEST(ShmRingQueuePerf, QPS_4K)    { RunThroughputTest(4096, "QPS"); }
