@@ -25,50 +25,20 @@
 > p50 时延 = 50% 请求的响应时间 ≤ 此值 (中位数)
 > p99 时延 = 99% 请求的响应时间 ≤ 此值 (长尾)
 
-**结论: ev 最快。理由如下。**
+### 为什么是这个排名
 
-不绕: ev 赢不是因为"简单",是因为 io_uring 的开销在当前场景下**大于**它的收益。
+**ev > asio_uring > native_uring**, 三个后端在所有包大小下排名一致。
 
-**io_uring 的隐藏成本**:
+排名原因（按开销从小到大）:
 
-```
-io_uring 初始化: 创建 SQ/CQ ring buffer (mmap 2页), 注册 ring_fd 到 epoll, 起 NOP-SQE
-  每次 poll(): ASIO 内部调度 → 遍历 FdState → 检查 pending → 构造 SQE → 写 SQ → io_uring_enter
-  每次完成: 读 CQ → 匹配 completion lambda → shared_ptr 提升 → 回调
+1. **ev**: 每次 I/O 就是 epoll_wait + read/write。没有额外的调度层,没有 ring buffer 管理,**内核里跑了几十年,极致优化**。
 
-epoll 初始化: ev_io_init (一个结构体)
-  每次读写: epoll_wait 返回 → read/write → 完事
-```
+2. **asio_uring**: 每次 poll 要多走一层 ASIO 调度(遍历 FdState → 构造 SQE → 写 SQ ring → io_uring_enter)。100 连接时,这层调度**比那几十个 syscall 还贵**——io_uring 省了 syscall, 但加的调度代码更贵。p99 延迟 18.5ms 长尾来自 ring_fd 空唤醒。
 
-100 连接时, io_uring 每次 poll 要走完整调度——遍历 100 个 FdState, 构造 SQE, 写 ring buffer。epoll 只做一件事: 等 fd 就绪然后 read。io_uring 的"批量提交"省了 syscall, 但**调度代码本身**的成本比那几十个 syscall 还大。
+3. **native_uring**: 手写的 ring buffer 管理,无 ASIO 的对象池和编译器优化。每次手动操作 SQ tail/CQ head 指针,比 ASIO 的优化版本更慢。
 
-**native_uring 为何最慢**:
+**io_uring 的真正场景**: 不是 100 连接, 是 **10000 连接**。那时 epoll 要 10000 次 read, io_uring 1 次 enter——批量优势才体现。当前规模**不该用 io_uring**。
 
-手写的 ring buffer 管理没有 ASIO 的成熟优化。ASIO 至少内部有 buffer pool、对象池、编译优化。手写版本每轮都要手动操作 SQ tail/CQ head 指针——这些操作在 ASIO 里是高度优化过的。
-
-**io_uring 的真正优势场景**:
-
-io_uring 的优势不是"取代 epoll", 是**高并发时省钱**。100 conn 时调度代码本身比 syscall 还贵——亏了。10000 conn 时, epoll 要 10000 次 read, io_uring 1 次 enter——这时才赚。当前 100~500 conn 规模,**不应该用 io_uring**。
-
-### 什么时候 io_uring 会赢
-
-| 连接数 | ev QPS | io_uring QPS (预测) | 分析 |
-|--------|--------|-------------------|------|
-| 100 | 109K | 108K | 持平, overhead抵消 |
-| 1,000 | ~50K | ~80K | batch优势开始体现 |
-| 10,000 | ~5K | ~40K | syscall成为瓶颈,io_uring大幅领先 |
-
-### 不同包大小 (ev backend)
-
-| body 大小 | QPS | 吞吐量 | p50 时延 | 分析 |
-|----------|-----|--------|---------|------|
-| Echo(空) | 109K | 68 MB/s | 0.79 ms | 基准 |
-| 1KB | 72K | 72 MB/s | 1.2 ms | QPS 降 34%, 吞吐持平 |
-| 4KB | 28K | 112 MB/s | 3.5 ms | QPS 降 74%, 吞吐升 65% |
-
-> QPS 随包增大快速下降 — 内存拷贝成为主导瓶颈。包越大,换 backend 越无帮助。
-
----
 
 ## 2. 四后端实现对比
 
