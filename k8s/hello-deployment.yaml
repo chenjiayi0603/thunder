@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: thunder-hello
   namespace: thunder
+  labels:
+    thunder.io/role: gateway
 spec:
   replicas: 1
   selector:
@@ -17,8 +19,7 @@ spec:
       - name: hello
         image: thunder-node:latest
         imagePullPolicy: Never
-        command: ["./node.sh", "start"]
-            - -c
+        command: ["bash", "-c", "chmod +x ./node.sh 2>/dev/null; LD_LIBRARY_PATH=/thunder/code/3party/lib:/thunder/build/lib ./node.sh start; exec tail -f /dev/null"]
         workingDir: /thunder/deploy/HelloHttp
         ports:
         - containerPort: 27006
