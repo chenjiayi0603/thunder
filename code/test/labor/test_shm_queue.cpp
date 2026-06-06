@@ -490,7 +490,7 @@ TEST(ShmRingQueueUnit, Destroy_Nullptr_NoCrash)
 
 TEST(ShmRingQueueUnit, CloseEventFd_Invalid)
 {
-    ShmRingQueue::CloseEventFd(-1);  // 无效fd, 不崩溃
+    { int invalid=-1; ShmRingQueue::CloseEventFd(invalid); }
     SUCCEED();
 }
 

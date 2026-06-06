@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "labor/EvIoBackend.hpp"
+#include "labor/io/EvIoBackend.hpp"
 #include "libev/ev.h"
 #include <unistd.h>
 #include <chrono>
@@ -69,7 +69,7 @@ TEST(BackendBench, EvIoBackend_Perf)
 }
 
 #ifdef THUNDER_IO_ASIO_URING
-#include "labor/AsioUringIoBackend.hpp"
+#include "labor/io/AsioUringIoBackend.hpp"
 TEST(BackendBench, AsioUring_Perf)
 {
     auto* loop = ev_loop_new(EVFLAG_AUTO);

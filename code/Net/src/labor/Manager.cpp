@@ -14,7 +14,7 @@
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
 #include "labor/TcpCenterConnector.hpp"
-#include "labor/EtcdCenterConnector.hpp"
+#include "register/EtcdCenterConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 

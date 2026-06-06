@@ -13,7 +13,7 @@
 
 #include <string>
 
-#include "labor/EtcdHttpConn.hpp"
+#include "register/EtcdHttpConn.hpp"
 
 using namespace net;
 

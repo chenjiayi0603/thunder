@@ -16,9 +16,9 @@
  *         需要 std::stoll / std::stoi 转换。
  ******************************************************************************/
 #include "EtcdCenterConnector.hpp"
-#include "EtcdHttpConn.hpp"
-#include "EtcdParse.hpp"
-#include "EtcdWatcher.hpp"
+#include "register/EtcdHttpConn.hpp"
+#include "register/EtcdParse.hpp"
+#include "register/EtcdWatcher.hpp"
 
 #include <algorithm>
 #include <chrono>
