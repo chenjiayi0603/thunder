@@ -17,6 +17,11 @@ spec:
       - name: logic
         image: thunder-node:latest
         imagePullPolicy: Never
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         command: ["./node.sh", "start"]
             - -c
         workingDir: /thunder/deploy/Logic

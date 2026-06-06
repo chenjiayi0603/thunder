@@ -19,6 +19,11 @@ spec:
       - name: hello
         image: thunder-node:latest
         imagePullPolicy: Never
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         command: ["bash", "-c", "chmod +x ./node.sh 2>/dev/null; LD_LIBRARY_PATH=/thunder/code/3party/lib:/thunder/build/lib ./node.sh start; exec tail -f /dev/null"]
         workingDir: /thunder/deploy/HelloWs
         ports:
