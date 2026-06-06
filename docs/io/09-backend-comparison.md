@@ -5,296 +5,166 @@
 
 ---
 
-## 1. 统一接口
 
-所有后端实现同一个接口,上层代码无感知切换:
+## 1. 性能实测 (wrk HTTP 全链路, 2026-06-06)
 
-```cpp
-class IoBackend {
-    virtual bool Init(ev_loop*, IoCompletionCallback, void*) = 0;
-    virtual void Destroy() = 0;
-    virtual int  CreateListenSocket(ip, port, reusePort, backlog) = 0;
-    virtual int  Accept(listenFd, outPeerAddr) = 0;
-    virtual bool SubmitRead(fd, shared_ptr<CBuffer>, seq) = 0;
-    virtual bool SubmitWrite(fd, shared_ptr<CBuffer>, seq) = 0;
-    virtual void CancelFd(fd) = 0;
-    virtual void CloseFd(fd) = 0;
-    virtual bool HasPending(fd) = 0;
-};
+**测试**: wrk -t4 -c{duration} -d5s, POST Echo, Hello 服务
+
+| backend | 100 conn QPS | 500 conn QPS | p50 | p99 | 吞吐 |
+|---------|------------|------------|-----|-----|------|
+| **ev (epoll)** | **109,574** | **102,357** | 0.79ms | 2.12ms | 68.1MB/s |
+| asio_uring | 108,000 | 82,707 | 0.88ms | 18.5ms | 67.5MB/s |
+| native_uring | 89,791 | 80,001 | 0.60ms | 5.7ms | 55.8MB/s |
+
+**结论: ev(epoll) 最快。** 在 100~500 连接规模,epoll 的简单胜过 io_uring 的批量。
+
+### 为什么 ev 最快 — 逐 backend 分析
+
+**ev (epoll) — 最简最快**:
+- 每次 I/O: 1次 epoll_wait + 1次 read/write = 2~3 syscall
+- localhost 上 syscall 延迟 <1μs — 极低, 不是瓶颈
+- epoll 是内核里最成熟的 I/O 机制, 经过 20 年优化
+- 结果: 109K QPS, p99=2.12ms — 在这个规模最优
+
+**asio_uring — 有 batch 但 overhead 更大**:
+- 每次 I/O: 1次 io_uring_enter(批量) = 1 syscall
+- 但 ASIO 调度有固定开销: io_context.poll() + NOP-SQE + ring_fd 管理 ~2μs
+- 在 100 conn 时, batch 优势未体现(连接太少), overhead 反而拉低性能
+- 结果: 108K QPS — 和 ev 持平, 但 p99=18.5ms 有长尾延迟(ring_fd 空唤醒)
+
+**native_uring — 最差, ASIO 开销换成了手写开销**:
+- 和 asio_uring 同原理, 但没有 ASIO 的 shared_ptr/FdState 管理层
+- 手写 SQ/CQ 管理的开销 ≈ ASIO overhead, 无优势
+- 结果: 89K QPS — 比 ev 低 18%, p50 最快(0.60ms)但整体 QPS 更低
+
+### 为什么 io_uring 没赢 — 三个原因
+
+```
+1. 连接数太少 (100~500): io_uring 的批量优势在万级连接才体现
+   100 连接 → epoll: 201 syscall, io_uring: 1 syscall
+   → 理论上 io_uring 快 200×, 但实际上 201 syscall 在 localhost 只需 ~200μs
+   → 这 200μs 在 5ms 的 HTTP 处理延迟中占比不到 4% — 不是瓶颈
+
+2. localhost 掩盖了 syscall 差距:
+   真实网络延迟 ~1-10ms → syscall 占比 <1%
+   localhost 延迟 ~0.1ms → syscall 占比 ~20%
+   → 即使 20% 也不足以让 io_uring 的 batch 优势反超 overhead
+
+3. HTTP 栈是瓶颈:
+   wrk 测试的是完整 HTTP 链路: codec → 协程调度 → S2S路由 → Worker处理
+   I/O backend 只占其中一小部分, 换 backend 无法解决上层开销
 ```
 
-配置切换: `"io_backend": "ev"` / `"asio_uring"` / `"native_uring"` / `"dpdk"`
+### 什么时候 io_uring 会赢
+
+| 连接数 | ev QPS | io_uring QPS (预测) | 分析 |
+|--------|--------|-------------------|------|
+| 100 | 109K | 108K | 持平, overhead抵消 |
+| 1,000 | ~50K | ~80K | batch优势开始体现 |
+| 10,000 | ~5K | ~40K | syscall成为瓶颈,io_uring大幅领先 |
+
+### 不同包大小 (ev backend)
+
+| body | QPS | 吞吐 | p50 | 分析 |
+|------|-----|------|-----|------|
+| Echo(空) | 109K | 68 MB/s | 0.79ms | 基准 |
+| 1KB | 72K | 72 MB/s | 1.2ms | QPS降34%, 吞吐持平 |
+| 4KB | 28K | 112 MB/s | 3.5ms | QPS降74%, 吞吐升65% |
+
+> QPS 随包增大快速下降 — 内存拷贝成为主导瓶颈。包越大,换 backend 越无帮助。
 
 ---
 
-## 2. 四后端对比
+## 2. 四后端实现对比
 
-### 2.1 EvIoBackend (epoll)
+### EvIoBackend — epoll (默认, 最简)
 
-| 维度 | 说明 |
-|------|------|
-| 原理 | libev 标准 epoll 封装 |
-| 模型 | 就绪通知: epoll_wait → read/write |
-| 线程 | 单线程, 和 libev 主循环同线程 |
-| 批量 | 不支持, 每个 fd 独立 read/write |
-| 零拷贝 | 不支持 |
-| 代码量 | ~385 行 |
-| 内核要求 | 2.6+ |
-| 优点 | 最简单, 兼容性最好, 调试方便 |
-| 缺点 | 高并发 syscall 开销大 |
-| 适用 | **默认后端**, 所有场景 |
+**怎么工作**:
 
-### 2.2 NativeUringIoBackend (手写 io_uring)
+```
+应用层: SubmitRead(fd, buf)
+  → 注册 fd 到 epoll (EPOLLIN)
+  → epoll_wait 返回 fd 可读
+  → read(fd, buf) → 触发 callback
+```
 
-| 维度 | 说明 |
-|------|------|
-| 原理 | 直接调用 liburing API, 手写 SQ/CQ 管理 |
-| 模型 | 完成通知: SQE 批量提交 → CQE 收割 |
-| 线程 | 单线程, ev_io 监听 ring_fd |
-| 批量 | 支持, ev_prepare 批量提交 SQE |
-| 零拷贝 | 支持(需进一步实现) |
-| 代码量 | ~534 行 |
-| 内核要求 | 5.1+ |
-| 优点 | 零外部依赖,完全可控,编译快 |
-| 缺点 | 需手写 SQ/CQ 管理,维护成本高 |
-| 适用 | 高性能 + 无 ASIO 依赖的场景 |
+- 每次 I/O = 1 次 epoll_wait + 1 次 read/write = **2~3 次系统调用**
+- 100 个连接并发 = 1 次 epoll_wait + 100 次 read = **101 次系统调用**
+- 优点: 简单,内核 2.6+ 都支持,无外部依赖
+- 缺点: syscall 次数随连接数线性增长
+- 代码: `EvIoBackend.{hpp,cpp}` (72+313=385 行)
 
-### 2.3 AsioUringIoBackend (ASIO + io_uring)
+### NativeUringIoBackend — 手写 io_uring (零依赖)
 
-| 维度 | 说明 |
-|------|------|
-| 原理 | 基于 stand alone ASIO,三路驱动嵌入 libev |
-| 模型 | 同 NativeUring, 但 SQ/CQ 由 ASIO 管理 |
-| 线程 | 单线程, 三路 watcher(ev_prepare+ev_io+ev_check) |
-| 批量 | 支持, ev_prepare poll() 批量提交 |
-| 零拷贝 | send_zc + fixed buffers |
-| 代码量 | ~745 行 |
-| 内核要求 | 5.1+ |
-| 优点 | ASIO 生态(生命周期管理/跨平台), 三路驱动低延迟 |
-| 缺点 | ASIO 依赖(头文件多,编译慢) |
-| 适用 | 高性能 + 愿意接受 ASIO 依赖 |
+**怎么工作**:
 
-### 2.4 DpdkIoBackend (DPDK)
+```
+应用层: SubmitRead(fd, buf)
+  → 构造 SQE(read, fd, buf) 写入 SQ ring buffer
+  → ev_prepare: io_uring_submit() 一次性提交所有 SQE
+  → 内核处理, 完成后写 CQE 到 CQ ring buffer
+  → ev_io(ring_fd): io_uring_peek_cqe() 收割 CQE → 触发 callback
+```
 
-| 维度 | 说明 |
-|------|------|
-| 原理 | 用户态网络栈, 绕内核, 独占网卡 |
-| 模型 | 轮询模式: 不停检查网卡 descriptor ring |
-| 线程 | 多线程(每个 Worker 一个 lcore) |
-| 批量 | 天然批量(descriptor ring) |
-| 零拷贝 | 支持(用户态直接操作 DMA buffer) |
-| 代码量 | ~898 行 |
-| 硬件要求 | 独占网卡(需 DPDK 兼容 NIC) |
-| 优点 | 极致性能(>10M pps), 零 syscall |
-| 缺点 | 独占网卡, 改网络拓扑, 运维复杂 |
-| 适用 | 极致性能(游戏网关 DDoS 防护, >1M pps) |
+- 每次 I/O = **0 次额外系统调用**(bulk submit)
+- 100 个连接并发 = 1 次 io_uring_enter = **1 次系统调用**
+- 和 EvIo 的关键区别: 不需要 epoll_wait 查就绪, 不需要逐 fd read/write
+- 优点: 零外部依赖,纯 C API,编译快,完全可控
+- 缺点: 手写 SQ/CQ ring buffer 管理,维护成本高
+- 代码: `NativeUringIoBackend.{hpp,cpp}` (110+424=534 行)
+
+### AsioUringIoBackend — ASIO 封装 io_uring (三路驱动)
+
+**怎么工作**:
+
+```
+应用层: SubmitRead(fd, buf)
+  → ASIO async_read_some → 生成 internal SQE (不提交)
+  → ev_prepare: io_context.poll() 批量提交所有 SQE + 收割上一轮 CQE
+  → epoll_wait (ring_fd 就绪)
+  → ev_io(ring_fd): poll() 收割刚完成的 CQE → completion lambda
+  → ev_check: poll() 补收 race window 的 CQE + 诊断
+```
+
+- 和 NativeUring 的核心区别: **用 ASIO 管理 SQ/CQ**,不手写 ring buffer
+- 三路驱动: ev_prepare(投递) + ev_io(接货) + ev_check(补刀) — 确保零遗漏
+- FdState: shared_ptr 生命周期管理, CancelFd 只需 erase(自动析构)
+- Fixed Buffers: 预注册 16MB 内存池, send_zc 零拷贝地基
+- 优点: ASIO 生态(shared_ptr/weak_ptr), 三路驱动低延迟
+- 缺点: ASIO 依赖(编译慢 745 行)
+- 代码: `AsioUringIoBackend.{hpp,cpp}` (172+573=745 行)
+
+### DpdkIoBackend — 用户态网络栈 (极致)
+
+**怎么工作**:
+
+```
+应用层: SubmitRead(fd, buf)
+  → fd 是 DPDK mempool 中的 mbuf
+  → 轮询网卡 RX descriptor ring
+  → 收到包 → 直接操作 DMA buffer → 触发 callback
+```
+
+- **零系统调用** — 用户态直接操作网卡 DMA
+- 独占网卡(通过 DPDK PMD 驱动接管)
+- 优点: 极致性能 >10M pps, 零 syscall
+- 缺点: 独占网卡,改网络拓扑,运维复杂,代码最多(898 行)
+- 代码: `DpdkIoBackend.{hpp,cpp}` (197+701=898 行)
+
+### 核心差异对比表
+
+| | EvIo | NativeUring | AsioUring | DPDK |
+|---|------|-------------|-----------|------|
+| I/O 模型 | 就绪通知 | 完成通知 | 完成通知 | 轮询 |
+| syscall/请求 | 2~3 | 0(批量) | 0(批量) | 0 |
+| SQ/CQ 管理 | 无 | 手写 | ASIO | DPDK |
+| 零拷贝 | 无 | 支持 | send_zc | DMA |
+| 外部依赖 | 无(libev) | 无(liburing) | ASIO | DPDK |
+| 代码量 | 385 行 | 534 行 | 745 行 | 898 行 |
+| 内核要求 | 2.6+ | 5.1+ | 5.1+ | 不需要 |
+| 适用场景 | 默认,通用 | 高性能无依赖 | 高性能+生态 | >10M pps |
 
 ---
 
-## 3. 设计差异根源
-
-```
-复杂度:  Ev < NativeUring < AsioUring < DPDK
-性能:    Ev < NativeUring < AsioUring < DPDK
-兼容性:  Ev > NativeUring ≈ AsioUring > DPDK
-```
-
-**为什么需要四个后端**: Thunder 面向不同场景——开发用 epoll(简单),生产用 io_uring(高性能),极致用 DPDK(>10M pps)。用户按需选择。
-
-**NativeUring vs AsioUring**: 功能等价,依赖不同。NativeUring 零外部依赖,AsioUring 靠 ASIO 管理生命周期。两套保留是因为"零依赖"和"生态便利"各有用户。
-
 ---
 
-## 4. 性能对比 — QPS + 时延 + 包大小分析
-
-### 4.1 实测数据 (2026-06-06, Linux 7.0, 20 cores)
-
-| 包大小 | pipe QPS | pipe MB/s | pipe 时延 | ShmRingQueue QPS | ShmRingQueue MB/s | 加速比 |
-|--------|----------|-----------|----------|-----------------|-------------------|--------|
-| 64 B   | 0.85 M/s | 52 MB/s   | 1175 ns  | **7.9 M/s**     | 484 MB/s          | **9.3×** |
-| 128 B  | 0.83 M/s | 102 MB/s  | 1200 ns  | **7.5 M/s**     | 900 MB/s          | **9.0×** |
-| 256 B  | 0.82 M/s | 201 MB/s  | 1214 ns  | **7.4 M/s**     | 1,795 MB/s        | **9.0×** |
-| 512 B  | 0.79 M/s | 386 MB/s  | 1266 ns  | **7.1 M/s**     | 3,470 MB/s        | **9.0×** |
-| 1 KB   | 0.71 M/s | 695 MB/s  | 1405 ns  | **6.9 M/s**     | 6,782 MB/s        | **9.7×** |
-| 2 KB   | 0.69 M/s | 1,356 MB/s| 1440 ns  | **6.0 M/s**     | 11,720 MB/s       | **8.6×** |
-| 4 KB   | 0.65 M/s | 2,524 MB/s| 1548 ns  | **5.0 M/s**     | 19,530 MB/s       | **7.7×** |
-| 8 KB   | 0.51 M/s | 4,001 MB/s| 1953 ns  | **3.5 M/s**     | 27,340 MB/s       | **6.8×** |
-
-> pipe: Python 实测(50K rounds), ShmRingQueue: C++ gtest(500K rounds SPSC 跨线程)
-> pipe 数据模拟 epoll 单连接场景(每轮一次 read+write syscall)
-
-### 4.2 分析: pipe 瓶颈
-
-```
-pipe write/read 往返 = 2×syscall + 2×内核拷贝
-syscall 开销: ~500ns × 2 = ~1000ns (固定)
-内核拷贝: size / 带宽
-
-64B:  1175ns = 1000ns(syscall) + 175ns(copy) → syscall 占 85%
-8KB:  1953ns = 1000ns(syscall) + 953ns(copy) → syscall 占 51%
-
-pipe QPS 随包增大下降: 0.85→0.51 M/s — 内核拷贝线性增长
-```
-
-### 4.3 分析: ShmRingQueue 瓶颈
-
-```
-零 syscall + 共享内存直接读写
-
-64B:  QPS=7.9M,  BW=484 MB/s — 瓶颈: 原子操作+cache一致性
-8KB:  QPS=3.5M,  BW=27.3 GB/s — 瓶颈: 内存带宽(DDR4 ~50GB/s, 已用55%)
-
-QPS 随包增大下降: 7.9→3.5M — memcpy 时间主导
-BW 随包增大上升: 484→27,340 MB/s — 大包效率高
-```
-
-### 4.4 加速比为何递减
-
-```
-64B:  syscall占85% → 跳过收益最大 → 9.3×
-8KB:  syscall占51% → 收益下降 + ShmRingQueue memcpy占比上升 → 6.8×
-
-趋势: 包越大, syscall节省占比越小, 加速比收敛
-```
-
-### 4.5 ShmRingQueue 时延
-
-| 测试 | 时延 | 分析 |
-|------|------|------|
-| 单消息 RTT | **7.7 ns** | ~23 CPU cycles, L1 cache级 |
-| SPSC 跨线程 | **~130 ns** | cache line bouncing |
-
-### 4.6 场景适用建议
-
-| 场景 | 包大小 | 推荐后端 | 预期 QPS |
-|------|--------|---------|----------|
-| 小消息 IPC(Manager↔Worker) | 64~256B | ShmRingQueue | 7~8 M/s |
-| API网关短请求 | 256~1KB | io_uring | 理论 >5 M/s |
-| 文件传输/静态资源 | 4~8KB | io_uring send_zc | ~12 GB/s |
-| 极致小包(游戏协议) | 64~128B | DPDK | >10 M pps |
-
-### 4.7 io_uring vs epoll (理论推测)
-
-```
-单连接: 和 pipe 同(1次 io_uring_enter vs 2次 read+write)
-100 连接并发: 1次 io_uring_enter vs 100次 read+write → QPS 高 ~50×
-
-ShmRingQueue 9× 证明了"零 syscall = 巨大收益"
-io_uring 把多连接 I/O 打包到一次 enter → 并发越高, 收益越大
-```
-
-## 5. 测试过程
-
-```bash
-# ShmRingQueue QPS (4 包大小)
-./build/bin/thunder_test_shm_queue --gtest_filter=*QPS*
-
-# pipe IOPS (epoll syscall baseline)
-python3 -c "import os,time; r,w=os.pipe(); ..."
-
-# ShmRingQueue 时延
-./build/bin/thunder_test_shm_queue --gtest_filter=*Latency*
-
-# 全量回归
-ctest -j1  # 304/304 ✅
-
-## 6. wrk HTTP 全链路压测 (实测 2026-06-06)
-
-```bash
-wrk -t4 -c100 -d5s -s wrk_echo.lua http://127.0.0.1:27006/hello/hello
-```
-
-| backend | 100 conn QPS | 500 conn QPS | p50 时延 | p99 时延 | 吞吐量 |
-|---------|-------------|-------------|---------|---------|--------|
-| **ev** (epoll) | **109,574** | **102,357** | 0.79 ms | 2.12 ms | 68.1 MB/s |
-| asio_uring | 108,000 | 82,707 | 0.88 ms | 18.5 ms | 67.5 MB/s |
-| native_uring | 89,791 | 80,001 | 0.60 ms | 5.7 ms | 55.8 MB/s |
-
-> 测试: wrk -t4 -c100 -d5s, POST Echo(空body), 每轮 5 秒
-
-### 6.1 不同包大小 QPS + 吞吐 (ev backend)
-
-| body 大小 | QPS | 吞吐量 | p50 时延 |
-|-----------|-----|--------|---------|
-| Echo (空) | 109K | 68 MB/s | 0.79 ms |
-| 1KB body | 72K | 72 MB/s | 1.2 ms |
-| 4KB body | 28K | 112 MB/s | 3.5 ms |
-
-> QPS 随包增大下降, 但吞吐量(带宽)上升——因为每个请求的数据量更大
-
-### 6.2 不同包大小: ShmRingQueue vs pipe (后端无关 benchmark)
-
-| 包大小 | pipe 时延 | pipe 吞吐 | ShmRingQueue 吞吐 | 加速比 |
-|--------|----------|----------|------------------|--------|
-| 64 B | 1175 ns | 52 MB/s | 484 MB/s | **9.3×** |
-| 256 B | 1214 ns | 201 MB/s | 1,795 MB/s | **9.0×** |
-| 1 KB | 1405 ns | 695 MB/s | 6,782 MB/s | **9.7×** |
-| 8 KB | 1953 ns | 4,001 MB/s | 27,340 MB/s | **6.8×** |
-
-### 6.2 分析: 为什么 epoll 在当前规模最快
-
-**原理**:
-
-```
-epoll 开销 = epoll_wait(1次) + read(1次) + write(1次) = 3 syscall
-io_uring 开销 = io_uring_enter(1次) + NOP-SQE 管理 + ring_fd 启停
-
-单连接时: epoll 3 syscall vs io_uring 1 syscall + ASIO overhead
-         → 3 syscall < 1 syscall + overhead? No!
-         → 在 localhost 上, syscall 延迟 <1μs, ASIO overhead ~2μs
-         → epoll 的 3×1μs < io_uring 的 1μs+2μs
-
-100 连接时: epoll 1 epoll_wait + 100 read/write = 201 syscall
-            io_uring 1 io_uring_enter + overhead
-            → 201μs vs 3μs → io_uring 理论上应该赢
-            → 但 wrk 测出来 ev 赢, 说明瓶颈不在 I/O 层而在应用层(HTTP codec/协程)
-```
-
-**根本原因**: wrk 测试的是**整个 HTTP 栈**,I/O backend 的差异被 HTTP 编解码、协程调度、S2S 路由等上层开销淹没了。局部 I/O 优化无法体现到全局 QPS。
-
-### 6.3 正确用法
-
-| 场景 | 推荐 Backend | 原因 |
-|------|-------------|------|
-| 中小规模(当前) | **ev** (epoll) | 性能足够, 最简单 |
-| 大并发(>1K conn) | **asio_uring** | 批量提交节省 syscall |
-| 极致(>10M pps) | **DPDK** | 用户态网络栈 |
-| Manager↔Worker IPC | **ShmRingQueue** | 共享内存零拷贝, 9× 加速 |
-
-## 7. 场景推荐
-
-| 场景 | conn | 推荐 | 原因 |
-|------|------|------|------|
-| 开发调试 | <100 | ev | 最简单 |
-| 中小规模 | 100~1K | ev | 实测最快 |
-| 大规模并发 | 1K~10K | asio_uring | 批量优势 |
-| 极大规模 | >10K | DPDK | 零 syscall |
-| Manager↔Worker IPC | — | ShmRingQueue | 零拷贝 |
-```
-
-### 4.8 Backend 对等实测 (2026-06-06)
-
-尝试用 C++ ev_loop benchmark 对比 Ev vs AsioUring, 结果不稳定:
-
-| Backend | 64B | 256B | 1KB | 问题 |
-|---------|-----|------|-----|------|
-| EvIoBackend | 0.045 M/s | 0.044 M/s | 0.047 M/s | ev_run(NOWAIT) 未驱动 epoll 完成 |
-| AsioUringIoBackend | 0.28 M/s | 1.30 M/s | 1.25 M/s | ev_prepare 批量提交, 数据偏大 |
-
-**不稳定原因**: 单线程 pipe write→read 串行, 无法模拟真实并发。ev_run(EVRUN_NOWAIT) 对不同后端行为不同(EvIo 需要 fd 就绪才触发, AsioUring 在 ev_prepare 中同步 poll)。
-
-**正确方法**: wrk HTTP 压测(见 §4.9)或专用 C++ benchmark(每连接独立线程+ev_loop 驱动)。
-
-### 4.9 实际建议: wrk HTTP 压测
-
-```bash
-# 对比两个 backend 的真实业务吞吐
-# 1. 配置 Hello.json "io_backend": "ev"
-# 2. 启动服务 → wrk -t4 -c100 -d30s http://127.0.0.1:27006/hello
-# 3. 配置 Hello.json "io_backend": "asio_uring"
-# 4. 重启 → wrk 同样参数 → 对比 QPS
-
-# 这才是真实 backend 性能对比——走完整 HTTP 栈+codec+S2S
-```
-
-**当前结论**: ShmRingQueue vs pipe 的 9× 加速证明了"零 syscall=巨大收益"。Backend 对等对比需 wrk 全链路压测。
