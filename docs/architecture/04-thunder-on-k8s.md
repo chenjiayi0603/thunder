@@ -261,6 +261,9 @@ Interface 只做一件事:收到 HTTP 请求(GenKey/VerifyKey),调 S2S 发给 Lo
 
 HPA 按 CPU 设置 70% 阈值:凌晨低峰自动减到 1 个 Pod,白天高峰自动加到 5 个。不需要人操作。
 
+**为什么 Interface 可以开 HPA 而其他不行**: Interface 是纯 HTTP 短连接。HPA scale-in 杀 Pod → 在途请求失败 → 客户端自动重试 → Service 路由到另一个 Pod。一个请求重试一次,用户无感知。WebSocket 长连接断了就真断了——客户端没有自动重连机制。
+HPA 按 CPU 设置 70% 阈值:凌晨低峰自动减到 1 个 Pod,白天高峰自动加到 5 个。不需要人操作。
+
 ### Hello — ⚠️ 勉强放 k8s
 
 Hello 一个 Pod 里同时跑 HTTP(短连接)和 WebSocket(长连接)。关键区别:
