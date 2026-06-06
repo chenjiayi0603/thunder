@@ -69,6 +69,10 @@ class TestEtcdConfigFormat:
 
     def test_empty_value(self):
         etcd_put(PREFIX + "empty", "")
+        val = etcd_get(PREFIX + "empty")
+        # etcd may omit value field for empty values
+        assert val is None or val == ""
+        etcd_put(PREFIX + "empty", "")
         val = etcd_get(PREFIX + "empty"); assert val == "" or val is None  # etcd may omit empty value field
 
     def test_long_value(self):
