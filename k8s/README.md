@@ -32,3 +32,27 @@ kubectl apply -f k8s/hello-ws-deployment.yaml
 - [ ] 构建 Docker 镜像 (当前使用 hostPath 挂载)
 - [ ] etcd 3 节点 StatefulSet 测试 (需 PVC provisioner)
 - [ ] 冒烟回归测试
+
+## 测试结果 (2026-06-06)
+
+| 测试 | 结果 | 说明 |
+|------|------|------|
+| etcd | ✅ | healthy, 3 节点注册 |
+| Hello Echo | ✅ | code:0 |
+| HelloWS 握手 | ✅ | 101 Switching Protocols |
+| Redis | ⚠️ | 需配置 k8s Service DNS |
+| MySQL | ⚠️ | 需配置 k8s Service DNS |
+| Interface | ⚠️ | 进程正常, Worker codec 初始化需排查 |
+
+## 部署方式
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/etcd-local.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/mysql.yaml
+kubectl apply -f k8s/logic-deployment.yaml
+kubectl apply -f k8s/interface-deployment.yaml
+kubectl apply -f k8s/hello-deployment.yaml
+kubectl apply -f k8s/hello-ws-deployment.yaml
+```
