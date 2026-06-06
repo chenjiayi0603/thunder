@@ -15,8 +15,10 @@ spec:
     spec:
       containers:
       - name: hello-ws
-        image: thunder-hello-ws:latest
+        image: thunder-node:latest
+        imagePullPolicy: Never
         command: ["./node.sh", "start"]
+            - -c
         workingDir: /thunder/deploy/HelloWs
         ports:
         - containerPort: 27010

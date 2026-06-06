@@ -15,8 +15,10 @@ spec:
     spec:
       containers:
       - name: hello
-        image: thunder-hello:latest
+        image: thunder-node:latest
+        imagePullPolicy: Never
         command: ["./node.sh", "start"]
+            - -c
         workingDir: /thunder/deploy/HelloHttp
         ports:
         - containerPort: 27006

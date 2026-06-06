@@ -4038,3 +4038,71 @@ App ──→ RNIC (RDMA 网卡)           RNIC ──→ App 内存
 
 ## 附录C: 并发模型详解
 (详见原文档: io_uring_concurrency_model.md)
+
+---
+
+## 8. Thunder 两套 io_uring 实现对比
+
+Thunder 有两套 io_uring 后端,共享同一接口 `IoBackend`,通过配置切换:
+
+```
+Hello.json: "io_backend": "native_uring"  或  "io_backend": "asio_uring"
+```
+
+### 8.1 区别
+
+| | NativeUringIoBackend | AsioUringIoBackend |
+|---|---------------------|-------------------|
+| 依赖 | liburing (纯 C) | stand alone ASIO (C++) |
+| 代码量 | ~534 行 | ~745 行 |
+| SQ/CQ 管理 | 手写 ring buffer 操作 | ASIO 内部管理 |
+| 生命周期 | 裸指针, 手动管理 | shared_ptr/weak_ptr, 自动析构 |
+| watcher 数 | 2 路 (ev_prepare + ev_io) | 3 路 (ev_prepare + ev_io + ev_check) |
+| 零拷贝 | 支持(需实现) | send_zc + fixed buffers (内置) |
+| 空唤醒 | 存在 | UpdateRingWatcher 按需启停, 消除 |
+| 编译 | 快(无模板) | 慢(ASIO 大量模板) |
+
+### 8.2 调用过程
+
+**NativeUring**:
+
+```
+Worker → SubmitRead(fd, buf)
+  → 直接构造 io_uring_sqe (read, fd, buf)
+  → 写入 SQ ring buffer
+  → ev_prepare: io_uring_submit() 批量提交
+  → epoll_wait → ring_fd 可读
+  → ev_io: io_uring_peek_cqe() 取结果 → callback
+```
+
+**AsioUring**:
+
+```
+Worker → SubmitRead(fd, buf)
+  → ASIO async_read_some → 生成内部 SQE (不提交到 SQ)
+  → ev_prepare: io_context.poll() ①批量提交 SQE ②收割上一轮 CQE
+  → epoll_wait → ring_fd 可读
+  → ev_io: poll() 收割刚完成的 CQE → completion lambda
+  → ev_check: poll() 补收 race window CQE + UpdateRingWatcher 按需启停
+```
+
+关键区别: NativeUring 是 2 路驱动(提交+收割), AsioUring 是 3 路(提交+收割+补刀)。第三路 ev_check 收割 ev_io 与 ev_prepare 之间可能到达的 CQE,避免漏事件。
+
+### 8.3 选择建议
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 无 ASIO 依赖 | NativeUring | 编译快, 零外部依赖 |
+| 需要生命周期管理 | AsioUring | shared_ptr 自动析构, 不用手动跟踪 |
+| 需要零拷贝 | AsioUring | send_zc + fixed buffers 已实现 |
+| 调试/学习 | NativeUring | 手写 ring buffer, 更直观 |
+
+### 8.4 实测性能 (wrk HTTP 全链路)
+
+| backend | 空body QPS | 1KB QPS | 4KB QPS |
+|---------|-----------|---------|---------|
+| ev (epoll) | 109K | 59K | 23K |
+| NativeUring | 90K | 68K | 24K |
+| AsioUring | 108K | **71K** | **39K** |
+
+**大包时 AsioUring 反超 ev** — 4KB 时快 70%。原因是 send_zc 零拷贝省了数据拷贝开销。NativeUring 没有零拷贝实现,QPS 随包大降。

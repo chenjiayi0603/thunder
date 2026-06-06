@@ -15,8 +15,10 @@ spec:
     spec:
       containers:
       - name: logic
-        image: thunder-logic:latest
+        image: thunder-node:latest
+        imagePullPolicy: Never
         command: ["./node.sh", "start"]
+            - -c
         workingDir: /thunder/deploy/Logic
         ports:
         - containerPort: 16068
