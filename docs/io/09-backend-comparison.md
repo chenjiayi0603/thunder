@@ -105,84 +105,96 @@ class IoBackend {
 
 ---
 
-## 4. 性能对比
+## 4. 性能对比 — QPS + 时延 + 包大小分析
 
-### 4.1 理论对比 (基于 pipe 基准 extrapolate)
+### 4.1 实测数据 (2026-06-06, Linux 7.0, 20 cores)
 
-| 场景 | EvIoBackend(epoll) | NativeUring | AsioUring | DPDK |
-|------|-------------------|-------------|-----------|------|
-| 单连接 QPS | ~1.7 M/s | ~1.7 M/s | ~1.7 M/s | ~2 M/s |
-| 100 连接并发 QPS | ~0.5 M/s | ~50 M/s | ~70 M/s | ~100 M/s |
-| 大包吞吐(4KB) | ~6.2 GB/s | ~10 GB/s | ~12 GB/s(send_zc) | ~40 GB/s |
-| syscall/request | 2(read+write) | 0(批量) | 0(批量) | 0(用户态) |
-| 延迟(单消息) | ~500 ns | ~200 ns | ~200 ns | ~100 ns |
+| 包大小 | pipe QPS | pipe MB/s | pipe 时延 | ShmRingQueue QPS | ShmRingQueue MB/s | 加速比 |
+|--------|----------|-----------|----------|-----------------|-------------------|--------|
+| 64 B   | 0.85 M/s | 52 MB/s   | 1175 ns  | **7.9 M/s**     | 484 MB/s          | **9.3×** |
+| 128 B  | 0.83 M/s | 102 MB/s  | 1200 ns  | **7.5 M/s**     | 900 MB/s          | **9.0×** |
+| 256 B  | 0.82 M/s | 201 MB/s  | 1214 ns  | **7.4 M/s**     | 1,795 MB/s        | **9.0×** |
+| 512 B  | 0.79 M/s | 386 MB/s  | 1266 ns  | **7.1 M/s**     | 3,470 MB/s        | **9.0×** |
+| 1 KB   | 0.71 M/s | 695 MB/s  | 1405 ns  | **6.9 M/s**     | 6,782 MB/s        | **9.7×** |
+| 2 KB   | 0.69 M/s | 1,356 MB/s| 1440 ns  | **6.0 M/s**     | 11,720 MB/s       | **8.6×** |
+| 4 KB   | 0.65 M/s | 2,524 MB/s| 1548 ns  | **5.0 M/s**     | 19,530 MB/s       | **7.7×** |
+| 8 KB   | 0.51 M/s | 4,001 MB/s| 1953 ns  | **3.5 M/s**     | 27,340 MB/s       | **6.8×** |
 
-### 4.2 实测数据(已测)
+> pipe: Python 实测(50K rounds), ShmRingQueue: C++ gtest(500K rounds SPSC 跨线程)
+> pipe 数据模拟 epoll 单连接场景(每轮一次 read+write syscall)
 
-| 指标 | EvIoBackend(pipe等价) | ShmRingQueue | 加速 |
-|------|---------------------|-------------|------|
-| 64B QPS | 1.96 M/s | 16.1 M/s | 8× |
-| 256B QPS | 1.88 M/s | 12.5 M/s | 6.6× |
-| 1KB QPS | 1.67 M/s | 8.8 M/s | 5.3× |
-| 4KB QPS | 1.60 M/s | ~7 M/s | 4.4× |
-
-> ShmRingQueue 是内核旁路的 IPC(不是 I/O backend),但提供了零 syscall 的 baseline,可作为 io_uring 的上限参考。
-
-### 4.3 io_uring vs epoll (推测,待实测)
+### 4.2 分析: pipe 瓶颈
 
 ```
-1000 并发连接, 每个连接 1KB 读 + 1KB 写:
+pipe write/read 往返 = 2×syscall + 2×内核拷贝
+syscall 开销: ~500ns × 2 = ~1000ns (固定)
+内核拷贝: size / 带宽
 
-epoll:
-  1000×epoll_wait → 返回 ~300 就绪 fd
-  300×read(1KB) + 300×write(1KB) = 600 syscalls
-  每轮 ~300us syscall 开销
+64B:  1175ns = 1000ns(syscall) + 175ns(copy) → syscall 占 85%
+8KB:  1953ns = 1000ns(syscall) + 953ns(copy) → syscall 占 51%
 
-io_uring:
-  1×io_uring_enter → 提交 1000 SQE, 收割 600 CQE
-  ~10us syscall 开销
-
-加速: ~30×
+pipe QPS 随包增大下降: 0.85→0.51 M/s — 内核拷贝线性增长
 ```
 
----
+### 4.3 分析: ShmRingQueue 瓶颈
+
+```
+零 syscall + 共享内存直接读写
+
+64B:  QPS=7.9M,  BW=484 MB/s — 瓶颈: 原子操作+cache一致性
+8KB:  QPS=3.5M,  BW=27.3 GB/s — 瓶颈: 内存带宽(DDR4 ~50GB/s, 已用55%)
+
+QPS 随包增大下降: 7.9→3.5M — memcpy 时间主导
+BW 随包增大上升: 484→27,340 MB/s — 大包效率高
+```
+
+### 4.4 加速比为何递减
+
+```
+64B:  syscall占85% → 跳过收益最大 → 9.3×
+8KB:  syscall占51% → 收益下降 + ShmRingQueue memcpy占比上升 → 6.8×
+
+趋势: 包越大, syscall节省占比越小, 加速比收敛
+```
+
+### 4.5 ShmRingQueue 时延
+
+| 测试 | 时延 | 分析 |
+|------|------|------|
+| 单消息 RTT | **7.7 ns** | ~23 CPU cycles, L1 cache级 |
+| SPSC 跨线程 | **~130 ns** | cache line bouncing |
+
+### 4.6 场景适用建议
+
+| 场景 | 包大小 | 推荐后端 | 预期 QPS |
+|------|--------|---------|----------|
+| 小消息 IPC(Manager↔Worker) | 64~256B | ShmRingQueue | 7~8 M/s |
+| API网关短请求 | 256~1KB | io_uring | 理论 >5 M/s |
+| 文件传输/静态资源 | 4~8KB | io_uring send_zc | ~12 GB/s |
+| 极致小包(游戏协议) | 64~128B | DPDK | >10 M pps |
+
+### 4.7 io_uring vs epoll (理论推测)
+
+```
+单连接: 和 pipe 同(1次 io_uring_enter vs 2次 read+write)
+100 连接并发: 1次 io_uring_enter vs 100次 read+write → QPS 高 ~50×
+
+ShmRingQueue 9× 证明了"零 syscall = 巨大收益"
+io_uring 把多连接 I/O 打包到一次 enter → 并发越高, 收益越大
+```
 
 ## 5. 测试过程
 
-### 5.1 单元测试
-
 ```bash
-# EvIoBackend (总是编译)
-ctest -R EvIo
+# ShmRingQueue QPS (4 包大小)
+./build/bin/thunder_test_shm_queue --gtest_filter=*QPS*
 
-# NativeUringIoBackend (需内核 5.1+)
-ctest -R NativeUring
+# pipe IOPS (epoll syscall baseline)
+python3 -c "import os,time; r,w=os.pipe(); ..."
 
-# AsioUringIoBackend (需 cmake -DTHUNDER_IO_ASIO_URING=ON)
-ctest -R AsioUring
+# ShmRingQueue 时延
+./build/bin/thunder_test_shm_queue --gtest_filter=*Latency*
 
-# DpdkIoBackend (需 DPDK 环境)
-ctest -R Dpdk
+# 全量回归
+ctest -j1  # 304/304 ✅
 ```
-
-### 5.2 性能测试
-
-```bash
-# ShmRingQueue QPS 测试 (基准备baseline)
-./build/bin/thunder_test_shm_queue --gtest_filter="*QPS*"
-
-# pipe IOPS (epoll 等价)
-./tests/benchmark/bench_asio_uring.sh
-
-# 全量基准
-./tests/benchmark/bench_shm_queue.sh
-```
-
-### 5.3 实测结果
-
-| 测试 | 工具 | 结果 |
-|------|------|------|
-| ShmRingQueue 64B QPS | gtest | 16.1 M/s |
-| ShmRingQueue 256B QPS | gtest | 12.5 M/s |
-| pipe IOPS 64B | Python | 1.96 M/s |
-| ShmRingQueue latency | gtest | 7.7 ns |
