@@ -321,7 +321,7 @@ Pod IP 每次重启都变。k8s Service 可以提供固定 ClusterIP,但:
   直连 Pod IP → 下次重启变了 → 路由表过期 → 需要 watch etcd 更新。
 ```
 
-**总结**: Logic 放 k8s 技术上可以跑,但没有新增任何好处——反而多了网络跳数和状态管理问题。裸机跑 Logic 的性能和简单性都比 k8s 好。
+**结论**: Logic 放 k8s 同 Pod 跑就可以, 不需要拆。关 HPA, 固定 replicas。和 docker-compose 一样。
 
 ### DPDK — ⚠️ 关HPA可放
 
@@ -336,7 +336,8 @@ DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过
 ```
 Interface → 放 k8s ✅  无状态 API, 可 HPA, 可滚动更新
 Hello    → 关 HPA 可放 k8s
-Logic    → 关 HPA, 同Pod Manager+Worker, 固定replicas=1~2
-HelloWS  → 关 HPA 可放 k8s
+Logic    → ✅ 可放 (关 HPA)
+Hello    → ✅ 可放 (关 HPA)
+HelloWS  → ✅ 可放 (关 HPA)
 DPDK     → 裸机/VM ❌  独占网卡
 ```
