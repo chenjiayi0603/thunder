@@ -134,32 +134,74 @@
 - 缺点: ASIO 依赖(编译慢 745 行)
 - 代码: `AsioUringIoBackend.{hpp,cpp}` (172+573=745 行)
 
-### DpdkIoBackend — 用户态网络栈 (极致)
+### DPDK — 未测试
 
-**怎么工作**:
+DPDK 需要**独占网卡 + DPDK 兼容 NIC**(如 Intel X520/X710), 且需要 `meson` 编译。
+当前测试环境无 DPDK 硬件, 无法实测。**以下对比仅限已测的三个后端**(ev/asio_uring/native_uring)。
 
+
+### 工作流程图
+
+**ev (epoll)**:
 ```
-应用层: SubmitRead(fd, buf)
-  → fd 是 DPDK mempool 中的 mbuf
-  → 轮询网卡 RX descriptor ring
-  → 收到包 → 直接操作 DMA buffer → 触发 callback
+SubmitRead  SubmitWrite    ...
+    │           │
+    └─────┬─────┘
+          ▼
+    ev_prepare ── 无操作 (epoll 不需要 prepare)
+          │
+          ▼
+    epoll_wait ──── fd 就绪? ──YES──► read/write ──► callback
+          │
+          ▼
+    ev_check ── 无操作
 ```
 
-- **零系统调用** — 用户态直接操作网卡 DMA
-- 独占网卡(通过 DPDK PMD 驱动接管)
-- 优点: 极致性能 >10M pps, 零 syscall
-- 缺点: 独占网卡,改网络拓扑,运维复杂,代码最多(898 行)
-- 代码: `DpdkIoBackend.{hpp,cpp}` (197+701=898 行)
+**native_uring**:
+```
+SubmitRead  SubmitWrite    ...
+    │           │
+    └─────┬─────┘
+          ▼
+    ev_prepare ── io_uring_submit() ── 批量提交所有 SQE 到 SQ
+          │                            同时收割上一轮 CQE
+          ▼
+    epoll_wait ── ring_fd 可读? ──► io_uring_peek_cqe() ──► callback
+          │
+          ▼
+    ev_check ── 补收割 race window CQE
+```
+
+**asio_uring (三路驱动)**:
+```
+SubmitRead  SubmitWrite
+    │           │         (只构造 async_op, 不提交)
+    └─────┬─────┘
+          ▼
+  ┌─ ev_prepare ── io_context.poll() ── ① 提交所有 SQE
+  │                                       ② 收割上一轮 CQE → callback
+  ├─ epoll_wait ── ring_fd 可读?
+  │       │
+  ├─ ev_io ── poll() ── 收割 CQE → callback
+  │       │            └─ 无挂起 op? → stop ring_fd 监听
+  │       │
+  └─ ev_check ── poll() ── 补收割 race window CQE
+                            └─ UpdateRingWatcher()
+                               └─ 有挂起? start : stop
+```
+
+**关键差異**: ev 只有 epoll_wait 做实际工作。native_uring 在 ev_prepare 做批量提交。
+asio_uring 用三个 watcher 覆盖全部时机——提交(ev_prepare)、即时收割(ev_io)、兜底(ev_check)。
 
 ### 核心差异对比表
 
-| | EvIo | NativeUring | AsioUring | DPDK |
+| | EvIo | NativeUring | AsioUring |
 |---|------|-------------|-----------|------|
 | I/O 模型 | 就绪通知 | 完成通知 | 完成通知 | 轮询 |
 | syscall/请求 | 2~3 | 0(批量) | 0(批量) | 0 |
-| SQ/CQ 管理 | 无 | 手写 | ASIO | DPDK |
+| SQ/CQ 管理 | 无 | 手写 | ASIO |
 | 零拷贝 | 无 | 支持 | send_zc | DMA |
-| 外部依赖 | 无(libev) | 无(liburing) | ASIO | DPDK |
+| 外部依赖 | 无(libev) | 无(liburing) | ASIO |
 | 代码量 | 385 行 | 534 行 | 745 行 | 898 行 |
 | 内核要求 | 2.6+ | 5.1+ | 5.1+ | 不需要 |
 | 适用场景 | 默认,通用 | 高性能无依赖 | 高性能+生态 | >10M pps |
