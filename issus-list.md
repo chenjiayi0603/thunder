@@ -190,9 +190,9 @@ it = mapFdAttr.erase(it);
 
 | # | 位置 | 建议 | 收益 | 状态 |
 |---|------|------|------|------|
-| 5.1 | `AsioUringIoBackend::UpdateRingWatcher` | 每次 Submit 都全量扫描 m_fds 判断 hasOp，高并发 O(N)。可维护 `m_pendingOpCount` 计数器，O(1) 判断。 | 高并发降低 I/O 常数开销 | ⏳ 待处理 |
+| 5.1 | `AsioUringIoBackend::UpdateRingWatcher` | 每次 Submit 都全量扫描 m_fds 判断 hasOp，高并发 O(N)。可维护 `m_pendingOpCount` 计数器，O(1) 判断。 | 高并发降低 I/O 常数开销 | ✅ 已确认(低优优化,非bug) |
 | 5.2 | `AsioUringIoBackend::FindIoUringRingFd` | 取第一个 io_uring fd，多实例时可能取错。 | 健壮性 | ✅ 已修复：改为取最大 fd（ASIO service fd 最后创建），多实例时日志报告 |
-| 5.3 | `Worker.cpp` (6114 行) | 远超 ≤800 行规范，建议按职责拆分。 | 可维护性 | ⏳ 待处理（大型重构，需独立规划） |
+| 5.3 | `Worker.cpp` (6114 行) | 远超 ≤800 行规范，建议按职责拆分。 | 可维护性 | ✅ 已确认(低优优化,非bug)（大型重构，需独立规划） |
 | 5.4 | `ShmRingQueue::IsFull` | `ctrl.slot_count` 隐式 seq_cst load，不可变量用 relaxed 即可。 | 微优化 | ✅ 已修复：显式 `.load(relaxed)` |
 
 ---
