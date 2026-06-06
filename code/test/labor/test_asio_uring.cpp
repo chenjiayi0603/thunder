@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "util/CBuffer.hpp"
 
 #ifdef THUNDER_IO_ASIO_URING
 #include "labor/AsioUringIoBackend.hpp"
@@ -9,7 +10,7 @@
 
 // 回调计数
 static int g_completed = 0;
-static void CompletionCb(int fd, uint32_t seq, int op, int result, void*) {
+static void CompletionCb(int fd, uint32_t seq, net::IoOp op, int result, void*) {
     g_completed++;
 }
 
@@ -46,7 +47,7 @@ TEST_F(AsioUringTest, SubmitRead_InvalidFd)
 {
     ASSERT_TRUE(backend.Init(loop, CompletionCb, nullptr));
     auto buf = std::make_shared<util::CBuffer>();
-    EXPECT_FALSE(backend.SubmitRead(-1, buf, 1));  // 无效 fd
+    EXPECT_TRUE(backend.SubmitRead(-1, buf, 1));  // io_uring 延后验证fd
 }
 
 TEST_F(AsioUringTest, CancelFd_NotFound)
