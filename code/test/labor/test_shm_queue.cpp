@@ -352,3 +352,73 @@ TEST(ShmRingQueueE2E, WorkerRestartSimulation)
 
     ShmRingQueue::Destroy(q2);
 }
+
+// ==========================================================================
+// Performance benchmarks — SPSC throughput + latency
+// ==========================================================================
+
+TEST(ShmRingQueuePerf, Throughput_1M_Messages)
+{
+    constexpr uint32_t kSlots = 256;
+    constexpr uint32_t kMsgs  = 1000000;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    ASSERT_NE(q, nullptr);
+
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> produced{0}, consumed{0};
+
+    std::thread producer([&]() {
+        char body[256] = {};
+        while (!start.load(std::memory_order_acquire)) {}
+        for (uint32_t i = 0; i < kMsgs; ++i) {
+            while (!q->TryEnqueue(1, i, body, 128)) { std::this_thread::yield(); }
+            produced.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread consumer([&]() {
+        uint32_t cmd, seq, out_len; char buf[256];
+        while (!start.load(std::memory_order_acquire)) {}
+        uint64_t local = 0;
+        while (local < kMsgs) {
+            if (q->TryDequeue(cmd, seq, buf, out_len)) { ++local; }
+            else { std::this_thread::yield(); }
+        }
+        consumed.store(local, std::memory_order_relaxed);
+    });
+
+    auto t0 = std::chrono::steady_clock::now();
+    start.store(true, std::memory_order_release);
+    producer.join(); consumer.join();
+    auto t1 = std::chrono::steady_clock::now();
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    double mps = (kMsgs / 1000000.0) / (ms / 1000.0);  // million msgs/sec
+    EXPECT_EQ(produced.load(), kMsgs);
+    EXPECT_EQ(consumed.load(), kMsgs);
+    std::cout << "[perf] SPSC 1M msgs: " << ms << "ms, " << mps << " M msg/s" << std::endl;
+    EXPECT_GT(mps, 0.5);  // at least 0.5M msg/s (conservative)
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueuePerf, Latency_SingleMessage)
+{
+    constexpr uint32_t kSlots = 8;
+    constexpr uint32_t kRounds = 100000;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    ASSERT_NE(q, nullptr);
+
+    auto t0 = std::chrono::steady_clock::now();
+    char body[128] = {};
+    for (uint32_t i = 0; i < kRounds; ++i) {
+        while (!q->TryEnqueue(1, i, body, 64)) {}
+        uint32_t cmd, seq, out_len; char buf[256];
+        while (!q->TryDequeue(cmd, seq, buf, out_len)) {}
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    double avg_ns = static_cast<double>(ns) / kRounds;
+    std::cout << "[perf] single-msg latency: " << avg_ns << " ns/round (" << kRounds << " rounds)" << std::endl;
+    EXPECT_LT(avg_ns, 5000.0);  // < 5us per round-trip
+    ShmRingQueue::Destroy(q);
+}

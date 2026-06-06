@@ -347,3 +347,15 @@ thunder_link_thirdparty_shared(thunder_test_e2e_smoke)
 target_link_libraries(thunder_test_e2e_smoke PRIVATE GTest::gtest_main curl)
 set_target_properties(thunder_test_e2e_smoke PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_e2e_smoke DISCOVERY_MODE PRE_TEST)
+
+# ---- AsioUringIoBackend 单元测试 (需 -DENABLE_ASIO_URING=ON) ----
+add_executable(thunder_test_asio_uring
+  labor/test_asio_uring.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_asio_uring PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_asio_uring)
+thunder_link_thirdparty_shared(thunder_test_asio_uring)
+target_link_libraries(thunder_test_asio_uring PRIVATE GTest::gtest_main)
+set_target_properties(thunder_test_asio_uring PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_asio_uring DISCOVERY_MODE PRE_TEST)
