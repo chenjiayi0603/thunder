@@ -15,7 +15,7 @@
 #include <zconf.h>
 
 #include "log4cplus/loggingmacros.h"
-#include "util/StreamCodec.hpp"
+#include "codec/StreamCodec.hpp"
 #include "util/CBuffer.hpp"
 #include "protocol/msg.pb.h"
 #include "labor/Labor.hpp"

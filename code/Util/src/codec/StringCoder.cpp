@@ -8,7 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <algorithm>
-#include "StringCoder.hpp"
+#include "codec/StringCoder.hpp"
 
 namespace util
 {

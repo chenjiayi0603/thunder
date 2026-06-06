@@ -9,7 +9,7 @@
  ******************************************************************************/
 #include "HttpCodec.hpp"
 #include "codec/HttpFastCodec.hpp"
-#include "util/StringCoder.hpp"
+#include "codec/StringCoder.hpp"
 #include "CodecCommon.hpp"
 
 namespace net

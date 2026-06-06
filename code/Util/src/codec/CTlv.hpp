@@ -11,7 +11,7 @@
 #ifndef CTLV_HPP_
 #define CTLV_HPP_
 
-#include "CBuffer.hpp"
+#include "util/CBuffer.hpp"
 #include "StreamCodec.hpp"
 
 namespace util

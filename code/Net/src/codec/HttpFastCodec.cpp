@@ -14,7 +14,7 @@
 #include "codec/HttpFastCodec.hpp"
 #include "protocol/http.pb.h"
 #include "util/CBuffer.hpp"
-#include "util/StringCoder.hpp"
+#include "codec/StringCoder.hpp"
 #include "util/http/http_parser.h"
 
 namespace net

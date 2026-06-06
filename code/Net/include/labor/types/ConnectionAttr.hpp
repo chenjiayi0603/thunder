@@ -12,7 +12,7 @@
 #include "libev/ev.h"
 #include "NetDefine.hpp"
 #include "util/CBuffer.hpp"
-#include "util/StreamCodec.hpp"
+#include "codec/StreamCodec.hpp"
 
 namespace net { class ThunderCodec; }
 

@@ -67,7 +67,7 @@ extern "C" {
 #include "unix/process_helper.h"
 #include "util/json/CJsonObject.hpp"
 #include "util/CBuffer.hpp"
-#include "util/StreamCodec.hpp"
+#include "codec/StreamCodec.hpp"
 #include "util/CodeConvert.h"
 #include "util/UnixTime.hpp"
 #include "curl/CurlClient.hpp"

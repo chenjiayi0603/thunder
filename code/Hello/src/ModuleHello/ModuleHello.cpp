@@ -14,7 +14,7 @@
 #include <memory>
 
 #include "util/CommonUtils.hpp"
-#include "util/StringCoder.hpp"
+#include "codec/StringCoder.hpp"
 #include "ModuleHello.hpp"
 #include "HttpRequestCo.hpp"
 #include "Interface.hpp"
