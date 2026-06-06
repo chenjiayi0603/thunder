@@ -233,3 +233,41 @@ THUNDER_ASIO_URING_DIAG=1 → /tmp/asio_uring_diag.log
 | 代码量 | ~300 行 | ~500 行 |
 | 内核要求 | 2.6+ | 5.1+ |
 | 适用 | 通用,兼容好 | 高吞吐,需新内核 |
+
+---
+
+## 7. 设计优势总结
+
+### vs epoll (EvIoBackend)
+
+| 维度 | epoll | io_uring | 优势 |
+|------|-------|----------|------|
+| syscall 次数 | N次(N=就绪fd数) | 1次(批量提交+收割) | io_uring 减少 ~N× syscall |
+| 用户态↔内核态 | 数据拷贝(read/write) | 可选零拷贝(send_zc) | io_uring 省内存带宽 |
+| 文件I/O | 不支持(epoll只管fd就绪) | 统一接口 | io_uring 可直接异步读文件 |
+| 并发1000连接 | 1000×epoll_wait+read | 1×io_uring_enter | io_uring ~1000×效率 |
+| 代码量 | ~300行 | ~500行 | epoll更简单 |
+| 内核要求 | 2.6+ | 5.1+ | epoll更兼容 |
+
+### 为什么选 io_uring 做高性能后端
+
+Thunder 是**游戏网关**——高并发(数万连接)、低延迟(毫秒级)、大流量(GB/s)。epoll 在高并发时 syscall 开销成为瓶颈。io_uring 的批量提交+零拷贝天然适合这个场景。
+
+**但是epoll 仍然保留**(EvIoBackend)——兼容性:老内核、简单场景、调试方便。用户通过配置选: `"io_backend": "asio_uring"` 或 `"io_backend": "ev"`。
+
+### 为什么不用 DPDK
+
+DPDK 是用户态网络栈,bind 独占网卡,需要改网络拓扑。io_uring 基于标准 socket API,业务代码零改动——改配置即可。DPDK 用于极致性能场景(>10M pps),io_uring 用于高性能场景(1~5M pps)。
+
+### 为什么用 ASIO 而非手写 io_uring
+
+手写 io_uring(NativeUringIoBackend)是 Thunder 自己的实现,好处是无外部依赖。ASIO 是 C++ 标准提案库,生态成熟,维护成本低。两套后端并存,用户自选。
+
+ASIO 的优势:
+- 对象生命周期管理(shared_ptr/weak_ptr)
+- 跨平台抽象(posix::stream_descriptor)
+- 无需手写 SQ/CQ 环形缓冲区操作
+
+手写 io_uring 的优势:
+- 零依赖,编译更快
+- 完全可控,无 ASIO 内部调度开销

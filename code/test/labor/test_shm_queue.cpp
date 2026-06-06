@@ -481,3 +481,67 @@ TEST(ShmRingQueuePerf, QPS_64B)   { RunThroughputTest(64,   "QPS"); }
 TEST(ShmRingQueuePerf, QPS_256B)  { RunThroughputTest(256,  "QPS"); }
 TEST(ShmRingQueuePerf, QPS_1K)    { RunThroughputTest(1024, "QPS"); }
 TEST(ShmRingQueuePerf, QPS_4K)    { RunThroughputTest(4096, "QPS"); }
+
+TEST(ShmRingQueueUnit, Destroy_Nullptr_NoCrash)
+{
+    ShmRingQueue::Destroy(nullptr);  // 应该不崩溃
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, CloseEventFd_Invalid)
+{
+    ShmRingQueue::CloseEventFd(-1);  // 无效fd, 不崩溃
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, EventFd_SemaphoreMode)
+{
+    int efd = ShmRingQueue::CreateEventFd();
+    ASSERT_GE(efd, 0);
+    // 信号量模式: 写2次, 读2次(每次-1)
+    uint64_t val = 1;
+    write(efd, &val, sizeof(val));
+    write(efd, &val, sizeof(val));
+    uint64_t out;
+    EXPECT_EQ(read(efd, &out, sizeof(out)), (ssize_t)sizeof(out));
+    EXPECT_EQ(out, 1u);
+    EXPECT_EQ(read(efd, &out, sizeof(out)), (ssize_t)sizeof(out));
+    EXPECT_EQ(out, 1u);
+    ShmRingQueue::CloseEventFd(efd);
+}
+
+TEST(ShmRingQueueUnit, MultipleCreateDestroy)
+{
+    // 反复创建销毁, 验证无泄漏(手工验证 valgrind)
+    for (int i = 0; i < 100; ++i) {
+        ShmRingQueue* q = ShmRingQueue::Create(32, 4096);
+        ASSERT_NE(q, nullptr);
+        q->TryEnqueue(i, 100, "ok", 2);
+        ShmRingQueue::Destroy(q);
+    }
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, MaxBodySize)
+{
+    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->MaxBodySize(), 4096u);
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueueUnit, Count_TracksMessages)
+{
+    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->Count(), 0u);
+    const char* msg = "test";
+    EXPECT_TRUE(q->TryEnqueue(1, 1, msg, 4));
+    EXPECT_EQ(q->Count(), 1u);
+    EXPECT_TRUE(q->TryEnqueue(2, 2, msg, 4));
+    EXPECT_EQ(q->Count(), 2u);
+    uint32_t cmd, seq, out_len; char buf[256];
+    EXPECT_TRUE(q->TryDequeue(cmd, seq, buf, out_len));
+    EXPECT_EQ(q->Count(), 1u);
+    ShmRingQueue::Destroy(q);
+}
