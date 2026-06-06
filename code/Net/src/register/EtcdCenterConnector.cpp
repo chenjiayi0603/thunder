@@ -801,7 +801,8 @@ void EtcdCenterConnector::OnWatchAsync()
         if (wev.key.find(kConfigPrefix) == 0) {
             std::string configPath = wev.key.substr(kConfigPrefix.size());
             CenterEvent cev; cev.type = CenterEventType::ConfigUpdated;
-            if (wev.type == "PUT") { cev.config_content = wev.value; }
+            // etcd grpc-gateway 省略 PUT 的 type 字段: 空 type = PUT (#34)
+            if (wev.type.empty() || wev.type == "PUT") { cev.config_content = wev.value; }
             else { ETCD_LOG_DEBUG("Watch — CONFIG DELETE " << configPath << " (忽略)"); continue; }
             m_callback(cev); continue;
         }

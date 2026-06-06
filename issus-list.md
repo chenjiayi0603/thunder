@@ -468,3 +468,9 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 - **文件**: `docs/architecture/evaluations/thunder_on_k8s_evaluation.md`
 - **状态**: 📋 评估完成
 - **结论**: Interface 可放 k8s, Hello/Logic 留裸机
+
+### #34 config watch 分支空 type 误判为 DELETE
+- **文件**: `code/Net/src/register/EtcdCenterConnector.cpp:804`
+- **状态**: ✅ 已修复
+- **问题**: etcd grpc-gateway 对 PUT 事件省略 `type` 字段, 原代码 `if (wev.type=="PUT")` 对空不成立 → config PUT 全走 DELETE 分支 → 配置下发永不生效
+- **修复**: `if (wev.type.empty() || wev.type=="PUT")` — 和 #9 registry 分支同根因
