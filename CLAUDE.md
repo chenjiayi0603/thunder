@@ -754,3 +754,13 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 ```
 
 ---
+
+### 触发词：rearrange docs
+- docs 目录编号前缀扁平化(如 `01-xxx.md`, `02-xxx.md`), 无子目录
+- 参考模板: english-learner/docs/architecture/
+### 触发词：logs / 日志
+- 用 tests/logs.sh 查看, 支持 --logic/--interface/--etcd 指定节点
+### 触发词：smoke / 冒烟
+- tests/test_smoke.sh --hello/--interface/--etcd 分段测试
+### 触发词：chaos / 混沌
+- tests/chaos_etcd.sh 三个场景(停服/重启/灾难)
