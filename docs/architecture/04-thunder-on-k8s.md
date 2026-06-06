@@ -406,3 +406,12 @@ Interface/Hello/HelloWS 三个服务都直接对客户端。暴露方式不影�
 
 
 **Thunder 不需要 Ingress**。docker-compose 现在三个端口直接暴露, k8s 也沿用。Ingress 是 k8s 运维的可选项,不是 Thunder 的要求。
+  
+
+## 9. 域名与暴露
+
+客户端通过域名访问, 不走 nginx/Ingress 额外代理层:
+
+
+
+**不需要 Ingress**。DNS 指向 Node IP, NodePort 直接到 Pod, 零额外跳转。和 docker-compose 一样, 只是 k8s 管 Pod 生命周期。
