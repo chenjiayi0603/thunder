@@ -344,3 +344,19 @@ Hello    → ✅ 可放 (关 HPA)
 HelloWS  → ✅ 可放 (关 HPA)
 DPDK     → 裸机/VM ❌  独占网卡
 ```
+
+
+---
+
+## 最终结论
+
+所有 Thunder 节点都支持内部重连机制,杀 Pod 后自动恢复,无需外部干预。
+
+| 服务 | 可放 k8s | 原因 |
+|------|---------|------|
+| Interface (API网关) | ✅ | 内部 S2S 自愈, etcd路由自动更新 |
+| Logic | ✅ | Manager+Worker 同Pod, shm正常, etcd重注册 |
+| Hello | ✅ | 同上, 外部WS重连由客户端处理 |
+| HelloWS | ✅ | 同上 |
+
+**无需纠结 HPA 开不开** — 那是业务层决策,不影响能放 k8s。
