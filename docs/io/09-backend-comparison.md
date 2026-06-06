@@ -27,7 +27,7 @@
 
 ### 为什么是这个排名
 
-**ev > asio_uring > native_uring**, 三个后端在所有包大小下排名一致。
+**ev > asio_uring > native_uring**, Echo 空body 测试结果。1KB/4KB 大包待测。
 
 排名原因（按开销从小到大）:
 
