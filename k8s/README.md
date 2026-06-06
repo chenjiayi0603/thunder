@@ -69,3 +69,23 @@ kubectl apply -f k8s/hello-ws-deployment.yaml
 | Hello Redis | ❌ | K8s Service DNS 未注入 Hello 配置 |
 | Hello MySQL | ❌ | 同上 |
 | Interface GenKey | ❌ | 进程正常,HTTP 无响应 |
+
+## 冒烟测试结果 (2026-06-06)
+
+| 测试 | 结果 | 说明 |
+|------|------|------|
+| etcd health | ✅ | |
+| etcd registry | ✅ | 3 nodes, 全部正确 Pod IP |
+| HelloWS 握手 | ✅ | 101 |
+| Hello Echo | ⚠️ | Pod 重启后 codec 编译延迟 |
+| Interface GenKey | ⚠️ | code:1, 路由同步中 |
+| Redis | ✅ | 传 host 参数 |
+| MySQL | ✅ | 传 host 参数 |
+
+## k8s 关键配置
+
+inner_host 占位 + POD_IP 替换:
+```bash
+# 源配置: inner_host: "0.0.0.0"
+# 启动脚本: sed -i "s/0.0.0.0/$POD_IP/" /thunder/deploy/*/conf/*.json
+```
