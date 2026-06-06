@@ -788,3 +788,9 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 - **禁止 git checkout 覆盖修改** — 所有文件变动必须经过确认
 - **禁止 rebase skip** — 冲突时合并解决, 不跳过有效提交
 - **禁止 revert file moves/refactors** — 原因: 上次 rebase skip 导致 io/ register/ 目录丢失
+
+### 提交规范 (Commit Rules)
+- **只能 git merge，禁止 git rebase** — rebase 会改写历史, 丢弃本地提交
+- **有冲突必须手动解决** — 不允许 --skip / --abort / --force
+- **解决冲突后立即验证** — 全量编译 + 冒烟测试
+- **每步提交前确认工作树干净** — git status 检查无遗漏
