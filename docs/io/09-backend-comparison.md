@@ -27,9 +27,23 @@
 
 ### 为什么是这个排名
 
-**ev > asio_uring > native_uring**, Echo 空body 测试结果。1KB/4KB 大包待测。
+### 不同包大小对比
 
-排名原因（按开销从小到大）:
+| body | ev QPS | ev p50 | asio_uring QPS | asio_uring p50 | native_uring QPS | native_uring p50 |
+|------|--------|--------|---------------|---------------|-----------------|-----------------|
+| 空(18B) | **109,574** | 0.79 ms | 108,000 | 0.88 ms | 89,791 | 0.60 ms |
+| 1KB | 58,598 | 2.81 ms | **71,465** | 1.28 ms | 67,678 | 13.91 ms |
+| 4KB | 23,083 | 4.48 ms | **39,326** | 0.93 ms | 23,763 | 1.20 ms |
+
+**结论变了**:
+
+- 空body: ev 第一 (109K), 但 asio_uring 几乎持平 (108K)
+- **1KB body: asio_uring 反超** (71K vs ev 58K, 快 22%)
+- **4KB body: asio_uring 大幅领先** (39K vs ev 23K, 快 70%)
+
+**大包时 io_uring 赢**。原因: 包越大, epoll 的 read/write syscall 开销越大(数据拷贝), io_uring 的批量提交 + 零拷贝优势越明显。
+
+### 排名分析（按开销从小到大）:
 
 1. **ev**: 每次 I/O 就是 epoll_wait + read/write。没有额外的调度层,没有 ring buffer 管理,**内核里跑了几十年,极致优化**。
 
