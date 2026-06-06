@@ -360,3 +360,14 @@ target_link_libraries(thunder_test_asio_uring PRIVATE GTest::gtest_main)
 target_compile_definitions(thunder_test_asio_uring PRIVATE THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING)
 set_target_properties(thunder_test_asio_uring PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_asio_uring DISCOVERY_MODE PRE_TEST)
+
+# ---- Backend 性能对比 benchmark ----
+add_executable(thunder_bench_backends
+  labor/bench_backends.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_bench_backends PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_bench_backends)
+thunder_link_thirdparty_shared(thunder_bench_backends)
+target_link_libraries(thunder_bench_backends PRIVATE GTest::gtest_main)
+set_target_properties(thunder_bench_backends PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")

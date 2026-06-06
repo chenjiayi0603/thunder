@@ -198,3 +198,30 @@ python3 -c "import os,time; r,w=os.pipe(); ..."
 # 全量回归
 ctest -j1  # 304/304 ✅
 ```
+
+### 4.8 Backend 对等实测 (2026-06-06)
+
+尝试用 C++ ev_loop benchmark 对比 Ev vs AsioUring, 结果不稳定:
+
+| Backend | 64B | 256B | 1KB | 问题 |
+|---------|-----|------|-----|------|
+| EvIoBackend | 0.045 M/s | 0.044 M/s | 0.047 M/s | ev_run(NOWAIT) 未驱动 epoll 完成 |
+| AsioUringIoBackend | 0.28 M/s | 1.30 M/s | 1.25 M/s | ev_prepare 批量提交, 数据偏大 |
+
+**不稳定原因**: 单线程 pipe write→read 串行, 无法模拟真实并发。ev_run(EVRUN_NOWAIT) 对不同后端行为不同(EvIo 需要 fd 就绪才触发, AsioUring 在 ev_prepare 中同步 poll)。
+
+**正确方法**: wrk HTTP 压测(见 §4.9)或专用 C++ benchmark(每连接独立线程+ev_loop 驱动)。
+
+### 4.9 实际建议: wrk HTTP 压测
+
+```bash
+# 对比两个 backend 的真实业务吞吐
+# 1. 配置 Hello.json "io_backend": "ev"
+# 2. 启动服务 → wrk -t4 -c100 -d30s http://127.0.0.1:27006/hello
+# 3. 配置 Hello.json "io_backend": "asio_uring"
+# 4. 重启 → wrk 同样参数 → 对比 QPS
+
+# 这才是真实 backend 性能对比——走完整 HTTP 栈+codec+S2S
+```
+
+**当前结论**: ShmRingQueue vs pipe 的 9× 加速证明了"零 syscall=巨大收益"。Backend 对等对比需 wrk 全链路压测。
