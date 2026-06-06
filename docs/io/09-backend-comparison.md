@@ -8,52 +8,47 @@
 
 ## 1. 性能实测 (wrk HTTP 全链路, 2026-06-06)
 
-**测试**: wrk -t4 -c{duration} -d5s, POST Echo, Hello 服务
+**测试**: wrk -t4 -c100 -d5s, POST Echo, Hello 服务
 
-| backend | 100 conn QPS | 500 conn QPS | p50 | p99 | 吞吐 |
-|---------|------------|------------|-----|-----|------|
-| **ev (epoll)** | **109,574** | **102,357** | 0.79ms | 2.12ms | 68.1MB/s |
-| asio_uring | 108,000 | 82,707 | 0.88ms | 18.5ms | 67.5MB/s |
-| native_uring | 89,791 | 80,001 | 0.60ms | 5.7ms | 55.8MB/s |
+**指标说明**:
+- **QPS**: 每秒完成的请求数 (越高越好)
+- **p50 时延**: 50% 请求的响应时间 ≤ 此值 (中位数, 衡量典型延迟)
+- **p99 时延**: 99% 请求的响应时间 ≤ 此值 (长尾, 衡量最慢的 1%)
+- **吞吐量**: 每秒传输的数据量
 
-**结论: ev(epoll) 最快。** 在 100~500 连接规模,epoll 的简单胜过 io_uring 的批量。
+| backend | 100 conn QPS | 500 conn QPS | p50 时延 | p99 时延 | 吞吐量 |
+|---------|------------|------------|---------|---------|--------|
+| **ev (epoll)** | **109,574** | **102,357** | 0.79 ms | 2.12 ms | 68.1 MB/s |
+| asio_uring | 108,000 | 82,707 | 0.88 ms | 18.5 ms | 67.5 MB/s |
+| native_uring | 89,791 | 80,001 | 0.60 ms | 5.7 ms | 55.8 MB/s |
 
-### 为什么 ev 最快 — 逐 backend 分析
+> p50 时延 = 50% 请求的响应时间 ≤ 此值 (中位数)
+> p99 时延 = 99% 请求的响应时间 ≤ 此值 (长尾)
 
-**ev (epoll) — 最简最快**:
-- 每次 I/O: 1次 epoll_wait + 1次 read/write = 2~3 syscall
-- localhost 上 syscall 延迟 <1μs — 极低, 不是瓶颈
-- epoll 是内核里最成熟的 I/O 机制, 经过 20 年优化
-- 结果: 109K QPS, p99=2.12ms — 在这个规模最优
+**结论: ev 最快。理由如下。**
 
-**asio_uring — 有 batch 但 overhead 更大**:
-- 每次 I/O: 1次 io_uring_enter(批量) = 1 syscall
-- 但 ASIO 调度有固定开销: io_context.poll() + NOP-SQE + ring_fd 管理 ~2μs
-- 在 100 conn 时, batch 优势未体现(连接太少), overhead 反而拉低性能
-- 结果: 108K QPS — 和 ev 持平, 但 p99=18.5ms 有长尾延迟(ring_fd 空唤醒)
+不绕: ev 赢不是因为"简单",是因为 io_uring 的开销在当前场景下**大于**它的收益。
 
-**native_uring — 最差, ASIO 开销换成了手写开销**:
-- 和 asio_uring 同原理, 但没有 ASIO 的 shared_ptr/FdState 管理层
-- 手写 SQ/CQ 管理的开销 ≈ ASIO overhead, 无优势
-- 结果: 89K QPS — 比 ev 低 18%, p50 最快(0.60ms)但整体 QPS 更低
-
-### 为什么 io_uring 没赢 — 三个原因
+**io_uring 的隐藏成本**:
 
 ```
-1. 连接数太少 (100~500): io_uring 的批量优势在万级连接才体现
-   100 连接 → epoll: 201 syscall, io_uring: 1 syscall
-   → 理论上 io_uring 快 200×, 但实际上 201 syscall 在 localhost 只需 ~200μs
-   → 这 200μs 在 5ms 的 HTTP 处理延迟中占比不到 4% — 不是瓶颈
+io_uring 初始化: 创建 SQ/CQ ring buffer (mmap 2页), 注册 ring_fd 到 epoll, 起 NOP-SQE
+  每次 poll(): ASIO 内部调度 → 遍历 FdState → 检查 pending → 构造 SQE → 写 SQ → io_uring_enter
+  每次完成: 读 CQ → 匹配 completion lambda → shared_ptr 提升 → 回调
 
-2. localhost 掩盖了 syscall 差距:
-   真实网络延迟 ~1-10ms → syscall 占比 <1%
-   localhost 延迟 ~0.1ms → syscall 占比 ~20%
-   → 即使 20% 也不足以让 io_uring 的 batch 优势反超 overhead
-
-3. HTTP 栈是瓶颈:
-   wrk 测试的是完整 HTTP 链路: codec → 协程调度 → S2S路由 → Worker处理
-   I/O backend 只占其中一小部分, 换 backend 无法解决上层开销
+epoll 初始化: ev_io_init (一个结构体)
+  每次读写: epoll_wait 返回 → read/write → 完事
 ```
+
+100 连接时, io_uring 每次 poll 要走完整调度——遍历 100 个 FdState, 构造 SQE, 写 ring buffer。epoll 只做一件事: 等 fd 就绪然后 read。io_uring 的"批量提交"省了 syscall, 但**调度代码本身**的成本比那几十个 syscall 还大。
+
+**native_uring 为何最慢**:
+
+手写的 ring buffer 管理没有 ASIO 的成熟优化。ASIO 至少内部有 buffer pool、对象池、编译优化。手写版本每轮都要手动操作 SQ tail/CQ head 指针——这些操作在 ASIO 里是高度优化过的。
+
+**io_uring 的真正优势场景**:
+
+io_uring 的优势不是"取代 epoll", 是**高并发时省钱**。100 conn 时调度代码本身比 syscall 还贵——亏了。10000 conn 时, epoll 要 10000 次 read, io_uring 1 次 enter——这时才赚。当前 100~500 conn 规模,**不应该用 io_uring**。
 
 ### 什么时候 io_uring 会赢
 
@@ -65,11 +60,11 @@
 
 ### 不同包大小 (ev backend)
 
-| body | QPS | 吞吐 | p50 | 分析 |
-|------|-----|------|-----|------|
-| Echo(空) | 109K | 68 MB/s | 0.79ms | 基准 |
-| 1KB | 72K | 72 MB/s | 1.2ms | QPS降34%, 吞吐持平 |
-| 4KB | 28K | 112 MB/s | 3.5ms | QPS降74%, 吞吐升65% |
+| body 大小 | QPS | 吞吐量 | p50 时延 | 分析 |
+|----------|-----|--------|---------|------|
+| Echo(空) | 109K | 68 MB/s | 0.79 ms | 基准 |
+| 1KB | 72K | 72 MB/s | 1.2 ms | QPS 降 34%, 吞吐持平 |
+| 4KB | 28K | 112 MB/s | 3.5 ms | QPS 降 74%, 吞吐升 65% |
 
 > QPS 随包增大快速下降 — 内存拷贝成为主导瓶颈。包越大,换 backend 越无帮助。
 
