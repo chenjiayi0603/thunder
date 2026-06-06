@@ -1,10 +1,13 @@
-# Thunder 在 k8s 上的适应性分析
+# Thunder k8s 部署方案
 
-> 日期: 2026-06-05
-> 状态: 评估
-> 驱动问题: Thunder 作为高性能异步网关框架,是否适合放在 k8s 上多节点部署?
+> 日期: 2026-06-06
+> 包含: 适应性分析 + 部署设计 + 完整 YAML
 
 ---
+
+## 1. 适应性分析
+
+
 
 ## 1. Thunder 的架构画像
 
@@ -25,34 +28,61 @@
 
 **核心假设**: 少节点(3-5 台),固定拓扑,同机 Manager-Worker 走 shm,跨机走 TCP 直连。
 
----
 
-## 2. 当前部署与 k8s 的冲突矩阵
-
-| 现状 | k8s 上怎么处理 | 冲突 |
-|------|---------------|------|
-| `network_mode: host` + 127.0.0.1 绑定 | Pod 之间 127.0.0.1 不可达 | 必须改 |
-| Manager↔Worker shm IPC | Pod 内能用,Pods 间不能用 | 同 Pod 则不变 |
-| etcd `http://127.0.0.1:2379` | Service DNS 或 StatefulSet 地址 | 改 endpoint 配置 |
-| node_id 去 etcd 槽位抢占 | StatefulSet 序号可替代 | 可保留 |
-| S2S TCP 直连(IP:port) | ClusterIP Service 或 Pod IP | 需适配 |
-| `io_uring` 直接操作 fd | k8s 不限制(容器有 CAP) | 无冲突 |
-| WebSocket 长连接 | Service 负载均衡可能切断 | 需 SessionAffinity |
 
 ---
 
-## 3. 分层决策
+## 2. 部署设计
 
-### 3.1 etcd——必须自建,不能蹭 k8s 的
+
+
+## 1. 概述
+
+Thunder 当前在 docker-compose 以 `network_mode: host` 单机运行。迁移到 k8s 需要解决网络、etcd、服务发现三块。
+
+**核心约束**:
+- Manager↔Worker 共享内存 IPC 只能在同 Pod 内
+- S2S 跨节点走 TCP 直连(不经过 CNI overlay 更高效)
+- etcd 必须自建(不能蹭 k8s 控制面的 etcd)
+
+---
+
+## 2. 部署架构
 
 ```
-k8s 自带的 etcd = kube-apiserver 独占, 是集群命根子
-业务直连 k8s etcd → 反模式, 且托管 k8s(ACK/EKS/GKE)不暴露 etcd 端口
+┌──────────────── k8s Cluster ───────────────────┐
+│                                                  │
+│  ┌─ StatefulSet: thunder-etcd ──────────────┐  │
+│  │  etcd-0 │ etcd-1 │ etcd-2                 │  │
+│  │  (PVC)  │ (PVC)  │ (PVC)                  │  │
+│  └───────────────────────────────────────────┘  │
+│         ↑                                        │
+│    etcd_endpoints: http://thunder-etcd-0:2379    │
+│         │                                        │
+│  ┌─ Deployment: thunder-logic ───────────────┐  │
+│  │  Pod (2 容器):                             │  │
+│  │    logic-manager:  Logic_robot (Manager)   │  │
+│  │    logic-worker:    Logic_robot_W0 (Worker) │  │
+│  │    shm: /dev/shm (IPC)                     │  │
+│  └───────────────────────────────────────────┘  │
+│                                                  │
+│  ┌─ Deployment: thunder-interface ────────────┐  │
+│  │  Service: ClusterIP:27008                  │  │
+│  │  HPA: min=1, max=5 (CPU>70%)               │  │
+│  └───────────────────────────────────────────┘  │
+│                                                  │
+│  ┌─ Deployment: thunder-hello ────────────────┐  │
+│  │  Service: ClusterIP:27006                  │  │
+│  │  固定副本(不建议 HPA, 长连接怕断)           │  │
+│  └───────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────┘
 ```
 
-**方案 A(推荐): 独立 etcd StatefulSet**
+---
 
-```
+## 3. etcd — StatefulSet
+
+```yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -60,130 +90,253 @@ metadata:
 spec:
   serviceName: thunder-etcd
   replicas: 3
+  selector:
+    matchLabels:
+      app: thunder-etcd
   template:
+    metadata:
+      labels:
+        app: thunder-etcd
     spec:
       containers:
       - name: etcd
         image: quay.io/coreos/etcd:v3.5.21
+        command:
+        - etcd
+        - --name=$(ETCD_NAME)
+        - --data-dir=/etcd-data
+        - --listen-client-urls=http://0.0.0.0:2379
+        - --advertise-client-urls=http://$(ETCD_NAME).thunder-etcd:2379
+        - --listen-peer-urls=http://0.0.0.0:2380
+        - --initial-advertise-peer-urls=http://$(ETCD_NAME).thunder-etcd:2380
+        - --initial-cluster=thunder-etcd-0=http://thunder-etcd-0.thunder-etcd:2380,thunder-etcd-1=http://thunder-etcd-1.thunder-etcd:2380,thunder-etcd-2=http://thunder-etcd-2.thunder-etcd:2380
         env:
         - name: ETCD_NAME
-          valueFrom: {fieldRef: {fieldPath: metadata.name}}
-        - name: ETCD_INITIAL_CLUSTER
-          value: "thunder-etcd-0=http://thunder-etcd-0:2380,thunder-etcd-1=..."
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         volumeMounts:
         - name: data
           mountPath: /etcd-data
   volumeClaimTemplates:
-  - metadata: {name: data}
-    spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-etcd
+spec:
+  clusterIP: None  # Headless
+  ports:
+  - port: 2379
+  - port: 2380
+  selector:
+    app: thunder-etcd
 ```
 
-每个业务 Pod 配置 `etcd_endpoints: http://thunder-etcd-0.thunder-etcd:2379,http://thunder-etcd-1.thunder-etcd:2379,...`
+节点配置 etcd endpoint:
+```
+"etcd_endpoints": "http://thunder-etcd-0.thunder-etcd:2379,http://thunder-etcd-1.thunder-etcd:2379,http://thunder-etcd-2.thunder-etcd:2379"
+```
 
-### 3.2 网络——从 host 迁移到 ClusterIP
+---
 
-| 节点 | 端口 | k8s Service | 说明 |
-|------|------|------------|------|
-| Hello HTTP | 27006 | ClusterIP:27006 | 对外/对内 |
-| Hello WS | 27010 | ClusterIP:27010 | websocket,需 `sessionAffinity:ClientIP` |
-| Hello HTTPS | 27443 | ClusterIP:27443 | TLS 终结 |
-| Interface | 27008 | ClusterIP:27008 | API 层 |
-| Logic | 16068 | ClusterIP:16068 | 内部 S2S |
+## 4. 业务节点 — Deployment
 
-**Pod 配置去掉 `network_mode: host`, 监听 `0.0.0.0`(或 Pod IP)**
-
-### 3.3 Manager↔Worker——同 Pod 不变
+### 4.1 Logic
 
 ```yaml
-# Logic Pod: Manager + Workers 同容器(和现在一样)
-containers:
-- name: logic
-  image: thunder-logic
-  command: ["./node.sh", "start"]
-  # Manager fork Workers → shm IPC 正常工作(pod 内共享内存)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-logic
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: thunder-logic
+  template:
+    spec:
+      containers:
+      - name: logic
+        image: thunder-logic:latest
+        command: ["./node.sh", "start"]
+        env:
+        - name: ETCD_ENDPOINTS
+          value: "http://thunder-etcd-0.thunder-etcd:2379,http://thunder-etcd-1.thunder-etcd:2379,http://thunder-etcd-2.thunder-etcd:2379"
+        ports:
+        - containerPort: 16068
+```
+**注意**: Manager+Worker 同 Pod,shm IPC 不变。不拆 Worker 出去——拆了就得换 gRPC,改了架构。
+
+### 4.2 Interface — 可 HPA
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: thunder-interface
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: thunder-interface
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
 ```
 
-**不分拆 Pod**。拆了就得把 shm IPC 换成网络 IPC,得不偿失。
+Interface 无状态,天然适合弹性。
 
-### 3.4 node_id——两条路
+### 4.3 Hello — 不建议 HPA
 
-| 方式 | node_id 来源 | 重启变化 | 实现 |
-|------|------------|---------|------|
-| **A. 保持 etcd 槽位** (当前) | etcd slot 竞争 | lease 不过期不变 | 不改代码 |
-| **B. StatefulSet 序号** | `${HOSTNAME##*-}` | 重启不变 | 去掉槽位逻辑,简化 connector |
-
-**推荐 A(不改代码)**。B 更"k8s-native"但改了 connector 的注册核心。
+Hello/HelloWS 有 WebSocket 长连接。HPA scale-in 直接断连。建议固定副本。
 
 ---
 
-## 4. 哪层适合 k8s,哪层不适合
+## 5. Service 暴露
 
-```
-第一层 — Hello/HelloWS(接入网关):
-  长连接、低延迟、绑网卡、非 12-factor
-  k8s overlay 网络多一跳(CNI 0.5~1ms)
-  → 不太适合。裸机/VM 更好
+```yaml
+# Interface Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-interface
+spec:
+  type: ClusterIP
+  ports:
+  - port: 27008
+  selector:
+    app: thunder-interface
 
-第二层 — Logic(业务引擎):
-  Manager+Worker 多进程, 同机 shm IPC
-  放 k8s 上能跑, 但除了"统一运维"没额外收益
-  → 可以做, 但没必要
-
-第三层 — Interface(API 层):
-  无状态 HTTP 接入, 会话在 redis
-  最接近 12-factor
-  → 最适合 k8s. 可以 HPA 弹性 + 滚动更新
-```
-
----
-
-## 5. 推荐路线
-
-### 路线 1: 不动(当前)——最稳
-
-```
-3-5 台裸机/VM,固定拓扑,手工运维
-Gateway → 裸机; Logic → 裸机; Interface → 裸机
-好处: 性能最优,无网络 overlay,运维最简单
-代价: 没弹性,没 k8s 生态
-```
-
-### 路线 2: 混合——务实折中
-
-```
-            ┌─────────────────────────┐
-裸机/VM:    │ Hello(WS)  Logic        │ ← 性能敏感层,不动
-            └─────────────────────────┘
-                      ↑ S2S TCP
-            ┌─────────────────────────┐
-k8s:        │ Interface               │ ← 无状态 API 层,弹性 + CI/CD
-            └─────────────────────────┘
-```
-
-**Interface 是唯一值得放 k8s 的层**——无状态、有弹性需求、不改核心链路。
-
-### 路线 3: 全上 k8s——不推荐
-
-```
-需要解决:
-  - etcd 独立 StatefulSet(可做)
-  - 网络从 host→ClusterIP(可做,但延迟加 0.5~1ms)
-  - WS 长连接需要 sessionAffinity(可做,但 k8s 负载均衡对这场景不是最优)
-  - shm IPC 只能同 Pod(限制了扩展方式)
-  - 滚动更新时 WebSocket 断连(需 graceful shutdown + drain)
-
-结论: 技术上可以, 但"为了容器化而容器化", 性能倒退, 运维复杂度增加。
-除非组织上强制"所有服务必须在 k8s 上", 否则不推荐。
+# Hello HTTP (对外 → NodePort 或 Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-hello
+spec:
+  type: NodePort
+  ports:
+  - port: 27006
+    nodePort: 30006
+  selector:
+    app: thunder-hello
 ```
 
 ---
 
-## 6. 结论
+## 6. 与 docker-compose 差异
 
-| 问题 | 答案 |
-|------|------|
-| Thunder 能不能放 k8s | 能,但不应该全放 |
-| 哪层最适合 k8s | **Interface**(无状态 API) |
-| 哪层不应放 k8s | Hello/HelloWS(接入网关,对网络延迟敏感) |
-| etcd 怎么部署 | 独立 StatefulSet,不蹭 k8s 自带的 |
-| 全程最小改动方案 | etcd StatefulSet + 改 endpoint 配置 + 去掉 host 网络 → ClusterIP |
+| 项 | docker-compose | k8s |
+|----|---------------|-----|
+| 网络 | host 模式, 127.0.0.1 | ClusterIP Service, 0.0.0.0 监听 |
+| etcd | 单节点, host 网络 | StatefulSet 3 节点, Headless Service |
+| 配置 | 127.0.0.1:2379 | thunder-etcd-0.thunder-etcd:2379,... |
+| S2S 路由 | etcd registry → IP:port 直连 | 同, 但 IP 是 Pod IP 或 Service ClusterIP |
+| 端口 | 写死在 conf 里 | 写死在 conf 里, Service 映射 |
+
+---
+
+## 7. 哪些适合 k8s,哪些不适合
+
+### Interface — ✅ 适合 k8s
+
+Interface 只做一件事:收到 HTTP 请求(GenKey/VerifyKey),调 S2S 发给 Logic,把结果返回。每个请求独立,不依赖上一次请求的状态(session 在 Redis,不在本地内存)。所以:
+
+- **挂了没事**: Pod A 挂了,流量自动切到 Pod B。新 Pod 启动后 etcd 注册,30 秒内加入路由表。
+- **扩缩无状态**: 加 Pod 不需要迁移 session,减 Pod 没有断连问题(全是短连接 HTTP)。
+- **滚动更新安全**: 新版本 Pod 和旧版本 Pod 可以同时存在。Client 无感知。
+
+HPA 按 CPU 设置 70% 阈值:凌晨低峰自动减到 1 个 Pod,白天高峰自动加到 5 个。不需要人操作。
+
+### Hello — ⚠️ 勉强放 k8s
+
+Hello 一个 Pod 里同时跑 HTTP(短连接)和 WebSocket(长连接)。关键区别:
+
+- **HTTP 部分**: 同 Interface 一样无状态。放 k8s 完全没问题。
+- **WebSocket 部分**: 客户端 ws:// → Hello, 连接建立后一直保持。问题有两个:
+
+1. **HPA scale-in**: CPU 降到阈值以下 → k8s 删 Pod。Pod 被删 → 上面所有 WebSocket 连接断开。客户端没有"重新连到另一个 Pod"的机制——连到哪个 Pod 是 Service 路由决定的,客户端收到断连只能报错。
+
+2. **滚动更新**: 新版本部署 → 旧 Pod 逐步销毁。旧 Pod 上的 WebSocket 连接全部断开 → 新 Pod 启动前有一段时间没有服务 → 如果客户端此时重连,可能连到还没准备好的新 Pod。
+
+**能否解决**: 可以,但需要自己实现——添加 `preStop` hook (发 SIGTERM → 等排空 → 再退出),设置 `terminationGracePeriodSeconds: 60`,给 WebSocket 客户端加重连逻辑。这些都不是 k8s 自带的能力,要自己写。
+
+**结论**: 如果 Hello 只跑 HTTP,放 k8s 没问题。如果跑 WebSocket,需要自己补优雅断开+重连,或者干脆不放 k8s。
+
+### HelloWS — ❌ 不适合 k8s
+
+纯 WebSocket,每条连接都是长连接。问题比 Hello 更严重——Hello 至少还有 HTTP 部分可以正常扩缩,HelloWS 完全依赖长连接。
+
+- HPA scale-in → 直接杀掉 Pod → 上面所有连接断开 → 没有"换个 Pod"这种概念,因为 Service 路由是随机的,断连后的重连可能到同一个旧 Pod,也可能到新 Pod——客户端不知道。
+- 就算不用 HPA,固定 3 个副本:滚动更新时旧 Pod 销毁 → 连接断 → 新 Pod 启动 → 连接重建。如果 3 个 Pod 都同时更新,短暂时间内没有服务。
+
+**k8s 不适合长连接的根本原因**: k8s 设计时假设每个请求独立(Pod 是无状态副本)。WebSocket 让 Pod 有了"连接状态"——Pod 死了连接就断了,不像 HTTP 请求可以重试。
+
+### Logic — ❌ 不适合 k8s
+
+Logic 的架构有几个 k8s 无法获利的点:
+
+**1. Manager+Worker shm IPC**
+
+```
+Manager 和 Worker 同进程用共享内存通信。
+fork 后父子进程映射同一物理页 → 零拷贝。
+
+k8s 上: 同 Pod 内可以继续用 shm。但 Manager 是单例(只该有一个),
+Worker 可以多副本。如果把 Manager 和 Worker 拆成两个 Pod:
+  shm 不能跨 Pod → 必须换 gRPC/TCP → 多了序列化+网络开销。
+  原来 0 拷贝 7ns 延迟 → 变成网络调用 ~1ms 延迟。
+```
+
+**2. Manager 是单例**
+
+```
+集群里只需要一个 Logic Manager 管注册/路由/配置。
+Worker 可以有多个。k8s 的 Deployment 把所有 Pod 一视同仁——
+扩缩时不知道哪个是 Manager 哪个是 Worker。
+
+方案: StatefulSet 固定 Pod-0 为 Manager,其他为 Worker。但 Manager 挂了
+怎么选新 Leader? 需要自己实现选主——这正是旧 Center 做的事。
+```
+
+**3. S2S TCP 直连依赖固定 IP**
+
+```
+Interface 请求 Logic: 查 etcd registry → Logic ip:port → TCP 直连。
+Pod IP 每次重启都变。k8s Service 可以提供固定 ClusterIP,但:
+  ClusterIP → iptables NAT → 多一跳。
+  直连 Pod IP → 下次重启变了 → 路由表过期 → 需要 watch etcd 更新。
+```
+
+**总结**: Logic 放 k8s 技术上可以跑,但没有新增任何好处——反而多了网络跳数和状态管理问题。裸机跑 Logic 的性能和简单性都比 k8s 好。
+
+### DPDK — ❌ 不适合 k8s
+
+DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过内核协议栈。k8s 上:
+
+- `hostNetwork: true` 能让 Pod 看到宿主机网卡。但**多个 Pod 不能同时 bind 同一网卡**——DPDK 没有虚拟化。
+- 即使一个节点只跑一个 DPDK Pod:Pod 调度到哪个节点不可控,且网卡需要 DPDK 兼容 NIC(Intel X520/X710 等),k8s 节点可能有混插的。
+- DPDK 场景天然适合裸机:固定物理机,网卡配置一次不变,追求极致性能。
+
+### 结论
+
+```
+Interface → 放 k8s ✅  无状态 API, 可 HPA, 可滚动更新
+Hello    → 裸机/VM ⚠️  HTTP 可以放, WS 不要放
+Logic    → 裸机/VM ❌  shm IPC + 单例 Manager, k8s 没收益
+HelloWS  → 裸机/VM ❌  长连接不适合 k8s
+DPDK     → 裸机/VM ❌  独占网卡
+```
