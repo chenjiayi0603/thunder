@@ -162,7 +162,7 @@ it = mapFdAttr.erase(it);
 
 ## 🟡 #4 [中] ShmRingQueue 的 `Create/Destroy` 尺寸参数重复硬编码,有 munmap 尺寸不匹配隐患
 
-**当前状态: 未处理** — `code/Net/include/labor/types/ShmRingQueue.hpp:282/300`
+**当前状态: ✅ 已修复** — Destroy 从 ctrl 读尺寸, 测试加具名常量+非默认尺寸验证
 
 ### 问题
 - `slot_count=128, slot_size=4096` 这对魔数在 **5 处**重复硬编码
@@ -298,7 +298,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 
 ## 🟡 #10 [中/环境] Docker 守护进程僵尸容器 — E2E `docker compose up` 失败
 
-**当前状态: 未处理 (需 root 重启 docker 守护进程)**
+**当前状态: ✅ 已处理** — docker 重启后恢复正常
 
 - `docker ps -a` 列出 9 个 2 周前 `Exited(255)` 的无名容器,`docker rm -f` 报 `No such container`
   却阴魂不散 (`docker info` Containers: 9) → 守护进程容器记录与实际对象脱钩 (经典 daemon 状态损坏)。
@@ -310,7 +310,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 
 ## 🟡 #11 [中/测试基建] E2E 非 hermetic — etcd/日志 bind-mount 跨运行残留
 
-**当前状态: 未处理**
+**当前状态: ✅ 已处理** — deploy.sh test e2e 自动清 etcd
 
 - `docker-compose.yml`:`./data/etcd:/etcd-data`、`../:/thunder`(整仓)均为**宿主 bind mount**。
 - `docker compose down -v` **不清** bind mount → 历史 etcd registry/slot + 各节点日志跨运行累积。
