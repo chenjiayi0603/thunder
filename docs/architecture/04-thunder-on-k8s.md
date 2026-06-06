@@ -360,3 +360,34 @@ DPDK     → 裸机/VM ❌  独占网卡
 | HelloWS | ✅ | 同上 |
 
 **无需纠结 HPA 开不开** — 那是业务层决策,不影响能放 k8s。
+
+
+---
+
+## 注意事项
+
+### Gateway (Hello/HelloWS/Interface) — 对外 IP 不要变
+
+客户端连的是 IP:port。Pod IP 每次重启都变 → 客户端连不上。
+
+| 方案 | 说明 |
+|------|------|
+| NodePort | 固定宿主机 IP:NodePort, Pod 调度到哪个节点都能路由 |
+| LoadBalancer | 云厂商 LB → 固定外网 IP |
+| Ingress | HTTP 路由, 但对 WS 需要额外配置 |
+
+**不要用 ClusterIP 暴露给外部** — 外部客户端访问不到集群内部 IP。
+
+### etcd — 3 节点不要变
+
+etcd 是 Raft 集群(3 节点)。**副本数写死 3**,不要改 StatefulSet replicas。加了新节点需要手动 ,删节点需要 ——不是 k8s 自动做的。
+
+**不要共用 etcd 数据目录**。每个 Pod 有独立 PVC,数据在 。
+
+### Logic — Manager 被杀代价大
+
+Manager 是单例。被 HPA 或节点驱逐杀掉 → 所有 Worker 一起死 → 相当于整个 Logic 服务重启。虽然会自动恢复,但恢复期间(2~5s)不可用。建议:
+
+-  做冗余(两个 Pod,一个是备用)
+- 不用 HPA
+- : 两个 Pod 不在同一节点
