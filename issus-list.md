@@ -160,7 +160,7 @@ it = mapFdAttr.erase(it);
 
 ---
 
-## 🟡 #4 [中] ShmRingQueue 的 `Create/Destroy` 尺寸参数重复硬编码,有 munmap 尺寸不匹配隐患
+## ✅ #4 [已修复] ShmRingQueue 尺寸参数
 
 **当前状态: ✅ 已修复** — Destroy 从 ctrl 读尺寸, 测试加具名常量+非默认尺寸验证
 
@@ -296,7 +296,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 
 ---
 
-## 🟡 #10 [中/环境] Docker 守护进程僵尸容器 — E2E `docker compose up` 失败
+## ✅ #10 [已处理] Docker 僵尸容器
 
 **当前状态: ✅ 已处理** — docker 重启后恢复正常
 
@@ -308,7 +308,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 
 ---
 
-## 🟡 #11 [中/测试基建] E2E 非 hermetic — etcd/日志 bind-mount 跨运行残留
+## ✅ #11 [已处理] E2E hermetic
 
 **当前状态: ✅ 已处理** — deploy.sh test e2e 自动清 etcd
 
@@ -405,7 +405,7 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 - **根因**: `DoRegister` 幂等分支无视租约归属; `[&]` lambda 捕获导致 async 回调 crash
 - **修复**: `DecideRegAction` + `RebindRegistration` + 按值捕获
 
-### #20 watch 每秒重连风暴 — 未处理 compact_revision
+### #20 watch 每秒重连风暴 ✅ 已修复
 - **状态**: ✅ 已修复  
 - **修复**: `EtcdWatcher` 替代 curl 线程 + 处理 compact_revision
 
