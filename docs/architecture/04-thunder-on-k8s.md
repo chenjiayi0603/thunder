@@ -276,16 +276,16 @@ Hello 一个 Pod 里同时跑 HTTP(短连接)和 WebSocket(长连接)。关键�
 
 **结论**: 如果 Hello 只跑 HTTP,放 k8s 没问题。如果跑 WebSocket,需要自己补优雅断开+重连,或者干脆不放 k8s。
 
-### HelloWS — ❌ 不适合 k8s
+### HelloWS — ⚠️ 关HPA可放
 
 纯 WebSocket,每条连接都是长连接。问题比 Hello 更严重——Hello 至少还有 HTTP 部分可以正常扩缩,HelloWS 完全依赖长连接。
 
 - HPA scale-in → 直接杀掉 Pod → 上面所有连接断开 → 没有"换个 Pod"这种概念,因为 Service 路由是随机的,断连后的重连可能到同一个旧 Pod,也可能到新 Pod——客户端不知道。
 - 就算不用 HPA,固定 3 个副本:滚动更新时旧 Pod 销毁 → 连接断 → 新 Pod 启动 → 连接重建。如果 3 个 Pod 都同时更新,短暂时间内没有服务。
 
-**k8s 不适合长连接的根本原因**: k8s 设计时假设每个请求独立(Pod 是无状态副本)。WebSocket 让 Pod 有了"连接状态"——Pod 死了连接就断了,不像 HTTP 请求可以重试。
+**k8s 可以跑长连接——关 HPA + 固定副本 + maxUnavailable=0 滚动更新即可。
 
-### Logic — ❌ 不适合 k8s
+### Logic — ⚠️ 关HPA可放
 
 Logic 的架构有几个 k8s 无法获利的点:
 
@@ -323,7 +323,7 @@ Pod IP 每次重启都变。k8s Service 可以提供固定 ClusterIP,但:
 
 **总结**: Logic 放 k8s 技术上可以跑,但没有新增任何好处——反而多了网络跳数和状态管理问题。裸机跑 Logic 的性能和简单性都比 k8s 好。
 
-### DPDK — ❌ 不适合 k8s
+### DPDK — ⚠️ 关HPA可放
 
 DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过内核协议栈。k8s 上:
 
@@ -335,8 +335,8 @@ DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过
 
 ```
 Interface → 放 k8s ✅  无状态 API, 可 HPA, 可滚动更新
-Hello    → 裸机/VM ⚠️  HTTP 可以放, WS 不要放
+Hello    → 关 HPA 可放 k8s
 Logic    → 裸机/VM ❌  shm IPC + 单例 Manager, k8s 没收益
-HelloWS  → 裸机/VM ❌  长连接不适合 k8s
+HelloWS  → 关 HPA 可放 k8s
 DPDK     → 裸机/VM ❌  独占网卡
 ```
