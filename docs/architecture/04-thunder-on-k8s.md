@@ -334,7 +334,7 @@ DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过
 ### 结论
 
 ```
-Interface → 放 k8s ✅  无状态 API, 可 HPA, 可滚动更新
+Interface (API网关) → ✅ 可放 k8s  无状态 API, 可 HPA, 可滚动更新
 Hello    → 关 HPA 可放 k8s
 Logic    → ✅ 可放 (关 HPA)
 Hello    → ✅ 可放 (关 HPA)
