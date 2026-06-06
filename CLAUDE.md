@@ -764,3 +764,15 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 - tests/test_smoke.sh --hello/--interface/--etcd 分段测试
 ### 触发词：chaos / 混沌
 - tests/chaos_etcd.sh 三个场景(停服/重启/灾难)
+
+### 触发词：issus / 问题清单
+- 所有 bug/优化/设计问题统一记录在 `issus-list.md`
+- 发现新问题 → 先确认是真实问题 → 再记录 → 再修复
+- 修复后标记 `✅ 已修复`,未修复标记 `🟡`
+- 不要未经确认就改状态,不要删除已有条目
+### 触发词：代码移动
+- `git mv` 移动文件,同步修正所有 include 和 CMakeLists
+- 全量构建 + 冒烟验证无回归
+### 触发词：删代码
+- 先确认零引用 → `grep -rn` 全局搜索 → 再删
+- 测试文件如引用也一并清理
