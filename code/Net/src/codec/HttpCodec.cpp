@@ -675,15 +675,13 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
         return(CODEC_STATUS_PAUSE);
     }
 
-    // === Generic HTTP Fast-Path ===
-    // 先尝试直接解析，覆盖所有常规 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 请求。
-    // 遇到 chunked / CONNECT / 数据不全 / 未知 method 时回退 http_parser。
+    // === picohttpparser Fast-Path ===
+    // phr_parse_request 覆盖全部 HTTP/1.1 (含 chunked), 替代 http_parser
     size_t consumed = 0;
     if (TryFastDecodeHttpRequest(pBuff->GetRawReadBuffer(), pBuff->ReadableBytes(),
             oHttpMsg, consumed))
     {
         pBuff->AdvanceReadIndex(consumed);
-        // gzip 解压 (与正常路径一致)
         auto iter = oHttpMsg.headers().find("Content-Encoding");
         if (iter != oHttpMsg.headers().end() && iter->second == "gzip")
         {
@@ -692,14 +690,21 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
                 oHttpMsg.set_body(strData);
             else
             {
-                LOG4_ERROR("gunzip error in fast-path!");
+                LOG4_ERROR("gunzip error!");
                 return CODEC_STATUS_ERR;
             }
         }
         return CODEC_STATUS_OK;
     }
 
-    // Static parser settings — 只初始化一次，避免每请求 9 次函数指针赋值
+    // pico 解析失败 — HTTP 响应/不完整/错误
+    if (pBuff->ReadableBytes() <= 16)
+    {
+        LOG4_TRACE("pico parse incomplete, waiting more data");
+        return CODEC_STATUS_PAUSE;
+    }
+
+    // 回退 http_parser (HTTP 响应 / chunked / 特殊场景)
     static const http_parser_settings kParserSettings = []() {
         http_parser_settings s{};
         s.on_message_begin = OnMessageBegin;
@@ -717,43 +722,35 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
     http_parser parser;
     http_parser_init(&parser, HTTP_BOTH);
     parser.data = &oHttpMsg;
-    size_t uiReadableBytes = pBuff->ReadableBytes();
     size_t uiLen = http_parser_execute(&parser, &kParserSettings,
-                    pBuff->GetRawReadBuffer(), uiReadableBytes);
+                    pBuff->GetRawReadBuffer(), pBuff->ReadableBytes());
     if (!oHttpMsg.is_decoding())
     {
-        if(parser.http_errno != HPE_OK)
+        if (parser.http_errno != HPE_OK)
         {
-            LOG4_ERROR("Failed to parse http message for cause:%s",
-                            http_errno_name((http_errno)parser.http_errno));
-            return(CODEC_STATUS_ERR);
-		}
+            LOG4_ERROR("http_parser error: %s", http_errno_name((http_errno)parser.http_errno));
+            return CODEC_STATUS_ERR;
+        }
         pBuff->AdvanceReadIndex(uiLen);
     }
     else
     {
-        LOG4_TRACE("decoding...RawReadBuffer:%s",pBuff->GetRawReadBuffer());
-        return(CODEC_STATUS_PAUSE);
+        LOG4_TRACE("http_parser decoding, waiting more data");
+        return CODEC_STATUS_PAUSE;
     }
+
     auto iter = oHttpMsg.headers().find("Content-Encoding");
-    if (iter != oHttpMsg.headers().end())
+    if (iter != oHttpMsg.headers().end() && iter->second == "gzip")
     {
-    	if (iter->second == std::string("gzip"))
-    	{
-    		std::string strData;
-			if (Gunzip(oHttpMsg.body(), strData))
-			{
-				oHttpMsg.set_body(strData);
-			}
-			else
-			{
-				LOG4_ERROR("guzip error!");
-				return(CODEC_STATUS_ERR);
-			}
-    	}
+        std::string strData;
+        if (Gunzip(oHttpMsg.body(), strData))
+            oHttpMsg.set_body(strData);
+        else
+        {
+            LOG4_ERROR("gunzip error!");
+            return CODEC_STATUS_ERR;
+        }
     }
-    LOG4_TRACE("%s", ToString(oHttpMsg).c_str());
-    return(CODEC_STATUS_OK);
 }
 
 void HttpCodec::AddHttpHeader(const std::string& strHeaderName, const std::string& strHeaderValue)

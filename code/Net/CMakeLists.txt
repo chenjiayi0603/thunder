@@ -8,6 +8,9 @@ foreach(_d ${_libnet_dirs})
   list(APPEND LIBNET_SOURCES ${_f})
 endforeach()
 
+# picohttpparser — HTTP/1.1 parser (替代 http-parser)
+list(APPEND LIBNET_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../Util/src/util/http/pico/picohttpparser.c")
+
 file(GLOB_RECURSE NET_ALL_SOURCES CONFIGURE_DEPENDS
   "${NET_SRC}/*.cpp"
   "${NET_SRC}/*.cc"

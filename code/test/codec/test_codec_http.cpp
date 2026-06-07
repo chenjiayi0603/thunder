@@ -106,8 +106,8 @@ TEST(HttpCodec, DecodeTruncatedPauses)
     EXPECT_EQ(net::CODEC_STATUS_PAUSE, codec.Decode(&partial, decoded));
 }
 
-// http_parser crash on pure garbage; use ASSERT_DEATH
-TEST(HttpCodec, DecodeCorruptedErrorsDeath)
+// pico: 非法输入安全返回 PAUSE, 不崩溃
+TEST(HttpCodec, DecodeCorruptedReturnsPause)
 {
     net::HttpCodec codec(util::CODEC_HTTP);
     util::CBuffer buf;
@@ -115,8 +115,7 @@ TEST(HttpCodec, DecodeCorruptedErrorsDeath)
     buf.Write(garbage, 6);
 
     HttpMsg dh;
-    // http_parser 对非法输入可能 abort——用 death test 断言
-    EXPECT_DEATH({ codec.Decode(&buf, dh); }, "");
+    EXPECT_EQ(codec.Decode(&buf, dh), net::CODEC_STATUS_PAUSE);
 }
 
 // Encode 缺版本号：HttpCodec 内部没有校验，可能 crash——用 death test
