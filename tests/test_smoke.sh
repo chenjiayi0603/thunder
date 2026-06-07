@@ -1,11 +1,17 @@
 #!/bin/bash
-# 冒烟测试 — 核心链路快速验证（需 Docker 集群已运行）
+# 冒烟测试 — 核心链路快速验证（支持 docker-compose / k8s 双模式）
 # 用法:
-#   ./tests/test_smoke.sh              # 全部
+#   ./tests/test_smoke.sh              # 全部 (docker-compose 模式)
+#   ./tests/test_smoke.sh --k8s        # 全部 (k8s 模式)
 #   ./tests/test_smoke.sh --hello      # 仅 Hello(HTTP/HTTPS/WS/Redis/MySQL)
 #   ./tests/test_smoke.sh --interface  # 仅 Interface→Logic
 #   ./tests/test_smoke.sh --etcd       # 仅 etcd 注册中心
 #   ./tests/test_smoke.sh --build      # 先重编再跑
+#   ./tests/test_smoke.sh --k8s --hello --interface  # k8s 模式 + 指定段
+#
+# 环境变量:
+#   K8S_NODE_IP    k8s 模式下节点 IP (默认自动检测)
+#   K8S_NAMESPACE  k8s namespace (默认 thunder)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,10 +21,11 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; NC='\033[0m'
 PASS=0; FAIL=0; SKIP=0
 
 # ── 参数解析 ─────────────────────────────────────────────
-RUN_HELLO=false; RUN_INTERFACE=false; RUN_ETCD=false
+RUN_HELLO=false; RUN_INTERFACE=false; RUN_ETCD=false; K8S_MODE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build) echo "=== 构建 ==="; cmake --build build -j1 && cmake --install build ;;
+        --k8s)   K8S_MODE=true ;;
         --hello) RUN_HELLO=true ;;
         --interface) RUN_INTERFACE=true ;;
         --etcd) RUN_ETCD=true ;;
@@ -31,10 +38,51 @@ if ! $RUN_HELLO && ! $RUN_INTERFACE && ! $RUN_ETCD; then
     RUN_HELLO=true; RUN_INTERFACE=true; RUN_ETCD=true
 fi
 
+# ── k8s 模式: 检测 Node IP 和 Namespace ─────────────────────
+K8S_NS="${K8S_NAMESPACE:-thunder}"
+if $K8S_MODE; then
+    # 自动检测 Node IP
+    if [ -n "${K8S_NODE_IP:-}" ]; then
+        NODE_IP="$K8S_NODE_IP"
+    else
+        NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null) || true
+        if [ -z "${NODE_IP:-}" ]; then
+            NODE_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+        fi
+    fi
+    if [ -z "${NODE_IP:-}" ]; then
+        echo -e "${RED}✘ 无法检测 k8s Node IP，请设置 K8S_NODE_IP 环境变量${NC}"
+        exit 1
+    fi
+    echo "k8s 模式: NODE_IP=$NODE_IP  namespace=$K8S_NS"
+
+    # 端口映射 (NodePort)
+    PORT_HELLO=30006
+    PORT_HELLO_WS=30010
+    PORT_INTERFACE=30008
+
+    # 获取 pod 名（用于 etcd exec）
+    ETCD_POD=$(kubectl get pods -n "$K8S_NS" -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || ETCD_POD=""
+else
+    NODE_IP="127.0.0.1"
+    PORT_HELLO=27006
+    PORT_HELLO_WS=27010
+    PORT_INTERFACE=27008
+    ETCD_POD=""
+fi
+
 # ── 检查集群是否已启动 ────────────────────────────────────────
-if ! ss -tln 2>/dev/null | grep -q ':27006 '; then
-    echo -e "${RED}✘ 集群未启动，请先执行 ./deploy.sh up${NC}"
-    exit 1
+if $K8S_MODE; then
+    READY=$(kubectl get pods -n "$K8S_NS" -l app=thunder-hello --no-headers 2>/dev/null | grep -c 'Running' || echo 0)
+    if [ "$READY" -eq 0 ]; then
+        echo -e "${RED}✘ k8s 集群未就绪 (namespace=$K8S_NS)，请先部署${NC}"
+        exit 1
+    fi
+else
+    if ! ss -tln 2>/dev/null | grep -q ':27006 '; then
+        echo -e "${RED}✘ 集群未启动，请先执行 ./deploy.sh up${NC}"
+        exit 1
+    fi
 fi
 
 echo "=============================================="
@@ -74,35 +122,55 @@ if $RUN_HELLO; then
 echo ""
 echo "--- HTTP / Hello ---"
 
-check "HTTP Echo (POST)                      [curl→Hello:27006]" \
-    '"code":0' \
-    'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"Echo\"}"'
+HELLO_URL="http://${NODE_IP}:${PORT_HELLO}"
+HELLO_WS_URL="http://${NODE_IP}:${PORT_HELLO_WS}"
 
-check "HTTP PoolCpu 协程挂起/恢复 (POST)     [curl→Hello:27006]" \
+check "HTTP Echo (POST)                      [curl→Hello:${PORT_HELLO}]" \
+    '"code":0' \
+    "curl -sf --max-time 5 ${HELLO_URL}/hello/hello -d '{\"option\":\"Echo\"}'"
+
+check "HTTP PoolCpu 协程挂起/恢复 (POST)     [curl→Hello:${PORT_HELLO}]" \
     '"checksum":786432' \
-    'curl -sf --max-time 10 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloPoolCpu\"}"'
+    "curl -sf --max-time 10 ${HELLO_URL}/hello/hello -d '{\"option\":\"TestHelloPoolCpu\"}'"
 
-check "HTTPS Echo (POST)                     [curl→HelloHttps:27443]" \
-    '"code":0' \
-    'curl -skf --max-time 5 https://127.0.0.1:27443/hello/hello -d "{\"option\":\"Echo\"}"'
+if $K8S_MODE; then
+    check "HTTPS Echo (POST)                     [curl→HelloHttps:30043]" \
+        '"code":0' \
+        "curl -skf --max-time 5 https://${NODE_IP}:30043/hello/hello -d '{\"option\":\"Echo\"}'"
+else
+    check "HTTPS Echo (POST)                     [curl→HelloHttps:27443]" \
+        '"code":0' \
+        'curl -skf --max-time 5 https://127.0.0.1:27443/hello/hello -d "{\"option\":\"Echo\"}"'
+fi
 
-check "Redis set/get (CoRedis)               [curl→Hello:27006→Redis:6379]" \
+# Redis: k8s 模式下需要传 k8s Service DNS，docker-compose 用 127.0.0.1 默认值
+_REDIS_HOST="${K8S_REDIS_HOST:-thunder-redis.${K8S_NS}}"
+_MYSQL_HOST="${K8S_MYSQL_HOST:-thunder-mysql.${K8S_NS}}"
+if $K8S_MODE; then
+    _REDIS_EXTRA=",\"redis_host\":\"${_REDIS_HOST}\""
+    _MYSQL_EXTRA=",\"mysql_host\":\"${_MYSQL_HOST}\",\"mysql_password\":\"root123\",\"mysql_db\":\"thunder\""
+else
+    _REDIS_EXTRA=""
+    _MYSQL_EXTRA=""
+fi
+
+check "Redis set/get (CoRedis)               [curl→Hello:${PORT_HELLO}→Redis:6379]" \
     '"set_ok":1' \
-    'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoRedis\"}"'
+    "curl -sf --max-time 5 ${HELLO_URL}/hello/hello -d '{\"option\":\"TestHelloCoRedis\"${_REDIS_EXTRA}}'"
 
-check "MySQL create/insert/select (CoMysql)   [curl→Hello:27006→MySQL:3306]" \
+check "MySQL create/insert/select (CoMysql)   [curl→Hello:${PORT_HELLO}→MySQL:3306]" \
     '"select_ok":1' \
-    'curl -sf --max-time 5 http://127.0.0.1:27006/hello/hello -d "{\"option\":\"TestHelloCoMysql\"}"'
+    "curl -sf --max-time 5 ${HELLO_URL}/hello/hello -d '{\"option\":\"TestHelloCoMysql\"${_MYSQL_EXTRA}}'"
 
 # WebSocket：-D - 把响应头输出到 stdout，不用 -f（101 非 2xx，-f 会失败）
-check "WebSocket 握手 101                    [curl→HelloWs:27010]" \
+check "WebSocket 握手 101                    [curl→HelloWs:${PORT_HELLO_WS}]" \
     '101 Switching Protocols' \
-    'curl -s --max-time 3 -D - \
-      -H "Upgrade: websocket" \
-      -H "Connection: Upgrade" \
-      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-      -H "Sec-WebSocket-Version: 13" \
-      http://127.0.0.1:27010/hello/shake'
+    "curl -s --max-time 3 -D - \
+      -H 'Upgrade: websocket' \
+      -H 'Connection: Upgrade' \
+      -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+      -H 'Sec-WebSocket-Version: 13' \
+      ${HELLO_WS_URL}/hello/shake"
 
 fi  # RUN_HELLO
 
@@ -111,36 +179,38 @@ if $RUN_INTERFACE; then
 echo ""
 echo "--- Interface → Logic ---"
 
+IFACE_URL="http://${NODE_IP}:${PORT_INTERFACE}"
+
 # 请求 1：GenKey 生成 token（POST）
-_GENKEY_POST=$(curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+_GENKEY_POST=$(curl -sf --max-time 5 "${IFACE_URL}/Interface/gentoken" \
   -d '{"option":"GenKey"}' 2>/dev/null)
-check "GenKey (POST)                           [curl→Interface:27008→Logic:16068]" '"code":0' "echo '${_GENKEY_POST}'"
+check "GenKey (POST)                           [curl→Interface:${PORT_INTERFACE}→Logic:16068]" '"code":0' "echo '${_GENKEY_POST}'"
 
 # 请求 2：VerifyKey 验证上一步拿到的 token
 _TOKEN=$(echo "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
 _KEY=$(echo   "$_GENKEY_POST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))"   2>/dev/null)
 check "VerifyKey 有效 token → code:0          [curl→Interface→Logic]" \
     '"code":0' \
-    "curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
+    "curl -sf --max-time 5 ${IFACE_URL}/Interface/gentoken \
       -d '{\"option\":\"VerifyKey\",\"token\":\"${_TOKEN}\",\"key\":\"${_KEY}\"}'"
 
 # 请求 3：GenKey（GET + JSON body）
 check "GenKey (GET + JSON body)                [curl→Interface→Logic]" \
     '"code":0' \
-    'curl -sf --max-time 5 -X GET \
-      -H "Content-Type: application/json" \
-      http://127.0.0.1:27008/Interface/gentoken \
-      -d "{\"option\":\"GenKey\"}"'
+    "curl -sf --max-time 5 -X GET \
+      -H 'Content-Type: application/json' \
+      ${IFACE_URL}/Interface/gentoken \
+      -d '{\"option\":\"GenKey\"}'"
 
 check "VerifyKey 非法 token → code:1          [curl→Interface→Logic]" \
     '"code":1' \
-    'curl -sf --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
-      -d "{\"option\":\"VerifyKey\",\"token\":\"bad\",\"key\":\"bad\"}"'
+    "curl -sf --max-time 5 ${IFACE_URL}/Interface/gentoken \
+      -d '{\"option\":\"VerifyKey\",\"token\":\"bad\",\"key\":\"bad\"}'"
 
 check "VerifyKey 空 token → code:1            [curl→Interface→Logic]" \
     '"code":1' \
-    'curl -s --max-time 5 http://127.0.0.1:27008/Interface/gentoken \
-      -d "{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}"'
+    "curl -s --max-time 5 ${IFACE_URL}/Interface/gentoken \
+      -d '{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}'"
 
 fi  # RUN_INTERFACE
 
@@ -150,10 +220,39 @@ echo ""
 echo "--- etcd ---"
 echo "     Manager(各节点) ──HttpCodec──► etcd(:2379)"
 
-if ! curl -sf --max-time 3 http://127.0.0.1:2379/health >/dev/null 2>&1; then
-    echo -e "  ${YELLOW}⚠️ ${NC} etcd :2379 不可达，跳过 etcd 段"
-    SKIP=$((SKIP+1))
+# k8s 模式: 通过 kubectl exec 查询 etcd
+if $K8S_MODE; then
+    if [ -z "${ETCD_POD:-}" ]; then
+        echo -e "  ${YELLOW}⚠️ ${NC} 找不到 etcd Pod，跳过 etcd 段"
+        SKIP=$((SKIP+1))
+    else
+        _REG=$(kubectl exec -n "$K8S_NS" "$ETCD_POD" -- \
+            etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/registry/ 2>/dev/null) || _REG=""
+        _SLOT=$(kubectl exec -n "$K8S_NS" "$ETCD_POD" -- \
+            etcdctl --endpoints=http://127.0.0.1:2379 get --prefix /thunder/slot/ 2>/dev/null) || _SLOT=""
+
+        if [ -z "${_REG:-}" ]; then
+            echo -e "  ${RED}❌${NC} etcd 查询 registry 失败"
+            FAIL=$((FAIL+1))
+        else
+            _COUNT=$(echo "$_REG" | grep -c '"node_type"' || echo 0)
+            _TYPES=$(echo "$_REG" | grep -oP '"node_type":"\K[^"]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+            echo -e "  ${GREEN}✅${NC} 注册中心健康  nodes=${_COUNT} types=[${_TYPES}]"
+            echo "$_REG" | while IFS= read -r line; do
+                if echo "$line" | grep -q '"node_type"'; then
+                    _type=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('node_type','?'))" 2>/dev/null || echo "?")
+                    _ip=$(echo "$line" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+                    echo "    ${_type}  ${_ip}"
+                fi
+            done
+            PASS=$((PASS+1))
+        fi
+    fi
 else
+    if ! curl -sf --max-time 3 http://127.0.0.1:2379/health >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠️ ${NC} etcd :2379 不可达，跳过 etcd 段"
+        SKIP=$((SKIP+1))
+    else
     _KEY=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/registry/').decode())")
     _END=$(python3 -c "import base64; print(base64.b64encode(b'/thunder/registry0').decode())")
     _REG=$(curl -sf --max-time 3 http://127.0.0.1:2379/v3/kv/range \
@@ -176,11 +275,13 @@ else
         echo "$_STATUS"
         FAIL=$((FAIL+1))
     fi
-fi
+fi   # if ! curl ... (docker-compose 模式)
+
+fi   # if $K8S_MODE else
 
 # ── etcd 监控 ──────────────────────────────────────────────────
 _ADMIN="${ROOT}/deploy/scripts/admin.py"
-if [ -f "$_ADMIN" ] && curl -sf --max-time 2 http://127.0.0.1:2379/health >/dev/null 2>&1; then
+if ! $K8S_MODE && [ -f "$_ADMIN" ] && curl -sf --max-time 2 http://127.0.0.1:2379/health >/dev/null 2>&1; then
     echo ""
     echo "--- etcd 监控 ---"
     echo ""

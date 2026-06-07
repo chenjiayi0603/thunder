@@ -15,8 +15,9 @@ spec:
     spec:
       containers:
       - name: app
-        image: thunder-node:latest
-        imagePullPolicy: Never
+        image: ubuntu:26.04
+        imagePullPolicy: IfNotPresent
+        workingDir: /thunder/deploy/Logic
         env:
         - name: POD_IP
           valueFrom:
@@ -24,13 +25,18 @@ spec:
               fieldPath: status.podIP
         - name: LD_LIBRARY_PATH
           value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
+        - name: DEBIAN_FRONTEND
+          value: noninteractive
         command:
         - bash
         - -c
         - |
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
           chmod +x ./node.sh 2>/dev/null || true
+          cp /thunder/k8s/conf/Logic.json /thunder/deploy/Logic/conf/Logic.json 2>/dev/null || true
           for conf in $(find /thunder/deploy -path '*/conf/*.json' 2>/dev/null); do
-            sed -i "s|\"inner_host\": \"[0-9.]*\"|\"inner_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
+            sed -i "s|\"inner_host\": \"[^\"]*\"|\"inner_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
+            sed -i "s|\"access_host\": \"[^\"]*\"|\"access_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
           done
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH ./node.sh start
           exec tail -f /dev/null

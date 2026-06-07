@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: thunder-hello
+  name: thunder-hello-https
   namespace: thunder
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: thunder-hello
+      app: thunder-hello-https
   template:
     metadata:
       labels:
-        app: thunder-hello
+        app: thunder-hello-https
     spec:
       containers:
       - name: app
         image: ubuntu:26.04
         imagePullPolicy: IfNotPresent
-        workingDir: /thunder/deploy/HelloHttp
+        workingDir: /thunder/deploy/HelloHttps
         env:
         - name: POD_IP
           valueFrom:
@@ -32,8 +32,9 @@ spec:
         - -c
         - |
           apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
-          chmod +x ./node.sh 2>/dev/null || true
-          cp /thunder/k8s/conf/Hello.json /thunder/deploy/HelloHttp/conf/Hello.json 2>/dev/null || true
+          chmod +x ./node.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
+          ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
+          cp /thunder/k8s/conf/HelloHttps.json /thunder/deploy/HelloHttps/conf/HelloHttps.json 2>/dev/null || true
           for conf in $(find /thunder/deploy -path '*/conf/*.json' 2>/dev/null); do
             sed -i "s|\"inner_host\": \"[^\"]*\"|\"inner_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
             sed -i "s|\"access_host\": \"[^\"]*\"|\"access_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
@@ -41,7 +42,7 @@ spec:
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH ./node.sh start
           exec tail -f /dev/null
         ports:
-        - containerPort: 27006
+        - containerPort: 27443
         volumeMounts:
         - name: thunder-repo
           mountPath: /thunder
@@ -53,12 +54,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: thunder-hello
+  name: thunder-hello-https
   namespace: thunder
 spec:
   type: NodePort
   ports:
-  - port: 27006
-    nodePort: 30006
+  - port: 27443
+    nodePort: 30043
   selector:
-    app: thunder-hello
+    app: thunder-hello-https
