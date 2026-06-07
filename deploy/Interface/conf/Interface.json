@@ -1,9 +1,9 @@
 {
     "node_type": "INTERFACE",
-    "access_host": "10.42.0.36",
+    "access_host": "10.42.0.98",
     "access_port": 27008,
     "access_codec": 3,
-    "inner_host": "10.42.0.36",
+    "inner_host": "10.42.0.98",
     "inner_port": 27009,
     "center": {
         "connector": "etcd",

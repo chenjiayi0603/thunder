@@ -744,8 +744,10 @@ void EtcdCenterConnector::DoWatchSnapshot()
                 if (snapRev > m_lastRevision) m_lastRevision = snapRev;
             }
             // 加载全量 kvs 作为 PUT 事件
+            // 全量快照前清空注册表, 避免残留旧 Pod IP (#issue: k8s pod 重启换 IP 后旧 key 无 DELETE 事件)
             util::CJsonObject kvs;
             if (oSnap.Get("kvs", kvs) && kvs.IsArray()) {
+                m_nodeRegistry.clear();
                 int n = kvs.GetArraySize();
                 for (int i = 0; i < n; ++i) {
                     util::CJsonObject kv; if (!kvs.Get(i, kv)) continue;

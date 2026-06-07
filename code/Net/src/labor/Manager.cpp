@@ -1139,6 +1139,7 @@ bool Manager::LoadConf(bool & boChanged)
 
 		m_oCurrentConf.Get("io_timeout", m_dIoTimeout);
 		m_oCurrentConf.Get("refresh_interval", m_iRefreshInterval);
+		if (m_iRefreshInterval <= 0) m_iRefreshInterval = 1;  // 默认 1s
 		m_oCurrentConf.Get("worker_beat", m_iWorkerBeat);
 
 		if (m_oLastConf.ToString().length() == 0)//第一次加载处理

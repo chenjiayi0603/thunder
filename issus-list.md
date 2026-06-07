@@ -474,3 +474,53 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
 - **状态**: ✅ 已修复
 - **问题**: etcd grpc-gateway 对 PUT 事件省略 `type` 字段, 原代码 `if (wev.type=="PUT")` 对空不成立 → config PUT 全走 DELETE 分支 → 配置下发永不生效
 - **修复**: `if (wev.type.empty() || wev.type=="PUT")` — 和 #9 registry 分支同根因
+
+---
+
+## ✅ #35 k8s 部署: Manager/Worker 异常退出
+
+> 2026-06-07 | 发现 | 状态: ✅ 已修复 (2026-06-08)
+
+### 根因
+`m_iRefreshInterval = 0`（所有配置文件都没配此字段）→ `CheckWorker()` 直接 return。
+Worker→Manager 共享内存队列不消费、心跳不检查 → 服务僵死。
+
+### 修复
+`Manager.cpp:LoadConf()`: `if (m_iRefreshInterval <= 0) m_iRefreshInterval = 1;`
+
+---
+
+## ✅ #36 单元测试: thunder_test_codec_http SIGILL
+
+> 2026-06-07 | 发现 | 状态: ✅ 已修复 (2026-06-08)
+
+### 根因
+pico 版本 `HttpCodec::Decode()` 末尾缺 `return CODEC_STATUS_OK;` → 非 void 函数无返回 → UB → SIGILL。
+
+### 修复
+`HttpCodec.cpp:Decode()`: 末尾补回 `return CODEC_STATUS_OK;`
+
+---
+
+## ✅ #37 etcd 路由快照残留旧 Pod IP
+
+> 2026-06-08 | 发现 | 状态: ✅ 已修复
+
+### 现象
+k8s pod 重启换 IP 后, `DoWatchSnapshot` 的 range query 不清空 `m_nodeRegistry`, 旧 Pod IP (如 10.42.0.97:16068) 残留, 导致 NodeNotice 携带过期路由, `SendToNext("LOGIC")` 连到已销毁 Pod → VerifyKey 失败。
+
+### 修复
+`EtcdCenterConnector.cpp:DoWatchSnapshot()`: range query 回调中 `m_nodeRegistry.clear()` 再重建全量快照。
+
+---
+
+## 🔵 #38 路由按需下发
+
+> 2026-06-08 | 记录 | 状态: 待实现
+
+### 需求
+当前 NodeNotice 全量下发所有节点类型给所有 Worker。应支持按节点类型过滤——例如 Interface 只需要 LOGIC 路由。建议在 conf 中加 `s2s_routes` / `upstream_types` 配置项。
+
+### 涉及文件
+- `EtcdCenterConnector.cpp`: 构造 NodeNotice 时按节点类型过滤
+- `deploy/Interface/conf/Interface.json`: 添加 `"upstream_types": ["LOGIC"]`

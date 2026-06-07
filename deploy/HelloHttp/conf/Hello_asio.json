@@ -1,9 +1,9 @@
 {
     "node_type": "HELLO",
-    "access_host": "10.42.0.36",
+    "access_host": "10.42.0.98",
     "access_port": 27006,
     "access_codec": 3,
-    "inner_host": "10.42.0.36",
+    "inner_host": "10.42.0.98",
     "inner_port": 27007,
     "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
     "server_name": "Hello_robot",

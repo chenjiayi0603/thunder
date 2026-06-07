@@ -751,6 +751,7 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
             return CODEC_STATUS_ERR;
         }
     }
+    return CODEC_STATUS_OK;
 }
 
 void HttpCodec::AddHttpHeader(const std::string& strHeaderName, const std::string& strHeaderValue)
