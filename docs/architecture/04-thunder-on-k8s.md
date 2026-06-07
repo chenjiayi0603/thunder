@@ -336,14 +336,15 @@ DPDK 的 PMD 驱动接管物理网卡——用户态直接操作 DMA ring,跳过
 
 ### 结论
 
-```
-Interface (API网关) → ✅ 可放 k8s  无状态 API, 可 HPA, 可滚动更新
-Hello    → 关 HPA 可放 k8s
-Logic    → ✅ 可放 (关 HPA)
-Hello    → ✅ 可放 (关 HPA)
-HelloWS  → ✅ 可放 (关 HPA)
-DPDK     → 裸机/VM ❌  独占网卡
-```
+| 服务 | k8s | 条件 |
+|------|-----|------|
+| Interface | ✅ 可放 | 无状态 API, 可 HPA, 可滚动更新 |
+| Hello | ✅ 可放 | 关 HPA, 固定副本, WebSocket 不需要 HPA |
+| HelloWS | ✅ 可放 | 关 HPA, 固定副本, 和 docker-compose 一样 |
+| Logic | ✅ 可放 | 关 HPA, 固定副本, shm IPC 在同 Pod |
+| DPDK | ❌ 不可 | 独占物理网卡, k8s 做不到 |
+
+**所有服务都可以放 k8s(chplabs 不可)——前提是关 HPA。** k8s 和 docker-compose 一样,都是跑容器。区别只是 HPA 和滚动更新这些 k8s 特有功能对长连接不友好,关了就行。
 
 
 ---
