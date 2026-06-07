@@ -9,6 +9,7 @@
  ******************************************************************************/
 #include <memory>
 #include <string>
+#include <vector>
 #include "protocol/oss_sys.pb.h"
 #include "labor/Manager.hpp"
 #include "labor/Worker.hpp"
@@ -1379,7 +1380,8 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         CloseSocket(m_iS2SListenFd);
         close(iControlFds[0]);
         close(iDataFds[0]);
-        ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
+        // iWorkerToMgrEfd: Worker→Manager 通知 (Worker 写, Manager 读) — Worker 需要保留
+        // iMgrToWorkerEfd: Manager→Worker 通知 — Worker 通过 ev_io ShmReadCallback 读, 需保留
         x_sock_set_block(iControlFds[1], 0);
         x_sock_set_block(iDataFds[1], 0);
         Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], workerIndex, m_oCurrentConf,
@@ -1896,23 +1898,30 @@ bool Manager::CheckWorker()
     LOG4_TRACE("%s()", __FUNCTION__);
     if (m_iRefreshInterval <= 0)
     {
-        return(true);
+        m_iRefreshInterval = 1;  // 默认 1s, 与 NODE_BEAT 一致
     }
+    int worker_count = 0;
     for (auto worker_iter:m_mapWorker)
     {
+        ++worker_count;
         LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime,m_iWorkerBeat);
         // 消费 Worker→Manager 共享内存队列
         tagWorkerAttr& attr = worker_iter.second;
         if (attr.pWorkerToMgrQueue && attr.iWorkerToMgrEventFd >= 0)
         {
+            LOG4_INFO("CheckWorker: checking worker_%d (pid=%d, efd=%d, queue=%p)",
+                      attr.iWorkerIndex, worker_iter.first, attr.iWorkerToMgrEventFd,
+                      (void*)attr.pWorkerToMgrQueue);
             // 先消费 eventfd 计数器
             uint64_t ev;
             while (read(attr.iWorkerToMgrEventFd, &ev, sizeof(ev)) > 0) {}
             // 批量出队
             uint32_t cmd, seq, body_len;
             char body_buf[4096];
+            int dequeued = 0;
             while (attr.pWorkerToMgrQueue->TryDequeue(cmd, seq, body_buf, body_len))
             {
+                ++dequeued;
                 // 构造 MsgHead + MsgBody 并走现有处理流程
                 MsgHead oInMsgHead;
                 MsgBody oInMsgBody;
@@ -1926,6 +1935,16 @@ bool Manager::CheckWorker()
                 {
                     DisposeDataFromWorker(oInMsgHead, oInMsgBody, conn_iter->second.get());
                 }
+                else
+                {
+                    LOG4_INFO("CheckWorker: worker_%d controlFd=%d not in m_mapFdAttr, cmd=%u",
+                              attr.iWorkerIndex, attr.iControlFd, cmd);
+                }
+            }
+            if (dequeued > 0)
+            {
+                LOG4_INFO("CheckWorker: dequeued %d msgs from worker_%d (pid=%d)",
+                          dequeued, attr.iWorkerIndex, worker_iter.first);
             }
         }
         if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
@@ -1940,16 +1959,18 @@ bool Manager::CheckWorker()
 
 bool Manager::RestartWorkers()
 {
-    LOG4_TRACE("%s()", __FUNCTION__);
-    for (const auto& worker_iter:m_mapWorker)
+    LOG4_INFO("%s() — graceful restart all workers", __FUNCTION__);
+    // 先收集所有 WorkerIndex (GracefulRestartWorker 会在迭代中修改 m_mapWorker)
+    std::vector<int> workerIndices;
+    for (const auto& worker_iter : m_mapWorker)
     {
-        LOG4_TRACE("RestartWorkers:now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime, m_iWorkerBeat);
-        {
-            LOG4_INFO( "terminate worker_%d pid %d",worker_iter.second.iWorkerIndex, worker_iter.first);
-            kill(worker_iter.first, SIGKILL);
-        }
+        workerIndices.push_back(worker_iter.second.iWorkerIndex);
     }
-    return(true);
+    for (int idx : workerIndices)
+    {
+        GracefulRestartWorker(idx);
+    }
+    return true;
 }
 
 void Manager::RefreshServer()
