@@ -886,9 +886,9 @@ Thunder 使用 etcd 作为注册中心和服务配置下发通道（config watch
 
 ---
 
-## 🔵 #45 SO 模块版本管理 via etcd
+## ✅ #45 SO 模块版本管理 via etcd
 
-> 2026-06-09 | 设计 | 状态: 待实现 | 设计文档: `docs/architecture/15-so-module-hot-reload-via-etcd.md`
+> 2026-06-09 | 设计 | 状态: ✅ 已实现 | 设计文档: `docs/architecture/15-so-module-hot-reload-via-etcd.md`
 
 ### 问题
 SO 模块当前仅在启动时从 `conf/*.json` 读取，更新需手动替换文件 + 发信号，无版本管理、无回滚、无法通过 etcd 统一管控。

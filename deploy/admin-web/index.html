@@ -101,26 +101,138 @@ async function loadNodes() {
     document.getElementById('content').innerHTML = '<div class="card"><p style="color:#999">无法获取节点数据 (etcd 不可达?)</p></div>';
     return;
   }
-  let h = '<div class="card"><h3>📋 注册节点列表 (' + d.kvs.length + ')</h3>';
+  // 按类型分组
+  var types = {}, typeOrder = [];
+  d.kvs.forEach(kv => {
+    var v = JSON.parse(b64Decode(kv.value));
+    var t = v.node_type;
+    if (!types[t]) { types[t] = []; typeOrder.push(t); }
+    types[t].push(v);
+  });
+
+  var h = '<div class="card"><h3>📋 注册节点列表 (' + d.kvs.length + ')</h3>';
   if (d.kvs.length === 0) { h += '<p style="color:#999">暂无注册节点</p></div>'; }
   else {
-    h += '<table><tr><th>类型</th><th>节点 IP:Port</th><th>Node ID</th><th>Worker</th><th>配置</th></tr>';
-    d.kvs.forEach(kv => {
-      const key = b64Decode(kv.key);
-      const val = JSON.parse(b64Decode(kv.value));
-      const addr = val.node_ip + ':' + val.node_port;
-      h += '<tr>';
-      h += '<td><span class="badge badge-' + (val.node_type==='LOGIC'?'ok':'warn') + '">' + val.node_type + '</span></td>';
-      h += '<td>' + addr + '</td>';
-      h += '<td>' + (val.node_id||'?') + '</td>';
-      h += '<td>' + (val.worker_num||0) + '</td>';
-      h += '<td><button class="btn btn-primary btn-sm" onclick="openNodeConfig(\'' + escJs(val.node_type) + '\',\'' + escJs(addr) + '\')">⚙ 配置</button></td>';
-      h += '</tr>';
+    h += '<table><tr><th>类型/节点</th><th>IP:Port</th><th>ID</th><th>W</th><th>模块</th><th>配置</th></tr>';
+    typeOrder.forEach(function(t) {
+      var nodes = types[t];
+      // 类型头行
+      h += '<tr style="background:#f8f9ff;font-weight:bold">';
+      h += '<td><span class="badge badge-' + (t==='LOGIC'?'ok':'warn') + '">' + t + '</span> (' + nodes.length + '节点)</td>';
+      h += '<td colspan="2"></td><td></td>';
+      h += '<td><button class="btn btn-sm" onclick="openModuleConfig(\'' + escJs(t) + '\')">⚙ 模块</button></td>';
+      h += '<td></td></tr>';
+      // 节点行
+      nodes.forEach(function(v) {
+        var addr = v.node_ip + ':' + v.node_port;
+        h += '<tr>';
+        h += '<td style="padding-left:24px;font-size:12px;color:#888">' + addr + '</td>';
+        h += '<td>' + addr + '</td>';
+        h += '<td>' + (v.node_id||'?') + '</td>';
+        h += '<td>' + (v.worker_num||0) + '</td>';
+        h += '<td></td>';
+        h += '<td><button class="btn btn-primary btn-sm" onclick="openNodeConfig(\'' + escJs(t) + '\',\'' + escJs(addr) + '\')">⚙ 配置</button></td>';
+        h += '</tr>';
+      });
     });
     h += '</table></div>';
   }
   h += nodeConfigModalHtml();
+  h += moduleConfigModalHtml();
   document.getElementById('content').innerHTML = h;
+}
+
+// ── SO 模块配置 Modal ──
+function moduleConfigModalHtml() {
+  return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:700px"><h3 id="modCfgTitle">⚙ 模块配置</h3>'
+    + '<div id="modCfgBody"></div></div></div>';
+}
+
+async function openModuleConfig(type) {
+  var cfgKey = '/thunder/config/module/' + type;
+  var d = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
+  var currentJson = '{\n  "module": []\n}';
+  if (d && d.kvs && d.kvs.length > 0) {
+    currentJson = b64Decode(d.kvs[0].value);
+    try { currentJson = JSON.stringify(JSON.parse(currentJson), null, 2); } catch(e) {}
+  }
+  // 版本历史计数
+  var histKey = '/thunder/config_history/module/' + type + '/';
+  var hd = await etcdPost('/v3/kv/range', {
+    key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
+  });
+  var vc = (hd && hd.kvs) ? hd.kvs.length : 0;
+  document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' SO 模块';
+  var h = '<div style="font-size:11px;color:#999;margin-bottom:4px;font-family:monospace">' + escHtml(cfgKey) + '</div>';
+  h += '<div style="font-size:12px;margin-bottom:8px"><b>版本:</b> <span style="color:#e94560">' + (vc > 0 ? 'v' + (vc+1) : 'v1') + ' (当前)</span></div>';
+  h += '<textarea id="modCfgJson" rows="14" style="width:100%;font-family:monospace;font-size:13px">' + escHtml(currentJson) + '</textarea>';
+  h += '<div class="flex mt12"><button class="btn btn-primary" onclick="saveModuleCfg(\'' + escJs(type) + '\')">💾 保存 (触发 GracefulRestart)</button>';
+  h += '<button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')">📋 版本历史 (' + vc + ')</button></div>';
+  document.getElementById('modCfgBody').innerHTML = h;
+  document.getElementById('modCfgModal').style.display = 'flex';
+}
+
+async function saveModuleCfg(type) {
+  var cfgKey = '/thunder/config/module/' + type;
+  var newVal = document.getElementById('modCfgJson').value;
+  try { JSON.parse(newVal); } catch(e) { toast('JSON 格式错误', false); return; }
+  // 备份旧值
+  var oldR = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
+  if (oldR && oldR.kvs && oldR.kvs.length > 0) {
+    var oldVal = b64Decode(oldR.kvs[0].value);
+    if (oldVal && oldVal !== newVal) {
+      await etcdPost('/v3/kv/put', {
+        key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
+        value: b64Encode(oldVal)
+      });
+    }
+  }
+  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(newVal)});
+  if (r) { toast(type + ' 模块版本已更新, GracefulRestart 触发中', true); document.getElementById('modCfgModal').style.display = 'none'; }
+  else { toast('保存失败', false); }
+}
+
+async function showModuleVersions(type) {
+  var cfgKey = '/thunder/config/module/' + type;
+  var histKey = '/thunder/config_history/module/' + type + '/';
+  var d = await etcdPost('/v3/kv/range', {
+    key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
+  });
+  var h = '<p style="font-size:12px">' + escHtml(type) + ' 模块版本历史</p><hr class="mb8">';
+  if (d && d.kvs && d.kvs.length > 0) {
+    h += '<table><tr><th>版本</th><th>时间</th><th>预览</th><th>操作</th></tr>';
+    for (var i = d.kvs.length - 1; i >= 0; i--) {
+      var kv = d.kvs[i];
+      var vk = b64Decode(kv.key).replace(histKey, '');
+      var ts = parseInt(vk.substring(1));
+      var val = b64Decode(kv.value);
+      h += '<tr><td style="font-size:11px;font-family:monospace">' + escHtml(vk) + '</td>';
+      h += '<td style="font-size:11px">' + new Date(ts).toLocaleString() + '</td>';
+      h += '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(val.substring(0,50)) + '</td>';
+      h += '<td><button class="btn btn-primary btn-sm" onclick="rollbackModuleCfg(\'' + escJs(type) + '\',\'' + escJs(val) + '\')">↩ 回滚</button></td></tr>';
+    }
+    h += '</table>';
+  } else { h += '<p style="color:#999">暂无历史版本</p>'; }
+  document.getElementById('versionList').innerHTML = h;
+  document.getElementById('versionModal').style.display = 'flex';
+}
+
+async function rollbackModuleCfg(type, oldVal) {
+  if (!confirm('确要回滚 SO 模块版本？此操作将触发 GracefulRestart。')) return;
+  var cfgKey = '/thunder/config/module/' + type;
+  var cur = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
+  if (cur && cur.kvs && cur.kvs.length > 0) {
+    var cv = b64Decode(cur.kvs[0].value);
+    if (cv !== oldVal) {
+      await etcdPost('/v3/kv/put', {
+        key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
+        value: b64Encode(cv)
+      });
+    }
+  }
+  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(oldVal)});
+  if (r) { toast('已回滚, GracefulRestart 触发中', true); closeVersionModal(); }
+  else { toast('回滚失败', false); }
 }
 
 // ── 节点配置 Modal ──
@@ -234,6 +346,7 @@ async function rollbackNodeCfg(addr, oldVal) {
 // 关闭modal
 document.addEventListener('click', function(e) {
   if (e.target.id === 'nodeCfgModal') document.getElementById('nodeCfgModal').style.display = 'none';
+  if (e.target.id === 'modCfgModal') document.getElementById('modCfgModal').style.display = 'none';
   if (e.target.id === 'versionModal') closeVersionModal();
 });
 

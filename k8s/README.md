@@ -261,49 +261,34 @@ NodePort 映射:
 
 ## SO 模块部署 (NFS 共享存储)
 
-所有 Pod 共用同一份 SO 文件，通过 NFS PersistentVolume 挂载:
+所有 Pod 共用同一份 SO 文件，通过 NFS PersistentVolume 挂载。
 
-```yaml
-# 1. PV (一次创建)
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: thunder-plugins
-spec:
-  capacity: {storage: 10Gi}
-  accessModes: [ReadOnlyMany]
-  nfs:
-    server: 192.168.3.100
-    path: /data/thunder/plugins
+**部署步骤**:
 
-# 2. PVC
-kind: PersistentVolumeClaim
-metadata:
-  name: thunder-plugins
-  namespace: thunder
-spec:
-  accessModes: [ReadOnlyMany]
-  resources: {requests: {storage: 10Gi}}
+```bash
+# 1. 先确认 NFS 服务器就绪, 修改 plugins-pv.yaml 中的 server IP
+# 2. 创建 PV/PVC
+kubectl apply -f k8s/plugins-pv.yaml
 
-# 3. Pod 挂载
-containers:
-- volumeMounts:
-  - name: plugins
-    mountPath: /data/thunder/plugins
-volumes:
-- name: plugins
-  persistentVolumeClaim:
-    claimName: thunder-plugins
+# 3. 在 deployment.yaml 的 containers 下加:
+#    volumeMounts:
+#    - name: plugins
+#      mountPath: /data/thunder/plugins
+#    volumes:
+#    - name: plugins
+#      persistentVolumeClaim:
+#        claimName: thunder-plugins
+
+# 4. 在 Pod 启动脚本中加 symlink:
+#    ln -sf /data/thunder/plugins/HelloHttp deploy/HelloHttp/plugins
 ```
 
-```
-  NFS: 192.168.3.100:/data/thunder/plugins/
-  ├── HelloHttp/  ModuleHello_v1.so, ModuleHello_v2.so
-  ├── Logic/      CmdGetToken_v2.so, CmdGetToken_v3.so
-  └── Interface/  ModuleInterface_v1.so
+**文件**: `k8s/plugins-pv.yaml`
 
-  Pod 内: deploy/{TYPE}/plugins → symlink → /data/thunder/plugins/{TYPE}
-```
+| 资源 | 说明 |
+|------|------|
+| PV | NFS ReadOnlyMany, 10Gi, server 改实际 IP |
+| PVC | thunder namespace, 绑定 PV |
 
 详见 `docs/architecture/15-so-module-hot-reload-via-etcd.md`
 

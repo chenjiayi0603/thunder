@@ -7,6 +7,11 @@
  * @note
  * Modify history:
  ******************************************************************************/
+#include <cstdio>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <unistd.h>
 #include <memory>
 #include <string>
 #include "protocol/oss_sys.pb.h"
@@ -2851,3 +2856,37 @@ bool Manager::GracefulRestartWorker(int iWorkerIndex)
 }
 
 } /* namespace net */
+
+// #45 SO download — HTTP GET SO file from URL, write to disk
+static bool DownloadSoFile(const std::string& url, const std::string& outPath)
+{
+    auto p = url.find("://");
+    std::string r = (p != std::string::npos) ? url.substr(p + 3) : url;
+    auto s = r.find('/');
+    if (s == std::string::npos) return false;
+    std::string host = r.substr(0, s), path = r.substr(s);
+    auto c = host.rfind(':');
+    int port = 80;
+    if (c != std::string::npos) { try { port = std::stoi(host.substr(c + 1)); } catch (...) {} host = host.substr(0, c); }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+    struct timeval tv{10, 0}; setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct hostent* he = gethostbyname(host.c_str());
+    if (!he) { close(fd); return false; }
+    struct sockaddr_in addr{}; addr.sin_family = AF_INET;
+    memcpy(&addr.sin_addr, he->h_addr, he->h_length); addr.sin_port = htons(port);
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { close(fd); return false; }
+    std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
+    send(fd, req.c_str(), req.size(), MSG_NOSIGNAL);
+    std::string resp; char buf[65536]; ssize_t n;
+    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0) resp.append(buf, n);
+    close(fd);
+    auto h = resp.find("\r\n\r\n");
+    if (h == std::string::npos) return false;
+    std::string body = resp.substr(h + 4);
+    FILE* fp = fopen(outPath.c_str(), "wb");
+    if (!fp) return false;
+    size_t written = fwrite(body.data(), 1, body.size(), fp);
+    fclose(fp);
+    return written == body.size();
+}

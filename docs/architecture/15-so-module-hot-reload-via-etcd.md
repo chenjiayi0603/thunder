@@ -431,3 +431,142 @@ GracefulRestartWorker 是 `dlopen(so_path)` — 从磁盘加载 SO。SO 不在�
   类型行 "⚙ 模块" → 管理 /thunder/config/module/{TYPE} → SO 版本
   节点行 "⚙ 配置" → 管理 /thunder/config/{IP:PORT}      → custom JSON
 ```
+
+---
+
+## SO 文件分发: URL 方式 (替代 NFS/PV)
+
+SO 文件不在 etcd 存储，etcd 只存下载 URL。Manager 从 HTTP 服务器下载 SO。
+
+### etcd Key
+
+```
+  /thunder/config/module/HELLO → {
+    "module": [{
+      "url_path": "/hello/hello",
+      "so_path": "plugins/ModuleHello.so",
+      "so_url": "http://192.168.3.61:8080/plugins/ModuleHello_v2.so",
+      "version": 2,
+      "sha256": "abc123..."    // 可选: 校验
+    }]
+  }
+```
+
+### Manager 下载流程
+
+```
+  ① Admin 改版本 + so_url
+  ② Manager watch → 检测 version 变更
+  ③ HTTP GET so_url → 写 /data/thunder/plugins/ModuleHello_v2.so
+  ④ (可选) sha256 校验
+  ⑤ dlopen("/data/thunder/plugins/ModuleHello_v2.so")
+  ⑥ GracefulRestartWorker → 零中断切换
+```
+
+### 文件服务器
+
+可用现有的 python HTTP server (8080 端口):
+```
+  deploy/Interface/confweb/plugins/ModuleHello_v2.so
+```
+
+或独立文件服务器 (nginx/minio/S3)。
+
+### k8s PV 多节点共享 SO 分析
+
+k8s PV 要支持多 Pod 跨节点共享 SO 文件，需要 `ReadWriteMany` 访问模式。
+
+| PV 类型 | ReadWriteMany | 多节点 | 能用? | 原因 |
+|---------|:---:|:---:|:---:|------|
+| hostPath | ❌ | ❌ | ❌ | 绑定单节点磁盘, Pod 调度到其他节点不可见 |
+| local | ❌ | ❌ | ❌ | 同上, 且 Pod 必须调度到 PV 所在节点 |
+| Longhorn | ❌ | ❌ | ❌ | 块存储, 只支持 ReadWriteOnce |
+| NFS | ✅ | ✅ | ✅ | ReadWriteMany, 多 Pod 跨节点共享 |
+| CephFS | ✅ | ✅ | ✅ | ReadWriteMany, 但需 Ceph 集群 |
+
+**结论: 只有 NFS 和 CephFS 支持多节点共享。其余全是单节点。**
+
+### 实际方案
+
+| 环境 | SO 分发方式 | 原因 |
+|------|-----------|------|
+| 单节点 k8s | hostPath | Pod 总在同一节点 |
+| 多节点 k8s (有 NFS) | NFS PV ✅ | ReadWriteMany |
+| 多节点 k8s (无 NFS) | HTTP URL 下载 ✅ | 不依赖存储 |
+| 任何环境 | 镜像内置 + Rolling Update | 最简单 |
+
+### NFS 部署 (k8s 多节点首选)
+
+```
+  NFS Server (一台机器或 NAS)
+       │
+  ┌────┴────┬────────┬────────┐
+  Node-1    Node-2   Node-3   (k8s 节点)
+  Pod-A     Pod-B    Pod-C    (所有 Pod 挂同一 NFS)
+```
+
+**为什么 NFS 最常用**:
+- Linux 内核自带 NFS 客户端，不用装驱动
+- 原生支持 ReadWriteMany
+- 各种 NAS/云存储都兼容 NFS 协议
+- `nfs-subdir-external-provisioner` 一行 Helm 装好 CSI
+
+```bash
+# 安装 NFS CSI provisioner
+helm install nfs-subdir nfs-subdir-external-provisioner \
+  --set nfs.server=192.168.3.100 \
+  --set nfs.path=/data/thunder/plugins
+```
+
+**云上对应**:
+
+| 云 | 服务 | 协议 |
+|----|------|------|
+| 阿里云 | NAS | NFS |
+| AWS | EFS | NFS |
+| 腾讯云 | CFS | NFS |
+| 自建 | NFS Server / TrueNAS (仅 ~15MB 内存) | NFS |
+
+### NFS vs CephFS 对比
+
+两者都支持 ReadWriteMany，是多节点 SO 共享唯二选择。
+
+| 维度 | NFS | CephFS |
+|------|-----|--------|
+| 协议 | NFS v3/v4 | Ceph 专有协议 |
+| 客户端 | 内核自带, 零安装 | 需 ceph-common + 内核模块 |
+| 部署复杂度 | ⭐ 一台 NFS Server | ⭐⭐⭐⭐ Ceph 集群 (MON+OSD+MDS) |
+| k8s CSI | `nfs-subdir-external-provisioner` | `ceph-csi` |
+| 性能 | 中等, 适合小文件 | 高, 适合大文件/高并发 |
+| 容量 | 单机磁盘 | 横向扩展 PB 级 |
+| 运维 | 简单, 单点 (可 HA) | 复杂, 需专人维护 |
+| 适合 SO 场景 | ✅ 推荐 | ⚠️ 杀鸡用牛刀 |
+
+**结论: SO 文件一般几 MB，几十个节点并发读，NFS 完全够用。CephFS 适合 PB 级数据场景，对 SO 管理来说太重。**
+
+### NFS 服务器搭建
+
+k8s 内置 nfs PV 类型，但需要外部 NFS 服务器提供共享目录。
+
+```bash
+# 任意 Linux 机器 (可以是 k8s 某个节点)
+apt install nfs-kernel-server
+mkdir -p /data/thunder/plugins
+echo "/data/thunder/plugins *(ro,sync,no_subtree_check)" >> /etc/exports
+exportfs -a
+
+# Pod 挂载 (k8s 原生, 零安装)
+volumes:
+- name: plugins
+  nfs:
+    server: 192.168.x.x       # NFS 服务器 IP
+    path: /data/thunder/plugins
+    readOnly: true
+```
+
+**云上免自建**:
+| 云 | 服务 |
+|----|------|
+| 阿里云 | NAS (开箱即用 NFS) |
+| AWS | EFS |
+| 腾讯云 | CFS |

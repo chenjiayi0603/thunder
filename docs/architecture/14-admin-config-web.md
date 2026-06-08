@@ -182,7 +182,8 @@ Thunder 使用 etcd 作为注册中心和配置下发通道。节点运行时配
 
 | 文件 | 说明 |
 |------|------|
-| `deploy/Interface/confweb/index.html` | 管理页面 (纯静态, ~14KB) |
+| `deploy/admin-web/index.html` | 管理页面 (纯静态) |
+| `deploy/admin-web/plugins/` | SO 文件服务器 |
 | `code/Interface/src/ModuleHello/ModuleInterface.cpp` | 不参与 admin (已解耦, #43) |
 
 ## 依赖

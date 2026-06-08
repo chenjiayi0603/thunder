@@ -1,0 +1,35 @@
+# SO 模块共享存储 — NFS PersistentVolume
+# 前置: NFS 服务器已运行, 路径 /data/thunder/plugins/ 已创建
+# 目录结构:
+#   /data/thunder/plugins/
+#   ├── HelloHttp/ModuleHello_v1.so, ModuleHello_v2.so
+#   ├── Logic/CmdGetToken_v2.so, CmdGetToken_v3.so
+#   └── Interface/ModuleInterface_v1.so
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: thunder-plugins
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.3.100    # ← 改: NFS 服务器 IP
+    path: /data/thunder/plugins
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thunder-plugins
+  namespace: thunder
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 10Gi

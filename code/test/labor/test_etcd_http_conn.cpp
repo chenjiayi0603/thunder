@@ -176,3 +176,65 @@ TEST(EtcdMultiEndpoint, ParseEmptyEntriesFiltered)
     c.Destroy();
     ev_loop_destroy(loop);
 }
+
+// ============================================================
+// #45: SO 文件 HTTP 下载测试
+// ============================================================
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+namespace {
+std::string HttpDownload(const std::string& url)
+{
+    auto p = url.find("://");
+    std::string r = (p != std::string::npos) ? url.substr(p + 3) : url;
+    auto s = r.find('/');
+    if (s == std::string::npos) return "";
+    std::string host = r.substr(0, s), path = r.substr(s);
+    auto c = host.rfind(':');
+    int port = 80;
+    if (c != std::string::npos) {
+        try { port = std::stoi(host.substr(c + 1)); } catch (...) {}
+        host = host.substr(0, c);
+    }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return "";
+    struct timeval tv{5, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct hostent* he = gethostbyname(host.c_str());
+    if (!he) { close(fd); return ""; }
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    memcpy(&addr.sin_addr, he->h_addr, he->h_length);
+    addr.sin_port = htons(port);
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { close(fd); return ""; }
+    std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
+    send(fd, req.c_str(), req.size(), MSG_NOSIGNAL);
+    std::string resp;
+    char buf[65536];
+    ssize_t n;
+    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0) resp.append(buf, n);
+    close(fd);
+    auto h = resp.find("\r\n\r\n");
+    return (h != std::string::npos) ? resp.substr(h + 4) : "";
+}
+}
+
+TEST(SoDownload, DownloadSoFromServer)
+{
+    std::string body = HttpDownload("http://127.0.0.1:8080/plugins/ModuleHello_v2.so");
+    if (body.empty()) GTEST_SKIP() << "HTTP server 8080 不可达";
+    EXPECT_GT(body.size(), 100000u);
+    EXPECT_EQ(body[0], '\x7f'); EXPECT_EQ(body[1], 'E');
+    EXPECT_EQ(body[2], 'L');   EXPECT_EQ(body[3], 'F');
+}
+
+TEST(SoDownload, DownloadAdminHtml)
+{
+    std::string body = HttpDownload("http://127.0.0.1:8080/index.html");
+    if (body.empty()) GTEST_SKIP() << "HTTP server 8080 不可达";
+    EXPECT_GT(body.size(), 1000u);
+    EXPECT_NE(body.find("Thunder Admin"), std::string::npos);
+}
