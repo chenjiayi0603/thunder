@@ -454,7 +454,7 @@ void EtcdCenterConnector::OnRegEnsureLease()
 void EtcdCenterConnector::OnRegQuery()
 {
     const std::string ipPort      = m_nodeIp + ":" + std::to_string(m_nodePort);
-    const std::string registryKey = std::string(kRegistryPrefix) + ipPort;
+    const std::string registryKey = BuildRegistryPrefix(m_nodeType) + ipPort;
     ETCD_LOG_DEBUG("OnRegQuery — key=" << registryKey);
     AsyncQueryRegistry(registryKey, [this, ipPort, registryKey](bool found, uint32_t nid, int64_t lease) {
         const auto action = etcd_parse::DecideRegAction(found, lease, m_leaseId);
@@ -502,7 +502,7 @@ void EtcdCenterConnector::OnRegScan()
     }
     const int         slotIdx = m_regSlot;
     const std::string slotKey = std::string(kSlotPrefix) + std::to_string(slotIdx);
-    const std::string regKey  = std::string(kRegistryPrefix) + ipPort;
+    const std::string regKey  = BuildRegistryPrefix(m_nodeType) + ipPort;
     ETCD_LOG_DEBUG("OnRegScan — slot=" << slotIdx);
     AsyncTryClaimSlot(slotIdx, slotKey, regKey, ipPort, m_nodeType,
         [this, slotIdx, slotKey, regKey](bool ok) {
@@ -579,7 +579,7 @@ void EtcdCenterConnector::SelfAuditRegistry()
 {
     if (!m_registered || m_leaseId == 0 || m_nodeIp.empty() || m_regInProgress) return;
     const std::string ipPort      = m_nodeIp + ":" + std::to_string(m_nodePort);
-    const std::string registryKey = std::string(kRegistryPrefix) + ipPort;
+    const std::string registryKey = BuildRegistryPrefix(m_nodeType) + ipPort;
     // fire-and-forget: 异步查 + 需要时异步重绑
     AsyncQueryRegistry(registryKey, [this, registryKey, ipPort](bool found, uint32_t nid, int64_t lease) {
         if (found && lease == m_leaseId) return;  // 健康
@@ -809,9 +809,23 @@ void EtcdCenterConnector::OnWatchAsync()
             m_callback(cev); continue;
         }
         if (wev.key.find(kRegistryPrefix) != 0) continue;
-        const std::string ipPort = wev.key.substr(strlen(kRegistryPrefix));
+        // key 格式: /thunder/registry/[{TYPE}/]{IP}:{PORT} (#38 etcd key 重构)
+        const std::string rest = wev.key.substr(strlen(kRegistryPrefix));
+        auto slash = rest.find('/');
+        std::string ntype, ipPort;
+        if (slash != std::string::npos) {
+            // 新格式: {TYPE}/{IP}:{PORT}
+            ntype = rest.substr(0, slash);
+            ipPort = rest.substr(slash + 1);
+        } else {
+            // 旧格式兼容: {IP}:{PORT} (type 从 value 中提取)
+            ipPort = rest;
+        }
         if (ipPort.rfind(':') == std::string::npos) continue;
-        // 维护注册表后发全量路由快照(issus #9)
+        // 上游类型过滤在 key 层完成(新格式), 旧格式需事后过滤
+        if (!m_upstreamTypes.empty() && !ntype.empty()
+            && m_upstreamTypes.find(ntype) == m_upstreamTypes.end())
+            continue;
         std::string evType = wev.type;
         if (evType.empty()) evType = "PUT";  // grpc-gateway 省略 type → 默认 PUT
         if (evType == "PUT") { m_nodeRegistry[ipPort] = wev.value; }
@@ -819,7 +833,7 @@ void EtcdCenterConnector::OnWatchAsync()
     }
     if (events.empty()) return;
 
-    // 构造路由快照, 按 upstream_types 过滤(#38)
+    // 构造路由快照(新格式已在 entry 处过滤, 此处兜底旧格式兼容)
     NodeNotice notice;
     for (const auto& kv : m_nodeRegistry) {
         const std::string& kvIpPort = kv.first;
@@ -827,10 +841,13 @@ void EtcdCenterConnector::OnWatchAsync()
         if (c == std::string::npos) continue;
         util::CJsonObject oVal;
         if (!oVal.Parse(kv.second)) continue;
-        int32_t nid = 0; uint32_t wnum = 0; std::string ntype;
-        oVal.Get("node_id", nid); oVal.Get("node_type", ntype); oVal.Get("worker_num", wnum);
-        // 上游类型过滤: empty=全量, 否则仅下发关注类型
-        if (!m_upstreamTypes.empty() && m_upstreamTypes.find(ntype) == m_upstreamTypes.end())
+        int32_t nid = 0; uint32_t wnum = 0;
+        oVal.Get("node_id", nid); oVal.Get("worker_num", wnum);
+        std::string ntype;
+        oVal.Get("node_type", ntype);
+        // 旧格式兼容: 未在 entry 处过滤的类型在此处过滤
+        if (!m_upstreamTypes.empty() && !ntype.empty()
+            && m_upstreamTypes.find(ntype) == m_upstreamTypes.end())
             continue;
         auto* nr = notice.add_node_arry_reg();
         nr->set_node_ip(kvIpPort.substr(0, c));

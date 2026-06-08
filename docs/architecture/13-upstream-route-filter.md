@@ -228,10 +228,110 @@ AddNodeIdentify(LOGIC, 10.42.0.99:16068.0)
 
 ---
 
-## 5. 扩展
+## 5. etcd Key 重构 — Watch 源头过滤
 
-当前 `upstream_types` 以 JSON 数组声明节点类型。未来可扩展：
+> 已实现 (2026-06-08)
 
-- **路由策略**：`"upstream": {"LOGIC": "round_robin", "HELLO": "conhash"}` — 不同类型用不同路由算法
-- **排除列表**：`"exclude_types": ["HELLO"]` — 排除不需要的类型
-- **动态更新**：配置变更时通过现有 `ConfigUpdated` 事件热更新 `m_upstreamTypes`
+### 5.1 问题
+
+v1 版在 `OnWatchAsync` 构造 NodeNotice 时从 value 提取 `node_type` 做过滤——但 etcd Watch **仍拉取全量 registry 数据**，只在客户端丢弃不需要的类型。
+
+### 5.2 方案
+
+将 `node_type` 提升到 etcd key 路径中，过滤在 key 层面完成。
+
+```
+# 旧结构
+/thunder/registry/{IP}:{PORT} → {"node_type":"LOGIC","node_id":52,...}
+
+# 新结构
+/thunder/registry/{TYPE}/{IP}:{PORT} → {"node_id":52,...}
+```
+
+```
+/thunder/registry/
+├── LOGIC/
+│   └── 10.42.0.97:16068 → {"node_id":52,...}
+├── HELLO/
+│   ├── 10.42.0.93:27007 → {"node_id":44,...}
+│   ├── 10.42.0.94:27444 → {"node_id":49,...}
+│   └── 10.42.0.95:27011 → {"node_id":40,...}
+└── INTERFACE/
+    └── 10.42.0.96:27009 → {"node_id":48,...}
+```
+
+### 5.3 Watch 策略
+
+| 配置 | Watch 前缀 | 效果 |
+|------|-----------|------|
+| `upstream_types: ["LOGIC"]` | `/thunder/registry/LOGIC/` | 仅收 LOGIC 事件 |
+| `upstream_types: []` (缺省) | `/thunder/registry/` | 全量 (兼容) |
+
+```cpp
+// EtcdCenterConnector::StartWatch()
+if (m_upstreamTypes.empty()) {
+    m_watcher->Watch("/thunder/registry/");     // 全量
+} else {
+    for (const auto& t : m_upstreamTypes)
+        m_watcher->Watch("/thunder/registry/" + t + "/");  // 按类型
+}
+```
+
+### 5.4 优势对比
+
+| | 应用层过滤 (v1) | etcd Watch 过滤 (v2) |
+|---|---|---|
+| 网络传输 | 全量拉取 | 仅关注类型 |
+| JSON 解析 | 全量解析后丢弃 | 不需要的不会收到 |
+| `m_nodeRegistry` | 含全量节点 | 仅含关注类型 |
+| `OnWatchAsync` 过滤代码 | 需要 | 不需要 |
+
+### 5.5 涉及改动
+
+| 模块 | 改动 |
+|------|------|
+| `DoRegister` | key: `/thunder/registry/{IP}:{PORT}` → `/thunder/registry/{TYPE}/{IP}:{PORT}` |
+| `DoWatchSnapshot` | range prefix 按 `m_upstreamTypes` 逐个查询 |
+| `StartWatch` | watch prefix 同上 |
+| `ProcessWatchLine` / `OnWatchAsync` | key 解析适配新层级; 去掉应用层过滤 |
+| `SelfAuditRegistry` | 自检 key 更新 |
+| `QueryRegistry` | 查询 key 更新 |
+| `BuildSlotTxn` | slot txn 中 registry key 更新 |
+| etcd 存量数据 | 需清理旧 key 或做迁移 |
+
+### 5.6 实现摘要
+
+**新 key 格式**：`/thunder/registry/{TYPE}/{IP}:{PORT}`
+
+```cpp
+// BuildRegistryPrefix / BuildMyRegistryKey (EtcdCenterConnector.hpp)
+static std::string BuildRegistryPrefix(const std::string& nodeType) {
+    return "/thunder/registry/" + nodeType + "/";
+}
+std::string BuildMyRegistryKey() const {
+    return BuildRegistryPrefix(m_nodeType) + m_nodeIp + ":" + std::to_string(m_nodePort);
+}
+```
+
+**key 层过滤** (`OnWatchAsync`)：旧格式 `{IP}:{PORT}` 兼容，新格式 `{TYPE}/{IP}:{PORT}` 直接按 type 前缀筛选，无需解析 JSON value。
+
+**向后兼容**：`upstream_types` 缺省时不对 Watch 前缀做任何限制，行为与旧版完全一致。
+
+### 5.7 验证
+
+etcd key (`etcdctl get --prefix /thunder/registry/`)：
+```
+/thunder/registry/INTERFACE/10.42.0.103:27009    ← 新格式
+/thunder/registry/LOGIC/10.42.0.102:16068        ← 新格式
+/thunder/registry/10.42.0.93:27007               ← 旧格式 (兼容)
+```
+
+Interface Worker 路由表 (`grep AddNodeIdentify`)：
+```
+AddNodeIdentify(LOGIC, 10.42.0.102:16068.0)      ← 仅 LOGIC, 1条
+```
+
+冒烟测试：
+- Hello HTTP/HTTPS/WS/Redis/MySQL    **6/6** ✅
+- Interface→Logic GenKey/VerifyKey    **5/5** ✅
+- etcd 注册中心                       **1/1** ✅

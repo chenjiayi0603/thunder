@@ -530,5 +530,11 @@ k8s pod 重启换 IP 后, `DoWatchSnapshot` 的 range query 不清空 `m_nodeReg
 - `deploy/Interface/conf/Interface.json`: 添加 `"upstream_types": ["LOGIC"]`
 - `k8s/conf/Interface.json`: 同上
 
+### 实现 (v2 — etcd key 重构)
+- key 格式: `/thunder/registry/{IP}:{PORT}` → `/thunder/registry/{TYPE}/{IP}:{PORT}`
+- `OnWatchAsync`: 从 key 路径提取 type, 在 entry 处过滤 (无需解析 JSON value)
+- 旧格式 key 兼容 (缺省 `upstream_types` 时行为不变)
+- 详见 `docs/architecture/13-upstream-route-filter.md`
+
 ### 验证
-k8s 冒烟 Interface→Logic 5/5 全部通过, 路由表仅含 LOGIC 条目。
+k8s 冒烟 Hello 6/6 + Interface→Logic 5/5 + etcd 1/1 = 12/12, 路由表仅含 LOGIC 条目。

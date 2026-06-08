@@ -229,6 +229,15 @@ private:
      */
     static std::string B64Dec(const std::string& s);
 
+    /// 构建某节点类型的 registry 前缀 (#38 etcd key 重构: type 提升到 key 路径)
+    static std::string BuildRegistryPrefix(const std::string& nodeType) {
+        return "/thunder/registry/" + nodeType + "/";
+    }
+    /// 构建本节点的 etcd registry key
+    std::string BuildMyRegistryKey() const {
+        return BuildRegistryPrefix(m_nodeType) + m_nodeIp + ":" + std::to_string(m_nodePort);
+    }
+
     /**
      * @brief 发射事件到 Manager 回调（ev 按值传入，支持 std::move）
      */
