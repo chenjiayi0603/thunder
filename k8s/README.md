@@ -114,6 +114,55 @@
 - Key 格式: `/thunder/registry/{TYPE}/{IP}:{PORT}`
 - 类型前缀使路由按需下发成为可能（#38 upstream_types 过滤）
 
+### etcd 地址发现 (业务节点如何知道 etcd 在哪)
+
+业务节点通过配置文件中的 `center.etcd_endpoints` 获知 etcd 地址，不同环境使用不同来源：
+
+```json
+// 每个节点的 JSON 配置中
+{
+  "center": {
+    "connector": "etcd",
+    "etcd_endpoints": "http://thunder-etcd.thunder:2379"
+  }
+}
+```
+
+**k8s 环境 — 依赖 k8s Service DNS**：
+
+```
+  kubectl apply -f etcd-local.yaml
+       │
+       ▼
+  k8s 创建 Service "thunder-etcd" (ClusterIP: 10.43.76.197)
+       │
+       ▼
+  CoreDNS 自动注册:
+    thunder-etcd.thunder.svc.cluster.local → 10.43.76.197
+       │
+       ▼
+  业务 Pod DNS 解析:
+    thunder-etcd.thunder → 10.43.76.197:2379 → etcd Pod
+```
+
+- 无需额外服务发现组件，k8s Service 创建后 DNS 自动生效
+- 配置中写死域名 `thunder-etcd.thunder`，Pod 内 DNS 自动解析到 ClusterIP
+- 格式: `<service-name>.<namespace>` (短域名, k8s 自动补全 `svc.cluster.local`)
+
+**docker-compose 环境 — 直连宿主机端口**：
+
+```
+  network_mode: host
+  etcd 监听 127.0.0.1:2379
+  业务容器直接连 127.0.0.1:2379
+```
+
+| 环境 | etcd_endpoints 值 | 解析方式 |
+|------|------------------|---------|
+| k8s | `thunder-etcd.thunder:2379` | k8s CoreDNS → ClusterIP |
+| docker-compose | `127.0.0.1:2379` | 本地回环 (host 网络) |
+| 裸机多 etcd | `host1:2379,host2:2379` | DNS / hosts 文件 + 自动故障转移 |
+
 ### 跨节点 S2S 路由
 
 ```
@@ -207,6 +256,56 @@ NodePort 映射:
 | 配置注入 | `hostname -I` + sed → `/tmp/conf` | `$POD_IP` env + sed → `/tmp/conf` |
 | 端口暴露 | 直接监听宿主机 | NodePort Service |
 | 冒烟测试 | `pytest --mode=external` (127.0.0.1) | NodePort 或 port-forward |
+
+---
+
+## SO 模块部署 (NFS 共享存储)
+
+所有 Pod 共用同一份 SO 文件，通过 NFS PersistentVolume 挂载:
+
+```yaml
+# 1. PV (一次创建)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: thunder-plugins
+spec:
+  capacity: {storage: 10Gi}
+  accessModes: [ReadOnlyMany]
+  nfs:
+    server: 192.168.3.100
+    path: /data/thunder/plugins
+
+# 2. PVC
+kind: PersistentVolumeClaim
+metadata:
+  name: thunder-plugins
+  namespace: thunder
+spec:
+  accessModes: [ReadOnlyMany]
+  resources: {requests: {storage: 10Gi}}
+
+# 3. Pod 挂载
+containers:
+- volumeMounts:
+  - name: plugins
+    mountPath: /data/thunder/plugins
+volumes:
+- name: plugins
+  persistentVolumeClaim:
+    claimName: thunder-plugins
+```
+
+```
+  NFS: 192.168.3.100:/data/thunder/plugins/
+  ├── HelloHttp/  ModuleHello_v1.so, ModuleHello_v2.so
+  ├── Logic/      CmdGetToken_v2.so, CmdGetToken_v3.so
+  └── Interface/  ModuleInterface_v1.so
+
+  Pod 内: deploy/{TYPE}/plugins → symlink → /data/thunder/plugins/{TYPE}
+```
+
+详见 `docs/architecture/15-so-module-hot-reload-via-etcd.md`
 
 ---
 

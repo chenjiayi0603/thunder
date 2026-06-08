@@ -597,3 +597,346 @@ k8s 冒烟 Hello 6/6 + Interface→Logic 5/5 + etcd 1/1 = 12/12, 路由表仅含
 ### 验证
 - ✅ 单元测试: 6/6 通过（新增 4 个 + 原有 2 个 EtcdHttpConn 无回归）
 - ✅ 全量构建: 0 error
+
+### 设计说明：心跳与故障检测
+
+#### 心跳机制
+
+```
+  Init() 时:
+    POST /v3/lease/grant  ───► etcd 返回 {"ID": "<leaseId>"}
+    {"TTL":10}                   申请到租约 ID, TTL=10s
+
+  每 3 秒 ev_timer 触发 OnKeepAliveTimer():
+    POST /v3/lease/keepalive ──► etcd 返回 {"result":{"TTL":10}}
+    {"ID":"<leaseId>"}             续租成功, TTL 刷新回 10s
+```
+
+- `kLeaseTTL = 10s` — etcd lease 租约有效期
+- `kKeepAliveInterval = 3s` — 续租间隔（3s < 10s，保证在过期前续上）
+- 如果 10s 内未续租 → etcd 自动删除 lease 绑定的所有 key（注册信息丢失）
+
+#### 故障检测链
+
+```
+  AsyncKeepAlive() 发起 POST
+       │
+       ├─ 成功 → m_keepAliveFailCount = 0
+       │
+       └─ 失败 → m_keepAliveFailCount++
+                    │
+                    ├─ 已注册, ≥5 次 (~15s) → TryNextEndpoint()
+                    │     │
+                    │     └─ 关闭旧 EtcdHttpConn → 轮转索引 → 新 EtcdHttpConn → DoRegister
+                    │
+                    └─ 未注册, ≥10 次 (~30s) → TryNextEndpoint()
+                          │
+                          └─ 同上，但会先 LeaseRevoke() 清旧租约
+```
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `kKeepAliveInterval` | 3s | libev 定时器周期 |
+| `kLeaseTTL` | 10s | etcd lease 有效期 |
+| 已注册故障阈值 | 5 次 (~15s) | 连续 5 次 keepalive 失败触发切换 |
+| 未注册故障阈值 | 10 次 (~30s) | 等待更久（可能在注册流程中） |
+
+#### 请求详情
+
+`AsyncLeaseGrant` — 申请租约:
+```
+POST /v3/lease/grant
+Body: {"TTL":10}
+Resp: {"ID":"7587895385139449376","TTL":"10"}
+```
+
+`AsyncKeepAlive` — 续租（心跳）:
+```
+POST /v3/lease/keepalive
+Body: {"ID":"7587895385139449376"}
+Resp: {"result":{"TTL":10}}    ← ok
+      或 "" / 连接失败           ← fail → m_keepAliveFailCount++
+```
+
+### 混沌测试验证 (2026-06-08)
+
+**测试场景**: 双 etcd 端点 + 杀主节点
+
+```
+  配置: etcd_endpoints = "http://127.0.0.1:2379,http://127.0.0.1:2380"
+  初始: Logic → etcd1 (2379) 正常注册 + keepalive
+  混沌: docker stop etcd1
+  预期: ~15s 后自动切换 etcd2 (2380)
+```
+
+**测试结果**:
+
+| 时间 | 事件 |
+|------|------|
+| T+0s | `docker stop etcd1` — etcd1 宕机 |
+| T+3s | keepalive fail ×1 |
+| T+6s | keepalive fail ×2 |
+| T+12s | keepalive fail ×4 |
+| T+15s | keepalive fail ×5 → **触发阈值** |
+| **T+21s** | `TryNextEndpoint — 切换到端点 #1: http://127.0.0.1:2380 (原 #0 不可用)` |
+
+```
+  failCount: 0 → 1 → 2 → 3 → 4 → 5
+                               ↑
+                          触发 TryNextEndpoint()
+                               │
+                          m_iEndpointIdx: 0 → 1
+                          m_http->Close() + 新 EtcdHttpConn
+                          DoRegister() 重注册
+```
+
+**结论**:
+
+| 指标 | 结果 | 说明 |
+|------|------|------|
+| 故障检测 | ✅ 21s | etcd 宕机 → TryNextEndpoint 触发 |
+| 端点轮转 | ✅ #0→#1 | round-robin 正确 |
+| 日志可观测 | ✅ | `切换到端点 #1: ... (原 #0 不可用)` |
+| 回切 | ⚠️ | 需下次故障再轮转，当前不自动回原端点 |
+
+---
+
+## ✅ #41 etcd 配置下发管理缺少 Web 界面
+
+> 2026-06-08 | 记录 | 状态: ✅ 已修复
+
+### 问题
+Thunder 使用 etcd 作为注册中心和服务配置下发通道（config watch），当前仅有 CLI 管理工具（`deploy/scripts/admin.py`），缺少 Web 界面。运维人员无法通过浏览器查看/修改 etcd 中的配置。
+
+### 现状
+
+| 已有能力 | 方式 | 说明 |
+|---------|------|------|
+| 节点查看 | `admin.py nodes` | 列出 `/thunder/registry/` 下所有注册节点 |
+| 路由查看 | `admin.py routes` | 显示 Worker 路由表 |
+| 集群状态 | `admin.py status` | etcd 健康检查 |
+| 配置查改 | `admin.py config` | etcd config key 的 get/set |
+
+### 缺失
+
+| 功能 | 说明 |
+|------|------|
+| Web Dashboard | 浏览器可视化查看节点/路由/配置 |
+| 配置编辑 UI | 表单/JSON 编辑器修改 etcd config |
+| 配置版本管理 | 配置变更历史、回滚 |
+| 节点拓扑图 | 可视化展示各节点类型及连接关系 |
+| 告警/监控面板 | keepalive 失败、节点离线等告警 |
+
+### 已有基础
+
+- `deploy/Interface/confweb/` 目录已预留（`node.sh` 中 `SERVER_CONF_WEB`），但目录为空
+- `admin.py` 已封装 etcd CRUD 操作，可直接作为后端 API
+- Interface 节点已有 HTTP Codec，可增加 `/admin/` 路由提供 REST API + 静态页面
+
+### 建议方案
+
+1. **后端**: Interface 节点新增 `/admin/` 路由，封装 admin.py 功能为 REST API
+2. **前端**: 单页应用（HTML+JS），通过 API 获取数据渲染
+3. **部署**: 静态文件放 `deploy/Interface/confweb/`，Interface 启动时加载
+
+### 实现 (2026-06-08)
+
+**后端** — `ModuleInterface.cpp` 新增 `HttpGetEtcd()` 辅助 + 5 个 admin option:
+| option | 功能 | HTTP 操作 |
+|--------|------|----------|
+| `admin_nodes` | 节点列表 (含 type/ip/port/node_id/worker_num) | `POST /v3/kv/range` on `/thunder/registry/` |
+| `admin_config` | 配置项列表 | `POST /v3/kv/range` on `/thunder/config/` |
+| `admin_config_set` | 新增/修改配置 | `POST /v3/kv/put` |
+| `admin_status` | etcd 健康 + 节点/配置计数 | `GET /version` + range |
+| `admin_html` | 返回管理界面 HTML | — |
+
+**前端** — 内嵌单页 HTML/CSS/JS 仪表盘 (`GetAdminHtml()`):
+- 🖥 **节点** tab — 表格展示注册节点 (type badge, IP:Port, Node ID, Worker 数)
+- ⚙ **配置** tab — 配置项列表 + 在线编辑 + 新增
+- 📊 **状态** tab — etcd 版本/健康/节点数/配置数 + 自动刷新
+- 访问方式：浏览器打开 `http://127.0.0.1:27008/Interface/gentoken` (GET 请求)
+
+### 验证
+- ✅ 单元测试: 22/23 通过 (1 个 shm_queue perf 超时，与本次变更无关)
+- ✅ 回归测试: pytest 20 passed, 1 skipped, 0 failed
+- ✅ admin_nodes API — 返回 5 个注册节点，含完整 type/ip/port/node_id/worker_num
+- ✅ admin_config API — 读取 etcd config，支持 key/value 编辑
+- ✅ admin_config_set API — 写入 etcd `{"hello":"world"}` 并验证成功
+- ✅ admin_status API — etcd_ok:true, version:3.5.21, node_count:5
+- ✅ admin_html — GET 请求返回完整 HTML 管理页面
+
+### 🔜 待改进 (详见 `docs/architecture/14-admin-config-web.md`)
+- 配置入口移到节点行 "⚙ 配置" 按钮，点开直接编辑完整 JSON
+- etcd key 简化为 `/thunder/config/{IP:PORT}` (一个节点一个 key)
+- 去掉分层类型/节点选择器
+
+---
+
+## ✅ #42 Admin 配置管理：缺少版本历史与回滚
+
+> 2026-06-08 | 记录 | 状态: ✅ 已修复
+
+### 问题
+当前 `admin_config_set` 直接覆盖 etcd 配置值，无版本历史记录。运维人员无法查看配置变更历史，也无法回滚到之前的版本。
+
+### 方案
+
+**存储设计**:
+```
+/thunder/config/{key}              ← 当前值 (已有)
+/thunder/config_history/{key}/v{seq}  ← 历史版本 (新增)
+```
+
+每次写配置时：先读旧值 → 存入 history → 再写新值。
+
+**新增 API**:
+
+| option | 功能 | 入参 |
+|--------|------|------|
+| `admin_config_versions` | 列出某 key 的历史版本 | `{"key":"..."}` |
+| `admin_config_rollback` | 回滚到指定版本 | `{"key":"...","version":"v3"}` |
+
+**前端增强**:
+- 编辑改用 modal 对话框 (替代 prompt)
+- 每行配置增加 "历史" 按钮 → 展示版本列表 → 支持回滚
+
+### 实施计划
+1. 改 `admin_config_set` — 写入前保存旧值到 history
+2. 加 `admin_config_versions` — 查询 `/thunder/config_history/{key}/` 前缀
+3. 加 `admin_config_rollback` — 读历史版本 → 写回主 key
+4. 前端 HTML 加 modal 编辑 + 版本历史面板
+5. 单元测试 + 回归测试
+
+### 实现 (2026-06-08)
+
+**写入流程** (`admin_config_set`):
+```
+  POST /Interface/gentoken {"option":"admin_config_set","key":"...","value":"..."}
+      │
+      ├─ 1. etcdPost → GET /thunder/config/{key}  读旧值
+      │
+      ├─ 2. if 旧值存在:
+      │      PUT /thunder/config_history/{key}/v{timestamp_ms}
+      │      value = B64Encode(旧值)
+      │
+      └─ 3. PUT /thunder/config/{key}  写新值
+```
+
+**版本查询** (`admin_config_versions`):
+```
+  POST {"option":"admin_config_versions","key":"/thunder/config/xxx"}
+      │
+      └─ etcdPost → range query /thunder/config_history//thunder/config/xxx/
+         返回: {"versions":[{"version":"v1780918634360","value":"{...}"}, ...]}
+```
+
+**回滚** (`admin_config_rollback`):
+```
+  POST {"option":"admin_config_rollback","key":"...","version":"v17809..."}
+      │
+      ├─ 1. etcdPost → GET /thunder/config_history/{key}/{version}  读历史值
+      │
+      └─ 2. etcdPost → PUT /thunder/config/{key}  写回
+```
+
+**前端 UI 变更**:
+- 编辑改用 **modal 对话框** (替代 `prompt()`): textarea 编辑 JSON, 自动 focus
+- 每行配置增加 **📋 历史按钮** → 弹出版本列表 modal
+- 历史列表显示版本时间戳 + 值预览 + **↩ 回滚按钮** (confirm 确认)
+- 新增配置表单保留 (key input + value textarea)
+
+### 验证
+- ✅ 写 v1→v2→v3: 全部 ok
+- ✅ 版本历史: 2 个版本 (v1, v2) 已入库, v3 为当前值
+- ✅ 回滚 v3→v1: rolled back, 当前值恢复为 `{"ver":1,"msg":"first"}`
+- ✅ pytest 回归: 20 passed, 1 skipped, 0 failed
+- ✅ 单元测试: 22/23 passed (1 个 shm_queue perf 超时)
+
+
+## ✅ #43 Admin 管理界面应解耦 Interface，改用独立静态页面直连 etcd
+
+> 2026-06-08 | 设计讨论 | 状态: ✅ 已修复
+
+### 问题
+当前 admin Web UI 通过 Interface 节点 (`:27008/Interface/gentoken`) 提供 API 和 HTML 页面。Interface 是客户网关（对外提供 GenKey/VerifyKey），不应混入运维管理功能。
+
+### 修复：方案 B — 独立静态 HTML 直连 etcd
+
+```
+  confweb/index.html (纯静态, 13KB)
+       │
+       │ AJAX fetch()
+       ▼
+  etcd:2379  ← 直接调 etcd v3 REST API
+```
+
+**实现**:
+- `deploy/Interface/confweb/index.html` — 独立 HTML，浏览器直接打开
+- JS 内嵌 base64 编解码 (`btoa`/`atob` + `TextEncoder`/`TextDecoder`)
+- 直接调 `POST /v3/kv/range`、`POST /v3/kv/put`、`GET /version`
+- `ModuleInterface.cpp` — 回退到原始版本，仅保留 GenKey/VerifyKey/Echo 业务逻辑
+
+### 验证
+- ✅ GenKey 正常: code:0, token returned
+- ✅ Admin API 已移除: Interface 不再响应 admin_nodes 等
+- ✅ etcd 直连: 5 nodes via direct `/v3/kv/range`
+- ✅ 单元测试: 22/23 passed
+- ✅ 回归测试: 20 passed, 0 failed
+- ✅ 静态页面: `confweb/index.html` 浏览器打开即可使用
+
+---
+
+## 🔵 #45 SO 模块版本管理 via etcd
+
+> 2026-06-09 | 设计 | 状态: 待实现 | 设计文档: `docs/architecture/15-so-module-hot-reload-via-etcd.md`
+
+### 问题
+SO 模块当前仅在启动时从 `conf/*.json` 读取，更新需手动替换文件 + 发信号，无版本管理、无回滚、无法通过 etcd 统一管控。
+
+### 设计
+
+**etcd Key 结构**:
+```
+/thunder/config/
+├── module/                        ← SO 版本 (按节点类型, 同类共用)
+│   ├── HELLO     → {"modules": [{"url_path":"/hello/hello","so_path":"..._v2.so","version":2}]}
+│   ├── LOGIC     → {"modules": [{"cmd":10001,"so_path":"..._v3.so","version":3}]}
+│   └── INTERFACE → {"modules": [{"url_path":"/Interface/gentoken","so_path":"..._v1.so","version":1}]}
+│
+├── 10.42.0.109:27007 → {"https":{...}}    ← 节点 custom (按节点)
+└── 10.42.0.113:27444 → {"https":{...}}
+```
+
+**SO 文件存储** (NFS 共享, 所有节点挂载同一份):
+```
+NFS: /data/thunder/plugins/
+├── HelloHttp/ModuleHello_v1.so, ModuleHello_v2.so
+├── Logic/CmdGetToken_v2.so, CmdGetToken_v3.so
+└── Interface/ModuleInterface_v1.so
+
+k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
+裸机: mount -t nfs 或 symlink
+```
+
+**更新流程**:
+```
+1. 新 SO 放到 NFS 共享目录
+2. Admin 页面 → 类型行 "⚙ 模块" → 改 version + so_path
+3. 保存 → PUT /thunder/config/module/HELLO
+4. Manager watch 检测到变更 → 比对 SO 版本
+5. 版本不同 → GracefulRestartWorker (#2 drain 机制)
+6. 新 Worker dlopen 新版 → 旧 Worker drain → 零中断 ✅
+```
+
+**Admin 页面**:
+```
+🖥 节点 tab:
+类型行 "⚙ 模块" → 管理 /thunder/config/module/{TYPE} → SO 版本 + 回滚
+节点行 "⚙ 配置" → 管理 /thunder/config/{IP:PORT}      → custom JSON
+```
+
+### 待实现
+1. Manager config watch 新增 `/thunder/config/module/` 前缀 + 版本比对
+2. 版本变更 → 自动 GracefulRestartWorker
+3. Admin 页面: 类型行 "⚙ 模块" Modal
+4. k8s: NFS PV/PVC 部署配置

@@ -284,11 +284,97 @@ taskset -c 0-3 wrk -t4 -c100 ...
 
 启停见 **`deploy/deploy.md`**。端口检查：`ss -tlnp | grep 127.0.0.1`。示例：`curl -s -X POST "http://127.0.0.1:27008/Interface/gentoken" -H "Content-Type: application/json" -d '{"option":"GenKey"}'`。
 
+### 配置文件 IP 占位符机制 (#39)
 
-## Center 管理页（统一 /admin）
+所有配置文件使用 `0.0.0.0` 占位符，运行时由启动脚本替换为实际 IP：
 
-浏览器打开（按本机 `access_host` / `access_port` 修改）：
+```json
+// deploy/*/conf/*.json — 源文件使用占位符
+{
+  "access_host": "0.0.0.0",
+  "inner_host": "0.0.0.0"
+}
+```
 
-http://172.24.177.85:26000/admin
+**docker-compose** — 启动命令自动检测主机 IP 并注入：
+```bash
+MY_IP=$(hostname -I | cut -d' ' -f1)
+sed "s|0.0.0.0|$MY_IP|g" conf/*.json > /tmp/conf/*.json
+THUNDER_CONF_DIR=/tmp/conf ./node.sh start
+```
 
-页面模板：`deploy/Center/conf/admin/AdminPage.html`（与运行目录下 `conf/admin/AdminPage.html` 一致）。
+**k8s** — 使用 Pod IP 环境变量：
+```bash
+sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/*.json
+```
+
+所有 `node.sh` 支持 `THUNDER_CONF_DIR` 环境变量覆盖配置目录，无需修改源文件。
+
+### etcd 多端点故障转移 (#40)
+
+配置支持逗号分隔多 etcd 节点，故障时自动轮转：
+
+```json
+// 单节点 (docker-compose)
+"etcd_endpoints": "http://127.0.0.1:2379"
+
+// 多节点 (生产集群, 自动故障转移)
+"etcd_endpoints": "http://etcd-0:2379,etcd-1:2379,etcd-2:2379"
+```
+
+| 场景 | k8s | docker-compose | 裸机多 etcd |
+|------|-----|---------------|------------|
+| 配置 | `thunder-etcd.thunder:2379` | `127.0.0.1:2379` | `host1:2379,host2:2379` |
+| 高可用 | ClusterIP 负载均衡 | 单节点 | 逗号分隔 + 自动轮转 |
+
+故障检测: 3s keepalive 心跳 → 连续 5 次失败 (~15s) → `TryNextEndpoint()` 切换到下一端点。
+
+### etcd Admin 管理界面 (#41, #42, #43)
+
+纯静态 HTML 页面，浏览器直接打开，直连 etcd：
+
+```
+deploy/Interface/confweb/index.html  (13KB)
+     │
+     │ AJAX fetch()
+     ▼
+etcd:2379  ← 直接调 etcd v3 REST API
+```
+
+**功能**:
+- 🖥 **节点** tab — 注册节点列表 (type/IP:Port/Node ID/Worker)
+- ⚙ **配置** tab — etcd 配置读取、modal 编辑、新增
+- 📋 **版本历史** — 每次修改自动保存旧值，支持回滚
+- 📊 **状态** tab — etcd 健康检查 + 10s 自动刷新
+
+**访问方式**:
+
+```bash
+# 本地 — 浏览器直接打开文件
+firefox deploy/Interface/confweb/index.html
+
+# 内网 — 启动 HTTP 文件服务器
+cd deploy/Interface/confweb
+python3 -m http.server 8080 --bind 0.0.0.0 &
+# 内网其他机器访问: http://<本机IP>:8080/index.html?etcd=<本机IP>:2379
+
+# 内网访问需 etcd 改为监听 0.0.0.0:
+# docker-compose.yml → --listen-client-urls=http://0.0.0.0:2379
+
+# k8s — port-forward
+kubectl port-forward -n thunder svc/thunder-etcd 2379:2379
+```
+
+### k8s 部署
+
+详见 **`k8s/README.md`** — 含架构拓扑、服务发现、配置注入、NodePort 网络设计。
+
+```bash
+# 快速部署
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/etcd-local.yaml
+kubectl apply -f k8s/redis.yaml && kubectl apply -f k8s/mysql.yaml
+kubectl apply -f k8s/logic-deployment.yaml
+kubectl apply -f k8s/interface-deployment.yaml
+kubectl apply -f k8s/hello-deployment.yaml
+```
