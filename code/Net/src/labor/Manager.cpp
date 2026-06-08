@@ -1141,6 +1141,18 @@ bool Manager::LoadConf(bool & boChanged)
 		m_oCurrentConf.Get("refresh_interval", m_iRefreshInterval);
 		if (m_iRefreshInterval <= 0) m_iRefreshInterval = 1;  // 默认 1s
 		m_oCurrentConf.Get("worker_beat", m_iWorkerBeat);
+		// 上游路由过滤(#38): 仅下发关注节点类型的路由, 空=全量
+		m_setUpstreamTypes.clear();
+		if (m_oCurrentConf["upstream_types"].IsArray())
+		{
+			int n = m_oCurrentConf["upstream_types"].GetArraySize();
+			for (int i = 0; i < n; ++i)
+			{
+				std::string t;
+				if (m_oCurrentConf["upstream_types"].Get(i, t) && !t.empty())
+					m_setUpstreamTypes.insert(t);
+			}
+		}
 
 		if (m_oLastConf.ToString().length() == 0)//第一次加载处理
 		{
@@ -2610,6 +2622,7 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
         }
         auto p = std::make_unique<EtcdCenterConnector>(centerConf);
         p->SetLogger(GetLogger());  // 注入本节点 logger, 否则 etcd 日志打到无 appender 的硬编码 category 被丢弃 (issus #12)
+        p->SetUpstreamTypes(m_setUpstreamTypes);  // 路由按需下发(#38)
         return p;
     }
 

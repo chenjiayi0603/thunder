@@ -514,13 +514,21 @@ k8s pod 重启换 IP 后, `DoWatchSnapshot` 的 range query 不清空 `m_nodeReg
 
 ---
 
-## 🔵 #38 路由按需下发
+## ✅ #38 路由按需下发
 
-> 2026-06-08 | 记录 | 状态: 待实现
+> 2026-06-08 | 状态: ✅ 已实现
 
 ### 需求
-当前 NodeNotice 全量下发所有节点类型给所有 Worker。应支持按节点类型过滤——例如 Interface 只需要 LOGIC 路由。建议在 conf 中加 `s2s_routes` / `upstream_types` 配置项。
+当前 NodeNotice 全量下发所有节点类型给所有 Worker。应支持按节点类型过滤——例如 Interface 只需要 LOGIC 路由。
 
-### 涉及文件
-- `EtcdCenterConnector.cpp`: 构造 NodeNotice 时按节点类型过滤
+### 实现
+- `ManagerContext.hpp`: 新增 `m_setUpstreamTypes` 成员
+- `Manager.cpp:LoadConf()`: 读取 `upstream_types` JSON 数组
+- `Manager.cpp:CreateCenterConnector()`: 注入 `SetUpstreamTypes()`
+- `EtcdCenterConnector.hpp/cpp`: 新增 `SetUpstreamTypes()` + `m_upstreamTypes` 成员
+- `EtcdCenterConnector.cpp:OnWatchAsync()`: 非空时仅下发关注类型
 - `deploy/Interface/conf/Interface.json`: 添加 `"upstream_types": ["LOGIC"]`
+- `k8s/conf/Interface.json`: 同上
+
+### 验证
+k8s 冒烟 Interface→Logic 5/5 全部通过, 路由表仅含 LOGIC 条目。

@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include "../NetDefine.hpp"
 #include "cmd/Cmd.hpp"
 #include "labor/types/ConnectionAttr.hpp"
@@ -24,6 +25,8 @@ struct ManagerRuntimeContext
     int32 m_iWorkerBeat = 0;  ///< worker进程心跳超时时间，若大于此心跳未收到worker进程上报，则重启worker进程
 
     int32 m_iRefreshInterval = 0;  ///< 刷新Server的间隔周期
+
+    std::unordered_set<std::string> m_setUpstreamTypes;  ///< 本节点关注的上游节点类型(空=全量, #38 路由按需下发)
 
     util::E_CODEC_TYPE m_eCodec = util::CODEC_PB_INTERNAL;  ///< 接入端编解码器
     int32 m_iS2SListenFd = -1;  ///< Server to Server监听文件描述符（Server与Server之间的连接较少，但每个Server的每个Worker均与其他Server的每个Worker相连）

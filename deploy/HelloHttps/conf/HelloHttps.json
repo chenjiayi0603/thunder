@@ -1,9 +1,9 @@
 {
   "node_type": "HELLO",
-  "access_host": "10.42.0.98",
+  "access_host": "10.42.0.100",
   "access_port": 27443,
   "access_codec": 11,
-  "inner_host": "10.42.0.98",
+  "inner_host": "10.42.0.100",
   "inner_port": 27444,
   "center": {
     "connector": "etcd",

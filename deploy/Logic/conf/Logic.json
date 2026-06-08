@@ -1,6 +1,6 @@
 {
     "node_type": "LOGIC",
-    "inner_host": "10.42.0.98",
+    "inner_host": "10.42.0.100",
     "inner_port": 16068,
     "center": {
         "connector": "etcd",

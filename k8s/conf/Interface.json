@@ -40,5 +40,6 @@
             "version": 1
         }
     ],
-    "io_backend": "ev"
+    "io_backend": "ev",
+    "upstream_types": ["LOGIC"]
 }

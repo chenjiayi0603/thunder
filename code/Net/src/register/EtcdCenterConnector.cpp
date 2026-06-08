@@ -819,7 +819,7 @@ void EtcdCenterConnector::OnWatchAsync()
     }
     if (events.empty()) return;
 
-    // 构造全量 NodeNotice
+    // 构造路由快照, 按 upstream_types 过滤(#38)
     NodeNotice notice;
     for (const auto& kv : m_nodeRegistry) {
         const std::string& kvIpPort = kv.first;
@@ -829,6 +829,9 @@ void EtcdCenterConnector::OnWatchAsync()
         if (!oVal.Parse(kv.second)) continue;
         int32_t nid = 0; uint32_t wnum = 0; std::string ntype;
         oVal.Get("node_id", nid); oVal.Get("node_type", ntype); oVal.Get("worker_num", wnum);
+        // 上游类型过滤: empty=全量, 否则仅下发关注类型
+        if (!m_upstreamTypes.empty() && m_upstreamTypes.find(ntype) == m_upstreamTypes.end())
+            continue;
         auto* nr = notice.add_node_arry_reg();
         nr->set_node_ip(kvIpPort.substr(0, c));
         nr->set_node_port(static_cast<uint32_t>(std::stoul(kvIpPort.substr(c + 1))));

@@ -36,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <log4cplus/logger.h>
 #include "labor/CenterConnector.hpp"
@@ -73,6 +74,9 @@ public:
     /// 注入本节点 logger(由 Manager 在创建后调用)。否则 etcd 日志打到无 appender 的
     /// 硬编码 category 被丢弃,非 Logic 节点完全看不到 etcd 连接/watch 日志(issus #12)。
     void SetLogger(const log4cplus::Logger& logger) { m_logger = logger; }
+
+    /// 设置本节点关注的上游节点类型(仅下发这些类型的路由, 空=全量, #38)
+    void SetUpstreamTypes(const std::unordered_set<std::string>& types) { m_upstreamTypes = types; }
 
     // ---- 生命周期 ----
 
@@ -264,6 +268,9 @@ private:
     /// 发现到的全部在线节点 ip:port → registry value(JSON)。
     /// 仅 libev 线程(OnWatchAsync)访问, 无需锁。用于每次变更发"全量"路由快照(issus #9)。
     std::map<std::string, std::string> m_nodeRegistry;
+
+    /// 本节点关注的上游节点类型(空=全量下发, #38 路由按需下发)
+    std::unordered_set<std::string> m_upstreamTypes;
     int                 m_keepAliveFailCount    = 0;   ///< 续租连续失败次数, 用于 etcd 恢复后重注册
 
     ev_timer            m_keepAliveTimer{};     ///< 值成员，无需 new/delete

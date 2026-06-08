@@ -1,9 +1,9 @@
 {
     "node_type": "INTERFACE",
-    "access_host": "10.42.0.98",
+    "access_host": "10.42.0.100",
     "access_port": 27008,
     "access_codec": 3,
-    "inner_host": "10.42.0.98",
+    "inner_host": "10.42.0.100",
     "inner_port": 27009,
     "center": {
         "connector": "etcd",
@@ -40,5 +40,6 @@
             "version": 1
         }
     ],
-    "io_backend": "ev"
+    "io_backend": "ev",
+    "upstream_types": ["LOGIC"]
 }
