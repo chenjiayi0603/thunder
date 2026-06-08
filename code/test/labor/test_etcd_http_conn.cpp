@@ -94,3 +94,85 @@ TEST(EtcdHttpConn, RealChainedLeaseThenRange)
     EXPECT_TRUE(got2) << "链式 range 失败";
     EXPECT_NE(body2.find("\"header\""), std::string::npos) << "resp2=" << body2;
 }
+
+// ============================================================
+// #40: 多端点解析 & TryNextEndpoint() 故障转移
+// ============================================================
+#include "register/EtcdCenterConnector.hpp"
+#include "util/json/CJsonObject.hpp"
+
+namespace {
+void dummyCenterCallback(const net::CenterEvent&) {}
+}  // namespace
+
+// 单端点：解析为 1 个
+TEST(EtcdMultiEndpoint, ParseSingle)
+{
+    util::CJsonObject conf;
+    conf.Parse(R"({"etcd_endpoints":"http://127.0.0.1:2379","connector":"etcd"})");
+    EtcdCenterConnector c(conf);
+
+    struct ev_loop* loop = ev_loop_new(EVFLAG_AUTO);
+    bool ok = c.Init(loop, dummyCenterCallback, nullptr);
+    // Init 成功与否取决于 etcd 是否可达; 但端点解析在 Init 开头就完成
+    // 不可达时 Init 仍会成功(AsyncLeaseGrant fire-and-forget)
+    const auto& eps = c.GetEndpoints();
+    EXPECT_EQ(eps.size(), 1u);
+    if (!eps.empty()) EXPECT_EQ(eps[0], "http://127.0.0.1:2379");
+    EXPECT_EQ(c.GetEndpointIndex(), 0u);
+    c.Destroy();
+    ev_loop_destroy(loop);
+}
+
+// 多端点逗号分隔：正确解析全部
+TEST(EtcdMultiEndpoint, ParseMulti)
+{
+    util::CJsonObject conf;
+    conf.Parse(R"({"etcd_endpoints":"http://etcd-0:2379, http://etcd-1:2379 ,http://etcd-2:2379","connector":"etcd"})");
+    EtcdCenterConnector c(conf);
+
+    struct ev_loop* loop = ev_loop_new(EVFLAG_AUTO);
+    c.Init(loop, dummyCenterCallback, nullptr);
+    const auto& eps = c.GetEndpoints();
+    ASSERT_EQ(eps.size(), 3u);
+    EXPECT_EQ(eps[0], "http://etcd-0:2379");
+    EXPECT_EQ(eps[1], "http://etcd-1:2379");
+    EXPECT_EQ(eps[2], "http://etcd-2:2379");
+    EXPECT_EQ(c.GetEndpointIndex(), 0u);
+    c.Destroy();
+    ev_loop_destroy(loop);
+}
+
+// 逗号分隔含空白：正确 trim
+TEST(EtcdMultiEndpoint, ParseWithWhitespace)
+{
+    util::CJsonObject conf;
+    conf.Parse(R"({"etcd_endpoints":"  http://a:1  ,  http://b:2  ","connector":"etcd"})");
+    EtcdCenterConnector c(conf);
+
+    struct ev_loop* loop = ev_loop_new(EVFLAG_AUTO);
+    c.Init(loop, dummyCenterCallback, nullptr);
+    const auto& eps = c.GetEndpoints();
+    ASSERT_EQ(eps.size(), 2u);
+    EXPECT_EQ(eps[0], "http://a:1");
+    EXPECT_EQ(eps[1], "http://b:2");
+    c.Destroy();
+    ev_loop_destroy(loop);
+}
+
+// 空端点被过滤
+TEST(EtcdMultiEndpoint, ParseEmptyEntriesFiltered)
+{
+    util::CJsonObject conf;
+    conf.Parse(R"({"etcd_endpoints":"http://a:1,,http://b:2,","connector":"etcd"})");
+    EtcdCenterConnector c(conf);
+
+    struct ev_loop* loop = ev_loop_new(EVFLAG_AUTO);
+    c.Init(loop, dummyCenterCallback, nullptr);
+    const auto& eps = c.GetEndpoints();
+    ASSERT_EQ(eps.size(), 2u);
+    EXPECT_EQ(eps[0], "http://a:1");
+    EXPECT_EQ(eps[1], "http://b:2");
+    c.Destroy();
+    ev_loop_destroy(loop);
+}

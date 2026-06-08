@@ -78,6 +78,11 @@ public:
     /// 设置本节点关注的上游节点类型(仅下发这些类型的路由, 空=全量, #38)
     void SetUpstreamTypes(const std::unordered_set<std::string>& types) { m_upstreamTypes = types; }
 
+    /// 返回所有解析到的端点（测试用，#40）
+    const std::vector<std::string>& GetEndpoints() const { return m_vEndpoints; }
+    /// 返回当前端点索引（测试用，#40）
+    size_t GetEndpointIndex() const { return m_iEndpointIdx; }
+
     // ---- 生命周期 ----
 
     /**
@@ -206,6 +211,9 @@ private:
 
     // ---- Watch 功能（Phase C: EtcdWatcher 替代 curl 线程 + ev_async）----
 
+    /// 当前端点不可用时轮转到下一个端点。返回 true 表示已切换。
+    bool TryNextEndpoint();
+
     /// 启动 EtcdWatcher(异步,无线程) + 初始 snapshot 取 revision
     void StartWatch();
     void StopWatch();
@@ -254,7 +262,9 @@ private:
     /// 本节点 logger(由 SetLogger 注入);默认值仅为兜底,正常会被 Manager 覆盖。
     log4cplus::Logger   m_logger          = log4cplus::Logger::getInstance("etcd");
 
-    std::string         m_endpoint;        ///< etcd 地址，如 "http://127.0.0.1:2379"
+    std::string         m_endpoint;        ///< 当前 etcd 地址，如 "http://127.0.0.1:2379"
+    std::vector<std::string> m_vEndpoints; ///< 所有 etcd 端点列表（逗号分隔解析）
+    size_t              m_iEndpointIdx = 0;///< 当前使用的端点索引
 
     /// 异步 HTTP 客户端(Phase B: 替代 curl 短请求)
     std::unique_ptr<EtcdHttpConn> m_http;

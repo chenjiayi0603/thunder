@@ -89,7 +89,7 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
     m_callback  = cb;
     m_user_data = user_data;
 
-    // 解析 etcd_endpoints（多节点逗号分隔，取第一个）
+    // 解析 etcd_endpoints（多节点逗号分隔）
     std::string endpoints;
     m_oConf.Get("etcd_endpoints", endpoints);
     if (endpoints.empty())
@@ -97,14 +97,32 @@ bool EtcdCenterConnector::Init(struct ev_loop* loop,
         ETCD_LOG_ERROR("EtcdCenterConnector::Init — etcd_endpoints 未配置");
         return false;
     }
-    // 取第一个端点
-    auto pos = endpoints.find(',');
-    m_endpoint = (pos != std::string::npos) ? endpoints.substr(0, pos) : endpoints;
-    // 去除首尾空白
-    while (!m_endpoint.empty() && m_endpoint.front() == ' ') m_endpoint.erase(0, 1);
-    while (!m_endpoint.empty() && m_endpoint.back()  == ' ') m_endpoint.pop_back();
+    // 解析所有端点
+    m_vEndpoints.clear();
+    size_t start = 0;
+    while (start < endpoints.size())
+    {
+        auto pos = endpoints.find(',', start);
+        std::string ep = (pos != std::string::npos)
+                         ? endpoints.substr(start, pos - start)
+                         : endpoints.substr(start);
+        // 去除首尾空白
+        while (!ep.empty() && ep.front() == ' ') ep.erase(0, 1);
+        while (!ep.empty() && ep.back()  == ' ') ep.pop_back();
+        if (!ep.empty()) m_vEndpoints.push_back(ep);
+        if (pos == std::string::npos) break;
+        start = pos + 1;
+    }
+    if (m_vEndpoints.empty())
+    {
+        ETCD_LOG_ERROR("EtcdCenterConnector::Init — etcd_endpoints 无有效端点");
+        return false;
+    }
+    m_iEndpointIdx = 0;
+    m_endpoint     = m_vEndpoints[0];
 
-    ETCD_LOG_INFO("EtcdCenterConnector::Init — endpoint=" << m_endpoint);
+    ETCD_LOG_INFO("EtcdCenterConnector::Init — endpoint=" << m_endpoint
+                  << " (共 " << m_vEndpoints.size() << " 个端点)");
 
     // 解析 host:port, 创建异步 HTTP 连接(在 m_loop 上, 用框架 HttpCodec)
     {
@@ -605,6 +623,69 @@ void EtcdCenterConnector::KeepAliveTimerCallback(struct ev_loop* /*loop*/,
     self->OnKeepAliveTimer();
 }
 
+// ============================================================
+// TryNextEndpoint — 多端点故障转移
+// ============================================================
+
+bool EtcdCenterConnector::TryNextEndpoint()
+{
+    if (m_vEndpoints.size() <= 1) return false;
+
+    size_t oldIdx = m_iEndpointIdx;
+    m_iEndpointIdx = (m_iEndpointIdx + 1) % m_vEndpoints.size();
+    m_endpoint     = m_vEndpoints[m_iEndpointIdx];
+
+    // 关闭旧连接, 重新创建 EtcdHttpConn
+    if (m_http)
+    {
+        m_http->Close();
+        m_http.reset();
+    }
+
+    // 解析 host:port
+    auto protoEnd = m_endpoint.find("://");
+    std::string hostPort = (protoEnd != std::string::npos)
+                               ? m_endpoint.substr(protoEnd + 3) : m_endpoint;
+    auto colon = hostPort.rfind(':');
+    if (colon == std::string::npos)
+    {
+        ETCD_LOG_ERROR("TryNextEndpoint — 端点格式错误: " << m_endpoint);
+        m_iEndpointIdx = oldIdx;  // 回退
+        m_endpoint = m_vEndpoints[oldIdx];
+        return false;
+    }
+    std::string host = hostPort.substr(0, colon);
+    int port = 0;
+    try { port = std::stoi(hostPort.substr(colon + 1)); } catch (...) {}
+    if (port <= 0)
+    {
+        ETCD_LOG_ERROR("TryNextEndpoint — 端口解析失败: " << m_endpoint);
+        m_iEndpointIdx = oldIdx;
+        m_endpoint = m_vEndpoints[oldIdx];
+        return false;
+    }
+
+    m_http = std::make_unique<EtcdHttpConn>(m_loop, host, port, m_logger);
+
+    ETCD_LOG_INFO("TryNextEndpoint — 切换到端点 #" << m_iEndpointIdx
+                  << ": " << m_endpoint << " (原 #" << oldIdx << " 不可用)");
+
+    // 切换后立即尝试重注册
+    m_keepAliveFailCount = 0;
+    m_registered = false;
+    m_leaseId = 0;
+    if (!m_nodeIp.empty())
+    {
+        DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+    }
+
+    return true;
+}
+
+// ============================================================
+// OnKeepAliveTimer
+// ============================================================
+
 void EtcdCenterConnector::OnKeepAliveTimer()
 {
     if (m_regInProgress) return;  // 注册进行中,本轮跳过(避免 re-entrancy 竞态)
@@ -627,7 +708,10 @@ void EtcdCenterConnector::OnKeepAliveTimer()
                 if (m_keepAliveFailCount >= 10)
                 {
                     LeaseRevoke(); m_leaseId = 0; m_keepAliveFailCount = 0;
-                    DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+                    if (!TryNextEndpoint())
+                    {
+                        DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+                    }
                 }
             }
         });
@@ -637,6 +721,11 @@ void EtcdCenterConnector::OnKeepAliveTimer()
     AsyncKeepAlive([this](bool ok) {
         if (ok) { m_keepAliveFailCount = 0; }
         else {
+            ++m_keepAliveFailCount;
+            if (m_keepAliveFailCount >= 5 && TryNextEndpoint())
+            {
+                return;  // TryNextEndpoint 内部已触发重注册
+            }
             ETCD_LOG_WARN("OnKeepAliveTimer — 续租失败, ConnectionLost");
             m_registered = false; m_keepAliveFailCount = 1;
             Emit(CenterEventType::ConnectionLost);

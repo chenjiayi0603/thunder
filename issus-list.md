@@ -564,26 +564,36 @@ k8s 冒烟 Hello 6/6 + Interface→Logic 5/5 + etcd 1/1 = 12/12, 路由表仅含
 
 ---
 
-## 🔵 #40 etcd 多节点 endpoints 仅取首个，无故障转移
+## ✅ #40 etcd 多节点 endpoints 仅取首个，无故障转移
 
-> 2026-06-08 | 记录 | 状态: 待实现
+> 2026-06-08 | 记录 | 状态: ✅ 已修复
 
 ### 问题
-`etcd_endpoints` 配置支持逗号分隔多节点格式（如 `"http://etcd-0:2379,etcd-1:2379,etcd-2:2379"`），但 `EtcdCenterConnector::Init()` 中仅取第一个端点（`endpoints.substr(0, pos)`），后续端点不被使用。etcd 节点故障时无法自动切换到备用端点。
+`etcd_endpoints` 配置支持逗号分隔多节点格式，但 `EtcdCenterConnector::Init()` 仅取第一个端点，etcd 节点故障时无法自动切换到备用端点。
 
-### 代码位置
-```cpp
-// EtcdCenterConnector.cpp:102
-m_endpoint = (pos != std::string::npos) ? endpoints.substr(0, pos) : endpoints;
-```
+### 修复内容
 
-### 当前各环境的处理方式
+**端点解析**（`EtcdCenterConnector::Init()`）:
+- 解析所有逗号分隔的端点到 `m_vEndpoints` 列表
+- 去除首尾空白，过滤空条目
+- 日志输出端点总数
 
-| 环境 | etcd_endpoints | 高可用方式 |
-|------|---------------|-----------|
-| k8s | `http://thunder-etcd.thunder:2379` | k8s Service ClusterIP 自动负载均衡到多个 etcd Pod |
-| docker-compose | `http://127.0.0.1:2379` | 单节点 etcd，无需多端点 |
+**故障转移**（`TryNextEndpoint()`）:
+- 当前端点不可用时，轮转到下一个端点（round-robin）
+- 关闭旧连接，新建 `EtcdHttpConn` 到新端点
+- 自动触发重注册流程
 
-### 建议
-- **短期**：生产环境通过 k8s Service / 外部 LB 实现 etcd 高可用，配置中填 LB 地址即可
-- **长期**：`EtcdCenterConnector` 维护端点列表，当前端点连接失败时轮转到下一个（类似 gRPC 的 round_robin）
+**触发条件**（`OnKeepAliveTimer()`）:
+- 未注册状态：续租连续失败 10 次（~30s）→ 尝试下一端点
+- 已注册状态：续租连续失败 5 次（~15s）→ 尝试下一端点
+
+### 代码变更
+| 文件 | 变更 |
+|------|------|
+| `EtcdCenterConnector.hpp` | 新增 `m_vEndpoints` / `m_iEndpointIdx` / `TryNextEndpoint()` / `GetEndpoints()` |
+| `EtcdCenterConnector.cpp` | `Init()` 解析全部端点；`TryNextEndpoint()` 轮转重连 |
+| `test_etcd_http_conn.cpp` | 4 个单元测试：单端点、多端点、trim、空条目过滤 |
+
+### 验证
+- ✅ 单元测试: 6/6 通过（新增 4 个 + 原有 2 个 EtcdHttpConn 无回归）
+- ✅ 全量构建: 0 error
