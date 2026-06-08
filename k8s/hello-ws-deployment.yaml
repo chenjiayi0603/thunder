@@ -33,12 +33,8 @@ spec:
         - |
           apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
           chmod +x ./node.sh 2>/dev/null || true
-          cp /thunder/k8s/conf/HelloWs.json /thunder/deploy/HelloWs/conf/HelloWs.json 2>/dev/null || true
-          for conf in $(find /thunder/deploy -path '*/conf/*.json' 2>/dev/null); do
-            sed -i "s|\"inner_host\": \"[^\"]*\"|\"inner_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
-            sed -i "s|\"access_host\": \"[^\"]*\"|\"access_host\": \"$POD_IP\"|" "$conf" 2>/dev/null || true
-          done
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH ./node.sh start
+          mkdir -p /tmp/conf && cp /thunder/k8s/conf/HelloWs.json /tmp/conf/HelloWs.json && sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/HelloWs.json
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH bin/HelloWs /tmp/conf/HelloWs.json
           exec tail -f /dev/null
         ports:
         - containerPort: 27010

@@ -1,6 +1,6 @@
 {
   "node_type": "HELLO",
-  "access_host": "",
+  "access_host": "0.0.0.0",
   "access_port": 27443,
   "access_codec": 11,
   "inner_host": "0.0.0.0",

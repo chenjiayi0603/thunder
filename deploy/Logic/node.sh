@@ -6,7 +6,7 @@ SERVER_HOME="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 
 SERVER_BIN="${SERVER_HOME}/bin"
-SERVER_CONF="${SERVER_HOME}/conf"
+SERVER_CONF="${THUNDER_CONF_DIR:-${SERVER_HOME}/conf}"
 SERVER_LIB="${SERVER_HOME}/lib"
 SERVER_3LIB="${SERVER_HOME}/../3lib"
 _THUNDER_DEPLOY="$(cd "${SERVER_HOME}/.." && pwd)"

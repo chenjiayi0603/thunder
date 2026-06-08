@@ -538,3 +538,52 @@ k8s pod 重启换 IP 后, `DoWatchSnapshot` 的 range query 不清空 `m_nodeReg
 
 ### 验证
 k8s 冒烟 Hello 6/6 + Interface→Logic 5/5 + etcd 1/1 = 12/12, 路由表仅含 LOGIC 条目。
+
+---
+
+## ✅ #39 配置文件 IP 地址应固定为占位符
+
+> 2026-06-08 | 记录 | 状态: ✅ 已修复
+
+### 问题
+`deploy/*/conf/*.json` 中的 `access_host` / `inner_host` 随每次 k8s pod 重启变换 IP（如 `10.42.0.103`），且通过 hostPath 持久化后容易残留旧 IP 导致服务绑定失败。
+
+### 修复
+- `access_host`：全部改为 `""`（空字符串，绑定所有接口）
+- `inner_host`：全部改为 `"0.0.0.0"`（绑定所有接口）
+- 与 `k8s/conf/*.json` 完全对齐，k8s 部署由 `sed "s|0.0.0.0|$POD_IP|g"` 替换
+- 涉及 13 个配置文件统一修正
+
+### 验证
+- ✅ 全量构建: 0 error
+- ✅ 单元测试: 22/23 通过 (1 个 shm_queue perf 基准测试挂起，与本次变更无关)
+- ✅ 回归测试: pytest 20 passed, 1 skipped, 0 failed (HTTP Hello 4/4, Interface Chain 5/5, Stress 4/4, WS Hello 4/4, MultiCenter 2/2, WRK 1/1)
+- ✅ 冒烟测试: Interface→Logic 跨节点路由链路正常，GenKey/VerifyKey/并发去重全部通过
+- ✅ deploy/k8s 配置文件格式完全一致
+- ⚠️ HTTPS 冒烟 3 个用例 SSL 握手失败（证书不匹配 `127.0.0.1`，预存问题）
+
+---
+
+## 🔵 #40 etcd 多节点 endpoints 仅取首个，无故障转移
+
+> 2026-06-08 | 记录 | 状态: 待实现
+
+### 问题
+`etcd_endpoints` 配置支持逗号分隔多节点格式（如 `"http://etcd-0:2379,etcd-1:2379,etcd-2:2379"`），但 `EtcdCenterConnector::Init()` 中仅取第一个端点（`endpoints.substr(0, pos)`），后续端点不被使用。etcd 节点故障时无法自动切换到备用端点。
+
+### 代码位置
+```cpp
+// EtcdCenterConnector.cpp:102
+m_endpoint = (pos != std::string::npos) ? endpoints.substr(0, pos) : endpoints;
+```
+
+### 当前各环境的处理方式
+
+| 环境 | etcd_endpoints | 高可用方式 |
+|------|---------------|-----------|
+| k8s | `http://thunder-etcd.thunder:2379` | k8s Service ClusterIP 自动负载均衡到多个 etcd Pod |
+| docker-compose | `http://127.0.0.1:2379` | 单节点 etcd，无需多端点 |
+
+### 建议
+- **短期**：生产环境通过 k8s Service / 外部 LB 实现 etcd 高可用，配置中填 LB 地址即可
+- **长期**：`EtcdCenterConnector` 维护端点列表，当前端点连接失败时轮转到下一个（类似 gRPC 的 round_robin）

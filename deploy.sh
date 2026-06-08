@@ -87,7 +87,7 @@ show_help() {
     echo "  admin routes  查看路由表"
     echo "  admin status  etcd 集群健康"
     echo "  admin config  查改配置"
-    echo "  logs          查看所有节点最近日志 (需集群)
+    echo "  logs          查看所有节点最近日志 (需集群)"
     echo "  clean         清理 build/ + Docker + tmp"
     echo ""
     echo "Options:"
