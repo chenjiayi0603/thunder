@@ -135,6 +135,13 @@ public:
      * @param ulSeq       fd 序列号
      */
     virtual void OnConnectionDestroy(const std::string& strIdentify, int iFd, uint32_t ulSeq) = 0;
+
+    /**
+     * @brief 向 Center 写入配置 (etcd: PUT /thunder/config/...)
+     * @param key   配置 key (如 /thunder/config/module/HELLO)
+     * @param value 配置 value (JSON)
+     */
+    virtual void PutConfig(const std::string& key, const std::string& value) { (void)key; (void)value; }
 };
 
 } /* namespace net */

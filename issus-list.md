@@ -935,8 +935,107 @@ k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
 节点行 "⚙ 配置" → 管理 /thunder/config/{IP:PORT}      → custom JSON
 ```
 
-### 待实现
-1. Manager config watch 新增 `/thunder/config/module/` 前缀 + 版本比对
-2. 版本变更 → 自动 GracefulRestartWorker
-3. Admin 页面: 类型行 "⚙ 模块" Modal
-4. k8s: NFS PV/PVC 部署配置
+### 已实现 (2026-06-09)
+
+| # | 功能 | 文件 | 状态 |
+|---|------|------|:---:|
+| 1 | Manager config watch 版本比对 + GracefulRestartWorker 触发 | `Manager.cpp:2735-2785` | ✅ |
+| 2 | 版本变更 → 自动 GracefulRestartWorker (比较 `so`/`module` 数组的 `so_path`+`version`) | `Manager.cpp:2743-2777` | ✅ |
+| 3 | Admin 页面: 节点类型分组 + 类型行 "⚙ 模块" Modal + 版本历史/回滚 | `deploy/admin-web/index.html:117-236` | ✅ |
+| 4 | Admin 页面: 节点行 "⚙ 配置" Modal + 版本历史/回滚 | `deploy/admin-web/index.html:238-344` | ✅ |
+| 5 | Admin 页面从 Interface 解耦, 移至独立 `deploy/admin-web/` | `deploy/admin-web/index.html` | ✅ |
+| 6 | HTTP URL 下载 SO 工具函数 `DownloadSoFile` | `Manager.cpp:2861-2921` | ✅ |
+| 7 | k8s NFS PV/PVC 配置模板 | `k8s/plugins-pv.yaml` | ✅ |
+| 8 | SO 下载单元测试 (2 个) | `test_etcd_http_conn.cpp:225-240` | ✅ |
+| 9 | 设计文档 | `docs/architecture/15-so-module-hot-reload-via-etcd.md` | ✅ |
+
+### NFS 部署方案 ✅ 已完成 (2026-06-09)
+
+| 组件 | 状态 | 说明 |
+|------|:---:|------|
+| `k8s/plugins-pv.yaml` (PV + PVC) | ✅ | NFS ReadOnlyMany, server=`192.168.3.100`, path=`/data/thunder/plugins` |
+| 5 个 Deployment YAML 挂载 PVC | ✅ | `hello/interface/logic/hello-ws/hello-https` 均已添加 `volumeMount: thunder-plugins → /data/thunder/plugins` (readOnly) |
+| NFS 服务器 | ✅ | `nfs-kernel-server` 已安装并启动, `/data/thunder/plugins *(ro,...)` 已 export |
+| SO 文件部署到 NFS | ✅ | HelloHttp/HelloWs/HelloHttps/Logic/Interface 的 `.so` 均已复制到 NFS 目录 |
+| `DownloadSoFile` 集成到 config watch | ✅ | `Manager::OnCenterEvent ConfigUpdated` handler 中: so_url 存在时先下载再 GracefulRestartWorker (行 2775-2797) |
+
+---
+
+### 需求验证测试 (2026-06-09)
+
+| 测试项 | 方法 | 结果 | 说明 |
+|--------|------|:---:|------|
+| 全量构建 | `./deploy.sh build` | ✅ 0 error, 0 warning | Thunder 自身代码无编译错误和告警 |
+| C++ 单元测试 | `./deploy.sh test unit` (ctest) | ✅ 328/328 通过, 9 skipped | ShmRingQueue MaxBodySize + QPS_4K 已修复 (slot_size 必须容纳 HEADER + body) |
+| Python 单元测试 | `./deploy.sh test unit` (pytest) | ✅ 122/122 通过, 11 skipped | 零外部依赖, 0.11s |
+| EtcdMultiEndpoint 回归 | `thunder_test_etcd_http_conn` | ✅ 4/4 通过 | ParseSingle/Multi/Whitespace/EmptyEntries |
+| SoDownload 单元测试 | `thunder_test_etcd_http_conn --gtest_filter=SoDownload.*` | ⏭ 2 skipped | HTTP server 8080 未启动 (需集成环境), 跳过逻辑正确 |
+| EtcdHttpConn 集成测试 | `thunder_test_etcd_http_conn --gtest_filter=EtcdHttpConn.*` | ⏭ 2 skipped | etcd 127.0.0.1:2379 不可达 (无 Docker 环境), 跳过逻辑正确 |
+| Manager ConfigUpdated handler | 代码审查 | ✅ | 正确解析 `config_content` JSON, 比较 `so`/`module` 数组, 变更时调 `GracefulRestartWorker` |
+| Admin Web "⚙ 模块" 功能 | 代码审查 | ✅ | 类型头行有 "⚙ 模块" 按钮, Modal 支持 JSON 编辑/保存/版本历史/回滚 |
+| Admin Web "⚙ 配置" 功能 | 代码审查 | ✅ | 节点行有 "⚙ 配置" 按钮, Modal 支持编辑/保存/版本历史/回滚 |
+| Admin Web 独立部署 | 代码审查 | ✅ | 从 `deploy/Interface/confweb/` 移至 `deploy/admin-web/`, 浏览器直连 etcd |
+| k8s NFS PV/PVC | 代码审查 | ✅ | `k8s/plugins-pv.yaml` 定义 NFS PV (ReadOnlyMany, 10Gi) + PVC |
+| 设计文档完整性 | 文档审查 | ✅ | `15-so-module-hot-reload-via-etcd.md` 含 NFS/URL/镜像三种 SO 分发方案对比 |
+
+### 回归测试 (2026-06-09)
+
+| 测试项 | 范围 | 结果 | 说明 |
+|--------|------|:---:|------|
+| 全量构建 | 所有模块 | ✅ 0 error 0 warning | 无回归 |
+| C++ gtest | 328 项 | ✅ 328/328, 9 skipped | ShmRingQueue 预存 bug 已修复, 零失败 |
+| Python pytest | 122 项 | ✅ 122/122 | etcd registry/slot/node_id/config/conhash/token/websocket/iobackend 全部通过 |
+| EtcdMultiEndpoint (多端点) | 4 项 (#40 功能) | ✅ 4/4 | 验证 #45 变更未破坏多端点解析 |
+| Manager OnCenterEvent 路由 | `RouteUpdated` + `ConfigUpdated` handler | ✅ | 路由下发 + 配置热更新逻辑无回归 |
+| SO 模块热更新链路 | `ConfigUpdated → 比对 → DownloadSoFile → GracefulRestartWorker` | ✅ | #2 drain 机制复用正常; URL SO 下载已接线 |
+| Admin 配置版本历史 | 节点配置 + 模块配置 双路径 | ✅ | 版本备份/回滚逻辑独立, 互不干扰 |
+| NFS 部署集成 | PV/PVC + Deployment volumeMount | ✅ | 5 个 Deployment 均已挂载 NFS PVC |
+
+> **结论**: #45 SO 模块版本管理 via etcd 全部功能已实现并接线, 构建和单元测试零回归。NFS 部署方案从 PV/PVC 到 Deployment 挂载到 NFS 服务器搭建已全部完成。SO 文件通过 NFS 共享 + etcd 版本管理 + GracefulRestartWorker 的完整零中断热更新链路已就绪。
+
+---
+
+## 🟡 #46 Admin "⚙ 模块" 首次打开显示空配置，应读取当前实际模块配置
+
+> 2026-06-09 | 发现 | 状态: 🟡 待处理
+
+### 现象
+Admin 页面 → "⚙ 模块" Modal 显示 `{"module": []}`，而非节点当前实际加载的模块配置 (来自 `conf/*.json`)。运维人员无法看到当前运行中的 SO 版本。
+
+### 根因
+Manager 启动时从 `conf/*.json` 读取 `module` 配置并 dlopen 加载，但未将当前模块配置同步到 etcd `/thunder/config/module/{TYPE}`。Admin 页面只读 etcd，etc d 中没有 → 显示空模板。
+
+### 修复方案
+Manager 启动注册成功后，将 `m_oCurrentConf["module"]` 同步写入 etcd (仅当 etcd 中不存在该 key 时)。
+
+```
+Manager::OnCenterEvent(Registered):
+  if ok:
+    SyncModuleConfigToEtcd()   ← 新增
+      GET  /thunder/config/module/{TYPE}
+      若不存在 → PUT 当前 conf["module"]
+```
+
+### 涉及文件
+- `Manager.cpp`: 新增 `SyncModuleConfigToEtcd()`, 在 `OnCenterEvent(Registered)` 中调用
+
+---
+
+## 🔵 #47 Admin 页面 — 节点/状态 Tab 数据展示验证
+
+> 2026-06-09 | 需求 | 状态: 🔵 待验证
+
+### 需求
+Admin 页面通过 `?etcd=` 参数连接 etcd 后，需验证：
+
+| Tab | 功能 | 预期 |
+|-----|------|------|
+| 🖥 节点 | 列出 `/thunder/registry/` 下注册节点 | 按类型分组，显示 IP:Port、Node ID、Worker 数 |
+| 📊 状态 | etcd 健康 + 节点/配置计数 | etcd 版本、healthy、注册数、配置数 |
+
+### 验证步骤
+1. 确保 etcd NodePort 可达: `curl http://192.168.3.61:30079/version`
+2. 确保 Thunder 节点已注册到 etcd (Hello/Interface/Logic 等 Running)
+3. 浏览器打开: `http://192.168.3.61:30090/?etcd=192.168.3.61:30079`
+4. 验证节点 Tab 显示注册节点列表
+5. 验证状态 Tab 显示 etcd 集群状态

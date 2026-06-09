@@ -431,7 +431,11 @@ static void RunThroughputTest(uint32_t bodySize, const char* label)
 {
     constexpr uint32_t kSlots = 256;
     constexpr uint32_t kMsgs  = 500000;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    // slot_size 必须容纳 HEADER + body, 否则 TryEnqueue 永远被拒导致死循环
+    uint32_t slotSize = bodySize + ShmRingQueue::HEADER_SIZE;
+    if (slotSize < ShmRingQueue::kDefaultSlotSize)
+        slotSize = ShmRingQueue::kDefaultSlotSize;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, slotSize);
     ASSERT_NE(q, nullptr);
 
     std::vector<char> body(bodySize, 'x');
@@ -526,7 +530,8 @@ TEST(ShmRingQueueUnit, MaxBodySize)
 {
     ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
     ASSERT_NE(q, nullptr);
-    EXPECT_EQ(q->MaxBodySize(), 4096u);
+    // MaxBodySize = slot_size - HEADER_SIZE = 4096 - 12 = 4084
+    EXPECT_EQ(q->MaxBodySize(), 4096u - ShmRingQueue::HEADER_SIZE);
     ShmRingQueue::Destroy(q);
 }
 

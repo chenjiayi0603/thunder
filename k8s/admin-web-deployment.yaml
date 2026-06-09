@@ -1,0 +1,50 @@
+# Thunder Admin Web — 管理后台 + SO 上传服务
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-admin-web
+  template:
+    metadata:
+      labels:
+        app: thunder-admin-web
+    spec:
+      containers:
+      - name: app
+        image: python:3.12-alpine
+        imagePullPolicy: IfNotPresent
+        workingDir: /app
+        command: ["python3", "server.py", "--port", "8090"]
+        ports:
+        - containerPort: 8090
+        volumeMounts:
+        - name: admin-web
+          mountPath: /app
+        - name: nfs-plugins
+          mountPath: /data/thunder/plugins
+      volumes:
+      - name: admin-web
+        hostPath:
+          path: /home/tommychen/thunder/deploy/admin-web
+      - name: nfs-plugins
+        hostPath:
+          path: /data/thunder/plugins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+spec:
+  type: NodePort
+  selector:
+    app: thunder-admin-web
+  ports:
+  - port: 8090
+    targetPort: 8090
+    nodePort: 30090

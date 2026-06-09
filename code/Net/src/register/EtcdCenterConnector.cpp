@@ -271,6 +271,38 @@ void EtcdCenterConnector::OnConnectionDestroy(const std::string& /*strIdentify*/
     // etcd 后端无 TCP 连接，空操作
 }
 
+void EtcdCenterConnector::PutConfig(const std::string& key, const std::string& value)
+{
+    if (!m_http)
+    {
+        ETCD_LOG_WARN("PutConfig: http connection not available");
+        return;
+    }
+    // base64 encode key/value for etcd v3 API
+    auto b64 = [](const std::string& s) -> std::string {
+        static const char kTbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string out; out.reserve(((s.size() + 2) / 3) * 4);
+        for (size_t i = 0; i < s.size(); i += 3) {
+            uint32_t n = static_cast<unsigned char>(s[i]) << 16;
+            if (i + 1 < s.size()) n |= static_cast<unsigned char>(s[i+1]) << 8;
+            if (i + 2 < s.size()) n |= static_cast<unsigned char>(s[i+2]);
+            out += kTbl[(n >> 18) & 0x3F];
+            out += kTbl[(n >> 12) & 0x3F];
+            out += (i + 1 < s.size()) ? kTbl[(n >> 6) & 0x3F] : '=';
+            out += (i + 2 < s.size()) ? kTbl[n & 0x3F] : '=';
+        }
+        return out;
+    };
+    std::string body = R"({"key":")" + b64(key) + R"(","value":")" + b64(value) + R"("})";
+    m_http->Post("/v3/kv/put", body,
+        [this, key](bool ok, int /*status*/, const std::string& /*body*/) {
+            if (ok)
+                ETCD_LOG_INFO("PutConfig: " << key << " written");
+            else
+                ETCD_LOG_WARN("PutConfig: " << key << " failed");
+        });
+}
+
 // ============================================================
 // etcd HTTP 基础操作
 // ============================================================

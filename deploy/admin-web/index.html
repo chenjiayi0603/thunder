@@ -56,7 +56,7 @@ input:focus,textarea:focus{outline:none;border-color:#e94560;box-shadow:0 0 0 2p
 // ── etcd 直连配置 ──
 // 支持 URL 参数指定 etcd 地址: ?etcd=192.168.1.100:2379
 const p = new URLSearchParams(location.search);
-const ETCD = 'http://' + (p.get('etcd') || '127.0.0.1:2379');
+const ETCD = 'http://' + (p.get('etcd') || location.hostname + ':2379');
 document.querySelector('.header small').textContent = '直连 ' + ETCD;
 let currentTab = 'nodes';
 
@@ -143,6 +143,11 @@ async function loadNodes() {
 }
 
 // ── SO 模块配置 Modal ──
+// 上传服务器地址 (默认同主机 8090, 可通过 ?upload=host:port 指定)
+const UPLOAD = 'http://' + ((new URLSearchParams(location.search)).get('upload') || (location.hostname + ':8090'));
+// 节点类型 → NFS 子目录映射
+const TYPE_DIR = {HELLO:'HelloHttp',LOGIC:'Logic',INTERFACE:'Interface',HELLO_WS:'HelloWs',HELLO_HTTPS:'HelloHttps'};
+
 function moduleConfigModalHtml() {
   return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:700px"><h3 id="modCfgTitle">⚙ 模块配置</h3>'
     + '<div id="modCfgBody"></div></div></div>';
@@ -162,14 +167,52 @@ async function openModuleConfig(type) {
     key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
   });
   var vc = (hd && hd.kvs) ? hd.kvs.length : 0;
+  var typeDir = TYPE_DIR[type] || type;
   document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' SO 模块';
   var h = '<div style="font-size:11px;color:#999;margin-bottom:4px;font-family:monospace">' + escHtml(cfgKey) + '</div>';
   h += '<div style="font-size:12px;margin-bottom:8px"><b>版本:</b> <span style="color:#e94560">' + (vc > 0 ? 'v' + (vc+1) : 'v1') + ' (当前)</span></div>';
-  h += '<textarea id="modCfgJson" rows="14" style="width:100%;font-family:monospace;font-size:13px">' + escHtml(currentJson) + '</textarea>';
+  // 文件上传区域
+  h += '<div class="card" style="padding:12px;margin-bottom:10px;background:#f8f9ff">';
+  h += '<b style="font-size:13px">📤 上传 SO 到 NFS</b> ';
+  h += '<span style="font-size:11px;color:#999">(' + UPLOAD + '/plugins/' + typeDir + '/)</span><br>';
+  h += '<div class="flex" style="margin-top:6px">';
+  h += '<input type="file" id="soFileInput" accept=".so" style="width:auto;font-family:inherit">';
+  h += '<button class="btn btn-primary btn-sm" onclick="uploadSo(\'' + escJs(type) + '\')">⬆ 上传</button>';
+  h += '</div><div id="uploadStatus" style="font-size:12px;margin-top:4px;color:#999"></div></div>';
+  // JSON 编辑区
+  h += '<textarea id="modCfgJson" rows="12" style="width:100%;font-family:monospace;font-size:13px">' + escHtml(currentJson) + '</textarea>';
   h += '<div class="flex mt12"><button class="btn btn-primary" onclick="saveModuleCfg(\'' + escJs(type) + '\')">💾 保存 (触发 GracefulRestart)</button>';
   h += '<button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')">📋 版本历史 (' + vc + ')</button></div>';
   document.getElementById('modCfgBody').innerHTML = h;
   document.getElementById('modCfgModal').style.display = 'flex';
+}
+
+async function uploadSo(type) {
+  var fileInput = document.getElementById('soFileInput');
+  var status = document.getElementById('uploadStatus');
+  var file = fileInput.files[0];
+  if (!file) { status.innerHTML = '<span style="color:#d32f2f">请先选择 .so 文件</span>'; return; }
+  status.textContent = '上传中...';
+  var typeDir = TYPE_DIR[type] || type;
+  var url = UPLOAD + '/plugins/' + typeDir + '/' + file.name;
+  try {
+    var r = await fetch(url, {method:'PUT', body:file});
+    var j = await r.json();
+    if (j.ok) {
+      status.innerHTML = '<span style="color:#2e7d32">✅ ' + file.name + ' (' + (j.size/1024).toFixed(0) + ' KB) 已上传</span>';
+      // 自动填入 so_path 和 version
+      var ta = document.getElementById('modCfgJson');
+      var cfg = JSON.parse(ta.value);
+      var mod = cfg.module && cfg.module[0] ? cfg.module[0] : (cfg.module = [{}], cfg.module[0]);
+      mod.so_path = 'plugins/' + file.name;
+      mod.version = (mod.version || 0) + 1;
+      ta.value = JSON.stringify(cfg, null, 2);
+    } else {
+      status.innerHTML = '<span style="color:#d32f2f">❌ 上传失败</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:#d32f2f">❌ ' + (e.message || '无法连接上传服务器 (' + UPLOAD + ')') + '</span>';
+  }
 }
 
 async function saveModuleCfg(type) {

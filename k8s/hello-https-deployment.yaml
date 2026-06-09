@@ -42,10 +42,16 @@ spec:
         volumeMounts:
         - name: thunder-repo
           mountPath: /thunder
+        - name: thunder-plugins
+          mountPath: /data/thunder/plugins
+          readOnly: true
       volumes:
       - name: thunder-repo
         hostPath:
           path: /home/tommychen/thunder
+      - name: thunder-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
 ---
 apiVersion: v1
 kind: Service

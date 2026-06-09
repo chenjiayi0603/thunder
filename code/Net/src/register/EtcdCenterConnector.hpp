@@ -126,6 +126,9 @@ public:
 
     void OnConnectionDestroy(const std::string& strIdentify, int iFd, uint32_t ulSeq) override;
 
+    // ---- 配置下发 ----
+    void PutConfig(const std::string& key, const std::string& value) override;
+
 private:
     // ---- etcd HTTP 基础操作 ----
 

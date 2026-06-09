@@ -27,6 +27,9 @@
 #include "cmd/sys_cmd/CmdMgrLogicConfig.hpp"
 #include "cmd/sys_cmd/CmdMgrServerConfig.hpp"
 
+// #45 SO download — forward declaration (defined at end of file)
+static bool DownloadSoFile(const std::string& url, const std::string& outPath);
+
 namespace net
 {
 namespace
@@ -2697,6 +2700,19 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
             LOG4_WARN("OnCenterEvent: register failed, errcode=%d msg=%s",
                       ev.errcode, ev.errmsg.c_str());
         }
+
+        // #46: 注册成功后, 将当前 conf["module"] 同步到 etcd (Admin 页面可查看)
+        if (ev.errcode == 0 && m_pCenterConnector)
+        {
+            auto& modArr = m_oCurrentConf["module"];
+            if (modArr.IsArray() && modArr.GetArraySize() > 0)
+            {
+                std::string cfgKey = "/thunder/config/module/" + m_strNodeType;
+                std::string cfgVal = "{\"module\":" + modArr.ToString() + "}";
+                m_pCenterConnector->PutConfig(cfgKey, cfgVal);
+                LOG4_INFO("OnCenterEvent: sync module config to etcd key=%s", cfgKey.c_str());
+            }
+        }
         break;
 
     case CenterEventType::RouteUpdated:
@@ -2772,8 +2788,29 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
 	                }
 	                if (changed) {
 	                    LOG4_INFO("so/module version changed, trigger graceful restart");
-	                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
-	                        GracefulRestartWorker(i);
+	                    // #45: 通过 URL 下载新 SO 文件 (如果配置了 so_url)
+	                    auto newModArr = newConf["module"];
+	                    bool downloadOk = true;
+	                    for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+	                        std::string soUrl;
+	                        if (newModArr[i].Get("so_url", soUrl) && !soUrl.empty()) {
+	                            std::string soPath;
+	                            newModArr[i].Get("so_path", soPath);
+	                            if (!soPath.empty()) {
+	                                std::string outPath = "deploy/" + m_strNodeType + "/" + soPath;
+	                                if (DownloadSoFile(soUrl, outPath)) {
+	                                    LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
+	                                } else {
+	                                    LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
+	                                    downloadOk = false;
+	                                }
+	                            }
+	                        }
+	                    }
+	                    if (downloadOk) {
+	                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
+	                            GracefulRestartWorker(i);
+	                    }
 	                }
 	            }
             }
