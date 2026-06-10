@@ -995,38 +995,34 @@ k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
 
 ---
 
-## 🟡 #46 Admin "⚙ 模块" 首次打开显示空配置，应读取当前实际模块配置
+## ✅ #46 Admin "⚙ 模块" 首次打开显示空配置
 
-> 2026-06-09 | 发现 | 状态: 🟡 待处理
+> 2026-06-09 | 发现 | 状态: ✅ 已修复
 
 ### 现象
-Admin 页面 → "⚙ 模块" Modal 显示 `{"module": []}`，而非节点当前实际加载的模块配置 (来自 `conf/*.json`)。运维人员无法看到当前运行中的 SO 版本。
+Admin 页面 → "⚙ 模块" Modal 显示空配置，而非节点实际模块配置。
 
-### 根因
-Manager 启动时从 `conf/*.json` 读取 `module` 配置并 dlopen 加载，但未将当前模块配置同步到 etcd `/thunder/config/module/{TYPE}`。Admin 页面只读 etcd，etc d 中没有 → 显示空模板。
-
-### 修复方案
-Manager 启动注册成功后，将 `m_oCurrentConf["module"]` 同步写入 etcd (仅当 etcd 中不存在该 key 时)。
-
-```
-Manager::OnCenterEvent(Registered):
-  if ok:
-    SyncModuleConfigToEtcd()   ← 新增
-      GET  /thunder/config/module/{TYPE}
-      若不存在 → PUT 当前 conf["module"]
-```
-
-### 涉及文件
-- `Manager.cpp`: 新增 `SyncModuleConfigToEtcd()`, 在 `OnCenterEvent(Registered)` 中调用
+### 修复
+1. `CenterConnector.hpp` 新增 `PutConfig(key, value)` 虚方法
+2. `EtcdCenterConnector.cpp` 实现: base64 编码 → POST `/v3/kv/put`
+3. `Manager.cpp` 注册成功后 → 读取 `m_oCurrentConf["module"]` → `PutConfig` 到 etcd
+4. Admin 页面 "⚙ 模块" Modal 简化为: 上传 + SO 列表 + 一键更新 (去掉 JSON 编辑器)
 
 ---
 
-## 🔵 #47 Admin 页面 — 节点/状态 Tab 数据展示验证
+## ✅ #47 Admin 页面 — 节点/状态 Tab + 访问地址
 
-> 2026-06-09 | 需求 | 状态: 🔵 待验证
+> 2026-06-09 | 需求 | 状态: ✅ 已验证
 
-### 需求
-Admin 页面通过 `?etcd=` 参数连接 etcd 后，需验证：
+### 访问方式
+| 环境 | 地址 |
+|------|------|
+| 本地 | `http://127.0.0.1:8090` |
+| k8s | `http://192.168.3.61:30090/?etcd=192.168.3.61:30079` |
+
+`?etcd=` 参数告诉浏览器里的 Admin 页面直连 etcd API（静态 HTML，非服务端转发）。
+
+### 验证项
 
 | Tab | 功能 | 预期 |
 |-----|------|------|
@@ -1039,3 +1035,264 @@ Admin 页面通过 `?etcd=` 参数连接 etcd 后，需验证：
 3. 浏览器打开: `http://192.168.3.61:30090/?etcd=192.168.3.61:30079`
 4. 验证节点 Tab 显示注册节点列表
 5. 验证状态 Tab 显示 etcd 集群状态
+
+---
+
+## ✅ #48 Admin 从 SO 镜像提取文件，选中即更新
+
+> 2026-06-09 | 需求 | 状态: ✅ 已完成
+
+### 背景
+SO 版本通过 Docker 镜像管理（编译机 `docker build` → push 镜像仓库），节点镜像不被替换。Admin 从 SO 镜像中提取 .so 文件，写入本地 + NFS，触发 GracefulRestartWorker 热加载。
+
+### 流程
+```
+编译机                             镜像仓库              Admin Pod
+docker build (含 SO v1,v2,v3)  →  push  →  registry/so-hello:v3
+                                                         │
+                                              docker run --rm registry/so-hello:v3 \
+                                                cat /app/so/ModuleHello_v3.so
+                                                         │
+                                              → /app/plugins/HelloHttp/
+                                              → /data/thunder/plugins/HelloHttp/ (NFS)
+                                              → etcd 更新 → GracefulRestartWorker
+                                              → Worker dlopen 新版 SO
+```
+
+### 方案
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `Dockerfile.so` | SO 镜像模板：`FROM scratch` + `COPY *.so /app/so/` |
+| 2 | `server.py` | `POST /api/so-extract` — `docker run --rm image cat /path` 提取 SO 到本地+NFS |
+| 3 | `index.html` | ⚙ 模块 Modal 加 "📦 SO 镜像" 输入，填镜像名 → 提取 |
+| 4 | `k8s/admin-web-deployment.yaml` | 挂载 `docker.sock` 或配置 registry 凭据 |
+| 5 | 测试 | 提取 SO → 本地+NFS → etcd 更新 → 验证 |
+
+### Admin 页面效果
+```
+📦 SO 镜像提取
+  镜像: [registry/so-hello:v3]
+  文件: [ModuleHello_v3.so]      [⬇ 提取并更新]
+```
+
+### 实现要点
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `server.py` | `POST /api/so-extract` : `docker create` + `get_archive` + `_save_so` 本地+NFS |
+| 2 | `index.html` | 镜像名输入 + 文件名 + 提取按钮 + `extractAndRefresh()` |
+| 3 | `k8s/admin-web-deployment.yaml` | `docker.sock` hostPath + `pip install docker` |
+| 4 | 测试 | 提取 10240 bytes → 本地+NFS ✅ → 回归 328/328 ✅ |
+
+### 验证 (2026-06-09)
+构建 ✅ | Admin 页面 ✅ | SO 提取 ✅ | 本地+NFS 双写 ✅ | etcd ✅ | 回归 328/328 ✅
+
+---
+
+## ✅ #49 SO 镜像从 Registry 拉取 → NFS 分发到各节点
+
+> 2026-06-09 | 需求 | 状态: ✅ 已完成
+
+### 背景
+#48 实现了本地 docker 镜像提取。生产环境需从 Registry 拉取镜像 → 提取 SO → NFS 分发到各节点。
+
+### 流程
+```
+CI/CD                     Registry               Admin Pod               各节点 (k8s Pod)
+docker build            docker push
+so-hello:v3   ────────►  registry/              docker pull             NFS 挂载
+                          so-hello:v3  ←──────  registry/so-hello:v3    /data/thunder/plugins/
+                                                │                       Worker dlopen
+                                                ├── 提取 .so
+                                                ├── → 本地 plugins/
+                                                └── → NFS /data/thunder/plugins/
+                                                         │
+                                              ┌──────────┘
+                                              ▼
+                                        所有节点自动可见
+                                        Admin 改 etcd → GracefulRestartWorker
+```
+
+### 方案
+
+| # | 改动 | 说明 |
+|---|------|------|
+| 1 | `server.py` `_handle_so_extract` | 无本地镜像时 `docker pull` 从 registry 拉取 |
+| 2 | `k8s/admin-web-deployment.yaml` | 配置 registry 凭据 (imagePullSecrets 或 docker config) |
+| 3 | 测试 | registry pull → 提取 → NFS → 所有节点可见 |
+
+### 实现 (2026-06-09)
+- `server.py`: 镜像含 `/` 时自动 `docker pull` → 再 `docker create` + `get_archive` 提取
+- 测试: ✅ 本地镜像提取 | ✅ registry pull | ✅ 回归 328/328
+
+---
+
+## ✅ #50 deploy.sh 支持 SO 镜像构建 + 增量
+
+> 2026-06-09 | 需求 | 状态: ✅ 已完成
+
+### 功能
+- `./deploy.sh build-so all` — 构建所有类型 SO 镜像
+- `./deploy.sh build-so hello` — 单独构建指定类型
+- SHA256 增量检测, SO 无变化自动跳过
+
+### 文件
+- `deploy.sh`: `cmd_build_so()` + `build_one_so_image()`
+- `so-images/{hello,logic,interface,hello-ws,hello-https}/` — SO 存放目录
+
+### 测试
+首次构建 4 镜像 ✅ | 无变化跳过 ✅ | 单独构建 ✅
+
+---
+
+## ✅ #51 节点类型重命名 HELLO_HTTP / HELLO_HTTPS / HELLO_WS + code/Hello 拆分
+
+> 2026-06-09 | 需求 | 状态: ✅ 已完成
+
+### 背景
+三类 Hello 节点 (HTTP/HTTPS/WS) 有不同 SO 模块和底层编解码，应独立管理。
+
+### 重命名
+
+| 旧 | 新 |
+|----|----|
+| HELLO / HelloHttp | HELLO_HTTP / HelloHttp |
+| HELLO_HTTPS / HelloHttps | HELLO_HTTPS / HelloHttps |
+| HELLO_WS / HelloWs | HELLO_WS / HelloWs |
+
+### 改动
+
+| # | 文件 | 内容 |
+|---|------|------|
+| 1 | `admin-web/index.html` | TYPE_DIR 映射更新 |
+| 2 | `admin-web/server.py` | type_dir 映射更新 |
+| 3 | `so-images/` 目录 | `HelloHttp_ModuleHello/` 等 |
+| 4 | `code/Hello/` | 拆分为 `HelloHttp/`, `HelloHttps/`, `HelloWs/` (各自独立编译) |
+| 5 | `deploy.sh` | build-so 适配新命名 |
+| 6 | 文档 | 更新命名规范 |
+
+### 测试
+- deploy.sh build-so 全量 + 增量
+- Admin 页面 TYPE_DIR 映射正确
+- 各节点 SO 提取 → 正确目录
+- C++ 回归 328/328
+
+### 验证 (2026-06-09)
+- deploy.sh build-so 全量 6 镜像 ✅
+- Admin TYPE_DIR: HELLO_HTTP/HELLO_HTTPS/HELLO_WS ✅
+- SO 提取 HELLO_HTTP ✅
+- 回归 328/328 ✅
+
+---
+
+## ✅ #52 Admin "⚙ 模块" — 选中镜像后自动列出文件，去手动输入
+
+> 2026-06-09 | 需求 | 状态: ✅ 已完成
+
+### 需求
+点镜像列表 → 自动填镜像名 + 列出 .so 文件 → 选文件 → 提取。去掉手动输入。
+
+### 当前实现
+- `server.py` `GET /api/so-files?image=xxx` — 返回镜像内 .so 文件列表 ✅
+- `selectSoImage()` — 点镜像自动列文件 ✅
+- 文件名改为 `<select>` 下拉 ✅
+
+### 验证
+Ctrl+F5 刷新 Admin 页面 → ⚙ 模块 → 点镜像 → 文件名自动出现
+
+---
+
+## ✅ #53 Admin "⚙ 模块" 去掉本地上传，只保留镜像提取
+
+> 2026-06-09 | 优化 | 状态: ✅ 已完成
+
+SO 通过镜像管理，去掉浏览器本地上传入口。
+
+---
+
+## ✅ #54 k8s Admin Pod 频繁 Evict/Pending — 磁盘压力
+
+> 2026-06-10 | 发现 | 状态: ✅ 已恢复
+
+### 现象
+Admin Pod 反复被 Evict (disk-pressure)。
+
+### 根因
+docker 镜像累积 (多次 build thunder-admin-web:latest) + 容器残留, 磁盘使用率 > k8s eviction threshold。
+
+### 处理
+```bash
+sudo docker system prune -af
+kubectl -n thunder delete pod --field-selector=status.phase=Failed
+kubectl -n thunder rollout restart deployment thunder-admin-web
+```
+
+### 状态
+✅ 已恢复 (2026-06-10)
+- 是否有其他资源占用
+
+---
+
+## ✅ #55 k8s Admin Pod 启动需手动 pip install docker
+
+> 2026-06-10 | 发现 | 状态: ✅ 已修复
+
+### 根因
+`docker build` 的镜像 containerd 不可见。改用 `pip install -q docker` 启动时自动安装。
+
+### 修复
+部署命令: `sh -c "pip install -q docker; python3 server.py --port 8090"`
+
+### 验证
+Pod 重启后 docker 模块自动可用 ✅
+
+### 修复 (2026-06-10)
+改用 `thunder-admin-web:latest` 镜像 (Dockerfile 预装 docker SDK)。验证: docker OK + 6 images + so-files ✅
+
+---
+
+## ✅ #56 Admin SO 镜像列表按节点类型过滤
+
+> 2026-06-10 | 需求 | 状态: ✅ 已完成
+
+### 现象
+打开 HELLO_HTTP 的 ⚙ 模块，列出所有 6 个 SO 镜像(包括 logic/interface)，应只显示本节点相关。
+
+### 修复
+`loadSoImages` 加 `typeFilter`: HELLO_HTTP→hellohttp, LOGIC→logic, 等。JavaScript 客户端过滤。
+
+### 验证
+页面含 typeFilter ✅ | 回归 328/328 ✅
+
+---
+
+## 🔵 #57 Admin "⚙ 模块" 多个问题
+
+> 2026-06-10 | 发现 | 状态: 🔵 待修复
+
+### 问题 1: 镜像列表加载失败
+打开 HELLO_HTTP ⚙ 模块 → 显示"加载中..." → 超时或(无 so- 镜像)。
+- 可能: docker system prune 清理了镜像
+- 可能: typeFilter 过滤掉了所有镜像
+
+### 问题 2: SO 列表有旧条目
+显示 `ModuleHello.so v1` (旧名称) + `HelloHttp_ModuleHello.so v1` (新名称)。
+- 根因: etcd 中有旧模块配置残留
+- 修复: etcd 配置去重/迁移旧条目
+
+### 问题 3: 更新版本号不递增
+点 🔄 更新 → 版本始终是 v1，不递增。
+- 根因: `extractAndRefresh` / `uploadAndRefresh` 调用 `triggerUpdate(type, path, 1)` — version 写死为 1
+- 修复: 应读取当前版本 +1
+
+### 问题 4: 无执行结果反馈
+点 🔄 更新 → toast "GracefulRestart 触发中" → 不知道是否真的重启。
+- 当前 ectd PUT 成功 = toast 成功，但 Manager 可能不在线
+- 修复: 应轮询 etcd 确认配置写入 + 等待 Manager 状态变化
+
+### 修复 (2026-06-10)
+- 版本号自增: `triggerUpdate` 自动 +1 ✅
+- etcd 旧条目: 全部改为新命名 ✅
+- 镜像列表: SO 重建 ✅
+- testnewfunc: 构建 ✅ | C++ 328/328 ✅ | Python 122/122 ✅ | Admin 200, 6 images ✅ | typeFilter 2 ✅ | 版本自增 1 ✅ | SO 6 镜像 ✅

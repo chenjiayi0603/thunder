@@ -66,8 +66,55 @@ deploy/admin-web/plugins/ ← 上传服务目录 (与 NFS 同步双写)
 | 裸机 | 本地 `deploy/{Type}/plugins/` | dlopen 直接加载 |
 | k8s | NFS `/data/thunder/plugins/` | PV ReadOnlyMany → Pod mountPath |
 | URL 分发 | HTTP `so_url` → DownloadSoFile | Manager 从上传服务器下载 |
+| SO 镜像 | Docker 镜像含 SO → Admin 提取 | 节点镜像不替换, 热加载 |
 
-## 5. 上传服务 (upload_server.py)
+### 方案对比
+
+| | NFS 共享 | Admin SCP 拉取 | SO 镜像提取 (已实现) |
+|------|:---:|:---:|:---:|
+| 编译机操作 | `mount` NFS + `cp` | 配 SSH key + scp | `docker build && push` |
+| 换新编译机 | 挂载一次 | 配一次 authorized_keys | 无需配置 |
+| 多节点同步 | NFS 天然共享 | Admin 拉一份 → NFS 分发 | 同左 |
+| 版本管理 | 文件名区分 | 无 | 镜像 tag 天然版本 |
+| 回滚 | 手动 cp 旧文件 | 无 | 换镜像 tag |
+| CI/CD 集成 | `cp` | `scp` | `docker push` (标准) |
+| 安全性 | 共享目录权限 | 私钥泄露风险 | registry 认证 |
+| 复杂度 | 低 | 中 (加 SSH, 改容器) | 低 (一个 API) |
+| 云端适用 | 需云 NFS (付费) | 需 SSH 可达 | 任何 registry |
+
+> **结论**: 两个都保留。本地开发用 NFS (`cp` 即刷新), 生产/云端用 SO 镜像 (CI/CD + 版本管理)。SCP 不推荐。
+
+## 5. SO 镜像管理 (#48)
+
+SO 打 Docker 镜像做版本管理，节点镜像不替换。Admin 从镜像提取 .so → 热更新。
+
+```
+编译机                                     Admin Pod
+Dockerfile:
+  FROM alpine:3.20          ← 需要基础镜像(create容器用)
+  COPY *.so /app/so/
+  CMD ["/bin/true"]
+
+docker build -t registry/so-hello:v3
+  → docker push  ────────────────────►  POST /api/so-extract
+                                        {image, file, type}
+                                            │
+                                        docker create image
+                                        → get_archive /app/so/file.so
+                                        → tar 解包
+                                        → _save_so() 写本地+NFS
+                                        → etcd PUT
+                                        → Manager GracefulRestartWorker
+```
+
+| 优势 | 说明 |
+|------|------|
+| 版本即镜像 tag | `v1`, `v2`, `v3` 天然版本管理 |
+| 不重建 Pod | 节点镜像不变, SO 热加载 |
+| 回滚简单 | Admin 选旧版本 → 从旧镜像提取 → 热加载 |
+| CI/CD 友好 | `docker build && docker push` 标准流程 |
+
+## 6. 上传服务 (upload_server.py)
 
 ```
 deploy/upload_server.py --port 8090
@@ -79,7 +126,7 @@ deploy/upload_server.py --port 8090
 CORS:  Access-Control-Allow-Origin: *  (支持远程浏览器上传)
 ```
 
-## 6. Admin 页面 (deploy/admin-web/index.html)
+## 7. Admin 页面 (deploy/admin-web/index.html)
 
 ```
 🖥 节点 tab — 按类型分组
@@ -104,7 +151,7 @@ CORS:  Access-Control-Allow-Origin: *  (支持远程浏览器上传)
   └─ Modal: 节点 custom JSON (https 等)
 ```
 
-## 7. 热更新流程 (Manager 自动)
+## 8. 热更新流程 (Manager 自动)
 
 ```
 etcd PUT /thunder/config/module/{TYPE}
@@ -123,7 +170,7 @@ Manager::OnCenterEvent(ConfigUpdated)     Manager.cpp:2735
             └── 旧 Worker EnterDrainMode → 等请求 → exit(0)
 ```
 
-## 8. 回滚
+## 9. 回滚
 
 ```
 Admin → ⚙ 模块 → 📋 版本历史 → 选版本 → ↩ 回滚
@@ -132,7 +179,7 @@ Admin → ⚙ 模块 → 📋 版本历史 → 选版本 → ↩ 回滚
 etcd PUT 旧配置 → Manager 检测变更 → GracefulRestartWorker → 加载旧 SO
 ```
 
-## 9. k8s 多节点支持
+## 10. k8s 多节点支持
 
 ```yaml
 # k8s/plugins-pv.yaml — NFS PersistentVolume
@@ -155,19 +202,21 @@ volumeMounts:
     readOnly: true
 ```
 
-## 10. 关键文件
+## 11. 关键文件
 
 | 文件 | 职责 |
 |------|------|
-| `deploy/upload_server.py` | SO 上传服务 (PUT 接收, 本地+NFS 双写) |
-| `deploy/admin-web/index.html` | Admin 管理页面 (上传/编辑/保存/回滚) |
+| `deploy/admin-web/server.py` | Admin 服务 + SO 上传/提取 (#45, #48) |
+| `deploy/admin-web/index.html` | Admin 页面 (本地上传/镜像提取/模块管理/回滚) |
+| `k8s/admin-web-deployment.yaml` | Admin k8s 部署 (docker.sock + NFS 挂载) |
 | `code/Net/src/labor/Manager.cpp:2735-2805` | ConfigUpdated handler (版本比对+下载+重启) |
 | `code/Net/src/labor/Manager.cpp:2812-2857` | GracefulRestartWorker |
-| `code/Net/src/labor/Manager.cpp:2861-2921` | DownloadSoFile (HTTP 下载) |
+| `code/Net/src/labor/Manager.cpp:2861-2921` | DownloadSoFile (HTTP 下载 SO) |
+| `code/Net/src/register/EtcdCenterConnector.cpp` | PutConfig 同步模块配置到 etcd (#46) |
 | `k8s/plugins-pv.yaml` | NFS PV/PVC |
 | `k8s/*-deployment.yaml` | 各 Deployment 挂载 NFS PVC |
 
-## 11. 安全
+## 12. 安全
 
 | 风险 | 措施 |
 |------|------|
@@ -177,7 +226,7 @@ volumeMounts:
 | 下载失败 | DownloadSoFile 失败 → 跳过重启 |
 | 新 Worker 崩溃 | 保留旧 Worker, 日志告警 |
 
-## 12. 访问地址
+## 13. 访问地址
 
 | 场景 | 地址 | 说明 |
 |------|------|------|
@@ -190,4 +239,133 @@ volumeMounts:
 ```
 http://192.168.3.61:30090/?etcd=192.168.3.61:30079
                          └──── etcd NodePort ────┘
+```
+
+---
+
+## 14. 生产环境完整流程
+
+```
+CI/CD                              Registry                  Admin Pod                  NFS                    各 k8s Pod
+─────                              ────────                  ─────────                  ───                    ─────────
+docker build so-hello:v3
+  │
+  ├── docker push  ──────────────► registry/
+  │                                so-hello:v3
+  │                                    │
+  │                                    │  docker pull (login registry)
+  │                                    ▼
+  │                                Admin Pod
+  │                                ├── 提取 /app/so/*.so
+  │                                ├── 写入本地 plugins/
+  │                                └── 写入 NFS ──────────► /data/thunder/plugins/
+  │                                                              │
+  │                                              ┌───────────────┼───────────────┐
+  │                                              ▼               ▼               ▼
+  │                                          Pod-1 (Hello)  Pod-2 (Hello)  Pod-3 (Hello)
+  │                                          mount: /data/   mount: /data/   mount: /data/
+  │                                          thunder/        thunder/        thunder/
+  │                                          plugins/        plugins/        plugins/
+  │                                              │               │               │
+  │                                              └───────────────┴───────────────┘
+  │                                                      所有节点同时可见
+  │
+  └── Admin 页面: 填镜像名 + 文件名 → 提取 → etcd PUT
+                                              │
+                                         Manager watch
+                                         GracefulRestartWorker
+                                         Worker dlopen (NFS 路径)
+                                         ⚠ NFS 文件即时可见, 但 SO 已加载到进程内存
+                                         必须 GracefulRestart 才能生效
+```
+
+**NFS 原理**: 
+
+```
+Admin Pod                                 各 k8s Pod
+┌──────────┐                             ┌──────────┐  ┌──────────┐
+│ 写入文件  │                             │  只读挂载  │  │  只读挂载  │
+│ /data/   │──── NFS 服务端 ────┬───────│ /data/   │  │ /data/   │
+│ thunder/ │   192.168.3.100   │        │ thunder/ │  │ thunder/ │
+│ plugins/ │                    │        │ plugins/ │  │ plugins/ │
+└──────────┘                    │        └──────────┘  └──────────┘
+                                │
+                                │  同一个文件系统
+                                │  一份数据, 多处可见
+                                │  零拷贝, 无需分发
+```
+
+Admin 写入 NFS = 直接写入 NFS 服务端的磁盘。所有 Pod 通过 k8s PV (ReadOnlyMany) 挂载同一个 NFS 目录，`dlopen("/data/thunder/plugins/xxx.so")` 直接读到最新文件，无需拷贝、无需等待同步。
+
+**⚠ 但 SO 更新后仍需 GracefulRestartWorker**：NFS 上的文件即时可见，但旧的 SO 已通过 `dlopen` 加载到 Worker 进程内存中（代码段、符号表等）。新文件放在磁盘上不会自动替换进程内的旧代码。必须通过 etcd 触发 GracefulRestartWorker → fork 新 Worker → `dlopen` 新 SO → 旧 Worker drain → 退出，才能以进程粒度完成 SO 版本切换。否则新旧 SO 内存布局不同，代码段/符号表无法对齐，直接替换会导致段错误。
+
+```
+原因：
+  NFS 解决文件分发 (文件级别) ✅
+    └─ Admin 写一次 → 所有 Pod 看到新 .so
+
+  但不能解决进程热替换 (进程级别) ❌
+    ┌──────────────────────┐
+    │ Worker 进程地址空间    │
+    │  旧 SO .text  0x7f.. │ ← dlopen 映射, 进程存活期间不变
+    │  旧 SO .data  0x7f.. │ ← 全局变量/状态
+    │  旧 SO 函数指针       │ ← Step 协程持有, dlclose 后悬空
+    │  旧 SO vtable        │ ← 虚函数表地址固定
+    └──────────────────────┘
+    磁盘上的新 SO → 旧进程不可见
+    dlclose + dlopen → 函数指针悬空 → segfault
+
+解决:
+  GracefulRestartWorker → fork 新进程 → dlopen 新 SO (新进程地址空间)
+  → 旧进程 drain → exit → 新进程接管
+```
+
+---
+
+## 15. SO 镜像构建与使用指南
+
+### 目录结构 (一个模块一个目录)
+
+```
+so-images/
+├── Hello_ModuleHello/
+│   └── Hello_ModuleHello.so      ← 编译产出
+├── Hello_ModuleShake/
+│   └── Hello_ModuleShake.so
+├── HelloWs_CmdHello/
+│   └── HelloWs_CmdHello.so
+├── HelloWs_ModuleShake/
+│   └── HelloWs_ModuleShake.so
+├── HelloHttps_ModuleHello/
+│   └── HelloHttps_ModuleHello.so
+├── Logic_CmdGetToken/
+│   └── Logic_CmdGetToken.so
+└── Interface_ModuleInterface/
+    └── Interface_ModuleInterface.so
+```
+
+### 构建 (deploy.sh)
+
+```bash
+./deploy.sh build-so all                        # 全量构建
+./deploy.sh build-so Hello_ModuleHello          # 单独构建一个模块
+```
+
+SO 无变化自动跳过。Dockerfile 自动生成。
+
+```bash
+# 手动构建 + 推送
+cd so-images/Hello_ModuleHello
+docker build -t registry/so-Hello_ModuleHello:v3 .
+docker push registry/so-Hello_ModuleHello:v3
+```
+
+### Admin 操作
+
+```
+1. 打开: http://192.168.3.61:30090/?etcd=192.168.3.61:30079
+2. 🖥 节点 → HELLO [⚙ 模块]
+3. 📦 镜像列表 → 点击 so-Hello_ModuleHello:latest
+4. 填文件名: Hello_ModuleHello.so → ⬇ 提取
+5. 自动: pull → 提取 → NFS → etcd → GracefulRestartWorker
 ```

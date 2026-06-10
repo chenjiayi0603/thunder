@@ -19,7 +19,7 @@ spec:
         image: python:3.12-alpine
         imagePullPolicy: IfNotPresent
         workingDir: /app
-        command: ["python3", "server.py", "--port", "8090"]
+        command: ["sh", "-c", "pip install -q docker; python3 server.py --port 8090"]
         ports:
         - containerPort: 8090
         volumeMounts:
@@ -27,6 +27,8 @@ spec:
           mountPath: /app
         - name: nfs-plugins
           mountPath: /data/thunder/plugins
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
       volumes:
       - name: admin-web
         hostPath:
@@ -34,6 +36,9 @@ spec:
       - name: nfs-plugins
         hostPath:
           path: /data/thunder/plugins
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
 ---
 apiVersion: v1
 kind: Service

@@ -179,8 +179,6 @@ cd tests && python3 -m pytest e2e/ -v -s -m "integration or smoke" --mode=local
 
 #### 1. CPU governor
 
-#### 1. CPU governor
-
 默认 `powersave` 会将空闲核心降到 400MHz，严重影响单线程事件驱动吞吐（Thunder 实测 −9.7%, Nginx 仅 −1.1%，因 Thunder protobuf/JSON 路径对 CPU 频率更敏感）。
 
 ```bash

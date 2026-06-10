@@ -61,7 +61,8 @@ while [[ $# -gt 0 ]]; do
         --keep-docker) KEEP_DOCKER=true ;;
         --verbose) VERBOSE=true ;;
         --help|-h) CMD="help"; break ;;
-        unit|e2e|bench|smoke|regression|perf) MODE="$1" ;;
+        unit|e2e|bench|smoke|regression|perf|all) MODE="$1" ;;
+        Hello_*|Logic_*|Interface_*|HelloWs_*|HelloHttps_*) MODE="$1" ;;
         	*) ;;  # pass-through for admin/extra args
     esac
     shift
@@ -73,6 +74,7 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  build         cmake configure + build + install"
+    echo "  build-so      构建 SO 镜像 (可指定类型: hello/logic/interface/all)"
     echo "  test          全部测试 (unit + e2e)"
     echo "  test unit     C++ + Python 单元测试 (零外部依赖, ~45s)"
     echo "  test e2e      Docker 集成测试 (~3min)"
@@ -162,6 +164,69 @@ cmd_build() {
     }
 
     ok "Build 完成"
+}
+
+# ─── SO 镜像构建 ─────────────────────────────────
+SO_IMAGE_DIR="${PROJECT_DIR}/so-images"
+
+# 扫描 so-images/ 下所有子目录作为 SO 模块名
+get_so_modules() {
+    find "${SO_IMAGE_DIR}" -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sort
+}
+
+cmd_build_so() {
+    local target="${MODE:-all}"
+
+    if [[ "$target" == "all" ]]; then
+        for mod in $(get_so_modules); do
+            build_one_so_module "$mod"
+        done
+    elif [[ -d "${SO_IMAGE_DIR}/${target}" ]]; then
+        build_one_so_module "$target"
+    else
+        warn "SO 模块不存在: ${target}"
+    fi
+    ok "SO 镜像构建完成"
+}
+
+build_one_so_module() {
+    local mod="$1"                        # e.g. Hello_ModuleHello
+    local dir="${SO_IMAGE_DIR}/${mod}"
+    local tag="so-${mod,,}:latest"       # so-hello_modulehello:latest (Docker 需小写)
+    local hash_file="${dir}/.so_hash"
+
+    local so_count=$(find "$dir" -maxdepth 1 -name "*.so" | wc -l)
+    if [[ "$so_count" -eq 0 ]]; then
+        warn "${mod}: 无 .so 文件, 跳过"
+        return
+    fi
+
+    # 增量: SO 无变化则跳过
+    local new_hash=$(sha256sum "$dir"/*.so 2>/dev/null | sha256sum | awk '{print $1}')
+    local old_hash=""
+    [[ -f "$hash_file" ]] && old_hash=$(cat "$hash_file")
+    if [[ "$new_hash" == "$old_hash" ]] && docker image inspect "$tag" &>/dev/null; then
+        echo "  ${tag} (无变化, 跳过)"
+        return
+    fi
+
+    log "构建 SO 镜像: ${tag}"
+
+    cat > "${dir}/Dockerfile" << 'DOCKERFILE'
+FROM alpine:3.20
+COPY *.so /app/so/
+CMD ["/bin/true"]
+DOCKERFILE
+
+    docker build -t "$tag" "$dir" || {
+        err "${mod} 镜像构建失败"
+        return
+    }
+
+    echo "$new_hash" > "$hash_file"
+    local size=$(docker image inspect "$tag" --format '{{.Size}}' 2>/dev/null)
+    size=$(( size / 1024 / 1024 ))
+    ok "  ${tag}  ${size}MB"
 }
 
 # ─── C++ Unit Tests ─────────────────────────────
@@ -428,6 +493,9 @@ case "${CMD}" in
                 cmd_test_e2e
                 ;;
         esac
+        ;;
+    build-so)
+        cmd_build_so
         ;;
     up)
         cmd_up

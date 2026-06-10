@@ -1,6 +1,8 @@
 # Thunder Admin Web — 管理后台 + SO 上传服务
 FROM python:3.12-alpine
 
+RUN pip install docker -q
+
 WORKDIR /app
 
 COPY index.html .

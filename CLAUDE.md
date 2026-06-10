@@ -320,6 +320,7 @@ curl -sI -H "Upgrade: websocket" -H "Connection: Upgrade" \
 - 存在多种理解时列出选项让用户选，不要替用户做决定
 - 发现更简单的方案时主动说出来
 - 把 trade-off 摆出来，不要隐藏困惑
+- **确认方案后才能改代码** — 用户说"好"或"可以"之后再动手，不要边想边改
 
 ### 2. 简洁优先 (Simplicity First)
 
@@ -798,3 +799,77 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 - **有冲突必须手动解决** — 不允许 --skip / --abort / --force
 - **解决冲突后立即验证** — 全量编译 + 冒烟测试
 - **每步提交前确认工作树干净** — git status 检查无遗漏
+
+
+### testnewfunc 触发词 (Thunder)
+
+当用户说"testnewfunc"时，执行以下流程：
+
+**1. 定位改动范围**
+```bash
+git diff HEAD --stat          # 未提交更改
+git log --oneline -3           # 最近提交
+```
+确定影响范围：code/Net | code/Hello* | deploy/admin-web | k8s | build
+
+**2. 全量构建**
+```bash
+./deploy.sh build              # cmake + make + install, 必须 0 error 0 warning
+```
+
+**3. C++ 单元测试**
+```bash
+ctest -j4 --output-on-failure  # 从 build/code/test 目录运行
+```
+- 328 项必须 100% 通过
+- 失败项逐一排查，不允许跳过
+
+**4. Python 单元测试**
+```bash
+cd tests && python -m pytest pytest/ -v
+```
+
+**5. k8s 部署**（涉及 k8s 配置或部署文件时）
+```bash
+kubectl apply -f k8s/
+kubectl -n thunder rollout restart deployment thunder-admin-web
+```
+
+**6. Admin 功能测试**（涉及 Admin 页面改动时）
+- 页面可访问: `curl http://127.0.0.1:30090/index.html` → HTTP 200
+- SO 镜像列表: `curl http://127.0.0.1:30090/api/so-images` → 返回 JSON
+- SO 文件列表: `curl http://IP:8090/api/so-files?image=xxx` → 返回 .so 列表
+- SO 提取: `curl -X POST http://IP:8090/api/so-extract ...` → 本地+NFS 双写验证
+- 页面功能: grep 检查 selectSoImage / extractAndRefresh / triggerUpdate 等函数存在
+- **必须真实请求，禁止 mock**
+
+**7. SO 镜像构建**（涉及 so-images 或 deploy.sh 改动时）
+```bash
+./deploy.sh build-so all        # 全量构建
+./deploy.sh build-so HelloHttp_ModuleHello  # 单独构建
+```
+- 首次构建 → 全量通过
+- 二次构建 → 全部跳过(无变化)
+
+**8. 回归测试（影响范围内的旧功能）**
+- 分析改动影响范围，列出受影响的旧功能
+- 跑受影响的相关测试
+- 不跑全量回归（除非用户明确要求）
+
+**9. 端到端测试（新增/修改的功能）**
+- 针对本次改动的功能点，明确列出测试场景
+- 实际跑通完整链路，展示运行输出
+- 跑不通就说明具体卡在哪，不要跳过
+
+**测试输出要求**:
+- 每个测试项必须展示：命令 + 完整输出 + 结果
+- 通过 ✅ / 失败 ❌ / 跳过 ⏭ 必须明确标注
+- 部分通过 = 未通过，必须列出原因
+- 构建失败、ctest 失败 = 阻塞，先修复再继续
+
+**禁止的测试方式**:
+- ❌ 只跑 ctest 就说"测试通过"
+- ❌ curl 健康检查就说"功能正常"
+- ❌ 改完代码不跑测试就提交
+- ❌ 说"已验证"但不展示完整输出
+- ❌ 部分通过就说"测试通过"

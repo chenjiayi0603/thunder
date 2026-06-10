@@ -1,5 +1,5 @@
 {
-    "node_type": "HELLO",
+    "node_type": "HELLO_HTTP",
     "access_host": "0.0.0.0",
     "access_port": 27006,
     "access_codec": 3,
@@ -31,7 +31,7 @@
     "module": [
         {
             "url_path": "/hello/hello",
-            "so_path": "plugins/ModuleHello.so",
+            "so_path": "plugins/HelloHttp_ModuleHello.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1

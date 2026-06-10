@@ -101,3 +101,39 @@ cmake --build build -j1
 | etcd | HTTP | 2379 |
 | Redis | TCP | 6379 |
 | MySQL | TCP | 3306 |
+
+---
+
+## Admin 管理后台
+
+### 访问地址
+
+| 环境 | 地址 |
+|------|------|
+| 本地 | `http://127.0.0.1:8090` |
+| k8s | `http://192.168.3.61:30090/?etcd=192.168.3.61:30079` |
+
+`?etcd=` 参数告诉浏览器直连 etcd API（静态 HTML，非服务端转发）。默认用页面 IP + `:2379`。
+
+### 启动
+
+```bash
+# 本地
+cd deploy/admin-web && python3 server.py --port 8090
+
+# k8s
+kubectl apply -f k8s/admin-web-deployment.yaml
+```
+
+### SO 模块热更新
+
+```
+Admin → 🖥 节点 → 类型行 [⚙ 模块] → 选镜像 → 选文件 → ⬇ 提取
+```
+流程：docker pull → 提取 SO → NFS 分发 → etcd 更新 → GracefulRestartWorker (零中断)
+
+**构建 SO 镜像**: `./deploy.sh build-so HelloHttp_ModuleHello`
+**回滚**: 📋 版本历史 → 选版本 → ↩ 回滚
+**节点配置**: 节点行 [⚙ 配置] → 编辑 custom JSON
+
+> 详细流程见 `docs/architecture/15-so-module-hot-reload-via-etcd.md`

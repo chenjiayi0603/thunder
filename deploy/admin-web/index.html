@@ -143,116 +143,252 @@ async function loadNodes() {
 }
 
 // ── SO 模块配置 Modal ──
-// 上传服务器地址 (默认同主机 8090, 可通过 ?upload=host:port 指定)
-const UPLOAD = 'http://' + ((new URLSearchParams(location.search)).get('upload') || (location.hostname + ':8090'));
-// 节点类型 → NFS 子目录映射
-const TYPE_DIR = {HELLO:'HelloHttp',LOGIC:'Logic',INTERFACE:'Interface',HELLO_WS:'HelloWs',HELLO_HTTPS:'HelloHttps'};
+const UPLOAD = location.origin;  // 上传和页面同端口, k8s NodePort 直通
+const TYPE_DIR = {HELLO_HTTP:'HelloHttp',HELLO_HTTPS:'HelloHttps',HELLO_WS:'HelloWs',LOGIC:'Logic',INTERFACE:'Interface'};
 
 function moduleConfigModalHtml() {
-  return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:700px"><h3 id="modCfgTitle">⚙ 模块配置</h3>'
-    + '<div id="modCfgBody"></div></div></div>';
+  return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:600px"><h3 id="modCfgTitle">⚙ 模块</h3>'
+    + '<div id="modCfgBody"></div></div></div>'
+    + '<div id="versionModal" class="modal"><div class="modal-content"><h3>📋 版本历史</h3><div id="versionList"></div>'
+    + '<button class="btn mt12" onclick="closeVersionModal()" style="background:#ddd">关闭</button></div></div>';
 }
 
 async function openModuleConfig(type) {
   var cfgKey = '/thunder/config/module/' + type;
+  var typeDir = TYPE_DIR[type] || type;
+  document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' SO 模块';
+
+  // 读当前 etcd 配置
   var d = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
-  var currentJson = '{\n  "module": []\n}';
+  var curMods = [];
   if (d && d.kvs && d.kvs.length > 0) {
-    currentJson = b64Decode(d.kvs[0].value);
-    try { currentJson = JSON.stringify(JSON.parse(currentJson), null, 2); } catch(e) {}
+    try { curMods = JSON.parse(b64Decode(d.kvs[0].value)).module || []; } catch(e) {}
   }
   // 版本历史计数
   var histKey = '/thunder/config_history/module/' + type + '/';
-  var hd = await etcdPost('/v3/kv/range', {
-    key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
-  });
+  var hd = await etcdPost('/v3/kv/range', {key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')});
   var vc = (hd && hd.kvs) ? hd.kvs.length : 0;
-  var typeDir = TYPE_DIR[type] || type;
-  document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' SO 模块';
-  var h = '<div style="font-size:11px;color:#999;margin-bottom:4px;font-family:monospace">' + escHtml(cfgKey) + '</div>';
-  h += '<div style="font-size:12px;margin-bottom:8px"><b>版本:</b> <span style="color:#e94560">' + (vc > 0 ? 'v' + (vc+1) : 'v1') + ' (当前)</span></div>';
-  // 文件上传区域
-  h += '<div class="card" style="padding:12px;margin-bottom:10px;background:#f8f9ff">';
-  h += '<b style="font-size:13px">📤 上传 SO 到 NFS</b> ';
-  h += '<span style="font-size:11px;color:#999">(' + UPLOAD + '/plugins/' + typeDir + '/)</span><br>';
-  h += '<div class="flex" style="margin-top:6px">';
-  h += '<input type="file" id="soFileInput" accept=".so" style="width:auto;font-family:inherit">';
-  h += '<button class="btn btn-primary btn-sm" onclick="uploadSo(\'' + escJs(type) + '\')">⬆ 上传</button>';
-  h += '</div><div id="uploadStatus" style="font-size:12px;margin-top:4px;color:#999"></div></div>';
-  // JSON 编辑区
-  h += '<textarea id="modCfgJson" rows="12" style="width:100%;font-family:monospace;font-size:13px">' + escHtml(currentJson) + '</textarea>';
-  h += '<div class="flex mt12"><button class="btn btn-primary" onclick="saveModuleCfg(\'' + escJs(type) + '\')">💾 保存 (触发 GracefulRestart)</button>';
-  h += '<button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')">📋 版本历史 (' + vc + ')</button></div>';
+
+  // 上传区
+  var h = '<div class="card" style="padding:12px;margin-bottom:12px;background:#f8f9ff">';
+  // SO 镜像提取 — 列表
+  h += '<b style="font-size:13px">📦 SO 镜像列表</b> ';
+  h += '<button class="btn btn-sm" onclick="loadSoImages(\'' + escJs(type) + '\')" style="font-size:11px">🔄 刷新</button><br>';
+  h += '<div id="soImageList" style="max-height:140px;overflow-y:auto;margin:4px 0">加载中...</div>';
+  h += '<div class="flex" style="margin-top:4px">';
+  h += '<input type="text" id="soImageInput" placeholder="或输入: registry/so:v3" style="flex:1;font-family:monospace;font-size:12px">';
+  h += '<select id="soFileInput2" style="width:auto;font-family:monospace;font-size:12px"><option value="">选镜像后自动列出文件</option></select>';
+  h += '<button class="btn btn-primary btn-sm" onclick="extractAndRefresh(\'' + escJs(type) + '\')">⬇ 提取</button>';
+  h += '</div>';
+  h += '</div>';
+  h += '<div id="uploadStatus" style="font-size:12px;margin-top:4px;color:#999"></div>';
+  // 异步加载镜像列表
+  loadSoImages(type);
+
+  // SO 列表 (按 so_path 去重)
+  h += '<table><tr><th>SO 文件</th><th style="width:60px">版本</th><th style="width:80px">操作</th></tr>';
+  if (curMods.length > 0) {
+    var seen = {};
+    curMods.forEach(function(m) {
+      if (seen[m.so_path]) return;
+      seen[m.so_path] = true;
+      h += '<tr>';
+      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(m.so_path || '?') + '</td>';
+      h += '<td><span class="badge badge-ok">v' + (m.version||'?') + '</span></td>';
+      h += '<td><button class="btn btn-primary btn-sm" onclick="triggerUpdate(\'' + escJs(type) + '\',\'' + escJs(m.so_path||'') + '\',' + (m.version||0) + ')">🔄 更新</button></td>';
+      h += '</tr>';
+    });
+  } else {
+    h += '<tr><td colspan="3" style="color:#999">暂无模块 — 请上传 SO 文件</td></tr>';
+  }
+  h += '</table>';
+
+  h += '<div class="flex mt12"><button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')">📋 版本历史 (' + vc + ')</button></div>';
   document.getElementById('modCfgBody').innerHTML = h;
   document.getElementById('modCfgModal').style.display = 'flex';
 }
 
-async function uploadSo(type) {
+async function uploadAndRefresh(type) {
   var fileInput = document.getElementById('soFileInput');
   var status = document.getElementById('uploadStatus');
   var file = fileInput.files[0];
   if (!file) { status.innerHTML = '<span style="color:#d32f2f">请先选择 .so 文件</span>'; return; }
   status.textContent = '上传中...';
   var typeDir = TYPE_DIR[type] || type;
-  var url = UPLOAD + '/plugins/' + typeDir + '/' + file.name;
   try {
-    var r = await fetch(url, {method:'PUT', body:file});
+    var r = await fetch(UPLOAD + '/plugins/' + typeDir + '/' + file.name, {method:'PUT', body:file});
     var j = await r.json();
     if (j.ok) {
-      status.innerHTML = '<span style="color:#2e7d32">✅ ' + file.name + ' (' + (j.size/1024).toFixed(0) + ' KB) 已上传</span>';
-      // 自动填入 so_path 和 version
-      var ta = document.getElementById('modCfgJson');
-      var cfg = JSON.parse(ta.value);
-      var mod = cfg.module && cfg.module[0] ? cfg.module[0] : (cfg.module = [{}], cfg.module[0]);
-      mod.so_path = 'plugins/' + file.name;
-      mod.version = (mod.version || 0) + 1;
-      ta.value = JSON.stringify(cfg, null, 2);
+      status.innerHTML = '<span style="color:#2e7d32">✅ ' + file.name + ' 已上传</span>';
+      // 自动触发更新
+      triggerUpdate(type, 'plugins/' + file.name, 0);
     } else {
       status.innerHTML = '<span style="color:#d32f2f">❌ 上传失败</span>';
     }
   } catch(e) {
-    status.innerHTML = '<span style="color:#d32f2f">❌ ' + (e.message || '无法连接上传服务器 (' + UPLOAD + ')') + '</span>';
+    status.innerHTML = '<span style="color:#d32f2f">❌ ' + (e.message || '无法连接上传服务器') + '</span>';
   }
 }
 
-async function saveModuleCfg(type) {
-  var cfgKey = '/thunder/config/module/' + type;
-  var newVal = document.getElementById('modCfgJson').value;
-  try { JSON.parse(newVal); } catch(e) { toast('JSON 格式错误', false); return; }
-  // 备份旧值
-  var oldR = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
-  if (oldR && oldR.kvs && oldR.kvs.length > 0) {
-    var oldVal = b64Decode(oldR.kvs[0].value);
-    if (oldVal && oldVal !== newVal) {
-      await etcdPost('/v3/kv/put', {
-        key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
-        value: b64Encode(oldVal)
-      });
+async function loadSoImages(type) {
+  var list = document.getElementById('soImageList');
+  if (!list) { console.log('soImageList not found'); return; }
+  list.innerHTML = '加载中...';
+  // 超时兜底: 3s 后仍显示"加载中..."则报错
+  var timer = setTimeout(function(){ list.innerHTML = '<span style="color:#999">(超时, 检查网络)</span>'; }, 4000);
+  try {
+    var r = await fetch(UPLOAD + '/api/so-images');
+    clearTimeout(timer);
+    var j = await r.json();
+    var images = j.images || [];
+    // 按节点类型过滤: HELLO_HTTP→hellohttp, LOGIC→logic, ...
+    var typeFilter = {HELLO_HTTP:'hellohttp_',HELLO_HTTPS:'hellohttps_',HELLO_WS:'hellows_',
+                      LOGIC:'logic_',INTERFACE:'interface_'}[type] || type.toLowerCase();
+    images = images.filter(function(img) {
+      return img.tag.toLowerCase().indexOf(typeFilter) >= 0;
+    });
+    if (images.length === 0) {
+      list.innerHTML = '<span style="color:#999">(无 so- 镜像)</span>';
+      return;
     }
+    var h = '<table style="font-size:12px;width:100%">';
+    images.forEach(function(img, i) {
+      var full = img.tag, size = (img.size/1024/1024).toFixed(1);
+      var name = full, reg = '';
+      var slash = full.lastIndexOf('/');
+      if (slash > 0) { reg = full.substring(0, slash); name = full.substring(slash+1); }
+      var act = i === 0 ? ' style="background:#f0f4ff"' : '';
+      h += '<tr' + act + ' onclick="selectSoImage(\'' + escJs(full) + '\')" style="cursor:pointer">';
+      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(name) + '</td>';
+      h += '<td style="width:60px;color:#999">' + size + 'MB</td>';
+      h += '</tr>';
+    });
+    h += '</table>';
+    list.innerHTML = h;
+  } catch(e) {
+    clearTimeout(timer);
+    list.innerHTML = '<span style="color:#999">(docker API 不可用: ' + (e.message||'') + ')</span>';
   }
-  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(newVal)});
-  if (r) { toast(type + ' 模块版本已更新, GracefulRestart 触发中', true); document.getElementById('modCfgModal').style.display = 'none'; }
-  else { toast('保存失败', false); }
 }
 
+async function selectSoImage(full) {
+  document.getElementById('soImageInput').value = full;
+  var sel = document.getElementById('soFileInput2');
+  sel.innerHTML = '<option>加载中...</option>';
+  try {
+    var r = await fetch(UPLOAD + '/api/so-files?image=' + encodeURIComponent(full));
+    var j = await r.json();
+    var files = j.files || [];
+    if (files.length === 0) {
+      sel.innerHTML = '<option value="">(无 .so 文件)</option>';
+      return;
+    }
+    var h = '';
+    files.forEach(function(f) {
+      h += '<option value="' + escHtml(f) + '">' + escHtml(f) + '</option>';
+    });
+    sel.innerHTML = h;
+  } catch(e) {
+    sel.innerHTML = '<option value="">(获取失败)</option>';
+  }
+}
+
+async function extractAndRefresh(type) {
+  var image = document.getElementById('soImageInput').value.trim();
+  var file = document.getElementById('soFileInput2').value.trim();
+  var status = document.getElementById('uploadStatus');
+  if (!image || !file) { status.innerHTML = '<span style="color:#d32f2f">请填镜像名和文件名</span>'; return; }
+  status.textContent = '提取中...';
+  try {
+    var r = await fetch(UPLOAD + '/api/so-extract', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image: image, file: file, type: type})
+    });
+    var j = await r.json();
+    if (j.ok) {
+      status.innerHTML = '<span style="color:#2e7d32">✅ ' + file + ' 已提取 (' + (j.size/1024).toFixed(0) + ' KB)</span>';
+      triggerUpdate(type, 'plugins/' + file, 0);
+    } else {
+      status.innerHTML = '<span style="color:#d32f2f">❌ 提取失败</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:#d32f2f">❌ ' + (e.message || '提取失败') + '</span>';
+  }
+}
+
+async function fetchAndRefresh(type) {
+  var urlInput = document.getElementById('soUrlInput');
+  var status = document.getElementById('uploadStatus');
+  var url = urlInput.value.trim();
+  if (!url) { status.innerHTML = '<span style="color:#d32f2f">请输入 SO 文件 URL</span>'; return; }
+  var fn = url.split('/').pop();
+  var typeDir = TYPE_DIR[type] || type;
+  status.textContent = '拉取中...';
+  try {
+    var r = await fetch(UPLOAD + '/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url, path: 'plugins/' + typeDir + '/' + fn})
+    });
+    var j = await r.json();
+    if (j.ok) {
+      status.innerHTML = '<span style="color:#2e7d32">✅ ' + fn + ' 已拉取 (' + (j.size/1024).toFixed(0) + ' KB)</span>';
+      triggerUpdate(type, 'plugins/' + fn, 1);
+    } else {
+      status.innerHTML = '<span style="color:#d32f2f">❌ 拉取失败</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:#d32f2f">❌ ' + (e.message || '远端不可达') + '</span>';
+  }
+}
+
+async function triggerUpdate(type, soPath, version) {
+  var cfgKey = '/thunder/config/module/' + type;
+  // 读当前配置
+  var d = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
+  var curCfg = {module: []};
+  if (d && d.kvs && d.kvs.length > 0) {
+    try { curCfg = JSON.parse(b64Decode(d.kvs[0].value)); } catch(e) {}
+  }
+  // 备份旧值
+  var oldVal = JSON.stringify(curCfg);
+  await etcdPost('/v3/kv/put', {
+    key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
+    value: b64Encode(oldVal)
+  });
+  // 更新 so_path 和 version (version=0 时自动+1)
+  var found = false, newVer = version || 1;
+  curCfg.module.forEach(function(m) {
+    if (m.so_path === soPath) { newVer = (m.version || 0) + 1; m.version = newVer; found = true; }
+  });
+  if (!found) curCfg.module.push({so_path: soPath, version: newVer});
+  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(JSON.stringify(curCfg))});
+  if (r) {
+    toast(type + ': ' + soPath + ' → v' + version + ' | GracefulRestart 触发中', true);
+    document.getElementById('modCfgModal').style.display = 'none';
+  } else {
+    toast('更新失败', false);
+  }
+}
+
+// 版本历史 & 回滚 (复用节点配置 Modal 的 showVersions/rollback)
 async function showModuleVersions(type) {
   var cfgKey = '/thunder/config/module/' + type;
   var histKey = '/thunder/config_history/module/' + type + '/';
   var d = await etcdPost('/v3/kv/range', {
     key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
   });
-  var h = '<p style="font-size:12px">' + escHtml(type) + ' 模块版本历史</p><hr class="mb8">';
+  var h = '<p style="font-size:12px">' + escHtml(type) + ' 版本历史</p><hr class="mb8">';
   if (d && d.kvs && d.kvs.length > 0) {
-    h += '<table><tr><th>版本</th><th>时间</th><th>预览</th><th>操作</th></tr>';
+    h += '<table><tr><th>版本</th><th>时间</th><th>内容</th><th>操作</th></tr>';
     for (var i = d.kvs.length - 1; i >= 0; i--) {
-      var kv = d.kvs[i];
-      var vk = b64Decode(kv.key).replace(histKey, '');
-      var ts = parseInt(vk.substring(1));
-      var val = b64Decode(kv.value);
+      var kv = d.kvs[i], vk = b64Decode(kv.key).replace(histKey,''), vv = b64Decode(kv.value);
+      var ts = parseInt(vk.substring(1)), dt = new Date(ts).toLocaleString();
       h += '<tr><td style="font-size:11px;font-family:monospace">' + escHtml(vk) + '</td>';
-      h += '<td style="font-size:11px">' + new Date(ts).toLocaleString() + '</td>';
-      h += '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(val.substring(0,50)) + '</td>';
-      h += '<td><button class="btn btn-primary btn-sm" onclick="rollbackModuleCfg(\'' + escJs(type) + '\',\'' + escJs(val) + '\')">↩ 回滚</button></td></tr>';
+      h += '<td style="font-size:11px">' + dt + '</td>';
+      h += '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(vv) + '</td>';
+      h += '<td><button class="btn btn-primary btn-sm" onclick="triggerRollback(\'' + escJs(type) + '\',\'' + escJs(vv) + '\')">↩ 回滚</button></td></tr>';
     }
     h += '</table>';
   } else { h += '<p style="color:#999">暂无历史版本</p>'; }
@@ -260,23 +396,22 @@ async function showModuleVersions(type) {
   document.getElementById('versionModal').style.display = 'flex';
 }
 
-async function rollbackModuleCfg(type, oldVal) {
-  if (!confirm('确要回滚 SO 模块版本？此操作将触发 GracefulRestart。')) return;
+async function triggerRollback(type, oldVal) {
+  if (!confirm('确要回滚？此操作将触发 GracefulRestart。')) return;
   var cfgKey = '/thunder/config/module/' + type;
   var cur = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
   if (cur && cur.kvs && cur.kvs.length > 0) {
-    var cv = b64Decode(cur.kvs[0].value);
-    if (cv !== oldVal) {
-      await etcdPost('/v3/kv/put', {
-        key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
-        value: b64Encode(cv)
-      });
-    }
+    await etcdPost('/v3/kv/put', {
+      key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
+      value: b64Encode(b64Decode(cur.kvs[0].value))
+    });
   }
   var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(oldVal)});
-  if (r) { toast('已回滚, GracefulRestart 触发中', true); closeVersionModal(); }
+  if (r) { toast(type + ' 已回滚', true); closeVersionModal(); }
   else { toast('回滚失败', false); }
 }
+
+function closeVersionModal() { document.getElementById('versionModal').style.display = 'none'; }
 
 // ── 节点配置 Modal ──
 function nodeConfigModalHtml() {
@@ -491,7 +626,6 @@ function openEditModal(key, val) {
   document.getElementById('editVal').focus();
 }
 function closeModal() { document.getElementById('editModal').style.display = 'none'; }
-function closeVersionModal() { document.getElementById('versionModal').style.display = 'none'; }
 
 async function saveEdit() {
   const key = document.getElementById('editKey').value;

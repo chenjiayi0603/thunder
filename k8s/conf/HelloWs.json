@@ -1,5 +1,5 @@
 {
-    "node_type": "HELLO",
+    "node_type": "HELLO_WS",
     "access_host": "0.0.0.0",
     "access_port": 27010,
     "access_codec": 5,

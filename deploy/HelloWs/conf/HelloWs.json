@@ -1,5 +1,5 @@
 {
-    "node_type": "HELLO",
+    "node_type": "HELLO_WS",
     "access_host": "0.0.0.0",
     "access_port": 27010,
     "access_codec": 5,
@@ -33,7 +33,7 @@
     "so": [
         {
             "cmd": 20001,
-            "so_path": "plugins/CmdHello.so",
+            "so_path": "plugins/HelloWs_CmdHello.so",
             "entrance_symbol": "create",
             "process_num": 0,
             "load": true,
@@ -43,7 +43,7 @@
     "module": [
         {
             "url_path": "/hello/shake",
-            "so_path": "plugins/ModuleShake.so",
+            "so_path": "plugins/HelloWs_ModuleShake.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1
