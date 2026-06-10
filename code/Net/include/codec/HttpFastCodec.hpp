@@ -31,6 +31,9 @@ namespace net {
 bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
         HttpMsg& oHttpMsg, size_t& consumed);
 
+bool TryFastDecodeHttpResponse(const char* raw, size_t rawLen,
+        HttpMsg& oHttpMsg, size_t& consumed);
+
 // ========== Encode ==========
 
 /**

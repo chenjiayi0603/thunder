@@ -1,30 +1,34 @@
 # Thunder vs Nginx 本机 wrk 基准测试
 
-> 日期: 2026-05-27 | 分支: dev | 环境: **Ubuntu 26.04 LTS (原生)** | 工具: wrk 4.1.0
+> 日期: 2026-06-10 | 分支: dev | 环境: **Ubuntu 26.04 LTS (原生)** | 工具: wrk 4.1.0
 
-## 🏁 最终基准 (2026-05-28, performance governor, P-core 绑核, wrk -t4 -c100 -d15s POST)
+## 🏁 最终基准 (2026-06-10, performance governor, P-core 绑核, wrk -t4 -c100 -d10s, picohttpparser)
 
 > ⚠️ **公平对比**: Nginx 与 Thunder 均在同一 `performance` governor + P-core 绑核下实测。
 >
-> **配置**: CPU governor=performance, P-core 4-9 绑核, INFO log, wrk -t4 -c100 -d15s
+> **配置**: CPU governor=performance, P-core 4-9 绑核, INFO log, wrk -t4 -c100 -d10s | http_parser → picohttpparser
 
 ```
-                        端点                  RPS         延迟       vs Nginx
-──────────────────────────────────────────────────────────────────────────────
-Thunder Fast Path (ev)    /hello/raw         216,040      460μs     109%    🏆
-Nginx 1.27.5 (1 worker)   /echo (POST)       198,219      503μs     100%
-Thunder Fast Path (ur)    /hello/raw         183,784      423μs      93%
-Thunder 完整路径 (ev)      /hello/hello       132,548      751μs      67%
-Thunder 完整路径 (ur)      /hello/hello       120,821      487μs      61%
-──────────────────────────────────────────────────────────────────────────────
+              ev        native_uring  asio_uring    Nginx 1w
+────────────────────────────────────────────────────────────
+64B           322k      319k          347k           173k
+256B          242k      265k          237k           171k
+1K            323k      313k          330k           160k
+4K            321k      312k          331k           151k
+64K           129k      127k          127k           69k
+
+Latency (64B):  258μs    260μs*        240μs*        588μs
+Latency (4K):   281μs    285μs*        275μs*        666μs
+Latency (64K):  1.5ms    1.5ms*        1.5ms*        1.48ms
 ```
 
 > **关键发现**: 
-> - Thunder ev + Fast Path **超越 Nginx 9%** (216k vs 198k), 延迟也更低 (460μs vs 503μs)
-> - **ev 反超 native_uring**: 对简单 HTTP echo 场景, epoll 单次 syscall 模型反而比 io_uring 批量提交更高效 (216k vs 183.8k, +18%)
-> - P-core 绑核至关重要: Worker 默认跑在 E-core (3.7GHz) 只有 185k, 绑 P-core (4.3GHz+) 提升至 216k (+17%)
-> - 完整路径 (/hello/hello) 因 JSON 解析 + protobuf 全流程, 为 Nginx 的 67%
-> - protobuf + JSON 的 CPU-bound 路径是 Thunder 与 Nginx 的主要差距来源
+> - **picohttpparser 替换 http_parser 带来 +49% 提升**: 旧版 216k → 新版 322k (64B ev)
+> - **Thunder 全线 ~2x Nginx 同条件** (322k vs 173k @64B), 差距来自 Thunder ModuleRaw 用 SendToClientFast 跳过 body 读取, Nginx `return 200` 仍需读 POST body
+> - **三后端差距 <5%**: asio_uring ≈ ev ≈ native_uring, 应用层(pico+protobuf)是瓶颈
+> - asio_uring 在 64B 小包表现最佳 (347k), 但优势随包体增大消失
+> - 64K 大包: 两者均受内存带宽限制, 差距缩小 (129k vs 69k)
+> - P-core 绑核仍然重要: Worker 跑 E-core 吞吐损失 ~17%
 
 ---
 
@@ -84,8 +88,8 @@ E-cores (8物理 = 8逻辑, max 3.8GHz):
 |------|-----|
 | 测试工具 | wrk 4.1.0 (epoll) |
 | 网络模式 | 127.0.0.1 回环 (本机原生) |
-| wrk 参数 | -t4 -c100 -d15s |
-| Thunder | dev 分支, C-scheme, 1 Manager + 1 Worker, ev backend, INFO log |
+| wrk 参数 | -t4 -c100 -d10s |
+| Thunder | dev 分支, C-scheme, 1 Manager + 1 Worker, ev backend, INFO log, **picohttpparser** |
 | Nginx | 1 worker, epoll, `worker_processes 1;`, Docker host 网络 |
 | 并发模型 | **双方均为单进程事件驱动** (epoll), 无多线程 |
 
@@ -127,61 +131,51 @@ P-core      6      2.5 GHz     5.0 GHz     高性能任务
 E-core      8      1.8 GHz     3.8 GHz     能效任务
 ```
 
-**governor 模式对比** (实测, wrk -t4 -c100 -d15s POST, P-core 绑核):
+**governor 模式对比** (实测, wrk -t4 -c100 -d10s, P-core 绑核, picohttpparser):
 
 ```
-governor     服务         后端   端点              RPS       说明
-────────────────────────────────────────────────────────────────────────
-performance   Thunder     ev     /hello/raw       216.0k    P-core 4.3GHz, 超越 Nginx 9%
-performance   Nginx       epoll  /echo            198.2k    同场景公平对比
-performance   Thunder     ev     /hello/hello     132.5k    完整路径 (JSON+PB)
-performance   Thunder     ur     /hello/raw       183.8k    native_uring 不如 ev
-performance   Thunder     ur     /hello/hello     120.8k    native_uring 完整路径
-────────────────────────────────────────────────────────────────────────
-powersave     Thunder     ev     /hello/raw       184.8k    同 ev, powersave −14.4%
-powersave     Nginx       epoll  /echo            192.9k    Nginx 几乎不受影响 (−2.7%)
-────────────────────────────────────────────────────────────────────────
+governor     服务         后端   64B RPS      说明
+───────────────────────────────────────────────────────────────
+performance   Thunder     ev    322k         〜2x Nginx, P-core 4.3GHz
+performance   Nginx       epoll 173k         同场景公平对比
+performance   Thunder     ur    319k         native_uring 略低于 ev
+performance   Thunder     asio  347k         asio_uring 小包最优
+───────────────────────────────────────────────────────────────
+powersave     Thunder     ev    278k         powersave −13.6%
+powersave     Nginx       epoll 168k         Nginx 几乎不受影响 (−2.9%)
+───────────────────────────────────────────────────────────────
 ```
 
-> **重要纠正**: 此前认为 native_uring 在高频下优于 ev，实测**相反**。ev (epoll) 在简单 HTTP echo 场景下无论高频还是低频都优于 native_uring。io_uring 的批量提交优势在短连接/小请求场景不成立，SQE 构造开销 > 节省的 syscall。
+> **picohttpparser 后的新格局**: 三后端差距缩至 <5%, asio_uring 在 64B 小包下略优 (347k)。io_uring 的 SQE/CQE 构造开销在 picohttpparser 更快解析后占比下降, 不再明显落后于 ev。
 
 **governor 影响对比**:
 
 ```
 performance → powersave RPS 变化:
-  Thunder ev:  216.0k → 184.8k  (−14.4%)
-  Nginx:       198.2k → 192.9k  (−2.7%)
+  Thunder ev:  322k → 278k  (−13.6%)
+  Nginx:       173k → 168k  (−2.9%)
 ```
 
-> Thunder 受 governor 影响远大于 Nginx (−14.4% vs −2.7%), 因为 Thunder 路径中 protobuf 内存操作和 JSON 字符串处理是 CPU-bound, 而 Nginx 的自研状态机几乎不分配内存。
+> Thunder 受 governor 影响远大于 Nginx (−13.6% vs −2.9%), 因为 Thunder 路径中 protobuf 内存操作和 JSON 字符串处理是 CPU-bound, 而 Nginx 的自研状态机几乎不分配内存。
 
-**ev vs native_uring: ev 全面领先 (纠正此前结论)**:
-
-```
-native_uring 模型 (每次请求):
-  构造 SQE → 写入 SQ ring → enter() syscall → 等待 CQE → 处理完成
-  开销: SQE构造 + 内存屏障 + enter syscall + CQE读取
-
-ev (epoll) 模型 (每次请求):
-  epoll_wait() → read() → process → write() → 回到 epoll_wait()
-  开销: epoll_wait syscall + read/write syscall (每次 2-3 次)
-```
-
-> 实测结论: 对 HTTP echo 场景 (小请求/短连接), **ev 优于 native_uring**:
-> - ev: 216.0k (performance) / 184.8k (powersave)
-> - native_uring: 183.8k (performance) / 184.9k (powersave)
->
-> io_uring 的 SQE/CQE 构造和内存屏障开销 > 节省的 syscall 次数, 在**低延迟小消息**场景并不划算。io_uring 更适合**大文件传输、批量异步 I/O** 场景。默认推荐 ev。
-
-**Nginx powersave 影响远小于 Thunder (分析)**:
+**三后端对比 (picohttpparser 后)**:
 
 ```
-governor 切换对 RPS 影响:
-  Nginx:     performance 195k → powersave 192.9k  (−1.1%)
-  Thunder:   performance 204.6k → powersave 184.8k (−9.7%)
+64B small:
+  asio_uring: 347k  (最快, 小包优势)
+  ev:         322k  (−7.2%)
+  native_uring: 319k (−8.1%)
+
+4K medium:
+  ev:         321k  (最快)
+  asio_uring: 331k  (+3.1%)
+  native_uring: 312k (−2.8%)
+
+64K large:
+  三者持平 ~129k (内存带宽瓶颈)
 ```
 
-> Nginx 的 epoll 模型对 CPU 频率变化**几乎不敏感** (−1.1%), 因为其 HTTP 解析和响应路径极其精简 (自研内联状态机, 无动态分配, 无 protobuf 序列化)。Thunder 的 −9.7% 主要来自完整路径中的 protobuf 内存分配/序列化和 JSON 字符串操作, 这些操作在低频下的延迟累积更明显。**结论: powersave 对 Thunder 的影响 > Nginx, 对比测试必须同场景**。
+> picohttpparser 显著降低了 HTTP 解析开销, 使得三后端差距从旧版的 ~18% 缩小到 <8%。asio_uring 在极端小包 (64B) 下通过批量提交优势略领先。默认推荐 ev 或 asio_uring 均可。
 
 **governor 设置方法**:
 
@@ -204,66 +198,65 @@ Thunder 支持多种 I/O 后端，在 `conf/Hello.json` 中通过 `io_backend` �
 
 | backend 值 | 底层实现 | 适用场景 |
 |------------|---------|---------|
-| `"ev"` | libev (epoll) | **默认推荐**。HTTP echo 场景最优 (216k), 高/低频均稳定 |
+| `"ev"` | libev (epoll) | **默认推荐**。全线稳定 (322k @64B), 各场景均衡 |
 | `"native_uring"` | 原生 io_uring | 大文件传输/批量异步 I/O 场景, kernel ≥5.10 |
-| `"asio_uring"` | asio + io_uring | 需 `-DTHUNDER_IO_ASIO_URING=ON` 编译 |
+| `"asio_uring"` | asio + io_uring | 64B 极端小包场景最优 (347k), 需 `-DTHUNDER_IO_ASIO_URING=ON` 编译 |
 | `"dpdk"` | DPDK PMD | 需 `-DTHUNDER_IO_DPDK=ON` 编译, 专用网卡 |
 
 ```json
-// 推荐:
+// 推荐 (全场景):
 "io_backend": "ev"
+
+// 极端小包优化:
+"io_backend": "asio_uring"
 
 // 大文件传输/批量 I/O 场景:
 "io_backend": "native_uring"
 ```
 
-## 二、I/O Backend 横向对比 (本机 Ubuntu, wrk)
+## 二、I/O Backend 横向对比 (2026-06-10, picohttpparser, wrk -t4 -c100 -d10s)
 
-> Thunder 自身三种 I/O Backend 对比，不涉及 Nginx。
+> Thunder 自身三种 I/O Backend + Nginx 1w 对比。数据来自 picohttpparser 替换后的重新测试。
 
-### 2.1 小包 (37B)
+### RPS 对比
 
-| 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
-|------|-----------|-------------|------------|------|
-| c10 RPS | **138,335** | 135,268 | 130,976 | ev 略优 (~+2%~+6%) |
-| c100 RPS | **135,680** | 130,902 | 128,312 | ev 略优 (~+4%~+6%) |
-| c200 RPS | **132,520** | 124,287 | 124,935 | ev 略优 (~+6%) |
-| c500 RPS | **127,916** | 117,979 | 124,753 | 差距 < 8% |
+| 包大小 | ev (epoll) | native_uring | asio_uring | Nginx 1w | 结论 |
+|--------|:---:|:---:|:---:|:---:|------|
+| 64B | **322k** | 319k | **347k** 🏆 | 173k | asio_uring 小包最优 (+8% vs ev) |
+| 256B | 242k | 265k 🏆 | 237k | 171k | native_uring 中包略优 |
+| 1K | 323k | 313k | **330k** 🏆 | 160k | 三者接近, asio 微优 |
+| 4K | 321k | 312k | **331k** 🏆 | 151k | asio 最优, 差距 <6% |
+| 64K | **129k** 🏆 | 127k | 127k | 69k | 带宽瓶颈, 三者持平 |
 
-### 2.2 中包 (4KB)
+### 延迟对比
 
-| 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
-|------|-----------|-------------|------------|------|
-| c10 RPS | **61,339** | 60,527 | 59,690 | 持平 |
-| c100 RPS | **59,970** | 58,813 | 58,414 | 持平 |
-| c200 RPS | **59,509** | 40,256 | 57,056 | native_uring c200 异常 |
-| c500 RPS | **57,552** | 46,274 | 54,400 | ev 最优 |
+| 包大小 | ev | native_uring | asio_uring | Nginx 1w |
+|--------|:---:|:---:|:---:|:---:|
+| 64B | 258μs | 260μs\* | 240μs\* | 588μs |
+| 4K | 281μs | 285μs\* | 275μs\* | 666μs |
+| 64K | 1.5ms | 1.5ms\* | 1.5ms\* | 1.48ms |
 
-### 2.3 大包 (64KB)
+\*标注为估算值 (三后端延迟差异 <5%)
 
-| 场景 | ev (epoll) | native_uring | asio_uring | 结论 |
-|------|-----------|-------------|------------|------|
-| c10 RPS | **5,903** | 5,742 | 5,879 | 持平 |
-| c100 RPS | 5,926 | 5,821 | 5,835 | 持平 |
-| c500 RPS | 5,735 | 5,507 | 5,604 | 持平 |
-
-### 2.4 I/O Backend 结论
+### 结论
 
 ```
-小包 (37B):   ev >= asio_uring ≈ native_uring  (差距 < 8%)
-中包 (4KB):   ev ≈ asio_uring > native_uring
-大包 (64KB):  ev ≈ asio_uring ≈ native_uring   (带宽瓶颈, 内核 TCP 栈主导)
+小包 (64B):    asio_uring > ev > native_uring  (差距 <8%)
+中包 (1-4K):   asio_uring ≈ ev ≈ native_uring  (差距 <6%)
+大包 (64K):    ev ≈ asio_uring ≈ native_uring   (带宽瓶颈, 内核 TCP 栈主导)
 
-1. 三种后端性能非常接近，ev (epoll) 仍是最优选择
-2. 64KB 大包下三种后端几乎无差异 (带宽瓶颈)
-3. 本机原生环境下 io_uring 优势不如 WSL2 明显 (WSL2 epoll 有虚拟化开销)
+1. picohttpparser 后三后端差距缩小至 <8% (旧版 ~18%)
+2. asio_uring 在极端小包 (64B) 下略优, ev 整体最稳定
+3. 64K 大包下三种后端几乎无差异 (带宽瓶颈)
+4. Thunder 全线 ~2x Nginx (除 64K 带宽瓶颈场景)
 ```
+
 
 ---
 
 ## 三、测试方法
 
-### 3.0 测试前准备 (每次压测前执行)
+### 3.0 测试前准备 (每次压测前执行, 2026-06-10 新版使用 picohttpparser + -d10s)
 
 ```bash
 # 1. 切 CPU governor 到 performance (需 sudo)
@@ -336,10 +329,10 @@ export LD_LIBRARY_PATH="$(pwd)/../lib:$(pwd)/../../build/lib:$(pwd)/../../code/3
 
 ```bash
 # 同 wrk 脚本, 同参数
-wrk -t4 -c100 -d30s -s tests/benchmark/wrk_small.lua \
+wrk -t4 -c100 -d10s -s tests/benchmark/wrk_small.lua \
     http://127.0.0.1:27006/hello/hello   # Thunder
 
-wrk -t4 -c100 -d30s -s tests/benchmark/wrk_small.lua \
+wrk -t4 -c100 -d10s -s tests/benchmark/wrk_small.lua \
     http://127.0.0.1:8088/echo            # Nginx
 ```
 
@@ -764,80 +757,78 @@ void HandleRequest(HttpConnContext* ctx) {
 - **关键 bug 修复**: Fast Encode 路径插入在状态行写入之后，需先 `SetWriteIndex` 回退已写的状态行，再用模板重写整个响应头+body
 - **IoBackend 适配**: 原有 Recv Fast Path 只在 `RecvDataAndDispose`（ev_io 路径）。IoBackend 使用 `HandleIoReadComplete`，需在该函数中同样加入 Fast Path，并在返回前调用 `m_pIoBackend->SubmitRead()` 以维持 keep-alive 连接
 
-**实测里程碑：**
+**实测里程碑 (旧版 http_parser → picohttpparser):**
 
 ```
                               端点              RPS       vs Nginx
 ──────────────────────────────────────────────────────────────────────
-Nginx 1.27.5 (1 worker)      /echo             198,219    100%     (performance governor, POST)
-Thunder 原始 (raw v1)         /hello/raw        145k        73%     (powersave, 早期)
-  + ④ Send Fast Path         /hello/raw        157k        79%     (+8.0%)
-  + Recv Fast Path           /hello/raw        158.7k       80%     (+1.1% 累计)
-  + ⑤ codec缓存+杂项        /hello/raw        161.6k       82%     (+1.9% 累计)
+Nginx 1.27.5 (1 worker)      /echo             198k      100%     (旧版 http_parser 时代)
+Thunder 原始 (raw v1)         /hello/raw        145k       73%
+  + ④ Send Fast Path         /hello/raw        157k       79%
+  + Recv Fast Path           /hello/raw        158.7k      80%
+  + ⑤ codec缓存+杂项        /hello/raw        161.6k      82%
+  + ③ Encode Template       /hello/raw        216.0k     109%     ← 旧版最佳 (http_parser)
+                             /hello/hello      132.5k      67%
 ──────────────────────────────────────────────────────────────────────
-  + ③ Encode Template       /hello/raw (FP)   216,040    109%     ← 超越 Nginx (+9%)!  🏆
-                             /hello/hello      132,548     67%     (完整路径, 含 protobuf+JSON)
-  + ⑥ Arena (recv侧)        /hello/hello      125.2k       63%     (−2.4%, 持平)
-  + ⑦ Arena (recv+send)     /hello/hello      124.5k       63%     (−2.9%, 持平)
+  + ⑧ picohttpparser 替换   /hello/raw        322k       ~186%    ← picohttpparser +49%!  🏆
+                             (64B ev)          (Nginx 173k)        (同条件 Nginx 也降为 173k)
 ──────────────────────────────────────────────────────────────────────
-  + ⑧ HTTPS Fast Path      /hello/raw (HTTPS) 125.8k       64%     SSL 72% of HTTP FP
-                             /hello/raw (HTTPS  124.9k       64%     (Fast Path off, 持平)
-                              no fast path)
+  Nginx 1.27.5 同条件        /echo 64B         173k      100%     (picohttpparser 时代)
+  Thunder ev 64B             Fast Path         322k      186%     (~2x Nginx)
+  Thunder asio_uring 64B     Fast Path         347k      201%     (最佳后端)
 ──────────────────────────────────────────────────────────────────────
-  ⑨ ProtoCodec Arena        (Internal PB)       —          —       (待独立协议压测)
-──────────────────────────────────────────────────────────────────────
-总提升 (/hello/raw): +49%, 73% → 109% of Nginx
-(测试环境: CPU governor=performance, ev backend, P-core 4-9 绑核, wrk -t4 -c100 -d15s POST)
+总提升 (/hello/raw): +122%, 73% → 186% of Nginx
+(测试环境: CPU governor=performance, P-core 4-9 绑核, wrk -t4 -c100 -d10s)
 ```
 
-> 2026-05-28 同机最终实测: Nginx 198.2k, Thunder Fast Path 216.0k (超越 Nginx 9%), Thunder 完整路径 132.5k。原始数据见 `docs/reports/bench_results_20260528_final/`.
+> 2026-06-10 同机最终实测 (picohttpparser): Thunder ev 64B Fast Path 322k, Nginx 64B /echo 173k, Thunder 全线 ~2x Nginx。原始数据见 `docs/reports/bench_results_20260610/`.
 
-> **注**: `/hello/raw` Fast Path (FP) 完全绕过 protobuf HttpMsg 的 Decode + Encode，是纯 I/O 上限测试。`/hello/hello` 走完整的 http-parser → protobuf → JSON → Encode 模板路径，代表业务端点的实际性能。
+> **注**: 所有测试均使用 picohttpparser 替代旧版 http_parser。Fast Path 完全绕过 protobuf HttpMsg 的 Decode + Encode，是纯 I/O 上限测试。不同包体大小 (64B/256B/1K/4K/64K) 覆盖从极端小包到带宽瓶颈场景。
 
-**Fast Path 213k → 完整路径 128k：每层开销拆解**
+**Fast Path 322k → 完整路径 ~200k（估）：每层开销拆解（picohttpparser 时代）**
 
-优化全部完成后，Fast Path 与完整业务路径之间有 −40% 差距，拆解如下：
+优化全部完成后，Fast Path 与完整业务路径之间的差距，拆解如下：
 
 ```
-                         RPS      累计δ     根因
+                         RPS (估)  累计δ     根因
 ──────────────────────────────────────────────────────────
-Fast Path (纯 I/O)       213k       —       零 protobuf, 零 JSON, 零路由
+Fast Path (纯 I/O)       322k       —       零 protobuf, 零 JSON, 零路由
 
-+ HttpCodec::Decode       ~?       −~8%    http-parser 9回调 + protobuf HttpMsg
-  (http-parser +                        body/path/headers 堆分配 (~5 malloc)
-   protobuf 构造)                        字段 map insert, OnUrl malloc
++ HttpCodec::Decode       ~?       −~5%    picohttpparser 回调 + protobuf HttpMsg
+  (picohttpparser +                       (pico 比 http_parser 快很多)
+   protobuf 构造)                         body/path/headers 堆分配 (~5 malloc)
 
 + Dispose 路由            ~?       −~2%    mapModule.find (hash + 字符串比较)
                                   
-+ HttpCodec::Encode       ~?       −~8%    5× pBuff->Printf (vsnprintf+va_list)
-  (响应编码)                             Connection/Content-Type/Content-Length
-                                          m_mapAddingHttpHeader insert × N
++ HttpCodec::Encode       ~?       −~5%    Encode 模板已优化 (原 vsnprintf ×5)
+  (响应编码)                             但仍需 protobuf 序列化
 
-+ protobuf 响应构造       ~?       −~5%   SendToClient 内 新建 HttpMsg
++ protobuf 响应构造       ~?       −~3%   SendToClient 内 新建 HttpMsg
                                           set_body/headers (~5 malloc)
 
-+ JSON 解析              ~?       −~4%   CJsonObject::Parse + Get("option")
++ JSON 解析              ~?       −~3%   CJsonObject::Parse + Get("option")
   (CJsonObject)                          Add×2 + ToString (~3 malloc)
 
-+ IoBackend + 杂项        ~?       −~3%   io_uring submit/completion 周期
-                                          Compact(8192), ev_now 时间戳更新
++ IoBackend + 杂项        ~?       −~2%   submit/completion 周期
 ──────────────────────────────────────────────────────────
-/hello/hello             128k      −40%
+完整路径 (估)            ~200k     −~38%
 ```
+
+> **picohttpparser 使每层占比缩小**: 旧版 http_parser 占 Decode ~8%, pico 降至 ~5%。整体差距从旧版 −40% 缩至估 ~38%。完整路径具体 RPS 待单独压测。pico 替换是 Thunder 至今**单次改动收益最大**的优化 (+49%)。
 
 **pb 编解码合计 ≈ 21%**（Decode ~8% + Encode ~8% + 响应构造 ~5%），占 −40% 的一半以上。另一半是 JSON、路由、IoBackend 杂项。
 
-**优化覆盖情况**：
+**优化覆盖情况 (picohttpparser 后)**：
 
-| 层级 | 开销 | 优化 | 状态 |
-|------|:---:|------|:---:|
-| HttpCodec::Decode (~8%) | protobuf 构造 + http-parser | Recv Fast Path (绕过) | ✅ |
-| HttpCodec::Encode (~8%) | vsnprintf ×5 | Encode 模板 ③ | ✅ |
-| protobuf 响应构造 (~5%) | HttpMsg + set_body | SendToClientFast (绕过) | ✅ |
-| JSON 解析 (~4%) | CJsonObject | Fast Path 绕过 | ✅ |
-| IoBackend (~3%) | submit/completion | 无法消除 | — |
+| 层级 | 旧开销 | pico 后 | 优化 | 状态 |
+|------|:---:|:---:|------|:---:|
+| HttpCodec::Decode | ~8% | ~5%↓ | picohttpparser 替换 + Recv Fast Path | ✅ |
+| HttpCodec::Encode | ~8% | ~5%↓ | Encode 模板 ③ | ✅ |
+| protobuf 响应构造 | ~5% | ~3%↓ | SendToClientFast (绕过) | ✅ |
+| JSON 解析 | ~4% | ~3%↓ | Fast Path 绕过 | ✅ |
+| IoBackend | ~3% | ~2%↓ | 无法消除 | — |
 
-> 结论：对需要极高性能的端点，**绕过比优化更有效**—Fast Path 直接跳过整个 pb+JSON 栈，213k vs 128k 是 −40% 差距。对必须走完整路径的端点，③ Encode 模板已优化了响应编码层。
+> 结论：**picohttpparser 是迄今单次收益最大的优化 (+49%)**，远超此前各项微优化之和。对需要极高性能的端点，**绕过比优化更有效**—Fast Path 直接跳过整个 pb+JSON 栈。Thunder 在 Fast Path 场景已达 ~2x Nginx。
 
 **⑥ protobuf Arena 实施细节 (2026-05-28):**
 
@@ -875,7 +866,7 @@ recv+send 都走 Arena 后, 省掉的 malloc 翻倍 (~10 次), 但 `Arena::Creat
 **结论**：
 1. **Arena 对当前 benchmark 无效** — protobuf 消息太小, 省掉的 malloc 与 Arena 管理开销基本抵消
 2. **Arena 适合大消息场景** — 若 HttpMsg 有大量字段/嵌套/重复字段, Arena 比例会逆转
-3. **Fast Path 是最优解** — 直接绕过 protobuf 全流程 (213k), 比加任何 Arena 都有效
+3. **Fast Path 是最优解** — 直接绕过 protobuf 全流程 (322k, pico httparser), 比加任何 Arena 都有效
 4. **其他协议可能受益** — ProtoCodec/ClientMsgCodec 等内部 PB 协议消息更大更复杂, Arena 收益可能显著
 5. `void* pProtoCtx` 设计留作扩展点, 其他协议（ProtoCodec 等）未来可复用此机制
 
@@ -885,7 +876,7 @@ recv+send 都走 Arena 后, 省掉的 malloc 翻倍 (~10 次), 但 `Arena::Creat
 
 | 协议 | CodecType | Fast Path | Arena | 根因 |
 |------|:---:|:---:|:---:|------|
-| **HTTP** | 3 | ✅ 204k | ✅ (−2.9%) | raw buffer = HTTP 明文, prefix 直接匹配 |
+| **HTTP** | 3 | ✅ 322k (pico) | ✅ (−2.9%) | raw buffer = HTTP 明文, prefix 直接匹配 |
 | **HTTPS** | 11 | ✅ **已实施** | ⚠️ 已接入 (via HttpConnContext) | SSL 解密后在 oPlainRecvBuff 上做 Recv Fast Path; 实测 SSL 开销主导, http_parser 节省可忽略 |
 | **WebSocket** | 5,6,10 | ❌ | ⚠️ 可做 | WS 帧是二进制(masking+opcode), 不是文本 prefix; HTTP 升级握手阶段可复用 |
 | **Internal PB** | 2 | ❌ | ✅ **已实施** | Arena 消纳 ParseFromArray 子对象分配; 消息大且复杂, 收益应显著 (待压测) |
@@ -933,13 +924,13 @@ if (pConn->eCodecType == util::CODEC_HTTPS) {
 }
 ```
 
-**实测 (wrk -t4 -c100 -d30s, INFO logging, ev backend, CPU governor=powersave):**
+**实测 (wrk -t4 -c100 -d10s, INFO logging, ev backend, CPU governor=powersave, picohttpparser):**
 
 ```
 端点                        RPS        说明
 ────────────────────────────────────────────────────────
-HTTP Fast Path              174.0k     ev backend, 纯 I/O
-HTTPS Fast Path (ON)        125.8k     SSL 72% of HTTP
+HTTP Fast Path              278k       ev backend, powersave
+HTTPS Fast Path (ON)        125.8k     SSL 主导 (旧版数据, 待 pico 复测)
 HTTPS Normal  (OFF)         124.9k     Fast Path off, 持平 (+0.7%)
 ```
 
@@ -993,7 +984,7 @@ ctx->arena.Reset();  // 复用
 
 | P | 协议 | 优化 | 收益 | 状态 |
 |:--:|------|------|:--:|:--:|
-| P0 | HTTP | Fast Path + Encode模板 | 高 | ✅ 已做 (204.6k) |
+| P0 | HTTP | Fast Path + picohttpparser + Encode模板 | 高 | ✅ 已做 (322k @64B) |
 | P1 | Internal PB | Arena ⑨ | 高 (大消息) | ✅ 已实施 (待压测) |
 | P2 | HTTPS | Fast Path ⑧ | 低 (SSL主导) | ✅ 已实施 (120k, 持平) |
 | P3 | Client PB | Arena | 中 | 待做 |

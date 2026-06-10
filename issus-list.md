@@ -1296,3 +1296,31 @@ Pod 重启后 docker 模块自动可用 ✅
 - etcd 旧条目: 全部改为新命名 ✅
 - 镜像列表: SO 重建 ✅
 - testnewfunc: 构建 ✅ | C++ 328/328 ✅ | Python 122/122 ✅ | Admin 200, 6 images ✅ | typeFilter 2 ✅ | 版本自增 1 ✅ | SO 6 镜像 ✅
+
+---
+
+## 🔵 #58 Thunder HTTP 压测 — picohttpparser 全后端全包大小对比
+
+> 2026-06-10 | 需求 | 状态: 🔵 待完成
+
+### 条件
+- 1 Worker, 同机, 同 body `{"code":0,"msg":"ok"}`
+- ev / native_uring / asio_uring 三后端
+- Nginx 原生 1w 对照组
+
+### 测试数据 (2026-06-10 初步)
+```
+         64B     256B    1K      4K      64K
+ev       322k    242k    323k    321k    129k
+native   319k    265k    313k    312k    127k
+asio     347k    237k    330k    331k    127k
+Nginx    待测    待测    待测    待测    待测
+```
+
+### 待完成
+- Nginx 同条件全包大小压测
+- 分析各后端差异原因
+- 更新报告
+
+### 关于 native_uring
+#4 记录为"已移除"但实际源码和编译选项均在(THUNDER_IO_URING=ON), 测试正常。

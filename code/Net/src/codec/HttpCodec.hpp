@@ -54,18 +54,6 @@ public:
     virtual void AddHttpHeader(const std::string& strHeaderName, const std::string& strHeaderValue);
 
     const std::string& ToString(const HttpMsg& oHttpMsg);
-protected:
-    static int OnMessageBegin(http_parser *parser);
-    static int OnUrl(http_parser *parser, const char *at, size_t len);
-    static int OnStatus(http_parser *parser, const char *at, size_t len);
-    static int OnHeaderField(http_parser *parser, const char *at, size_t len);
-    static int OnHeaderValue(http_parser *parser, const char *at, size_t len);
-    static int OnHeadersComplete(http_parser *parser);
-    static int OnBody(http_parser *parser, const char *at, size_t len);
-    static int OnMessageComplete(http_parser *parser);
-    static int OnChunkHeader(http_parser *parser);
-    static int OnChunkComplete(http_parser *parser);
-
 private:
     std::string m_strHttpString;
     std::unordered_map<std::string, std::string> m_mapAddingHttpHeader;       ///< encode前添加的http头，encode之后要清空

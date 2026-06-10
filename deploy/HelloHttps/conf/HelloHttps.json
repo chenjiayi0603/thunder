@@ -52,6 +52,13 @@
       "entrance_symbol": "create",
       "load": true,
       "version": 1
+    },
+    {
+      "url_path": "/hello/raw",
+      "so_path": "plugins/HelloHttps_ModuleRaw.so",
+      "entrance_symbol": "create",
+      "load": true,
+      "version": 1
     }
   ],
   "io_backend": "ev",

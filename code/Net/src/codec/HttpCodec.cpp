@@ -679,6 +679,8 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
     // phr_parse_request 覆盖全部 HTTP/1.1 (含 chunked), 替代 http_parser
     size_t consumed = 0;
     if (TryFastDecodeHttpRequest(pBuff->GetRawReadBuffer(), pBuff->ReadableBytes(),
+            oHttpMsg, consumed)
+        || TryFastDecodeHttpResponse(pBuff->GetRawReadBuffer(), pBuff->ReadableBytes(),
             oHttpMsg, consumed))
     {
         pBuff->AdvanceReadIndex(consumed);
@@ -697,62 +699,9 @@ E_CODEC_STATUS HttpCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
         return CODEC_STATUS_OK;
     }
 
-    // pico 解析失败 — HTTP 响应/不完整/错误
-    if (pBuff->ReadableBytes() <= 16)
-    {
-        LOG4_TRACE("pico parse incomplete, waiting more data");
-        return CODEC_STATUS_PAUSE;
-    }
-
-    // 回退 http_parser (HTTP 响应 / chunked / 特殊场景)
-    static const http_parser_settings kParserSettings = []() {
-        http_parser_settings s{};
-        s.on_message_begin = OnMessageBegin;
-        s.on_url = OnUrl;
-        s.on_status = OnStatus;
-        s.on_header_field = OnHeaderField;
-        s.on_header_value = OnHeaderValue;
-        s.on_headers_complete = OnHeadersComplete;
-        s.on_body = OnBody;
-        s.on_message_complete = OnMessageComplete;
-        s.on_chunk_header = OnChunkHeader;
-        s.on_chunk_complete = OnChunkComplete;
-        return s;
-    }();
-    http_parser parser;
-    http_parser_init(&parser, HTTP_BOTH);
-    parser.data = &oHttpMsg;
-    size_t uiLen = http_parser_execute(&parser, &kParserSettings,
-                    pBuff->GetRawReadBuffer(), pBuff->ReadableBytes());
-    if (!oHttpMsg.is_decoding())
-    {
-        if (parser.http_errno != HPE_OK)
-        {
-            LOG4_ERROR("http_parser error: %s", http_errno_name((http_errno)parser.http_errno));
-            return CODEC_STATUS_ERR;
-        }
-        pBuff->AdvanceReadIndex(uiLen);
-    }
-    else
-    {
-        LOG4_TRACE("http_parser decoding, waiting more data");
-        return CODEC_STATUS_PAUSE;
-    }
-
-    auto iter = oHttpMsg.headers().find("Content-Encoding");
-    if (iter != oHttpMsg.headers().end() && iter->second == "gzip")
-    {
-        std::string strData;
-        if (Gunzip(oHttpMsg.body(), strData))
-            oHttpMsg.set_body(strData);
-        else
-        {
-            LOG4_ERROR("gunzip error!");
-            return CODEC_STATUS_ERR;
-        }
-    }
-    return CODEC_STATUS_OK;
-}
+    // pico 解析失败 — 等待更多数据
+    LOG4_TRACE("pico parse incomplete, waiting more data");
+    return CODEC_STATUS_PAUSE;}
 
 void HttpCodec::AddHttpHeader(const std::string& strHeaderName, const std::string& strHeaderValue)
 {
@@ -803,177 +752,6 @@ const std::string& HttpCodec::ToString(const HttpMsg& oHttpMsg)
         m_strHttpString += "\r\n\r\n";
     }
     return(m_strHttpString);
-}
-
-int HttpCodec::OnMessageBegin(http_parser *parser)
-{
-    HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-    pHttpMsg->set_is_decoding(true);
-    return(0);
-}
-
-int HttpCodec::OnUrl(http_parser *parser, const char *at, size_t len)
-{
-    HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-    pHttpMsg->set_url(at, len);
-    struct http_parser_url stUrl;
-    if(0 == http_parser_parse_url(at, len, 0, &stUrl))
-    {
-//        if(stUrl.field_set & (1 << UF_PORT))
-//        {
-//            pHttpMsg->set_port(stUrl.port);
-//        }
-//        else
-//        {
-//            pHttpMsg->set_port(80);
-//        }
-//
-//        if(stUrl.field_set & (1 << UF_HOST) )
-//        {
-//            char* host = (char*)malloc(stUrl.field_data[UF_HOST].len+1);
-//            strncpy(host, at+stUrl.field_data[UF_HOST].off, stUrl.field_data[UF_HOST].len);
-//            host[stUrl.field_data[UF_HOST].len] = 0;
-//            pHttpMsg->set_host(host, stUrl.field_data[UF_HOST].len+1);
-//            free(host);
-//        }
-
-		if(stUrl.field_set & (1 << UF_PATH))
-		{
-			// 优化: set_path 内部已是拷贝语义, 无需外层 malloc+strncpy (省去 per-request malloc/free + 双重拷贝)
-			pHttpMsg->set_path(at + stUrl.field_data[UF_PATH].off,
-			                   stUrl.field_data[UF_PATH].len);
-		}
-
-        if (stUrl.field_set & (1 << UF_QUERY))
-		{
-			std::string strQuery;
-			strQuery.assign(at+stUrl.field_data[UF_QUERY].off, stUrl.field_data[UF_QUERY].len);
-			std::map<std::string, std::string> mapParam;
-			util::DecodeParameter(strQuery, mapParam);
-			for (auto it = mapParam.begin(); it != mapParam.end(); ++it)
-			{
-				(*pHttpMsg->mutable_params())[it->first] = it->second;
-			}
-		}
-    }
-    return 0;
-}
-
-int HttpCodec::OnStatus(http_parser *parser, const char *at, size_t len)
-{
-    HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-    pHttpMsg->set_status_code(parser->status_code);
-    return(0);
-}
-
-int HttpCodec::OnHeaderField(http_parser *parser, const char *at, size_t len)
-{
-	HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-	pHttpMsg->set_body(at, len);        // 用body暂存head_name，解析完head_value后再填充到head里
-    return(0);
-}
-
-int HttpCodec::OnHeaderValue(http_parser *parser, const char *at, size_t len)
-{
-	HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-	pHttpMsg->mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>(pHttpMsg->body(), std::string(at, len)));
-    return(0);
-}
-
-int HttpCodec::OnHeadersComplete(http_parser *parser)
-{
-	HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-	pHttpMsg->set_body("");
-    return(0);
-}
-
-int HttpCodec::OnBody(http_parser *parser, const char *at, size_t len)
-{
-    HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-    if (pHttpMsg->body().size() > 0)
-    {
-        pHttpMsg->mutable_body()->append(at, len);
-    }
-    else
-    {
-        pHttpMsg->set_body(at, len);
-    }
-    return(0);
-}
-
-int HttpCodec::OnMessageComplete(http_parser *parser)
-{
-//	HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-//	if (0 != parser->status_code)
-//	{
-//		pHttpMsg->set_status_code(parser->status_code);
-//		pHttpMsg->set_type(HTTP_RESPONSE);
-//	}
-//	else
-//	{
-//		pHttpMsg->set_method(parser->method);
-//		pHttpMsg->set_type(HTTP_REQUEST);
-//	}
-//	pHttpMsg->set_http_major(parser->http_major);
-//	pHttpMsg->set_http_minor(parser->http_minor);
-//	if (HTTP_GET == (http_method) pHttpMsg->method())
-//	{
-//		pHttpMsg->set_is_decoding(false);
-//	}
-//	else
-//	{
-//		if (parser->content_length == 0)
-//		{
-//			pHttpMsg->set_is_decoding(false);
-//		}
-//		else if (parser->content_length == pHttpMsg->body().size())
-//		{
-//			pHttpMsg->set_is_decoding(false);
-//		}
-//	}
-//	if (http_should_keep_alive(parser))
-//	{
-//		pHttpMsg->set_keep_alive(-1); ;
-//	}
-//	else
-//	{
-//		pHttpMsg->set_keep_alive(0);
-//	}
-
-	HttpMsg* pHttpMsg = (HttpMsg*) parser->data;
-	if (0 != parser->status_code)
-	{
-		pHttpMsg->set_status_code(parser->status_code);
-		pHttpMsg->set_type(HTTP_RESPONSE);
-	}
-	else
-	{
-		pHttpMsg->set_method(parser->method);
-		pHttpMsg->set_type(HTTP_REQUEST);
-	}
-	pHttpMsg->set_http_major(parser->http_major);
-	pHttpMsg->set_http_minor(parser->http_minor);
-	pHttpMsg->set_is_decoding(false);
-
-	if (http_should_keep_alive(parser))
-	{
-		pHttpMsg->set_keep_alive(-1); ;
-	}
-	else
-	{
-		pHttpMsg->set_keep_alive(0);
-	}
-    return(0);
-}
-
-int HttpCodec::OnChunkHeader(http_parser *parser)
-{
-    return(0);
-}
-
-int HttpCodec::OnChunkComplete(http_parser *parser)
-{
-    return(0);
 }
 
 } /* namespace net */

@@ -234,4 +234,40 @@ bool TryFastEncodeHttpResponse(const HttpMsg& oHttpMsg,
     return true;
 }
 
+bool TryFastDecodeHttpResponse(const char* raw, size_t rawLen,
+        HttpMsg& oHttpMsg, size_t& consumed)
+{
+    if (rawLen < 5 || memcmp(raw, "HTTP/", 5) != 0) return false;
+    int minor_version, status; const char* msg; size_t msg_len;
+    struct phr_header headers[64];
+    size_t num_headers = sizeof(headers) / sizeof(headers[0]);
+    int header_len = phr_parse_response(raw, rawLen, &minor_version, &status, &msg, &msg_len, headers, &num_headers, 0);
+    if (header_len <= 0) return false;
+    oHttpMsg.set_type(HTTP_RESPONSE);
+    oHttpMsg.set_http_major(1); oHttpMsg.set_http_minor(minor_version); oHttpMsg.set_status_code(status);
+    int content_length = -1; bool is_chunked = false;
+    for (size_t i = 0; i < num_headers; i++) {
+        if (headers[i].name_len == 14 && strncasecmp(headers[i].name, "content-length", 14) == 0)
+            content_length = (int)strtoul(headers[i].value, nullptr, 10);
+        else if (headers[i].name_len == 17 && strncasecmp(headers[i].name, "transfer-encoding", 17) == 0)
+            if (headers[i].value_len == 7 && strncasecmp(headers[i].value, "chunked", 7) == 0) is_chunked = true;
+    }
+    if (content_length < 0) content_length = 0;
+    const char* body_start = raw + header_len; size_t body_avail = rawLen - header_len;
+    if (is_chunked) {
+        char* decode_buf = const_cast<char*>(body_start); size_t decode_len = body_avail;
+        struct phr_chunked_decoder decoder; memset(&decoder, 0, sizeof(decoder));
+        ssize_t ret = phr_decode_chunked(&decoder, decode_buf, &decode_len);
+        if (ret <= 0) return false;
+        if (decode_len > 0) oHttpMsg.set_body(decode_buf, decode_len);
+        consumed = header_len + (body_avail - (size_t)ret);
+    } else {
+        if (body_avail < (size_t)content_length) return false;
+        if (content_length > 0) oHttpMsg.set_body(body_start, content_length);
+        consumed = header_len + content_length;
+    }
+    oHttpMsg.set_is_decoding(false);
+    return true;
+}
+
 }  // namespace net
