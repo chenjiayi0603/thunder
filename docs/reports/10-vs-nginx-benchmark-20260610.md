@@ -30,20 +30,19 @@ Latency(64K): 1.5ms     1.5ms*        1.5ms*        1.48ms
 ### HTTPS (SSL 加密, 2026-06-10 复测, powersave governor, P-core 绑核)
 
 ```
-              ev        native_uring  asio_uring¹   Nginx 1w²
+              ev        native_uring  asio_uring¹   Nginx 1w
 ─────────────────────────────────────────────────────────────
-64B           105k      89k           —               —
-4K            41k       36k           —               —
-64K           3.8k      3.3k          —               —
+64B           105k      89k           184k 🏆          112k
+4K            41k       36k           74k              101k 🏆
+64K           3.8k      3.3k          6.1k             23.6k 🏆
 
-Latency(64B): 890μs     ~920μs        —               —
-Latency(4K):  2.0ms     ~2.2ms        —               —
-Latency(64K): 23ms      ~26ms         —               —
+Latency(64B): 890μs     ~920μs        452μs            505μs
+Latency(4K):  2.0ms     ~2.2ms        1.2ms            560μs
+Latency(64K): 23ms      ~26ms         10ms             4.7ms
 ```
 
-> ¹ asio_uring 后端需 `-DTHUNDER_IO_ASIO_URING=ON` 编译, 当前版本未启用。
-> ² Nginx HTTPS 同条件待测。
-> HTTPS 受 SSL 加密/解密制约: 64B 吞吐 ~33% of HTTP (105k vs 322k), SSL 握手+加密占 CPU 主导。三后端差距 <16% (ev 最优), SSL 开销覆盖了后端差异。
+> ¹ asio_uring 在 HTTPS 小包场景优势显著 (184k vs 112k, +64% vs Nginx)，因批量提交降低 SSL syscall 开销。
+> 大包 (64K) 下 Nginx 领先 (23.6k vs 6.1k), 因 Nginx 多进程模型在 SSL 大包加密时能更好利用 CPU。
 
 > **单位换算**: 1ms (毫秒) = 1000μs (微秒)。例: 258μs = 0.258ms, 1.5ms = 1500μs。
 
@@ -54,7 +53,8 @@ Latency(64K): 23ms      ~26ms         —               —
 - **三后端差距 <5%**: asio_uring ≈ ev ≈ native_uring, 应用层(pico+protobuf)是瓶颈
 - **asio_uring 64B 小包最优** (347k), 优势随包体增大消失
 - **64K 大包带宽瓶颈**, 差距缩小 (129k vs 69k)
-- **HTTPS ~33% of HTTP** (105k vs 322k @64B ev), SSL 加密是瓶颈, 三后端差距 <16%
+- **HTTPS 64B: Thunder asio_uring 最优** (184k, +64% vs Nginx 112k), 因批量提交降低 SSL syscall 开销
+- **HTTPS 4K/64K: Nginx 领先** (101k/23.6k), 多进程模型在大包 SSL 加密场景更有优势
 - **P-core 绑核** 仍损失 ~17% 若跑在 E-core
 
 ### 延迟与吞吐关系分析

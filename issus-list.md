@@ -1316,18 +1316,17 @@ Nginx 1w  173k    171k    160k    151k     69k
 ### HTTPS 数据 (2026-06-10 复测, powersave governor, P-core 绑核)
 
 ```
-          64B      4K      64K
-ev        105k     41k     3.8k
-native     89k     36k     3.3k
-asio       —        —       —   (需 THUNDER_IO_ASIO_URING 编译)
-Nginx 1w   待测     待测    待测
+          64B      4K       64K
+ev        105k     41k      3.8k
+native     89k     36k      3.3k
+asio      184k     74k      6.1k
+Nginx 1w  112k    101k     23.6k
 ```
 
 ### 关键发现
 - HTTP: Thunder 全线 ~2x Nginx, asio_uring 64B 最优 (347k)
-- HTTPS: SSL 主导 (~33% of HTTP), 三后端差距 <16%, ev 最优
-- asio_uring HTTPS 因编译选项未启用，未测试
-- Nginx HTTPS 同条件待测
+- HTTPS 64B: Thunder asio_uring 最优 (184k, +64% vs Nginx 112k)
+- HTTPS 4K/64K: Nginx 领先 (101k/23.6k), 多进程模型在大包 SSL 场景更有优势
 
 ### 报告
 `docs/reports/10-vs-nginx-benchmark-20260610.md` (替换旧版 04, 175 行简洁版)
@@ -1377,57 +1376,78 @@ Lua 解析器支持的含义：
 
 ---
 
-## 🟡 #60 [计划] WebSocket 支持与测试
+## ✅ #60 [已实现] WebSocket 支持与测试
 
-> 2026-06-10 | 计划 | 状态: 🟡 待实现
+> 2026-06-10 | 核实 | 状态: ✅ 已实现 (需补充测试)
+
+### 实际状态
+WebSocket 已有完整实现：
+
+| 组件 | 状态 | 路径 |
+|------|:----:|------|
+| Codec (Json) | ✅ 已实现 | `code/Net/src/codec/CodecWebSocketJson.cpp` |
+| Codec (Pb) | ✅ 已实现 | `code/Net/src/codec/CodecWebSocketPb.cpp` |
+| Codec (PbApp) | ✅ 已实现 | `code/Net/src/codec/CodecWebSocketPbApp.cpp` |
+| HelloWs 部署 | ✅ 已存在 | `deploy/HelloWs/` (bin/conf/plugins) |
+| ModuleShake | ✅ 已存在 | `plugins/HelloWs_ModuleShake.so` |
+| CODEC_WEBSOCKET=5 | ✅ 已分配 | `access_codec: 5` |
+| WSS (TLS) | ❌ 未实现 | CODEC_WSS=10 已预留 |
+| 测试用例 | ⚠️ 存在但需验证 | `tests/e2e/test_ws_hello.py` |
+
+### 验证目标
+- [ ] HelloWs 服务启动正常
+- [ ] HTTP Upgrade → 101 握手
+- [ ] 收发 WebSocket 帧 (text/binary)
+- [ ] E2E 测试通过
+
+---
+
+## 🔵 #61 [分析] WASM 轻量沙箱热更新 — 能否不重启进程
+
+> 2026-06-10 | 分析 | 状态: 🔵 待评估
 
 ### 背景
-Thunder 当前支持 HTTP/HTTPS 协议。WebSocket 作为实时双向通信协议，在以下场景有需求：
-1. 实时通知/推送
-2. 游戏/即时通讯
-3. 全双工 RPC
+当前 SO 模块热更新 (#45) 依赖 `GracefulRestartWorker` — 新建 Worker 进程加载新版 SO，旧 Worker drain 完成后退出。整个过程仍需进程重启（虽然是零中断的优雅重启）。
 
-### 现状
+### 问题
+WASM (WebAssembly) 轻量沙箱能否实现**不重启进程**的热更新？
 
-| 能力 | 状态 |
-|------|:----:|
-| HTTP Upgrade → WebSocket 握手 | ❌ 未实现 |
-| WebSocket 帧解析 (masking/opcode) | ❌ 未实现 |
-| WebSocket 连接管理 | ❌ 未实现 |
-| 现有 Codec 类型 | CODEC_WEBSOCKET=5, CODEC_WS_ON_HTTP=6, CODEC_WSS=10 (已预留) |
-| 现有 HelloWs 部署 | `deploy/HelloWs/` 已创建, 含 ModuleShake |
+### WASM 与 SO 热更新对比
 
-### 需要实现
+| 维度 | SO (dlopen) | WASM 沙箱 |
+|------|:-----------:|:---------:|
+| 进程重启 | ✅ 需要 (GracefulRestartWorker) | ❌ **不需要**, 实例级替换 |
+| 隔离性 | 弱 (同一进程地址空间) | 强 (沙箱内存隔离) |
+| 安全 | 无沙箱, SO 可访问任意内存 | 沙箱, 限制系统调用 |
+| 性能 | 原生机器码, 零开销 | 有解释/编译开销 (WASM ~80-120% native) |
+| 语言支持 | C/C++ 编译为 .so | 任何编译为 WASM 的语言 (Rust/C/C++/Go) |
+| 单线程模型 | dlopen 非线程安全, 需 stop-the-world | 实例级替换, 不影响其他连接 |
 
-#### 1. WebSocket Codec
-- `code/Net/src/codec/WebSocketCodec.hpp/cpp` — 帧解析/编码
-  - 掩码处理 (client→server masking)
-  - opcode: text/binary/close/ping/pong
-  - 分片帧 (fragmentation)
-- `HttpsCodec` 扩展支持 WSS (WebSocket over TLS)
+### 实现路径
 
-#### 2. HTTP Upgrade 握手
-- `HttpCodec::Decode` 检测 `Upgrade: websocket` + `Connection: Upgrade`
-- 101 Switching Protocols 响应
-- 握手后切换 Codec 到 WebSocketCodec
+```
+Worker 进程
+  ├── wasm_runtime (WAMR / Wasmtime)
+  │     ├── 实例 v1 (旧版本) ← 正在处理请求
+  │     └── 实例 v2 (新版本) ← 刚加载, 等待连接迁移
+  │
+  └── 连接调度器: 逐连接将新请求指向 v2, v1 空闲后销毁
+```
 
-#### 3. WebSocket Module
-- `deploy/HelloWs/plugins/HelloWs_ModuleShake.so` — WebSocket 业务模块接口
-- 消息分发: 按 opcode/text/binary 路由到 handler
+### 关键挑战
 
-#### 4. 测试
+1. **WASM 运行时选择**: WAMR (轻量, C 接口) / Wasmtime (高性能, WASI 完整) / wasm3 (解释器)
+2. **接口绑定**: WASM 需导出 `AnyMessage()` + 宿主需导入 `SendToClientFast` 等 API
+3. **性能**: WASM 函数调用 ~20-50ns vs SO 原生 ~3ns, Fast Path 场景影响显著
+4. **连接迁移**: 旧实例的在途请求需完成或转移, 通过 `pProtoCtx` 挂载 WASM 实例引用
 
-| 测试类型 | 方法 | 预期 |
-|---------|------|------|
-| 单元测试 | WebSocket 帧编解码 | 所有 opcode + masking + 分片 |
-| 握手测试 | HTTP Upgrade → 101 | 正确切换 Codec |
-| E2E 测试 | wscat/wrk WebSocket 扩展 | 收发消息正确 |
-| 基准测试 | wrk WebSocket + 不同负载 | 对比 HTTP 长连接延迟/吞吐 |
+### 建议路线
 
-### 依赖
-- Codec 类型枚举已预留 (5/6/10)
-- HelloWs 部署结构已存在
-- SO 热更新链路 (#45) 可直接复用
+| 阶段 | 内容 | 收益 |
+|:----:|------|:----:|
+| P0 | WASM 运行时集成 + 简单 echo module | 验证可行性 |
+| P1 | wasm 中调用 SendToClientFast | 验证宿主导入 |
+| P2 | 实例级热替换 + 连接迁移 | 真正不重启进程 |
 
-### 优先级
-P2 (中) — 非阻塞, 核心 HTTP/HTTPS 路径已稳定。建议在 #57~#59 闭环后启动。
+### 结论
+WASM 轻量沙箱**可以实现不重启进程**的热更新 (实例级替换)，但性能有 ~5-15x 函数调用开销。建议先做 P0 验证可行性再决定投入。

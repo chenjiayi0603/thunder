@@ -32,6 +32,8 @@
 #include "codec/ClientMsgCodec.hpp"
 #include "codec/HttpCodec.hpp"
 #include "codec/HttpsCodec.hpp"
+#include "codec/WssCodec.hpp"
+#include "codec/WssCodec.hpp"
 #include "codec/CodecWebSocketJson.hpp"
 #include "codec/CodecWebSocketPb.hpp"
 #include "codec/CodecWebSocketPbApp.hpp"
@@ -694,14 +696,14 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                 }
                 pCodec = codec_iter->second.get();
             }
-            while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
-                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+            while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
+                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
             {
                 oInMsgHead.Clear();
                 oInMsgBody.Clear();
 
                 E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
-                if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+                if ((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pSendBuff->ReadableBytes() > 0)
                 {
                     conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
                     conn_iter->second->pSendBuff->Compact(8192);
@@ -863,7 +865,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         HttpMsg oOutHttpMsg;
                         if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
                         {
-                            if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                            if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                             {
                             	pConn->dKeepAlive = 10;   // 未带KeepAlive参数的http协议，默认10秒钟关闭
                                 LOG4_TRACE("set dKeepAlive(%lf)",pConn->dKeepAlive);
@@ -902,7 +904,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
 										AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
 									}
                             	}
-                                else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                                else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                                                 && pConn->dKeepAlive > 0)
                                 {
                                     // 无 Keep-Alive / Connection 时，上面未刷新定时器；accept 阶段 1s 检测仍在，
@@ -1359,8 +1361,8 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
     }
     ThunderCodec* pCodec = codec_iter->second.get();
 
-    while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
-            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+    while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
+            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
     {
         oInMsgHead.Clear();
         oInMsgBody.Clear();
@@ -1368,7 +1370,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
         E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
         // HTTPS TLS 握手要求同步双向 I/O：SSL_do_handshake 产生的响应数据
         // 必须立即写出，否则下一轮 Read/WantRead 循环会被异步 SubmitWrite 中断。
-        if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+        if ((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pSendBuff->ReadableBytes() > 0)
         {
             int iErrno = 0;
             pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
@@ -1447,7 +1449,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                 HttpMsg oInHttpMsg, oOutHttpMsg;
                 if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
                 {
-                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                     {
                         pConn->dKeepAlive = 10;
                     }
@@ -1477,7 +1479,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                                 AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
                             }
                         }
-                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                                         && pConn->dKeepAlive > 0)
                         {
                             AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
@@ -2529,6 +2531,26 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
         m_oCurrentConf["https"].Get("verify_client", oHttpsConfig.bServerVerifyClient);
         pHttpsCodec->SetHttpsConfig(oHttpsConfig);
     }
+
+    mapCodec.insert(std::make_pair(util::CODEC_WSS, std::make_unique<WssCodec>()));
+    // 从配置文件中读取 WSS 证书 (与 https 共用 "wss" 段或回退到 "https" 段)
+    {
+        auto* pWssCodec = static_cast<WssCodec*>(mapCodec[util::CODEC_WSS].get());
+        WssCodec::SslConfig oSslConfig;
+        std::string strCertFile, strKeyFile;
+        if (m_oCurrentConf["wss"].Get("server_cert", strCertFile) && !strCertFile.empty())
+        {
+            oSslConfig.strServerCertFile = strCertFile;
+        }
+        else { std::string s; if (m_oCurrentConf["https"].Get("server_cert", s) && !s.empty()) oSslConfig.strServerCertFile = s; }
+        if (m_oCurrentConf["wss"].Get("server_key", strKeyFile) && !strKeyFile.empty())
+        {
+            oSslConfig.strServerKeyFile = strKeyFile;
+        }
+        else { std::string s; if (m_oCurrentConf["https"].Get("server_key", s) && !s.empty()) oSslConfig.strServerKeyFile = s; }
+        m_oCurrentConf["wss"].Get("verify_client", oSslConfig.bServerVerifyClient);
+        pWssCodec->SetSslConfig(oSslConfig);
+    }
     mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, std::make_unique<ClientMsgCodec>(util::CODEC_PRIVATE)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, std::make_unique<CodecWebSocketJson>(util::CODEC_WEBSOCKET_EX_JS)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, std::make_unique<CodecWebSocketPb>(util::CODEC_WEBSOCKET_EX_PB)));
@@ -3297,7 +3319,7 @@ bool Worker::SendToClientFast(const tagMsgShell& stMsgShell,
 	}
 
 	// HTTPS: 必须经过 SSL 加密, 走正常 SendToClient 路径
-	if (pConn->eCodecType == util::CODEC_HTTPS)
+	if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
 	{
 		auto codec_iter = mapCodec.find(pConn->eCodecType);
 		if (codec_iter == mapCodec.end())
@@ -5532,7 +5554,7 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     {
         return CODEC_STATUS_ERR;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS)
+    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
     }
@@ -5546,7 +5568,7 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     {
         return CODEC_STATUS_ERR;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS)
+    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
     }
@@ -5616,7 +5638,7 @@ tagConnectionAttr* Worker::CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODE
 	}
     if (eCodecType == util::CODEC_HTTPS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
@@ -5693,7 +5715,7 @@ tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::str
 	// io_uring mode: IO events deferred to caller (after connect())
     if (eCodecType == util::CODEC_HTTPS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
@@ -5739,9 +5761,9 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     			pConn->iFd,iManagerControlFd,iManagerDataFd);
     	return false;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS)
+    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
@@ -5798,7 +5820,7 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     // 清理协议专属上下文 (如 HTTP 的 HttpConnContext/Arena)
     if (pConn->pProtoCtx != nullptr)
     {
-        if (pConn->eCodecType == util::CODEC_HTTP || pConn->eCodecType == util::CODEC_HTTPS)
+        if (pConn->eCodecType == util::CODEC_HTTP || pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
         {
             delete static_cast<net::HttpConnContext*>(pConn->pProtoCtx);
         }
