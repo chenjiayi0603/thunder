@@ -1299,28 +1299,135 @@ Pod 重启后 docker 模块自动可用 ✅
 
 ---
 
-## 🔵 #58 Thunder HTTP 压测 — picohttpparser 全后端全包大小对比
+## ✅ #58 Thunder HTTP/HTTPS 压测 — picohttpparser 全后端全包大小对比
 
-> 2026-06-10 | 需求 | 状态: 🔵 待完成
+> 2026-06-10 | 需求 | 状态: ✅ 已完成 (数据已录入 `docs/reports/10-vs-nginx-benchmark-20260610.md`)
 
-### 条件
-- 1 Worker, 同机, 同 body `{"code":0,"msg":"ok"}`
-- ev / native_uring / asio_uring 三后端
-- Nginx 原生 1w 对照组
+### HTTP 数据 (picohttpparser, performance governor, P-core 4-9 绑核)
 
-### 测试数据 (2026-06-10 初步)
 ```
-         64B     256B    1K      4K      64K
-ev       322k    242k    323k    321k    129k
-native   319k    265k    313k    312k    127k
-asio     347k    237k    330k    331k    127k
-Nginx    待测    待测    待测    待测    待测
+          64B     256B    1K      4K      64K
+ev        322k    242k    323k    321k    129k
+native    319k    265k    313k    312k    127k
+asio      347k    237k    330k    331k    127k
+Nginx 1w  173k    171k    160k    151k     69k
 ```
 
-### 待完成
-- Nginx 同条件全包大小压测
-- 分析各后端差异原因
-- 更新报告
+### HTTPS 数据 (2026-06-10 复测, powersave governor, P-core 绑核)
 
-### 关于 native_uring
-#4 记录为"已移除"但实际源码和编译选项均在(THUNDER_IO_URING=ON), 测试正常。
+```
+          64B      4K      64K
+ev        105k     41k     3.8k
+native     89k     36k     3.3k
+asio       —        —       —   (需 THUNDER_IO_ASIO_URING 编译)
+Nginx 1w   待测     待测    待测
+```
+
+### 关键发现
+- HTTP: Thunder 全线 ~2x Nginx, asio_uring 64B 最优 (347k)
+- HTTPS: SSL 主导 (~33% of HTTP), 三后端差距 <16%, ev 最优
+- asio_uring HTTPS 因编译选项未启用，未测试
+- Nginx HTTPS 同条件待测
+
+### 报告
+`docs/reports/10-vs-nginx-benchmark-20260610.md` (替换旧版 04, 175 行简洁版)
+
+---
+
+## 🟡 #59 [分析] Lua 解析器支持
+
+> 2026-06-10 | 分析 | 状态: 🟡 待决策
+
+### 背景
+当前 Thunder HTTP 解析器已从 http_parser 替换为 picohttpparser，性能提升 +49%。但 picohttpparser 是纯 C 解析器，无动态脚本扩展能力。
+
+### 需求分析
+Lua 解析器支持的含义：
+1. **Lua 作为 HTTP 请求/响应的脚本处理层** — 在请求生命周期中嵌入 Lua hook（类似 Nginx lua-nginx-module / OpenResty）
+2. **Lua 作为动态路由/过滤规则引擎** — 用 Lua 脚本定义路由匹配、请求改写、流量调度
+
+### 收益评估
+
+| 场景 | 价值 | 复杂度 |
+|------|:----:|:------:|
+| 动态请求改写/header 修改 | 中 | 低 (已有 Module 接口) |
+| 复杂路由规则 (正则/条件组合) | 高 | 中 |
+| 请求body 转换/gzip/filter | 中 | 中 |
+| 可编程响应 | 中 | 低 (已有 SendToClientFast) |
+| 热更新逻辑 (不需编译 .so) | 高 | 高 (沙箱/安全) |
+
+### 已有替代方案
+| 方案 | 优势 | 劣势 |
+|------|------|------|
+| C++ SO 模块热更新 (#45) | 性能好, 已有完整链路 | 需编译, 部署门槛高 |
+| Module 接口 | 原生支持, 零额外开销 | 静态注册, 灵活性低 |
+| etcd 配置 + 路由过滤 (#38) | 无运行时开销 | 仅路由, 不能改写请求 |
+
+### 推荐
+**暂不支持 Lua 解析器**，理由：
+1. Thunder 的 SO 模块热更新 (#45) 已提供动态扩展能力，C++ 模块性能远高于 Lua
+2. 路由过滤可通过 etcd 配置 + upstream_types 实现（#38），无需脚本
+3. Lua 虚拟机锁 (LuaJIT 全局锁) 在单线程事件循环中会阻塞所有请求
+4. 增加 Lua 解析器会引入复杂的沙箱/安全隔离问题
+
+### 行动
+- 不引入 Lua 解析器
+- 持续优化 picohttpparser + SO 模块热更新路径
+- 如需脚本能力，通过 SO 模块加载 wasm 轻量沙箱（待评估）
+
+---
+
+## 🟡 #60 [计划] WebSocket 支持与测试
+
+> 2026-06-10 | 计划 | 状态: 🟡 待实现
+
+### 背景
+Thunder 当前支持 HTTP/HTTPS 协议。WebSocket 作为实时双向通信协议，在以下场景有需求：
+1. 实时通知/推送
+2. 游戏/即时通讯
+3. 全双工 RPC
+
+### 现状
+
+| 能力 | 状态 |
+|------|:----:|
+| HTTP Upgrade → WebSocket 握手 | ❌ 未实现 |
+| WebSocket 帧解析 (masking/opcode) | ❌ 未实现 |
+| WebSocket 连接管理 | ❌ 未实现 |
+| 现有 Codec 类型 | CODEC_WEBSOCKET=5, CODEC_WS_ON_HTTP=6, CODEC_WSS=10 (已预留) |
+| 现有 HelloWs 部署 | `deploy/HelloWs/` 已创建, 含 ModuleShake |
+
+### 需要实现
+
+#### 1. WebSocket Codec
+- `code/Net/src/codec/WebSocketCodec.hpp/cpp` — 帧解析/编码
+  - 掩码处理 (client→server masking)
+  - opcode: text/binary/close/ping/pong
+  - 分片帧 (fragmentation)
+- `HttpsCodec` 扩展支持 WSS (WebSocket over TLS)
+
+#### 2. HTTP Upgrade 握手
+- `HttpCodec::Decode` 检测 `Upgrade: websocket` + `Connection: Upgrade`
+- 101 Switching Protocols 响应
+- 握手后切换 Codec 到 WebSocketCodec
+
+#### 3. WebSocket Module
+- `deploy/HelloWs/plugins/HelloWs_ModuleShake.so` — WebSocket 业务模块接口
+- 消息分发: 按 opcode/text/binary 路由到 handler
+
+#### 4. 测试
+
+| 测试类型 | 方法 | 预期 |
+|---------|------|------|
+| 单元测试 | WebSocket 帧编解码 | 所有 opcode + masking + 分片 |
+| 握手测试 | HTTP Upgrade → 101 | 正确切换 Codec |
+| E2E 测试 | wscat/wrk WebSocket 扩展 | 收发消息正确 |
+| 基准测试 | wrk WebSocket + 不同负载 | 对比 HTTP 长连接延迟/吞吐 |
+
+### 依赖
+- Codec 类型枚举已预留 (5/6/10)
+- HelloWs 部署结构已存在
+- SO 热更新链路 (#45) 可直接复用
+
+### 优先级
+P2 (中) — 非阻塞, 核心 HTTP/HTTPS 路径已稳定。建议在 #57~#59 闭环后启动。

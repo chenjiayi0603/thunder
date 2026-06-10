@@ -28,7 +28,7 @@
   },
   "io_timeout": 300.0,
   "step_timeout": 5.0,
-  "log_level": "DEBUG",
+  "log_level": "INFO",
   "load_so_interval": 60.0,
   "custom": {
     "https": {
