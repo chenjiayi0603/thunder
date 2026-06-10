@@ -1451,3 +1451,43 @@ Worker 进程
 
 ### 结论
 WASM 轻量沙箱**可以实现不重启进程**的热更新 (实例级替换)，但性能有 ~5-15x 函数调用开销。建议先做 P0 验证可行性再决定投入。
+
+---
+
+## 🔵 #62 [实现] ModuleLua — LuaJIT 模块支持
+
+> 2026-06-10 | 需求 | 状态: 🔵 待实现 | 设计: `docs/architecture/17-luajit-module-support.md`
+
+### 目标
+Thunder 模块系统支持 Lua 脚本，实现不重启进程的热加载。
+
+### 功能要求
+
+1. **ModuleLua 类**: 继承 `net::Module`，嵌入 LuaJIT VM，处理 `AnyMessage` 回调
+2. **Lua API 绑定**: 注册 `SendToClientFast`、`SendToNext`、`SendToConHash`、`SendToNodeType`、`SentTo` 等 Labor IO 接口
+3. **配置支持**: `module` 段支持 `script_path` 指向 `.lua` 文件
+4. **热加载**: 检测 `.lua` 文件变更后自动重载，不重启进程
+5. **etcd 分发**: 脚本内容存 etcd (`/thunder/config/scripts/`)，Worker watch 后写磁盘
+
+### Lua 定位
+
+```
+请求 → Lua (路由/鉴权/限流/header 改写) → 通过 → C++ SO (业务 + DB)
+               ↓ 拒绝
+            返回错误
+```
+
+Lua 只做 gatekeeper，不碰 IO 和业务计算。
+
+### 参考设计
+`docs/architecture/17-luajit-module-support.md`
+
+### 实施步骤
+
+| # | 内容 | 预估 |
+|:-:|------|:----:|
+| 1 | CMake 链接 luajit (`pkg-config --libs luajit`) | 0.5h |
+| 2 | ModuleLua 类 + AnyMessage 回调 | 1天 |
+| 3 | Lua binding: Labor IO 接口 (5 个函数) | 1天 |
+| 4 | 配置 + 热加载 (文件变更重载) | 0.5天 |
+| 5 | 单元测试 + echo 压测 | 0.5天 |

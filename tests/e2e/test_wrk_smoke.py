@@ -25,13 +25,13 @@ def test_wrk_smoke(proxyless_env: dict[str, str]) -> None:
     wrk_threads = os.getenv("WRK_THREADS", "4")
     wrk_connections = os.getenv("WRK_CONNECTIONS", "100")
     wrk_duration = os.getenv("WRK_DURATION", "60s")
-    target = os.getenv("WRK_TARGET", "http://127.0.0.1:27006/hello/hello")
+    target = os.getenv("WRK_TARGET", "http://192.168.3.61:30006/hello/hello")
     if shutil.which("wrk") is None:
         # 无 wrk 时退化为轻量请求回归，确保该用例在默认命令中可执行。
         s = requests.Session()
         s.trust_env = False
         for _ in range(3):
-            r = s.post("http://127.0.0.1:27006/hello/hello", json={"option": "Echo"}, timeout=10)
+            r = s.post("http://192.168.3.61:30006/hello/hello", json={"option": "Echo"}, timeout=10)
             assert r.status_code == 200, r.text
             assert '"code"' in r.text
         report.write_text(

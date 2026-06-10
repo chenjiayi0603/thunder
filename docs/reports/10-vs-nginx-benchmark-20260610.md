@@ -90,73 +90,69 @@ Latency(64K): 23ms      ~26ms         10ms             4.7ms
 
 ---
 
-## 二、I/O 后端对比分析
+## 二、核心原理：syscall 分布
 
-### 现象
-
-| 场景 | ev | native_uring | asio_uring |
-|------|:---:|:-----------:|:----------:|
-| HTTP 64B | 322k | 319k | **347k** (+8%) |
-| HTTPS 64B | 105k | 89k | **184k** (+75%) |
-
-HTTP 下三后端差距仅 <8%, HTTPS 下 asio_uring 领先 ev 达 +75%。
-
-### 原理
-
-**epoll (ev) 路径 (每次请求)**:
-```
-epoll_wait → read → SSL_read → SSL_write → write → epoll_wait
-               ↑ syscall    ↑ 多次内存操作    ↑ syscall
-```
-
-**native_uring (逐个 SQE 提交)**:
-```
-构造 SQE → io_uring_enter → 等 CQE → 处理
-           ↑ 每次 enter 是 syscall
-```
-
-**asio_uring (批量提交)**:
-```
-攒 N 个 SQE → 一次 io_uring_enter → 批量处理 CQE
-              ↑ 单次 syscall 处理 N 个操作
-```
-
-### 为什么 HTTPS 下差距拉大
-
-SSL 加密/解密在底层拆成多次 BIO 读写:
+四后端性能差异的根本原因：**每次 I/O 操作所需的 syscall 次数 × 能否批量合并**。
 
 ```
-一次 SSL_write(data):
-  → OpenSSL 内部: BIO_write(encrypt_chunk1)
-  →               BIO_write(encrypt_chunk2) ...
-  → 每次 BIO_write 都需要一次 I/O 提交
+模型:     应用 → [I/O 引擎] → syscall → 内核
 
-ev:          每次 BIO_write 都要 epoll 一圈
-native_uring:每次 BIO_write 构造 SQE, 立即 enter (无批量)
-asio_uring:  攒多个 SQE 一起 enter, 分摊 syscall 开销
+ev:        每次读写 → 1 次 syscall (read/write)
+native_uring: 每次读写 → 构造 SQE + 1 次 syscall (enter)
+asio_uring:  每次读写 → 入队 → N 次合并 → 1 次 syscall (enter)
+Nginx:      每次读写 → 1 次 syscall (read/write), 1 Worker
 ```
 
-HTTPS 场景 SSL 操作频繁, **I/O 操作次数是 HTTP 的数倍**, 批量提交的收益被放大。
+### 每笔 I/O 的 syscall 开销
 
-### 为什么 native_uring 不如 asio_uring
+| 后端 | 每笔 I/O 操作 | syscall 次数 | 可否批量 |
+|------|--------------|:-----------:|:-------:|
+| ev | `epoll_wait` 就绪 → `read/write` | **1 syscall / I/O** | ❌ 不能 |
+| Nginx 1w | 同上 | **1 syscall / I/O** | ❌ 不能 |
+| native_uring | 构造 SQE → `enter` | **1 enter syscall / I/O** + SQE 构造 | ❌ 不能 |
+| asio_uring | 入队 → 攒批 → `enter` | **1 enter syscall / N I/O** + 入队开销 | ✅ 可以 |
 
-| 后端 | 实现 | 批处理策略 |
-|------|------|-----------|
-| native_uring | Thunder 自研, 简单封装 io_uring | 逐操作提交, 无批量 |
-| asio_uring | Boost.Asio 成熟实现 | 环形缓冲区 + 批量提交 |
+**关键差异**: 当 N=1 时 (native_uring 无批量), io_uring 比 epoll 多了 SQE 构造开销, 却不省 syscall, 所以反而更慢。只有 N>1 时 (asio_uring 批量), io_uring 才真正省 syscall。
 
-native_uring 逐个 SQE 提交 + 逐个 enter, 在高频 I/O 场景下 SQE 构造开销 + syscall 次数 ≈ ev 的 epoll 路径, 吃不到 io_uring 的批量红利。asio_uring 的批量攒批才真正发挥了 io_uring **合并 syscall** 的优势。
-
-### 总结
+### HTTP 场景: 2-3 次 I/O / 请求
 
 ```
-asio_uring 优势 = Boost.Asio 的批量提交实现 + SSL 高频 I/O 场景
-                                                ↑
-                                     HTTP 下 I/O 次数少 → 优势有限
-                                     HTTPS 下 SSL 拆多次 I/O → 优势放大
+请求处理路径: read → 解析 → write
+I/O 次数:     2-3 次
 ```
 
----
+超高频下 syscall 开销占比不大, 三后端差距 <8%。
+
+### HTTPS 场景: 5-10+ 次 I/O / 请求
+
+```
+请求处理路径: SSL_read → decrypt → 解析 → SSL_write → encrypt
+I/O 次数:     5-10+ 次 (SSL 拆成多次 BIO)
+```
+
+I/O 次数翻倍 → asio_uring 批量优势被放大:
+
+```
+后端       每请求 I/O 次数   每笔 syscall 方式          总 syscall
+ev             5-10         1 sync / I/O              5-10 次
+native_uring   5-10         1 enter / I/O             5-10 次 + SQE 构造
+asio_uring     5-10         1 enter / N I/O (N=3-5)   1-3 次  ← 最少
+```
+
+结果: asio_uring 184k, ev 105k, native_uring 89k (因 SQE 构造拖累)。
+
+### 核心结论
+
+```
+性能排序 = 每 I/O 的 syscall overhead × I/O 次数
+
+I/O 少 (HTTP): overhead 差异小 → 三后端差距 <8%
+I/O 多 (HTTPS): overhead 差异被放大 → asio_uring 大幅领先
+
+asio_uring > ev ≈ native_uring > Nginx 1w
+                ↑
+         native_uring 多花 SQE 构造没省到 syscall
+```
 
 ## 三、测试环境
 

@@ -286,6 +286,18 @@ target_link_libraries(thunder_test_codec_http PRIVATE GTest::gtest_main)
 set_target_properties(thunder_test_codec_http PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_codec_http DISCOVERY_MODE PRE_TEST)
 
+# ---- WssCodec 编解码 E2E ----
+add_executable(thunder_test_codec_wss
+  codec/test_codec_wss.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_codec_wss PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_codec_wss)
+thunder_link_thirdparty_shared(thunder_test_codec_wss)
+target_link_libraries(thunder_test_codec_wss PRIVATE GTest::gtest_main OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(thunder_test_codec_wss PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_codec_wss DISCOVERY_MODE PRE_TEST)
+
 # ---- ClientMsgCodec 编解码 E2E ----
 add_executable(thunder_test_codec_client
   codec/test_codec_client.cpp
