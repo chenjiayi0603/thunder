@@ -29,6 +29,30 @@ EtcdHttpConn::EtcdHttpConn(struct ev_loop* loop, std::string host, int port,
     , m_urlBase("http://" + m_host + ":" + std::to_string(port))
     , m_codec(util::CODEC_HTTP)
 {
+    ev_timer_init(&m_inflightTimer, TimeoutCb, 0., 0.);
+    m_inflightTimer.data = this;
+}
+
+namespace { constexpr double kInflightTimeoutSec = 4.0; }  // connect/响应超时: 略大于 RTT, 小于 lease TTL(10s)
+
+/*static*/ void EtcdHttpConn::TimeoutCb(struct ev_loop*, ev_timer* w, int)
+{
+    auto* self = static_cast<EtcdHttpConn*>(w->data);
+    self->m_timerStarted = false;
+    self->FailAll("inflight/connect 超时");  // 重置连接 + 回调失败, 由上层(定时器)重试, 防止永久卡死
+}
+
+void EtcdHttpConn::ArmInflightTimer()
+{
+    if (m_timerStarted) ev_timer_stop(m_loop, &m_inflightTimer);
+    m_inflightTimer.repeat = kInflightTimeoutSec;
+    ev_timer_again(m_loop, &m_inflightTimer);
+    m_timerStarted = true;
+}
+
+void EtcdHttpConn::DisarmInflightTimer()
+{
+    if (m_timerStarted) { ev_timer_stop(m_loop, &m_inflightTimer); m_timerStarted = false; }
 }
 
 EtcdHttpConn::~EtcdHttpConn()
@@ -38,6 +62,13 @@ EtcdHttpConn::~EtcdHttpConn()
 
 void EtcdHttpConn::Post(const std::string& path, const std::string& body, RespCallback cb)
 {
+    // 上一条响应来自流式端点(keepalive)→连接不可复用。在此(调用方/定时器上下文, 非 libev
+    // 读回调内)关闭旧连接, 避免在 ReadCb 内重入 Reset 重建 watcher 破坏事件循环。
+    if (m_closeBeforeNextPost)
+    {
+        m_closeBeforeNextPost = false;
+        if (!m_inflight) Reset();
+    }
     m_queue.push_back(Pending{path, body, std::move(cb)});
     if (m_fd < 0)
     {
@@ -109,6 +140,7 @@ bool EtcdHttpConn::Connect()
     m_rioStarted = true;
     ev_io_start(m_loop, &m_wio);  // 写就绪 = connect 完成(或失败)
     m_wioStarted = true;
+    ArmInflightTimer();           // connect 卡住(无 OnWritable)时超时重置
     return true;
 }
 
@@ -165,6 +197,7 @@ void EtcdHttpConn::EncodeFrontRequest()
         return;
     }
     m_inflight = true;
+    ArmInflightTimer();   // 请求已发出, 等响应; 超时则重置防止 m_inflight 永久挂起
     if (!m_wioStarted)
     {
         ev_io_start(m_loop, &m_wio);
@@ -256,8 +289,14 @@ void EtcdHttpConn::DeliverFront(bool ok, int status, const std::string& body)
     Pending p = std::move(m_queue.front());
     m_queue.pop_front();
     m_inflight = false;
+    DisarmInflightTimer();  // 响应已到, 撤销超时(若 cb 续发请求, EncodeFrontRequest 会重新武装)
+    // etcd grpc-gateway 的 /v3/lease/keepalive 是流式端点: 同一连接发第二个请求拿不到
+    // 响应(实测), 故标记下次 Post 前关连接重建。不在此处 Reset —— DeliverFront 由 ReadCb
+    // 触发, 当场 Reset 会在 watcher 自身回调内停/重建该 watcher, 多次后破坏事件循环(卡死)。
+    if (p.path == "/v3/lease/keepalive") m_closeBeforeNextPost = true;
     if (p.cb) p.cb(ok, status, body);  // 回调可能 Post 新请求(链式状态机)
-    // 泵下一个（若回调已触发发送则 m_inflight=true，这里跳过）
+    // 泵下一个（若回调已触发发送则 m_inflight=true，这里跳过）。一元请求(grant/range/txn/put)
+    // 连接可复用: 解码已消费整条响应(含 chunked 终止块, 见 HttpFastCodec 修复), m_recv 无残留。
     if (m_connected && !m_inflight && !m_queue.empty())
     {
         EncodeFrontRequest();
@@ -278,6 +317,7 @@ void EtcdHttpConn::FailAll(const std::string& why)
 
 void EtcdHttpConn::Reset()
 {
+    DisarmInflightTimer();
     if (m_rioStarted)
     {
         ev_io_stop(m_loop, &m_rio);

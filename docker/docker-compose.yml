@@ -146,6 +146,8 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
+      etcd:
+        condition: service_healthy
     command:
       - bash
       - -c
@@ -184,6 +186,8 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
+      etcd:
+        condition: service_healthy
     command:
       - bash
       - -c
@@ -215,6 +219,8 @@ services:
       redis:
         condition: service_healthy
       mysql:
+        condition: service_healthy
+      etcd:
         condition: service_healthy
     command:
       - bash
@@ -254,6 +260,8 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
+      etcd:
+        condition: service_healthy
     command:
       - bash
       - -c
@@ -290,6 +298,8 @@ services:
     working_dir: /thunder/deploy/Interface
     depends_on:
       logic:
+        condition: service_healthy
+      etcd:
         condition: service_healthy
     command:
       - bash

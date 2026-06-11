@@ -45,6 +45,28 @@
       "entrance_symbol": "create",
       "load": true,
       "version": 1
+    },
+    {
+      "url_path": "/hello/lua_echo",
+      "script_path": "scripts/echo.lua",
+      "entrance_symbol": "create_echo",
+      "load": true,
+      "version": 1,
+      "so_path": "plugins/HelloHttp_ModuleLua.so"
+    },
+    {
+      "url_path": "/hello/lua_route",
+      "so_path": "plugins/HelloHttp_ModuleLua.so",
+      "entrance_symbol": "create_route",
+      "load": true,
+      "version": 1
+    },
+    {
+      "url_path": "/hello/lua_limit",
+      "so_path": "plugins/HelloHttp_ModuleLua.so",
+      "entrance_symbol": "create_limit",
+      "load": true,
+      "version": 1
     }
   ],
   "io_backend": "asio_uring",

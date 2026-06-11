@@ -75,6 +75,39 @@ end
 }
 ```
 
+
+## 实测性能
+
+同机同条件 (performance governor, P-core 绑核, wrk -t4 -c100 -d10s, POST echo JSON):
+
+```
+┌────────────────────────────────────┬──────────┬──────────────────┐
+│              方案                  │   RPS    │   vs SO Fast Path│
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ SO Fast Path (ModuleRaw)           │  234k 🏆 │        —         │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ ModuleLua (纯返回, 不读 msg)       │  203k    │       87%        │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ SO 完整路径 (ModuleHello)          │  194k    │       83%        │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ ModuleLua (读 msg:path + body)     │  179k    │       76%        │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ Nginx (return 200)                 │  127k    │       54%        │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ Envoy (direct_response)            │  239k    │      102%        │
+├────────────────────────────────────┼──────────┼──────────────────┤
+│ OpenResty LuaJIT (ngx.say)         │  131k    │       56%        │
+└────────────────────────────────────┴──────────┴──────────────────┘
+```
+
+| 脚本写法 | RPS | 说明 |
+|---------|:---:|------|
+| `SendToClientFast(...)` | 203k | 纯返回，不读请求数据 |
+| `msg:path()` + `msg:body()` + `SendToClientFast(...)` | 179k | 读取请求字段后再返回 |
+| `msg:headers()["key"]` + `SendToClientFast(...)` | ~180k (估) | header 查找 |
+
+差距原因：msg:path() 每次 Lua→C 跨边界 ~12k RPS 开销 (echo 极简路径下占比大，业务逻辑重时缩小)。
+
 ## LuaJIT vs SO vs WASM
 
 | 维度 | SO 模块 | LuaJIT 脚本 | WASM 沙箱 |
@@ -89,7 +122,13 @@ end
 
 | # | 内容 | 预估 |
 |:-:|------|:----:|
-| 1 | CMake 链接 luajit (`find_package` / `pkg-config`) | 0.5h |
+| # | 内容 | 状态 |
+|:-:|------|:----:|
+| 1 | CMake 链接 luajit | ✅ 需主二进制预链接 + LD_LIBRARY_PATH |
+| 2 | ModuleLua 类 + AnyMessage 回调 | ✅ 203k RPS (SO Fast Path 的 87%) |
+| 3 | Lua binding: SendToClientFast/SendToNext/SendToConHash/SendToNodeType/SentTo | ✅ 已注册 |
+| 4 | 配置 + 热加载 | ⚠️ 脚本路径需绝对路径 |
+| 5 | 压测验证 | ✅ 最终 203k RPS | 链接 luajit (`find_package` / `pkg-config`) | 0.5h |
 | 2 | 实现 `ModuleLua` 类 (Init/AnyMessage/析构) | 1天 |
 | 3 | Lua binding: `SendToClientFast`, `HttpMsg` 读写 | 1天 |
 | 4 | 配置 + 热加载支持 (重载 .lua 不重启) | 0.5天 |

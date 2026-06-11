@@ -65,6 +65,9 @@ private:
 
     static void ReadCb(struct ev_loop* loop, ev_io* w, int revents);
     static void WriteCb(struct ev_loop* loop, ev_io* w, int revents);
+    static void TimeoutCb(struct ev_loop* loop, ev_timer* w, int revents);
+    void ArmInflightTimer();   ///< 发起请求/连接时启动超时
+    void DisarmInflightTimer();///< 收到响应/重置时停止超时
 
     struct ev_loop*     m_loop;
     std::string         m_host;
@@ -77,8 +80,11 @@ private:
     bool                m_inflight    = false;   ///< 队首已发出、等响应
     ev_io               m_rio{};
     ev_io               m_wio{};
+    ev_timer            m_inflightTimer{};       ///< 连接/请求超时, 防止 connect 或响应卡死 m_inflight 永久挂起
     bool                m_rioStarted  = false;
     bool                m_wioStarted  = false;
+    bool                m_timerStarted = false;
+    bool                m_closeBeforeNextPost = false;  ///< 上条响应来自不可复用的流式端点(keepalive), 下次 Post 前先关连接
 
     HttpCodec           m_codec;
     util::CBuffer       m_recv;

@@ -923,6 +923,14 @@ void EtcdCenterConnector::OnWatchAsync()
     for (const auto& wev : events) {
         if (wev.key.find(kConfigPrefix) == 0) {
             std::string configPath = wev.key.substr(kConfigPrefix.size());
+            // 只处理本节点类型的配置: 配置键为 /thunder/config/module/{节点TYPE}。
+            // 否则 (如 LOGIC) 会收到他型(HELLO_HTTP 等)配置, 与自身配置比对"版本不同"→
+            // 误触发 graceful restart; 启动期 Watch 快照连环重启冲断本节点注册链。
+            if (configPath != "module/" + m_nodeType) {
+                ETCD_LOG_DEBUG("Watch — CONFIG " << configPath << " 非本节点类型("
+                               << m_nodeType << "), 忽略");
+                continue;
+            }
             CenterEvent cev; cev.type = CenterEventType::ConfigUpdated;
             // etcd grpc-gateway 省略 PUT 的 type 字段: 空 type = PUT (#34)
             if (wev.type.empty() || wev.type == "PUT") { cev.config_content = wev.value; }

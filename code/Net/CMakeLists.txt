@@ -20,6 +20,7 @@ add_library(Net SHARED ${LIBNET_SOURCES})
 set_target_properties(Net PROPERTIES OUTPUT_NAME "Net")
 
 add_executable(Hello ${NET_ALL_SOURCES})
+target_link_libraries(Hello PRIVATE "/usr/lib/x86_64-linux-gnu/libluajit-5.1.so.2")
 
 foreach(_t Net Hello)
   thunder_apply_common_compile_options(${_t})

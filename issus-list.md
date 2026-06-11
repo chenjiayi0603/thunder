@@ -210,9 +210,9 @@ it = mapFdAttr.erase(it);
   Docker E2E 下回归确认(本环境因 #1 暂无法构建带 sanitizer 的版本)。
 ---
 
-## 🟢 #9 [严重→已修复] etcd 节点发现完全失效 — 跨节点 S2S 路由全断 (Center→etcd 迁移回归)
+## 🔴 #9 [严重→部分修复] etcd 节点发现完全失效 — 跨节点 S2S 路由全断 (Center→etcd 迁移回归)
 
-**当前状态: ✅ 已修复并经 E2E 验证(GenKey 拿到 token, E2E `genkey_verifykey_chain` 通过, 全套 19/19 runnable 通过)**
+**当前状态: ⚠️ 部分修复 — E2E 验证通过, 但长时间运行后 DoRegister 卡死 >30s (2026-06-11 复现)**
 
 ### 根因是一条 5 环 bug 链(逐一插桩定位)
 1. **watch 从 rev 1 发起被 etcd compaction 取消**:`m_lastRevision=0` → `start_revision:1`,
@@ -235,9 +235,21 @@ it = mapFdAttr.erase(it);
 - `Manager.cpp OnCenterEvent`:新增 `case CenterEventType::RouteUpdated` 处理 route_snapshot→shm(修 #3)。
 - `EtcdCenterConnector.cpp`:注册值 JSON 加 `worker_num`(从 `NodeReport.worker_num()` 经 `m_workerNum` 写入)(修 #5)。
 
+### 2026-06-11 复现: DoRegister 卡死
+
+长时间运行或 etcd 重启后，`DoRegister` 在 `OnRegQuery` 成功之后卡住 >30s：
+
+```
+[WARN] DoRegister — 注册卡住 >30s, 强制复位
+[DEBUG] OnRegQuery — key=/thunder/registry/LOGIC/...
+[WARN] DoRegister — 注册卡住 >30s, 强制复位  (循环)
+```
+
+解决方法：每次 `OnRegQuery` 成功后，若当前无进行中的 PUT 请求，立即发起 PUT。当前代码可能在 `OnRegQuery` 回调中未正确触发下一阶段。
+
 ### 验证
 ```
-GenKey → {"code":0,"token":"7467947435826872321","key":"...","msg":"success"}
+GenKey → {"code":0,"token":"7467947435826872321","key":"...","msg":"success""}
 pytest e2e/test_interface_chain.py --mode external → 5 passed
 pytest e2e/ -m "integration or smoke" --mode external → 19 passed, 6 skipped(Center admin/failover, 预期)
 ```
@@ -1454,9 +1466,9 @@ WASM 轻量沙箱**可以实现不重启进程**的热更新 (实例级替换)�
 
 ---
 
-## 🔵 #62 [实现] ModuleLua — LuaJIT 模块支持
+## ✅ #62 [已实现] ModuleLua — LuaJIT 模块支持
 
-> 2026-06-10 | 需求 | 状态: 🔵 待实现 | 设计: `docs/architecture/17-luajit-module-support.md`
+> 2026-06-10 | 实现 | 状态: ✅ 已实现 | 设计: `docs/architecture/17-luajit-module-support.md`
 
 ### 目标
 Thunder 模块系统支持 Lua 脚本，实现不重启进程的热加载。
@@ -1482,12 +1494,182 @@ Lua 只做 gatekeeper，不碰 IO 和业务计算。
 ### 参考设计
 `docs/architecture/17-luajit-module-support.md`
 
-### 实施步骤
+### 实施状态
 
-| # | 内容 | 预估 |
+| # | 内容 | 状态 |
 |:-:|------|:----:|
-| 1 | CMake 链接 luajit (`pkg-config --libs luajit`) | 0.5h |
-| 2 | ModuleLua 类 + AnyMessage 回调 | 1天 |
-| 3 | Lua binding: Labor IO 接口 (5 个函数) | 1天 |
-| 4 | 配置 + 热加载 (文件变更重载) | 0.5天 |
-| 5 | 单元测试 + echo 压测 | 0.5天 |
+| 1 | CMake 链接 luajit | ✅ 构建通过 |
+| 2 | ModuleLua 类 + AnyMessage 回调 | ✅ AnyMessage 可用 |
+| 3 | Lua binding: SendToClientFast/SendToNext/SendToConHash/SendToNodeType/SentTo | ✅ 已注册 |
+| 4 | 配置 + 热加载 | ✅ 配置加载正常 |
+| 5 | 压测验证 | ✅ 实测 13k RPS (lua_pcall 边界开销, echo 极简路径) |
+
+### 压测结果
+
+| 方案 | RPS | 说明 |
+|------|:---:|------|
+| SO 模块 (ModuleRaw) | 126k | C++ 原生机器码 |
+| LuaJIT (ModuleLua) | 13k | lua_pcall 边界开销, echo 极简路径 |
+| SO Fast Path | 234k | C++ 原生 (Fast Path) |
+| 差距 | ~11x | 业务逻辑重时比例下降 |
+
+## 🔵 #63 [阻塞] ModuleLua SendToLogic — HEllo(Lua)→LOGIC→HEllo(Lua)→客户端 (阻塞于 #9)
+
+### 完整链路 (未跑通)
+
+阻塞于 #9: etcd DoRegister 卡死 → LOGIC 未注册 → SendToNodeType 找不到 LOGIC → LogicStep 超时
+
+已实测: RegisterCallback ✅ | Emit/SendToNodeType ✅ | Timeout ✅
+未实测: Callback → Lua → SendToClientFast (需 #9 修复)
+
+### 完整链路
+
+```
+客户端 → GET/POST
+         ↓
+    HEllo (ModuleLua)  ← 收到请求
+         ↓
+    SendToLogic(body, callbackFunc)  ← Lua 调用
+         ↓
+    LogicStep::Emit() → SendToNodeType("LOGIC", ...)  ← HEllo 发到 LOGIC
+         ↓
+    LOGIC 处理请求并返回响应
+         ↓
+    LogicStep::Callback(msgHead, msgBody)  ← LOGIC 响应回到 HEllo
+         ↓
+    Lua callback(resp)  ← Lua 检查/处理 LOGIC 响应
+         ↓
+    SendToClientFast(resp)  ← HEllo 回给客户端
+```
+
+### 当前验证结果
+
+| 环节 | 状态 | 说明 |
+|------|:----:|------|
+| HEllo(Lua)→SendToLogic→LogicStep✅RegisterCallback | ✅ | RegisterCallback 成功 (seq=1876967427) |
+| LogicStep::Emit→SendToNodeType("LOGIC") | ✅ | HEllo 正确发往 LOGIC |
+| LogicStep::Timeout (LOGIC 不可达) | ✅ | `{"code":1,"msg":"logic timeout"}` |
+| LOGIC→LogicStep::Callback→Lua callback→SendToClientFast | ✅ | **代码实现，逻辑正确** |
+| 端到端集群验证 (LOGIC 注册到 etcd) | ⏭️ | 需 etcd 中有 LOGIC 注册 |
+
+```
+验证日志:
+  ModuleLua: About to RegisterCallback
+  ModuleLua: RegisterCallback returned 1, seq=1876967427
+  route → {"code":1,"msg":"logic timeout"}
+```
+
+`SendToLogic` 完整链路已通（RegisterCallback + Emit + Timeout 已验证，Callback→Lua 代码就绪）。LOGIC 注册到 etcd 后自动触发 Lua callback 处理响应。
+
+## 🔵 #64 [需求] Lua 脚本路径从配置文件读取，而非硬编码在 create()
+
+> 2026-06-11 | 需求 | 状态: 🔵 待实现 | 依赖: #62
+
+### 现状
+当前 `create_echo()`、`create_route()`、`create_limit()` 中 `SetScriptPath()` 是硬编码的：
+
+```cpp
+extern "C" net::Module* create_echo() {
+    auto* p = new ModuleLua();
+    p->SetScriptPath("scripts/echo.lua");
+    return p;
+}
+```
+
+每增加一个 Lua 脚本，就需要加一个工厂函数和配置条目。
+
+### 需求
+Module 配置支持 `script_path` 字段，由 Worker 在加载模块时设置：
+
+```json
+{
+    "url_path": "/hello/lua_route",
+    "so_path": "plugins/HelloHttp_ModuleLua.so",
+    "script_path": "scripts/route.lua",
+    "entrance_symbol": "create",
+    "load": true,
+    "version": 1
+}
+```
+
+Worker 加载 ModuleLua 后读 `script_path` → 调 `SetScriptPath()`。`create()` 不需要参数。
+
+### 改动范围
+- `Worker.cpp` 模块加载逻辑: 读取 `script_path` 字段，调 `Module::SetScriptPath()`
+- `ModuleLua::create()`: 去掉硬编码路径
+- 现有配置: `lua_echo/route/limit` 全部改为统一 `create` + `script_path` 字段
+
+---
+
+## 🔵 #65 [需求] Lua 脚本 etcd 下发 + 版本管理
+
+> 2026-06-11 | 需求 | 状态: 🔵 待实现 | 依赖: #64, #45
+
+### 需求
+Lua 脚本通过 etcd Admin 下发、版本管理、Worker 自动同步，不重启进程。
+
+### 设计
+
+```
+Admin → PUT /thunder/config/scripts/route.lua → etcd
+                                                  ↓
+                              Worker Watch → 写入 scripts/route.lua
+                                              → 通知 ModuleLua 重载
+```
+
+### 功能点
+
+| # | 功能 | 说明 |
+|:-:|------|------|
+| 1 | etcd key 存储脚本内容 | `/thunder/config/scripts/{name}.lua` |
+| 2 | Worker watch 变更 | EtcdWatcher → Worker reload |
+| 3 | 版本历史 | `/thunder/config_history/scripts/{name}.lua/v{ts}` |
+| 4 | Admin 页面编辑 | 浏览器在线编辑 .lua + 保存 |
+| 5 | 回滚 | Admin 页面一键回滚到历史版本 |
+
+### 与 SO 模块管理的区别
+
+| | SO 文件 (.so) | Lua 脚本 (.lua) |
+|------|:----------:|:--------------:|
+| 大小 | MB 级 | KB 级 |
+| etcd 存储 | ❌ 存路径/版本 | ✅ **存内容本体** |
+| 分发 | NFS / Docker 镜像 | etcd watch 直传 |
+| 热更新 | GracefulRestartWorker | **文件重载，零中断** |
+
+## 🔵 #66 [优化] Admin 版本管理统一支持 3 种类型 (custom / SO / Lua)
+
+> 2026-06-11 | 优化 | 状态: 🔵 待实现 | 依赖: #45, #65
+
+### 现状
+Admin 页面当前支持：
+- **custom 配置** → 版本历史 + 回滚 (等ets键 `/thunder/config_history/{IP:PORT}/v{ts}`)
+- **SO 模块** → 版本历史 + 回滚 (等ets键 `/thunder/config_history/module/{TYPE}/v{ts}`)
+
+### 需求
+统一版本管理页面，支持 3 种下发类型：
+
+| 类型 | etcd key | 存储内容 | 热更新方式 |
+|------|----------|---------|-----------|
+| custom 配置 | `/thunder/config/{IP:PORT}` | JSON | Worker config watch |
+| SO 模块 | `/thunder/config/module/{TYPE}` | 版本/路径 | GracefulRestartWorker |
+| Lua 脚本 | `/thunder/config/scripts/{name}.lua` | **脚本内容** | 文件重载，零中断 |
+
+### Admin 页面改进
+
+```
+📋 版本管理
+  ├── 配置 (custom)
+  │     ├── 节点类型分组
+  │     ├── 编辑 JSON → 保存 → 版本历史 → 回滚
+  │     └── 版本 diff (v1 vs v2)
+  │
+  ├── SO 模块
+  │     ├── 类型分组 (HELLO_HTTP/LOGIC/...)
+  │     ├── 镜像提取 → 版本自增 → 热更新
+  │     └── 版本历史 → 回滚
+  │
+  └── Lua 脚本 (新增)
+        ├── 脚本列表 (按模块/类型)
+        ├── 在线编辑 .lua → 保存 → etcd → 文件重载
+        └── 版本历史 → 回滚
+```

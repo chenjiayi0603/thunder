@@ -5,6 +5,7 @@
 #include "codec/HttpFastCodec.hpp"
 #include "util/CBuffer.hpp"
 #include <gtest/gtest.h>
+#include <cstdio>
 
 // ========== HttpMsg Encode/Decode 往返 ==========
 
@@ -255,6 +256,16 @@ FastPathResult RunDecode(const std::string& raw) {
         msg.headers().find("Connection") != msg.headers().end(),
         msg.headers().find("Keep-Alive") != msg.headers().end()
     };
+}
+
+// 构造 Transfer-Encoding: chunked 响应字节 (单 chunk + 终止块, 无残留 → phr ret==0)
+std::string MakeChunkedResponse(const std::string& body) {
+    char sz[32];
+    std::snprintf(sz, sizeof(sz), "%zx", body.size());
+    return std::string("HTTP/1.1 200 OK\r\n")
+         + "Content-Type: application/json\r\n"
+         + "Transfer-Encoding: chunked\r\n\r\n"
+         + sz + "\r\n" + body + "\r\n0\r\n\r\n";
 }
 
 }  // namespace
@@ -522,4 +533,57 @@ TEST(FastPath, LargeBody_10KB) {
     auto r = RunDecode(raw);
     EXPECT_TRUE(r.ok);
     EXPECT_EQ(big, r.body);
+}
+
+// ── 13. chunked 响应解码 (etcd lease/keepalive 回归, issus #24) ──
+// 修复前 TryFastDecodeHttpResponse 把 phr_decode_chunked 的 ret==0 (完整无残留)
+// 误判为失败 → Decode 返回 PAUSE → keepalive 永远收不到响应 → 续租全挂、注册表崩塌。
+
+TEST(FastPath, ChunkedResponse_SingleChunkNoTrailing) {
+    // etcd /v3/lease/keepalive 的真实响应形态: 单 chunk, 终止块后无残留字节 (ret==0)
+    const std::string body = R"({"result":{"ID":"123","TTL":"60"}})";
+    auto r = RunDecode(MakeChunkedResponse(body));
+    EXPECT_TRUE(r.ok);            // 修复前: status==PAUSE → ok=false
+    EXPECT_EQ(body, r.body);
+}
+
+TEST(FastPath, ChunkedResponse_MultiChunk) {
+    std::string raw =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "3\r\nabc\r\n5\r\ndefgh\r\n0\r\n\r\n";
+    auto r = RunDecode(raw);
+    EXPECT_TRUE(r.ok);
+    EXPECT_EQ("abcdefgh", r.body);
+}
+
+TEST(FastPath, ChunkedResponse_EmptyBody) {
+    // 仅终止块的 chunked 响应 (body 为空) 也应解码成功
+    std::string raw =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n";
+    auto r = RunDecode(raw);
+    EXPECT_TRUE(r.ok);
+    EXPECT_EQ("", r.body);
+}
+
+TEST(FastPath, ChunkedResponse_SplitAcrossReads) {
+    // body chunk 与终止块分两次 recv 到达 (etcd keepalive 实况):
+    // 首次解码 PAUSE 不得污染源缓冲, 补齐后必须正确解码。
+    // 修复前 phr_decode_chunked 原地改写缓冲 → 重解到垃圾 → PAUSE 永挂 → 续租卡死。
+    net::HttpCodec codec(util::CODEC_HTTP);
+    util::CBuffer buf;
+    const std::string body = R"({"result":{"ID":"7","TTL":"60"}})";
+    char sz[16]; std::snprintf(sz, sizeof(sz), "%zx", body.size());
+    const std::string part1 =
+        std::string("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        + sz + "\r\n" + body + "\r\n";
+    const std::string part2 = "0\r\n\r\n";
+
+    buf.Write(part1.data(), part1.size());
+    HttpMsg m1;
+    EXPECT_EQ(net::CODEC_STATUS_PAUSE, codec.Decode(&buf, m1));  // 不完整 → PAUSE
+
+    buf.Write(part2.data(), part2.size());
+    HttpMsg m2;
+    EXPECT_EQ(net::CODEC_STATUS_OK, codec.Decode(&buf, m2));     // 补齐 → OK
+    EXPECT_EQ(body, m2.body());
 }

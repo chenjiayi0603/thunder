@@ -16,6 +16,8 @@ RUN apt-get update \
         libbrotli1 \
         libsnappy1v5 \
         liburing2 \
+        libluajit-5.1-2 \
+        libluajit-5.1-2 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /thunder

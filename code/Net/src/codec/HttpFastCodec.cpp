@@ -132,17 +132,18 @@ bool TryFastDecodeHttpRequest(const char* raw, size_t rawLen,
     size_t body_avail = rawLen - header_len;
 
     if (is_chunked) {
-        // phr_decode_chunked — 原地解码 chunked body
-        char* decode_buf = const_cast<char*>(body_start);
-        size_t decode_len = body_avail;
+        // 复制到临时缓冲解码: phr_decode_chunked 原地改写, 若分段到达则首次 -2 会污染源缓冲,
+        // 导致下次重解失败。复制可保持源缓冲不变, 不完整时安全重试。
+        std::string tmp(body_start, body_avail);
+        size_t decode_len = tmp.size();
         struct phr_chunked_decoder decoder;
         memset(&decoder, 0, sizeof(decoder));
-        ssize_t ret = phr_decode_chunked(&decoder, decode_buf, &decode_len);
+        ssize_t ret = phr_decode_chunked(&decoder, tmp.empty() ? nullptr : &tmp[0], &decode_len);
         if (ret == -1) return false;       // chunked 解码错误
-        if (ret == -2) return false;       // 数据不完整, 等下个包
+        if (ret == -2) return false;       // 数据不完整, 等下个包(源缓冲未被污染)
         // ret >= 0: 解码完成, decode_len = 解码后 body 长度
         if (decode_len > 0)
-            oHttpMsg.set_body(decode_buf, decode_len);
+            oHttpMsg.set_body(tmp.data(), decode_len);
         consumed = header_len + (body_avail - (size_t)ret);  // ret=残留字节数
     } else {
         if (body_avail < (size_t)content_length)
@@ -255,11 +256,19 @@ bool TryFastDecodeHttpResponse(const char* raw, size_t rawLen,
     if (content_length < 0) content_length = 0;
     const char* body_start = raw + header_len; size_t body_avail = rawLen - header_len;
     if (is_chunked) {
-        char* decode_buf = const_cast<char*>(body_start); size_t decode_len = body_avail;
+        // phr_decode_chunked 会原地解码(改写缓冲)。若 body 与终止块分两次 recv 到达,
+        // 首次 -2(不完整)已污染源缓冲, 下次带完整数据重解将解到垃圾 → PAUSE 永挂、
+        // keepalive 卡死。故复制到临时缓冲解码, 保持源缓冲不变以便重解。
+        std::string tmp(body_start, body_avail);
+        size_t decode_len = tmp.size();
         struct phr_chunked_decoder decoder; memset(&decoder, 0, sizeof(decoder));
-        ssize_t ret = phr_decode_chunked(&decoder, decode_buf, &decode_len);
-        if (ret <= 0) return false;
-        if (decode_len > 0) oHttpMsg.set_body(decode_buf, decode_len);
+        ssize_t ret = phr_decode_chunked(&decoder, tmp.empty() ? nullptr : &tmp[0], &decode_len);
+        // phr_decode_chunked: -1=错误, -2=数据不完整, >=0=解码完成(返回值为残留字节数)。
+        // ret==0 是"完整且无残留"的正常成功(etcd lease/keepalive 的 chunked 响应即此情形),
+        // 旧 `ret <= 0` 误判为失败 → Decode 返回 PAUSE → keepalive 永远收不到响应 → 续租全挂。
+        if (ret == -1) return false;       // chunked 解码错误
+        if (ret == -2) return false;       // 数据不完整, 等下个包(源缓冲未被污染)
+        if (decode_len > 0) oHttpMsg.set_body(tmp.data(), decode_len);
         consumed = header_len + (body_avail - (size_t)ret);
     } else {
         if (body_avail < (size_t)content_length) return false;

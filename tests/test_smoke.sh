@@ -64,7 +64,11 @@ if $K8S_MODE; then
     # 获取 pod 名（用于 etcd exec）
     ETCD_POD=$(kubectl get pods -n "$K8S_NS" -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || ETCD_POD=""
 else
-    NODE_IP="127.0.0.1"
+    # Docker-compose 模式自动检测宿主机 IP(容器 network_mode:host 绑定此 IP, 非 127.0.0.1)
+    NODE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "${NODE_IP:-}" ]; then
+        NODE_IP="127.0.0.1"  # 兜底
+    fi
     PORT_HELLO=27006
     PORT_HELLO_WS=27010
     PORT_INTERFACE=27008
@@ -140,7 +144,7 @@ if $K8S_MODE; then
 else
     check "HTTPS Echo (POST)                     [curl→HelloHttps:27443]" \
         '"code":0' \
-        'curl -skf --max-time 5 https://127.0.0.1:27443/hello/hello -d "{\"option\":\"Echo\"}"'
+        "curl -skf --max-time 5 https://${NODE_IP}:27443/hello/hello -d '{\"option\":\"Echo\"}'"
 fi
 
 # Redis: k8s 模式下需要传 k8s Service DNS，docker-compose 用 127.0.0.1 默认值
@@ -213,6 +217,29 @@ check "VerifyKey 空 token → code:1            [curl→Interface→Logic]" \
       -d '{\"option\":\"VerifyKey\",\"token\":\"\",\"key\":\"\"}'"
 
 fi  # RUN_INTERFACE
+
+# ── Lua Module ─────────────────────────────────────────
+echo ""
+echo "--- Lua Module ---"
+
+LUA_RESP=$(curl -sf --max-time 5 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_echo" -d 'test' 2>/dev/null)
+check "Lua echo (POST)                         [curl->Hello:${PORT_HELLO}->Lua]" '"code":0' "echo '${LUA_RESP}'"
+
+LUA_LIMIT_LONG=$(python3 -c "print('x'*101)")
+check "Lua limit body>100 (POST)              [curl->Hello:${PORT_HELLO}->Lua]" '"body too long"' "curl -sf --max-time 5 'http://${NODE_IP}:${PORT_HELLO}/hello/lua_limit' -d '${LUA_LIMIT_LONG}'"
+
+LUA_LIMIT_LONG=$(python3 -c "print('x'*101)")
+check "Lua limit body>100 (POST)              [curl->Hello:${PORT_HELLO}->Lua]" '"body too long"' "curl -sf --max-time 5 'http://${NODE_IP}:${PORT_HELLO}/hello/lua_limit' -d '${LUA_LIMIT_LONG}'"
+
+LUA_ROUTE_RESP=$(curl -sf --max-time 10 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_route" -d '{"option":"Echo"}' 2>/dev/null)
+# 必须 LOGIC 可达: {"code":0,"msg":"ok","logic":...}  (含 logic 字段=LOGIC 真实回包)
+# 不可达/超时则是 {"code":1,"msg":"logic timeout"}，判失败
+if echo "$LUA_ROUTE_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('code')==0 and 'logic' in d" 2>/dev/null; then
+    PASS=$((PASS+1)); echo -e "${GREEN}  [PASS] Lua route -> LOGIC (resp=${LUA_ROUTE_RESP})${NC}"
+else
+    FAIL=$((FAIL+1)); echo -e "${RED}  [FAIL] Lua route -> LOGIC: ${LUA_ROUTE_RESP}${NC}"
+fi
+
 
 # ── etcd ──────────────────────────────────────────────────────
 if $RUN_ETCD; then

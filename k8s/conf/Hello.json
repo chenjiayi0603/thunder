@@ -31,18 +31,41 @@
   "log_level": "INFO",
   "load_so_interval": 60.0,
   "so": [],
+  "upstream_types": ["LOGIC"],
   "module": [
     {
       "url_path": "/hello/hello",
-      "so_path": "plugins/ModuleHello.so",
+      "so_path": "plugins/HelloHttp_ModuleHello.so",
       "entrance_symbol": "create",
       "load": true,
       "version": 1
     },
     {
       "url_path": "/hello/raw",
-      "so_path": "plugins/ModuleHello.so",
+      "so_path": "plugins/HelloHttp_ModuleRaw.so",
       "entrance_symbol": "create",
+      "load": true,
+      "version": 1
+    },
+    {
+      "url_path": "/hello/lua_echo",
+      "script_path": "scripts/echo.lua",
+      "entrance_symbol": "create_echo",
+      "load": true,
+      "version": 1,
+      "so_path": "plugins/HelloHttp_ModuleLua.so"
+    },
+    {
+      "url_path": "/hello/lua_route",
+      "so_path": "plugins/HelloHttp_ModuleLua.so",
+      "entrance_symbol": "create_route",
+      "load": true,
+      "version": 1
+    },
+    {
+      "url_path": "/hello/lua_limit",
+      "so_path": "plugins/HelloHttp_ModuleLua.so",
+      "entrance_symbol": "create_limit",
       "load": true,
       "version": 1
     }
