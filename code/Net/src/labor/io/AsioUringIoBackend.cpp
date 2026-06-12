@@ -323,7 +323,11 @@ bool AsioUringIoBackend::SubmitRead(int fd, std::shared_ptr<util::CBuffer> buf, 
     }
     sp->readPending = true;
 
-    // 确保 CBuffer 有接收空间（8KB 预分配，够 HTTP 头/小包）
+    // ⚠️ 已知性能问题（待修复）：
+    // async_read_some 每次最多读 cap 字节，且 readPending 串行化，
+    // 导致 64K 包需 8 次 SQE→CQE 往返，实测延迟 18.6ms（ev 1.44ms 的 13 倍）。
+    // 正确修法是两段式读：先读 header 解析 Content-Length，再按实际大小扩容，
+    // 既消灭串行往返，又不浪费内存（65536 固定值在百万连接下需 64GB，不可行）。
     buf->EnsureWritableBytes(8192);
     char*  dst = const_cast<char*>(buf->GetRawWriteBuffer());
     size_t cap = buf->WriteableBytes();
