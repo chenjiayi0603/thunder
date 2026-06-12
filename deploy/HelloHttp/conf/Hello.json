@@ -69,7 +69,7 @@
       "version": 1
     }
   ],
-  "io_backend": "asio_uring",
+  "io_backend": "ev",
   "https": {
     "server_cert": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.crt",
     "server_key": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key",

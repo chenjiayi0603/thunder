@@ -1,0 +1,938 @@
+[
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/algorithm/Cache.cpp.o -c /home/tommychen/thunder/code/Util/src/algorithm/Cache.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/algorithm/Cache.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/algorithm/Cache.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/algorithm/Similarity.cpp.o -c /home/tommychen/thunder/code/Util/src/algorithm/Similarity.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/algorithm/Similarity.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/algorithm/Similarity.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/codec/CTlv.cpp.o -c /home/tommychen/thunder/code/Util/src/codec/CTlv.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/codec/CTlv.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/codec/CTlv.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/codec/StringCoder.cpp.o -c /home/tommychen/thunder/code/Util/src/codec/StringCoder.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/codec/StringCoder.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/codec/StringCoder.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/curl/CurlClient.cpp.o -c /home/tommychen/thunder/code/Util/src/curl/CurlClient.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/curl/CurlClient.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/curl/CurlClient.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/dbi/MysqlAsyncConn.cpp.o -c /home/tommychen/thunder/code/Util/src/dbi/MysqlAsyncConn.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/dbi/MysqlAsyncConn.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/dbi/MysqlAsyncConn.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/dbi/MysqlDbi.cpp.o -c /home/tommychen/thunder/code/Util/src/dbi/MysqlDbi.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/dbi/MysqlDbi.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/dbi/MysqlDbi.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/dbi/redis/RedisCmd.cpp.o -c /home/tommychen/thunder/code/Util/src/dbi/redis/RedisCmd.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/dbi/redis/RedisCmd.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/dbi/redis/RedisCmd.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/logging/FileLog.cpp.o -c /home/tommychen/thunder/code/Util/src/logging/FileLog.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/logging/FileLog.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/logging/FileLog.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/orm/ThunderMysqlMapper.cpp.o -c /home/tommychen/thunder/code/Util/src/orm/ThunderMysqlMapper.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/orm/ThunderMysqlMapper.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/orm/ThunderMysqlMapper.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/orm/ThunderRedisMapper.cpp.o -c /home/tommychen/thunder/code/Util/src/orm/ThunderRedisMapper.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/orm/ThunderRedisMapper.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/orm/ThunderRedisMapper.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/thread/Main.cpp.o -c /home/tommychen/thunder/code/Util/src/thread/Main.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/thread/Main.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/thread/Main.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/unix/process_helper.c.o -c /home/tommychen/thunder/code/Util/src/unix/process_helper.c",
+  "file": "/home/tommychen/thunder/code/Util/src/unix/process_helper.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/unix/process_helper.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/unix/proctitle_helper.c.o -c /home/tommychen/thunder/code/Util/src/unix/proctitle_helper.c",
+  "file": "/home/tommychen/thunder/code/Util/src/unix/proctitle_helper.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/unix/proctitle_helper.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/CBuffer.cpp.o -c /home/tommychen/thunder/code/Util/src/util/CBuffer.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/CBuffer.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/CBuffer.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/FileUtil.cpp.o -c /home/tommychen/thunder/code/Util/src/util/FileUtil.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/FileUtil.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/FileUtil.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/HashCalc.cpp.o -c /home/tommychen/thunder/code/Util/src/util/HashCalc.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/HashCalc.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/HashCalc.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/Iconv.cpp.o -c /home/tommychen/thunder/code/Util/src/util/Iconv.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/Iconv.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/Iconv.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/IpUtil.cpp.o -c /home/tommychen/thunder/code/Util/src/util/IpUtil.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/IpUtil.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/IpUtil.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/UnixTime.cpp.o -c /home/tommychen/thunder/code/Util/src/util/UnixTime.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/UnixTime.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/UnixTime.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/bson/BsonUtil.cpp.o -c /home/tommychen/thunder/code/Util/src/util/bson/BsonUtil.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/bson/BsonUtil.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/bson/BsonUtil.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/bzhash.cpp.o -c /home/tommychen/thunder/code/Util/src/util/bzhash.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/bzhash.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/bzhash.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/encrypt/base64.c.o -c /home/tommychen/thunder/code/Util/src/util/encrypt/base64.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/encrypt/base64.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/encrypt/base64.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/encrypt/hconv.c.o -c /home/tommychen/thunder/code/Util/src/util/encrypt/hconv.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/encrypt/hconv.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/encrypt/hconv.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/encrypt/rc5.c.o -c /home/tommychen/thunder/code/Util/src/util/encrypt/rc5.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/encrypt/rc5.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/encrypt/rc5.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/http/HttpParamCodec.cpp.o -c /home/tommychen/thunder/code/Util/src/util/http/HttpParamCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/http/HttpParamCodec.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/http/HttpParamCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/http/HttpUrlCoder.cpp.o -c /home/tommychen/thunder/code/Util/src/util/http/HttpUrlCoder.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/http/HttpUrlCoder.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/http/HttpUrlCoder.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/http/http_parser.c.o -c /home/tommychen/thunder/code/Util/src/util/http/http_parser.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/http/http_parser.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/http/http_parser.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/http/pico/picohttpparser.c.o -c /home/tommychen/thunder/code/Util/src/util/http/pico/picohttpparser.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/http/pico/picohttpparser.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/http/pico/picohttpparser.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/json/CJsonObject.cpp.o -c /home/tommychen/thunder/code/Util/src/util/json/CJsonObject.cpp",
+  "file": "/home/tommychen/thunder/code/Util/src/util/json/CJsonObject.cpp",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/json/CJsonObject.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Util",
+  "command": "/usr/bin/c++ -DUtil_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -x c++ -O3 -DNDEBUG -std=gnu++20 -fPIC -Wall -Wno-format -fno-strict-aliasing -Wno-sign-compare -o CMakeFiles/Util.dir/src/util/json/cJSON.c.o -c /home/tommychen/thunder/code/Util/src/util/json/cJSON.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/json/cJSON.c",
+  "output": "code/Util/CMakeFiles/Util.dir/src/util/json/cJSON.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Proto",
+  "command": "/usr/bin/c++ -DProto_EXPORTS -D_LINUX_OS_ -I/home/tommychen/thunder/code/Proto -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/Proto.dir/src/coor.pb.cc.o -c /home/tommychen/thunder/code/Proto/src/coor.pb.cc",
+  "file": "/home/tommychen/thunder/code/Proto/src/coor.pb.cc",
+  "output": "code/Proto/CMakeFiles/Proto.dir/src/coor.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/cmd/Cmd.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/Cmd.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/Cmd.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/cmd/Cmd.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/cmd/Module.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/Module.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/Module.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/cmd/Module.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/HttpStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/HttpStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/HttpStep.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/HttpStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/MysqlStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/MysqlStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/MysqlStep.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/MysqlStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/RedisStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/RedisStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/RedisStep.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/RedisStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/Step.cpp.o -c /home/tommychen/thunder/code/Net/src/step/Step.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/Step.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/Step.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/StepAuthRedis.cpp.o -c /home/tommychen/thunder/code/Net/src/step/StepAuthRedis.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/StepAuthRedis.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/StepAuthRedis.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/step/StepNode.cpp.o -c /home/tommychen/thunder/code/Net/src/step/StepNode.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/StepNode.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/step/StepNode.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/session/Session.cpp.o -c /home/tommychen/thunder/code/Net/src/session/Session.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/session/Session.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/session/Session.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/session/Timer.cpp.o -c /home/tommychen/thunder/code/Net/src/session/Timer.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/session/Timer.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/session/Timer.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/Labor.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Labor.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Labor.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/Labor.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/Loader.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Loader.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Loader.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/Loader.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/Manager.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Manager.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Manager.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/Manager.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/TcpCenterConnector.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/TcpCenterConnector.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/TcpCenterConnector.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/TcpCenterConnector.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/Worker.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Worker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Worker.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/Worker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/labor/WorkerThreadPool.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/WorkerThreadPool.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/WorkerThreadPool.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/labor/WorkerThreadPool.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/protocol/http.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/http.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/http.pb.cc",
+  "output": "code/Net/CMakeFiles/Net.dir/src/protocol/http.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/protocol/msg.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/msg.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/msg.pb.cc",
+  "output": "code/Net/CMakeFiles/Net.dir/src/protocol/msg.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/protocol/oss_sys.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/oss_sys.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/oss_sys.pb.cc",
+  "output": "code/Net/CMakeFiles/Net.dir/src/protocol/oss_sys.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/DbOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/DbOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/DbOperator.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/DbOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/MemOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/MemOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/MemOperator.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/MemOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/MongoOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/MongoOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/MongoOperator.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/MongoOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/RedisOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/RedisOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/RedisOperator.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/RedisOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/StorageOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/StorageOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/StorageOperator.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/StorageOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/storage/dataproxy.pb.cc.o -c /home/tommychen/thunder/code/Net/src/storage/dataproxy.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/dataproxy.pb.cc",
+  "output": "code/Net/CMakeFiles/Net.dir/src/storage/dataproxy.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/coro/MySqlAwaitable.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/MySqlAwaitable.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/MySqlAwaitable.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/coro/MySqlAwaitable.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/coro/RedisAwaitable.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/RedisAwaitable.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/RedisAwaitable.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/coro/RedisAwaitable.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/src/coro/StepCo20.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/StepCo20.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/StepCo20.cpp",
+  "output": "code/Net/CMakeFiles/Net.dir/src/coro/StepCo20.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/cc -DNODE_BEAT=10.0 -DNet_EXPORTS -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -fPIC -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Net.dir/__/Util/src/util/http/pico/picohttpparser.c.o -c /home/tommychen/thunder/code/Util/src/util/http/pico/picohttpparser.c",
+  "file": "/home/tommychen/thunder/code/Util/src/util/http/pico/picohttpparser.c",
+  "output": "code/Net/CMakeFiles/Net.dir/__/Util/src/util/http/pico/picohttpparser.c.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/Interface.cpp.o -c /home/tommychen/thunder/code/Net/src/Interface.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/Interface.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/Interface.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/NetUtil.cpp.o -c /home/tommychen/thunder/code/Net/src/NetUtil.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/NetUtil.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/NetUtil.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/Cmd.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/Cmd.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/Cmd.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/Cmd.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/Module.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/Module.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/Module.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/Module.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdBeat.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdBeat.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdBeat.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdBeat.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdConnectWorker.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdConnectWorker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdConnectWorker.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdConnectWorker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdHeartBeatRes.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdHeartBeatRes.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdHeartBeatRes.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdHeartBeatRes.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdLogicConfig.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdLogicConfig.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdLogicConfig.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdLogicConfig.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrBeat.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrBeat.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrBeat.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrBeat.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrLogicConfig.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrLogicConfig.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrLogicConfig.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrLogicConfig.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrServerConfig.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrServerConfig.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdMgrServerConfig.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdMgrServerConfig.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdNodeNotice.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdNodeNotice.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdNodeNotice.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdNodeNotice.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadCustom.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadCustom.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadCustom.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadCustom.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadModule.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadModule.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadModule.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadModule.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadSo.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadSo.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdReloadSo.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdReloadSo.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdSetLogLevel.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdSetLogLevel.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdSetLogLevel.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdSetLogLevel.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdToldWorker.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdToldWorker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdToldWorker.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdToldWorker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdUpdateConfig.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdUpdateConfig.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdUpdateConfig.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdUpdateConfig.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdUpdateNodeId.cpp.o -c /home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdUpdateNodeId.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/cmd/sys_cmd/CmdUpdateNodeId.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/cmd/sys_cmd/CmdUpdateNodeId.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/AppMsgCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/AppMsgCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/AppMsgCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/AppMsgCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/ClientMsgCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/ClientMsgCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/ClientMsgCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/ClientMsgCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/CodecCustom.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/CodecCustom.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/CodecCustom.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/CodecCustom.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/CodecWebSocketJson.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/CodecWebSocketJson.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/CodecWebSocketJson.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/CodecWebSocketJson.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/CodecWebSocketPb.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/CodecWebSocketPb.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/CodecWebSocketPb.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/CodecWebSocketPb.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/CodecWebSocketPbApp.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/CodecWebSocketPbApp.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/CodecWebSocketPbApp.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/CodecWebSocketPbApp.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/HttpCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/HttpCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/HttpCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/HttpCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/HttpFastCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/HttpFastCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/HttpFastCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/HttpFastCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/HttpsCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/HttpsCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/HttpsCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/HttpsCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/ProtoCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/ProtoCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/ProtoCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/ProtoCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/ThunderCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/ThunderCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/ThunderCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/ThunderCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/codec/WssCodec.cpp.o -c /home/tommychen/thunder/code/Net/src/codec/WssCodec.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/codec/WssCodec.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/codec/WssCodec.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/coro/MySqlAwaitable.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/MySqlAwaitable.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/MySqlAwaitable.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/coro/MySqlAwaitable.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/coro/RedisAwaitable.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/RedisAwaitable.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/RedisAwaitable.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/coro/RedisAwaitable.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/coro/StepCo20.cpp.o -c /home/tommychen/thunder/code/Net/src/coro/StepCo20.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/coro/StepCo20.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/coro/StepCo20.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/dispatcher/ConHash.cpp.o -c /home/tommychen/thunder/code/Net/src/dispatcher/ConHash.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/dispatcher/ConHash.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/dispatcher/ConHash.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/dispatcher/Nodes.cpp.o -c /home/tommychen/thunder/code/Net/src/dispatcher/Nodes.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/dispatcher/Nodes.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/dispatcher/Nodes.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/Labor.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Labor.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Labor.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/Labor.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/Loader.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Loader.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Loader.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/Loader.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/Manager.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Manager.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Manager.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/Manager.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/TcpCenterConnector.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/TcpCenterConnector.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/TcpCenterConnector.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/TcpCenterConnector.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/Worker.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/Worker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/Worker.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/Worker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/WorkerThreadPool.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/WorkerThreadPool.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/WorkerThreadPool.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/WorkerThreadPool.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/io/AsioUringIoBackend.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/io/AsioUringIoBackend.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/io/AsioUringIoBackend.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/io/AsioUringIoBackend.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/io/DpdkIoBackend.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/io/DpdkIoBackend.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/io/DpdkIoBackend.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/io/DpdkIoBackend.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/io/EvIoBackend.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/io/EvIoBackend.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/io/EvIoBackend.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/io/EvIoBackend.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/labor/io/NativeUringIoBackend.cpp.o -c /home/tommychen/thunder/code/Net/src/labor/io/NativeUringIoBackend.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/labor/io/NativeUringIoBackend.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/labor/io/NativeUringIoBackend.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/logger/CustomLogger.cpp.o -c /home/tommychen/thunder/code/Net/src/logger/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/logger/CustomLogger.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/logger/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/logger/FileLogger.cpp.o -c /home/tommychen/thunder/code/Net/src/logger/FileLogger.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/logger/FileLogger.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/logger/FileLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/main.cpp.o -c /home/tommychen/thunder/code/Net/src/main.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/main.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/main.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/protocol/http.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/http.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/http.pb.cc",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/protocol/http.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/protocol/msg.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/msg.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/msg.pb.cc",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/protocol/msg.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/protocol/oss_sys.pb.cc.o -c /home/tommychen/thunder/code/Net/src/protocol/oss_sys.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/protocol/oss_sys.pb.cc",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/protocol/oss_sys.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/register/EtcdCenterConnector.cpp.o -c /home/tommychen/thunder/code/Net/src/register/EtcdCenterConnector.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/register/EtcdCenterConnector.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/register/EtcdCenterConnector.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/register/EtcdHttpConn.cpp.o -c /home/tommychen/thunder/code/Net/src/register/EtcdHttpConn.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/register/EtcdHttpConn.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/register/EtcdHttpConn.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/register/EtcdWatcher.cpp.o -c /home/tommychen/thunder/code/Net/src/register/EtcdWatcher.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/register/EtcdWatcher.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/register/EtcdWatcher.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/session/Session.cpp.o -c /home/tommychen/thunder/code/Net/src/session/Session.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/session/Session.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/session/Session.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/session/Timer.cpp.o -c /home/tommychen/thunder/code/Net/src/session/Timer.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/session/Timer.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/session/Timer.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/HttpStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/HttpStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/HttpStep.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/HttpStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/MysqlStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/MysqlStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/MysqlStep.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/MysqlStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/RedisStep.cpp.o -c /home/tommychen/thunder/code/Net/src/step/RedisStep.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/RedisStep.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/RedisStep.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/Step.cpp.o -c /home/tommychen/thunder/code/Net/src/step/Step.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/Step.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/Step.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/StepAuthRedis.cpp.o -c /home/tommychen/thunder/code/Net/src/step/StepAuthRedis.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/StepAuthRedis.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/StepAuthRedis.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/StepNode.cpp.o -c /home/tommychen/thunder/code/Net/src/step/StepNode.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/StepNode.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/StepNode.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/sys_step/StepConnectWorker.cpp.o -c /home/tommychen/thunder/code/Net/src/step/sys_step/StepConnectWorker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/sys_step/StepConnectWorker.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/sys_step/StepConnectWorker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/step/sys_step/StepTellWorker.cpp.o -c /home/tommychen/thunder/code/Net/src/step/sys_step/StepTellWorker.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/step/sys_step/StepTellWorker.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/step/sys_step/StepTellWorker.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/DbOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/DbOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/DbOperator.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/DbOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/MemOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/MemOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/MemOperator.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/MemOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/MongoOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/MongoOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/MongoOperator.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/MongoOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/RedisOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/RedisOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/RedisOperator.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/RedisOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/StorageOperator.cpp.o -c /home/tommychen/thunder/code/Net/src/storage/StorageOperator.cpp",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/StorageOperator.cpp",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/StorageOperator.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Net",
+  "command": "/usr/bin/c++ -DNODE_BEAT=10.0 -DWORKER_OVERDUE=60.0 -D_GNU_SOURCE=1 -D_LINUX_OS_ -D_REENTRANT -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc -I/home/tommychen/thunder/code/3party/include/bson -I/home/tommychen/thunder/code/3party/include/libev -I/home/tommychen/thunder/code/3party/asio/asio/include -O3 -DNDEBUG -std=gnu++20 -Wno-deprecated-declarations -Wno-pmf-conversions -Wno-error=format-security -fcoroutines -o CMakeFiles/Hello.dir/src/storage/dataproxy.pb.cc.o -c /home/tommychen/thunder/code/Net/src/storage/dataproxy.pb.cc",
+  "file": "/home/tommychen/thunder/code/Net/src/storage/dataproxy.pb.cc",
+  "output": "code/Net/CMakeFiles/Hello.dir/src/storage/dataproxy.pb.cc.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleHelloHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttp.dir/src/ModuleHello/HttpRequestCo.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/ModuleHello/HttpRequestCo.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/ModuleHello/HttpRequestCo.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleHelloHttp.dir/src/ModuleHello/HttpRequestCo.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleHelloHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttp.dir/src/ModuleHello/ModuleHello.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/ModuleHello/ModuleHello.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/ModuleHello/ModuleHello.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleHelloHttp.dir/src/ModuleHello/ModuleHello.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleHelloHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttp.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleHelloHttp.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleHelloHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttp.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleHelloHttp.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleRawHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleRaw -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleRawHttp.dir/src/ModuleRaw/ModuleRaw.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/ModuleRaw/ModuleRaw.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/ModuleRaw/ModuleRaw.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleRawHttp.dir/src/ModuleRaw/ModuleRaw.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleRawHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleRaw -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleRawHttp.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleRawHttp.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleRawHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleRaw -I/home/tommychen/thunder/code/HelloHttp/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleRawHttp.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleRawHttp.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleLuaHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleLua -I/home/tommychen/thunder/code/HelloHttp/src -I/tmp/luajit-dev/usr/include/luajit-2.1 -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleLuaHttp.dir/src/ModuleLua/ModuleLua.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/ModuleLua/ModuleLua.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/ModuleLua/ModuleLua.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleLuaHttp.dir/src/ModuleLua/ModuleLua.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleLuaHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleLua -I/home/tommychen/thunder/code/HelloHttp/src -I/tmp/luajit-dev/usr/include/luajit-2.1 -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleLuaHttp.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/CustomLogger.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleLuaHttp.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttp",
+  "command": "/usr/bin/c++ -DModuleLuaHttp_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttp/src/ModuleLua -I/home/tommychen/thunder/code/HelloHttp/src -I/tmp/luajit-dev/usr/include/luajit-2.1 -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleLuaHttp.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttp/src/HelloSession.cpp",
+  "output": "code/HelloHttp/CMakeFiles/ModuleLuaHttp.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttps",
+  "command": "/usr/bin/c++ -DModuleHelloHttps_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttps/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttps/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttps.dir/src/ModuleHello/HttpRequestCo.cpp.o -c /home/tommychen/thunder/code/HelloHttps/src/ModuleHello/HttpRequestCo.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttps/src/ModuleHello/HttpRequestCo.cpp",
+  "output": "code/HelloHttps/CMakeFiles/ModuleHelloHttps.dir/src/ModuleHello/HttpRequestCo.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttps",
+  "command": "/usr/bin/c++ -DModuleHelloHttps_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttps/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttps/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttps.dir/src/ModuleHello/ModuleHello.cpp.o -c /home/tommychen/thunder/code/HelloHttps/src/ModuleHello/ModuleHello.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttps/src/ModuleHello/ModuleHello.cpp",
+  "output": "code/HelloHttps/CMakeFiles/ModuleHelloHttps.dir/src/ModuleHello/ModuleHello.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttps",
+  "command": "/usr/bin/c++ -DModuleHelloHttps_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttps/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttps/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttps.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloHttps/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttps/src/CustomLogger.cpp",
+  "output": "code/HelloHttps/CMakeFiles/ModuleHelloHttps.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloHttps",
+  "command": "/usr/bin/c++ -DModuleHelloHttps_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloHttps/src/ModuleHello -I/home/tommychen/thunder/code/HelloHttps/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleHelloHttps.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloHttps/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloHttps/src/HelloSession.cpp",
+  "output": "code/HelloHttps/CMakeFiles/ModuleHelloHttps.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DCmdHelloWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/CmdHello -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/CmdHelloWs.dir/src/CmdHello/CmdHello.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/CmdHello/CmdHello.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/CmdHello/CmdHello.cpp",
+  "output": "code/HelloWs/CMakeFiles/CmdHelloWs.dir/src/CmdHello/CmdHello.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DCmdHelloWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/CmdHello -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/CmdHelloWs.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/CustomLogger.cpp",
+  "output": "code/HelloWs/CMakeFiles/CmdHelloWs.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DCmdHelloWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/CmdHello -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/CmdHelloWs.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/HelloSession.cpp",
+  "output": "code/HelloWs/CMakeFiles/CmdHelloWs.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DModuleShakeWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/ModuleShake -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/cryptopp -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleShakeWs.dir/src/ModuleShake/ModuleShake.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/ModuleShake/ModuleShake.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/ModuleShake/ModuleShake.cpp",
+  "output": "code/HelloWs/CMakeFiles/ModuleShakeWs.dir/src/ModuleShake/ModuleShake.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DModuleShakeWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/ModuleShake -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/cryptopp -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleShakeWs.dir/src/CustomLogger.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/CustomLogger.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/CustomLogger.cpp",
+  "output": "code/HelloWs/CMakeFiles/ModuleShakeWs.dir/src/CustomLogger.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/HelloWs",
+  "command": "/usr/bin/c++ -DModuleShakeWs_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/HelloWs/src/ModuleShake -I/home/tommychen/thunder/code/HelloWs/src -I/home/tommychen/thunder/code/3party -I/home/tommychen/thunder/code/3party/cryptopp -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleShakeWs.dir/src/HelloSession.cpp.o -c /home/tommychen/thunder/code/HelloWs/src/HelloSession.cpp",
+  "file": "/home/tommychen/thunder/code/HelloWs/src/HelloSession.cpp",
+  "output": "code/HelloWs/CMakeFiles/ModuleShakeWs.dir/src/HelloSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Logic",
+  "command": "/usr/bin/c++ -DCmdGetToken_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/Logic/src/CmdGetToken -I/home/tommychen/thunder/code/Logic/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/CmdGetToken.dir/src/CmdGetToken/CmdGetToken.cpp.o -c /home/tommychen/thunder/code/Logic/src/CmdGetToken/CmdGetToken.cpp",
+  "file": "/home/tommychen/thunder/code/Logic/src/CmdGetToken/CmdGetToken.cpp",
+  "output": "code/Logic/CMakeFiles/CmdGetToken.dir/src/CmdGetToken/CmdGetToken.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Logic",
+  "command": "/usr/bin/c++ -DCmdGetToken_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/Logic/src/CmdGetToken -I/home/tommychen/thunder/code/Logic/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/CmdGetToken.dir/src/LogicSession.cpp.o -c /home/tommychen/thunder/code/Logic/src/LogicSession.cpp",
+  "file": "/home/tommychen/thunder/code/Logic/src/LogicSession.cpp",
+  "output": "code/Logic/CMakeFiles/CmdGetToken.dir/src/LogicSession.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Interface",
+  "command": "/usr/bin/c++ -DModuleInterface_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/Interface/src/ModuleHello -I/home/tommychen/thunder/code/Interface/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleInterface.dir/src/ModuleHello/ModuleInterface.cpp.o -c /home/tommychen/thunder/code/Interface/src/ModuleHello/ModuleInterface.cpp",
+  "file": "/home/tommychen/thunder/code/Interface/src/ModuleHello/ModuleInterface.cpp",
+  "output": "code/Interface/CMakeFiles/ModuleInterface.dir/src/ModuleHello/ModuleInterface.cpp.o"
+},
+{
+  "directory": "/home/tommychen/thunder/build_release/code/Interface",
+  "command": "/usr/bin/c++ -DModuleInterface_EXPORTS -DNODE_BEAT=10.0 -D_LINUX_OS_ -I/home/tommychen/thunder/code/Interface/src/ModuleHello -I/home/tommychen/thunder/code/Interface/src -I/home/tommychen/thunder/code/Proto/src -I/home/tommychen/thunder/code/Proto/include -I/home/tommychen/thunder/code/Net/include -I/home/tommychen/thunder/code/Net/src -I/home/tommychen/thunder/code/Util/src -I/home/tommychen/thunder/code/Util/src/Util -I/home/tommychen/thunder/code/3party/protobuf/src -I/home/tommychen/thunder/code/3party/protobuf/build/_deps/absl-src -I/home/tommychen/thunder/code/3party/include -I/home/tommychen/thunder/code/3party/include/mariadb -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src -I/home/tommychen/thunder/code/3party/include/mongoc/src/libbson/src/bson -O3 -DNDEBUG -std=gnu++20 -fPIC -o CMakeFiles/ModuleInterface.dir/src/InterfaceSession.cpp.o -c /home/tommychen/thunder/code/Interface/src/InterfaceSession.cpp",
+  "file": "/home/tommychen/thunder/code/Interface/src/InterfaceSession.cpp",
+  "output": "code/Interface/CMakeFiles/ModuleInterface.dir/src/InterfaceSession.cpp.o"
+}
+]

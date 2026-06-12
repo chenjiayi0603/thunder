@@ -1272,9 +1272,6 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
     iRecvByte += result;
 
     // === Receive Fast-Path (IoBackend) ===
-    // 对于 /hello/raw 等简单请求, 直接从 raw buffer 提取 path 并响应,
-    // 绕过 HttpCodec::Decode (http-parser 回调 + protobuf HttpMsg 构造)
-    // 和 Dispose → AnyMessage → SendToClient 全流程.
     if (pConn->eCodecType == util::CODEC_HTTP
         && pConn->pRecvBuff->ReadableBytes() > 0)
     {
@@ -1343,7 +1340,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                             m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
                         }
                     }
-                    return true;  // fast path handled
+                    return true;
                 }
                 // 请求不完整, 回退到正常 decode 流程
             }

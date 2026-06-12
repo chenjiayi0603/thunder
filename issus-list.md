@@ -210,9 +210,9 @@ it = mapFdAttr.erase(it);
   Docker E2E 下回归确认(本环境因 #1 暂无法构建带 sanitizer 的版本)。
 ---
 
-## 🔴 #9 [严重→部分修复] etcd 节点发现完全失效 — 跨节点 S2S 路由全断 (Center→etcd 迁移回归)
+## ✅ #9 [严重→已修复] etcd 节点发现完全失效 — 跨节点 S2S 路由全断 (Center→etcd 迁移回归)
 
-**当前状态: ⚠️ 部分修复 — E2E 验证通过, 但长时间运行后 DoRegister 卡死 >30s (2026-06-11 复现)**
+**当前状态: ✅ 已修复 — 5 环 bug 链 + #24 EtcdHttpConn 修复后, 5 节点稳定注册, keepalive 持续正常**
 
 ### 根因是一条 5 环 bug 链(逐一插桩定位)
 1. **watch 从 rev 1 发起被 etcd compaction 取消**:`m_lastRevision=0` → `start_revision:1`,
@@ -403,6 +403,8 @@ CLAUDE.md 宣称"✅ Center 集群/节点注册发现/S2S 跨节点"与实测不
       ② `CBuffer.hpp` memcpy(nullptr, 0) UBSan runtime error
       ASan: 18/18 net_interface + 41/41 codec_http + 10/10 shm_queue(含 fork 并发) 全通过 ✅
 - [x] GitHub Issue 闭环 — #8~#18 全部创建并关闭，引用对应 commit ✅
+- [x] **#63** ModuleLua SendToLogic 全链路 — 3 个 bug 修复, Docker 15/16 + K8s 12/16 ✅
+- [x] **#67** ModuleRaw keep-alive Non-2xx — Receive Fast-Path goto read_again → return true, 237k ✅
 
 
 ---
@@ -1513,14 +1515,9 @@ Lua 只做 gatekeeper，不碰 IO 和业务计算。
 | SO Fast Path | 234k | C++ 原生 (Fast Path) |
 | 差距 | ~11x | 业务逻辑重时比例下降 |
 
-## 🔵 #63 [阻塞] ModuleLua SendToLogic — HEllo(Lua)→LOGIC→HEllo(Lua)→客户端 (阻塞于 #9)
+## 🔵 #63 [已闭环] ModuleLua SendToLogic — HEllo(Lua)→LOGIC→HEllo(Lua)→客户端
 
-### 完整链路 (未跑通)
-
-阻塞于 #9: etcd DoRegister 卡死 → LOGIC 未注册 → SendToNodeType 找不到 LOGIC → LogicStep 超时
-
-已实测: RegisterCallback ✅ | Emit/SendToNodeType ✅ | Timeout ✅
-未实测: Callback → Lua → SendToClientFast (需 #9 修复)
+> 2026-06-11 | 修复 | 状态: ✅ 已闭环 | 阻塞于 #9+#24
 
 ### 完整链路
 
@@ -1531,35 +1528,40 @@ Lua 只做 gatekeeper，不碰 IO 和业务计算。
          ↓
     SendToLogic(body, callbackFunc)  ← Lua 调用
          ↓
-    LogicStep::Emit() → SendToNodeType("LOGIC", ...)  ← HEllo 发到 LOGIC
+    LogicStep::Emit() → SendToSession("LOGIC", ...)  ← HEllo 发到 LOGIC
          ↓
     LOGIC 处理请求并返回响应
          ↓
     LogicStep::Callback(msgHead, msgBody)  ← LOGIC 响应回到 HEllo
          ↓
-    Lua callback(resp)  ← Lua 检查/处理 LOGIC 响应
+    Lua callback(resp) return string  ← Lua 回调 return 应答
          ↓
-    SendToClientFast(resp)  ← HEllo 回给客户端
+    SendToClientFast(resp)  ← HEllo 回给客户端 (Callback 内用捕获的 m_shell)
 ```
 
-### 当前验证结果
+### 根因: 3 个 bug
 
-| 环节 | 状态 | 说明 |
-|------|:----:|------|
-| HEllo(Lua)→SendToLogic→LogicStep✅RegisterCallback | ✅ | RegisterCallback 成功 (seq=1876967427) |
-| LogicStep::Emit→SendToNodeType("LOGIC") | ✅ | HEllo 正确发往 LOGIC |
-| LogicStep::Timeout (LOGIC 不可达) | ✅ | `{"code":1,"msg":"logic timeout"}` |
-| LOGIC→LogicStep::Callback→Lua callback→SendToClientFast | ✅ | **代码实现，逻辑正确** |
-| 端到端集群验证 (LOGIC 注册到 etcd) | ⏭️ | 需 etcd 中有 LOGIC 注册 |
+| # | Bug | 文件 | 说明 |
+|---|-----|------|------|
+| 1 | `Emit` 缺 `seq`/`msgbody_len`, 用 `SendToNodeType`(广播) | `ModuleLua.cpp:45-53` | 回包 seq=0 不匹配 Step → Callback 永不触发 |
+| 2 | `RegisterCallback` 后未调 `Emit()` | `ModuleLua.cpp:82-88` | Step 注册了但消息从未发出 |
+| 3 | `route.lua` 回调内调全局 `SendToClientFast` | `route.lua` | 异步回调时 `__current_shell` 已 nil |
 
-```
-验证日志:
-  ModuleLua: About to RegisterCallback
-  ModuleLua: RegisterCallback returned 1, seq=1876967427
-  route → {"code":1,"msg":"logic timeout"}
-```
+### 修复
 
-`SendToLogic` 完整链路已通（RegisterCallback + Emit + Timeout 已验证，Callback→Lua 代码就绪）。LOGIC 注册到 etcd 后自动触发 Lua callback 处理响应。
+- `LogicStep::Emit`: `h.set_seq(GetSequence())` + `set_msgbody_len` + 改 `SendToSession("LOGIC")`
+- `lua_SendToLogic`: `RegisterCallback` 后 `baseStep->Emit(0)` (框架规范: 注册后必须显式 Emit)
+- `route.lua`: 回调 `return '...'` (C++ `Callback` 用捕获的 `m_shell` 发客户端)
+- `test_smoke.sh`: lua_route 断言收紧为 `code==0 and 'logic' in d`
+
+### 验证
+
+| 环境 | 结果 |
+|------|------|
+| **Docker-Compose** | `{"code":0,"msg":"ok","logic":{"code":1}}` ✅ |
+| **K8s** | `{"code":0,"msg":"ok","logic":{"code":1}}` ✅ |
+
+`logic={"code":1}` 是 LOGIC 真实回包 (`{"option":"Echo"}` 非合法 GenKey 参数 → LOGIC 返回 code:1), 符合「原样转发」设计。发 `{"option":"GenKey",...}` 时 logic 字段为 `{"code":0,token:...,key:...}`。
 
 ## 🔵 #64 [需求] Lua 脚本路径从配置文件读取，而非硬编码在 create()
 
@@ -1673,3 +1675,168 @@ Admin 页面当前支持：
         ├── 在线编辑 .lua → 保存 → etcd → 文件重载
         └── 版本历史 → 回滚
 ```
+
+## ✅ #67 [已修复] asio_uring ModuleRaw 404 + Receive Fast-Path 竞态
+
+> 2026-06-11 | bug | 状态: ✅ 已修复
+
+### 根因
+
+两个独立问题：
+
+**1. ModuleRaw.cpp 缺 MUDULE_CREATE** (主因)
+`ModuleRaw.cpp` 从创建起就缺 `MUDULE_CREATE(ModuleRaw)`，`ModuleRaw.so` 无 `create` 导出符号。
+- ev: Receive Fast-Path 拦截 `/hello/raw` → 不走 dlopen → 不受影响 ✅
+- asio_uring: 走正常 Codec 路径 → dlopen ModuleRaw.so → `dlsym "create"` 失败 → 404 ❌
+
+**2. Receive Fast-Path SubmitRead 竞态** (#67 原始猜测)
+`SendToClientFast` 后 `SubmitRead` 复用 pRecvBuff，但经测试 ev 后端 `goto read_again` 和 asio_uring 的 `SubmitRead` 路径均无实际竞态触发。Non-2xx 由问题 1 的 404 引起。
+
+### 修复
+
+`ModuleRaw.cpp` 加一行 `MUDULE_CREATE(ModuleRaw);`。
+
+### 影响范围
+
+| 后端 | 修前 | 修后 |
+|------|:---:|:---:|
+| ev | 正常 (Fast-Path 拦截) | 正常 (同) |
+| asio_uring | 404 / ~10 RPS | `{"code":0,"msg":"ok"}` ✅ |
+
+## 🔵 #68 [已排除] LuaJIT 加载对性能的影响 (误判)
+
+> 2026-06-12 | 记录 | 状态: ✅ 已排除 (数据污染)
+
+### 背景
+
+测试中发现 ModuleRaw 64B 在「有 Lua 模块」时 106k、「无 Lua 模块」时 207k, 误判为 LuaJIT 导致性能降半。
+
+### 真相
+
+多次 `python3 -c` 编辑 `conf/Hello.json` 导致配置损坏——module 数从 5 变为 2。
+
+**修正后**: 恢复原始 conf (`git checkout -- conf/Hello.json`), ModuleRaw 64B = **150k**。
+差异来源是 conf 污染, 非 LuaJIT。
+
+## ✅ #69 [已定位] 当前 ModuleRaw 基准 (110k) 远低于报告 (322k)
+
+> 2026-06-12 | 已定位 | 状态: ✅ 根因 = 工作区未提交的 `log_level: TRACE`, conf 已恢复 INFO (生效需重启服务)
+
+### 根因 (2026-06-12 确认)
+
+**`deploy/HelloHttp/conf/Hello.json` 的 `log_level` 被改为 `TRACE` 且未提交。**
+322k 报告在 INFO 下测得 (1196ec0 专门调整日志级别为 INFO)。
+
+单变量对照实验 (同二进制 / 同绑核 CPU4 / 同 powersave governor, 只改日志级别):
+
+| 条件 | ModuleRaw 64B RPS |
+|------|:---:|
+| TRACE (复现 #69) | 134k |
+| INFO (仅改日志级别) | **230k (+71%)** |
+
+- 机理: ev 收包路径在 Fast-Path **之前**有 2+ 条/请求 TRACE 日志 (`Worker.cpp:592/613`), ~30MB/s 落盘
+- 路径越长惩罚越大: ModuleRaw 1.7x / lua_echo 3.9x / ModuleHello **5.8x** (TRACE→INFO 恢复倍数)
+- 旁证: 同期 Nginx 173k→195k 不降反升, 排除 thermal/HT 限频理论
+- 漏因: 之前只比 `git diff 87f3eb7..HEAD` (提交间), TRACE 是**工作区未提交改动**;
+  且进程从共享内存读配置, 改文件不重启不生效, 中途改回也测不出
+- 剩余差距 (230k vs 322k) = powersave 4.1GHz vs performance ≈5GHz + 单核绑核 vs P-core 4-9,
+  与报告自有数据 (powersave −13.6%) 自洽
+- 修正后全矩阵数据见 `docs/reports/10-vs-nginx-benchmark-20260610.md` 第五节
+
+### 衍生发现
+
+1. **asio_uring 64K 大包仍可复现 Worker 崩溃** (signal 9 被杀, Manager 自动拉起) + wrk timeout,
+   即 #11 报告 "SubmitRead 竞态" 修复未生效, 待修
+2. **压测脚本杀进程顺序陷阱**: 先杀 Worker 再杀 Manager 会触发拉起新 Worker 后留孤儿监听,
+   SO_REUSEPORT 双 Worker 同时服务 → 吞吐虚高 ~40% (本次 asio 339k 假数据来源)
+3. 频繁重启压测实例向共享 etcd 注册新 node_id, 出现 "槽位已满(max=255)";
+   压测沙箱应将 etcd endpoint 指向死地址 (已验证对性能无影响)
+
+### 现象
+
+同机器、同 kernel、同 `performance` governor + HT0 绑核:
+- 报告 (2026-06-10, 87f3eb7): ModuleRaw 64B = **322k** (ev)
+- 当前 (HEAD): ModuleRaw 64B = **110k** (ev)
+
+### 已排除的因素
+
+| 因素 | 结果 | 方法 |
+|------|:----:|------|
+| LuaJIT 加载 | 无关 (110k) | 对比有/无 lua 模块 |
+| etcd 注册定时器 | 无关 (108k) | 改 endpoint 到 127.0.0.1:1 |
+| Worker.cpp 代码 diff | 无 diff | `git diff 87f3eb7..HEAD -- Worker.cpp` 空 |
+| Labor.cpp IoBackend | 无 diff | `git diff 87f3eb7..HEAD -- Labor.cpp` 空 |
+| CMake build flags | 一致 | 同为 RelWithDebInfo -O2 -g |
+| CPU 绑核 | 一致 | HT0 (0,2,4,6,8,10) |
+| Governor | 一致 | performance |
+| 环境脏 | 排除 | docker 停, 裸机, 恢复原始 conf |
+| HT 限频 | 排除 | 只绑 HT0, CPU4 4.3GHz 正常 |
+
+### 未排除的因素
+
+1. **系统库版本变化**: `protobuf`, `libc`, `libstdc++` 等系统库可能在两次压测间更新 (apt upgrade)
+2. **编译器版本**: 编译器版本可能不同, 生成代码不同
+3. **二进制依赖**: 当前构建的 binary 链接了不同的 .so (libNet.so 经过多次修改重建)
+4. **protobuf Arena 影响**: 虽然代码相同, protobuf 内部行为可能因版本不同
+
+### 验证方法
+
+```
+git stash           # 暂存当前修改
+git checkout 87f3eb7  # 切到报告版本
+cmake --build build   # 重编
+# 压测 ModuleRaw 64B → 如果能回到 322k, 说明是代码之外的差异
+# 如果还是 100k+ 量级, 说明是环境/库版本差异
+git checkout HEAD
+git stash pop
+```
+
+### 结论
+
+加载 `libluajit-5.1.so.2` + 3 个 Lua 模块对全进程性能无明显影响 (~150k, conf 恢复后一致)。
+## 🔴 #70 [bug] asio_uring 64K 大包 Worker 崩溃 (signal 9) + wrk timeout
+
+> 2026-06-12 | bug | 状态: 🔴 待修复 | 关联: #67 (当时结论"无实际竞态触发"被本次实证推翻)
+
+### 现象
+
+压测沙箱 (单 Worker 绑核 CPU4, INFO log, etcd 断连), `io_backend: asio_uring`:
+
+- `wrk -t4 -c100 -d10s -s wrk_64k.lua /hello/raw` 期间 Worker 被 signal 9 杀死,
+  Manager 日志: `error 9: duty <pid> exit and sent signal 17 with code 9` → 自动拉起
+- 复测未崩溃时也有 34 个 wrk timeout, RPS 仅 ~50k (ev 同条件 70k)
+- 64B/256B/1K/4K 均正常且与 ev 持平 (239k/236k/230k/225k), 仅 64K 大包触发
+- 崩溃为偶发, 非每次复现
+
+### 怀疑方向
+
+1. Receive Fast-Path `SendToClientFast` 后 `SubmitRead` 复用/扩容 pRecvBuff 与 io_uring
+   在途读的缓冲区竞态 (#67 原始猜测, 当时仅在小包下验证排除)
+2. 64K body 跨多次读完成, fast-path "请求不完整回退" 路径与批量提交交互
+3. signal 9 来源待查: OOM killer (内核日志无权限读取) 或 buffer 异常增长
+
+### 验证方法
+
+沙箱复现: /tmp/thunder-bench (asio_uring + wrk_64k 循环), 开 core dump / 监控 RSS 增长
+
+## 🟡 #71 [工具] 压测脚本杀进程顺序导致孤儿 Worker, SO_REUSEPORT 双进程服务吞吐虚高
+
+> 2026-06-12 | 工具/流程 | 状态: 🟡 已知坑, 压测脚本需固化正确顺序
+
+### 现象
+
+压测脚本先 `pkill Worker` 再 `pkill Manager`:
+Manager 在被杀前检测到 Worker 退出 → 自动拉起新 Worker → Manager 死后新 Worker 成孤儿。
+下轮压测实例启动后, 孤儿与新 Worker 通过 SO_REUSEPORT 同时监听同一端口,
+wrk 连接被内核分流到两个进程 → 吞吐虚高 ~40% (#69 排查中 asio_uring "339k" 假数据来源)。
+
+### 正确做法
+
+1. **先杀 Manager 再杀 Worker** (Manager 死后不会再拉起)
+2. 杀完后必须验证: `pgrep -x <name>_W0` 无残留 + `ss -tlnp | grep <port>` 端口已释放
+3. 同理适用于 node.sh stop 的实现审查 (resolve_pid 是否覆盖孤儿 Worker)
+
+### 附带发现 (同次排查)
+
+频繁重启压测实例向共享 etcd 注册新 node_id, 打满 255 槽位 ("槽位已满" WARN)。
+压测沙箱应将 etcd endpoint 指向死地址 (如 127.0.0.1:1, 已验证对性能无影响)。

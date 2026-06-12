@@ -1,6 +1,6 @@
 # LuaJIT 模块支持 — 设计文档
 
-> 日期: 2026-06-10 | 状态: 🟡 待实现
+> 日期: 2026-06-10 | 更新: 2026-06-11 | 状态: ✅ 已实现
 
 ## 背景
 
@@ -55,12 +55,127 @@ private:
 ```lua
 -- 模块脚本入口 (AnyMessage 回调)
 function handle_request(msg)
-    -- msg.path, msg.body, msg.headers["key"]
-    -- 支持:
-    --   SendToClient(msg)    -- 返回 HTTP 响应
-    --   SendToNext(module)   -- 转发到下一个模块
-    --   Log(level, text)     -- 日志
-    return {code = 0, msg = "ok"}
+    -- msg:path()          -- 请求路径 (string)
+    -- msg:body()          -- 请求 body (string)
+    -- msg:method()        -- HTTP method (int)
+    -- msg:headers()["key"]-- 请求头 (table, 只读)
+    --
+    -- 同步响应 (不涉及 LOGIC):
+    SendToClientFast('{"code":0,"msg":"ok"}')
+    --
+    -- 异步响应 (发到 LOGIC, 等回包再回客户端):
+    SendToLogic(msg:body(), function(resp)
+        return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+    end)
+    return true
+end
+```
+
+#### `SendToClientFast(jsonStr)` — 同步返回 HTTP 响应
+
+- 参数: JSON 字符串
+- **只能在 `handle_request` 同步路径调用** — 此时 `__current_shell` 有效
+- 异步回调中调用会失败: `__current_shell` 已被清空
+
+#### `SendToLogic(body, callback)` → `bool` — 异步请求 LOGIC 并等回包
+
+- 参数:
+  - `body`: 发给 LOGIC 的请求体 (string)
+  - `callback`: `function(resp)` — LOGIC 回包时被调用, `resp` 是 LOGIC 响应体
+- 回调**必须 `return`** 一个字符串作为客户端响应 — C++ `LogicStep::Callback` 用捕获的 `m_shell` 发送
+- **不要在回调里调 `SendToClientFast`** — 此时 `__current_shell` 已 nil
+- LOGIC 不可达时自动返回 `{"code":1,"msg":"logic timeout"}`
+
+### `SendToLogic` 回调底层实现
+
+```
+Lua:  SendToLogic("body", function(resp) return "response" end)
+                      │                          │
+                      │ arg1                     │ arg2
+                      ▼                          ▼
+C++:  lua_SendToLogic(L)
+        │
+        ├─ lua_tolstring(L, 1) → body
+        ├─ luaL_ref(L, LUA_REGISTRYINDEX) → cbRef   // 将 Lua 函数存入注册表
+        ├─ 取 __module_instance → ModuleLua*
+        ├─ 取 __current_shell  → tagMsgShell shell   // 此时有效, 捕获进 LogicStep
+        │
+        ├─ new LogicStep(self, shell, cbRef, body)
+        │     │
+        │     ├─ 构造: 保存 m_shell, m_iCbRef, m_body
+        │     │
+        │     ├─ RegisterCallback(step)  // Step 存入 mapCallbackStep (key=seq)
+        │     └─ Emit(0)                 // 触发 Emit → SendToSession("LOGIC")
+        │                                    │
+        │                            h.set_cmd(10001)
+        │                            h.set_seq(GetSequence())  // seq 用于回包匹配
+        │                            SendToSession("LOGIC", h, b)
+        │
+        └─ return true  (Lua 侧收到 boolean)
+
+                    ┌──── LOGIC 处理请求 ────┐
+                    │  CmdGetToken::AnyMessage │
+                    │  → SendToClient(stMsgShell, resp) │
+                    └──────────┬─────────────┘
+                               │ 回包 seq 匹配
+                               ▼
+C++:  LogicStep::Callback(stMsgShell, msgHead, msgBody)
+        │
+        ├─ lua_rawgeti(L, LUA_REGISTRYINDEX, m_iCbRef) // 取回调函数
+        ├─ lua_pushlstring(L, oBody.body())              // 压入 LOGIC 回包
+        ├─ lua_pcall(L, 1, 1, 0)                         // 调 callback(resp), 1入1出
+        │     │
+        │     └─ Lua: function(resp) return '{"code":0,...}'
+        │                    │
+        │                    └─ return 字符串 → 留在 Lua 栈顶
+        │
+        ├─ lua_isstring(L, -1)?  →  lua_tolstring → resp, len
+        ├─ SendToClientFast(m_shell, resp, len)  // 用捕获的 m_shell, 非全局变量
+        ├─ lua_pop(L, 1)
+        └─ luaL_unref(L, LUA_REGISTRYINDEX, m_iCbRef)  // 释放回调引用
+```
+
+**关键设计点:**
+
+| 机制 | 说明 |
+|------|------|
+| `m_iCbRef` | `luaL_ref` 将 Lua 函数存注册表, 返回整数索引, 异步回包时用 `lua_rawgeti` 取回 |
+| `m_shell` 捕获 | `LogicStep` 构造时保存 `tagMsgShell` — 此时连接有效; 异步回调不再依赖全局 `__current_shell` |
+| `seq` 匹配 | `Emit` 把 `GetSequence()` 写入 `MsgHead.seq`, LOGIC 回包原样带回, 框架 `mapCallbackStep.find(seq)` 路由到正确的 Step |
+| 回调返回值 | `lua_pcall(L, 1, 1, 0)` — 1 个参数 (LOGIC body), 期望 1 个返回值 (响应字符串)。不 return 或 return nil → C++ 不发客户端 |
+| 超时 | `step_timeout`(默认 5s) 后 `LogicStep::Timeout` 触发 → `SendToClientFast(m_shell, '{"code":1,"msg":"logic timeout"}')` |
+
+### 示例脚本
+
+**echo.lua** — 纯同步返回:
+```lua
+function handle_request(msg)
+    SendToClientFast('{"code":0,"msg":"ok"}')
+    return true
+end
+```
+
+**route.lua** — 异步转发 LOGIC, 等回包:
+```lua
+function handle_request(msg)
+    SendToLogic(msg:body(), function(resp)
+        return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+    end)
+    return true
+end
+```
+
+**limit.lua** — 限长 + 异步转发:
+```lua
+function handle_request(msg)
+    if #msg:body() > 100 then
+        SendToClientFast('{"code":1,"msg":"body too long"}')
+        return true
+    end
+    SendToLogic(msg:body(), function(resp)
+        return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+    end)
+    return true
 end
 ```
 
@@ -107,6 +222,16 @@ end
 | `msg:headers()["key"]` + `SendToClientFast(...)` | ~180k (估) | header 查找 |
 
 差距原因：msg:path() 每次 Lua→C 跨边界 ~12k RPS 开销 (echo 极简路径下占比大，业务逻辑重时缩小)。
+
+**裸机对比 (performance, taskset 4-9, INFO, 1 Worker, keep-alive):**
+
+| 端点 | RPS | vs ModuleRaw | 说明 |
+|------|----:|:-----------:|------|
+| ModuleRaw | 237k | — | picohttpparser + `SendToClientFast`, C++ 4 行 |
+| lua_echo | 168k | 71% | 以上 + `lua_pcall`, Lua 3 行 |
+| ModuleHello | 156k | 66% | 以上 + `CJsonObject::Parse/Get/Add/ToString` |
+
+> lua_echo 比 ModuleHello 快 8%: `lua_pcall` (29%) < CJsonObject 堆分配 (34%)。
 
 ## LuaJIT vs SO vs WASM
 
@@ -200,6 +325,7 @@ Lua 做 **gatekeeper**，不做业务处理。业务逻辑和数据操作仍在 
 - **性能**: LuaJIT 对热点路径 JIT 编译，非热点走解释器，echo 场景实测 ≈ native
 - **状态隔离**: 多 .lua 脚本共享一个 lua_State 还是独立？推荐共享 + 沙箱
 - **调试**: `lua_Debug` + `luaL_traceback` 提供错误信息
+- **lua_pcall vs lua_call vs lua_resume**: 当前两处 (`handle_request` L140, `SendToLogic` 回调 L59) 用 `lua_pcall`(有 errfunc 保护)。`lua_call` 无 errfunc 开销, 实测可 +5-10%, 但 Lua 错误会导致 worker 直接 abort。`lua_resume` 适合回调有耗时逻辑时防阻塞事件循环。可考虑脚本声明 `#resume: true` 按需切换。
 
 ## 参考
 

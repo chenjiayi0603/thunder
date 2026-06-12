@@ -11,7 +11,7 @@
 
 > `performance` governor, P-core 4-9 绑核, INFO log, 1 Worker, wrk -t4 -c100 -d10s
 
-### HTTP
+### HTTP 测试结果
 
 > `performance` governor, P-core 4-9 绑核, INFO log, 1 Worker, wrk -t4 -c100 -d10s
 
@@ -30,6 +30,10 @@ Latency(64K): 1.5ms     1.5ms*        1.5ms*        1.48ms
 ```
 
 > * 标注为估算值 (三后端延迟差异 <5%)。
+>
+> **#69 验证 (2026-06-12)**: 一度测得 ModuleRaw 64B 仅 110k, 根因为 conf 被误改 `TRACE` 日志, 非代码回归。
+> INFO 恢复后在 powersave + 单核绑核下实测 ev 240k / asio_uring 239k / native_uring 207k, 结合本报告
+> governor 对比数据 (powersave 对 ev 64B −13.6%) 与本表 performance 数据自洽。详见第五节。
 
 **分析：**
 - **全线 ~2x Nginx** (322k vs 173k @64B) — Thunder Fast Path 跳过 body 读取, Nginx `return 200` 仍需读 POST body
@@ -37,7 +41,7 @@ Latency(64K): 1.5ms     1.5ms*        1.5ms*        1.48ms
 - **asio_uring 64B 小包最优** (347k), 优势随包体增大消失
 - **64K 大包带宽瓶颈**, 差距缩小 (129k vs 69k)
 
-### HTTPS (SSL 加密)
+### HTTPS (SSL 加密) 测试结果
 
 > `powersave` governor, P-core 4-9 绑核, INFO log, 1 Worker, wrk -t4 -c100 -d10s
 
@@ -283,6 +287,61 @@ Fast Path (纯 I/O)          322k     —
 ```
 
 > picohttpparser 将 Decode 层开销从 ~8% 压至 ~5%, 是迄今最有效的单次优化。对极高性能场景, **绕过比优化更有效** — Fast Path 直接跳过整个 pb+JSON 栈。
+
+## 五、全量基准重测 (2026-06-12)
+
+### 5.0 ⚠️ #69 性能骤降事件: 根因为 TRACE 日志, 本节数据已重测修正
+
+本节最初记录的 ModuleRaw 64B = 106k (比 322k 低 ~3x) 触发 #69 排查。**根因: `conf/Hello.json` 的
+`log_level` 被改为 `TRACE` 且未提交** (322k 报告在 INFO 下测得, 见 1196ec0 提交说明)。
+
+- ev 收包路径在 Fast-Path **之前**就有 2+ 条/请求的 TRACE 日志 (`Worker.cpp:592/613` 格式化+落盘),
+  TRACE 级别下日志写入 ~30MB/s, 直接吃掉单核 CPU
+- 单变量对照 (同二进制/同绑核 CPU4/同 powersave, 只改日志级别): **TRACE 134k → INFO 230k (+71%)**
+- 路径越长惩罚越大: ModuleRaw 1.7x, lua_echo 3.9x, ModuleHello **5.8x**
+- 旁证: 同期 Nginx 反而 173k → 195k (日志只拖慢 Thunder, 排除 thermal/HT 限频理论)
+- 之前排查漏掉它的原因: `git diff 87f3eb7..HEAD` 只比提交, TRACE 是**工作区未提交改动**;
+  且运行中进程从共享内存读配置, 改文件不重启不生效
+
+### 5.1 修正后基准 (2026-06-12, INFO log)
+
+> `powersave` governor (CPU4 负载时 ~4.1GHz, max 5.0), **单物理核绑核 (CPU4=P-core2 HT0)**, INFO log,
+> 1 Worker, wrk -t4 -c100 -d10s 绑 E-core 12-19, keep-alive, etcd 断连(已验证对性能无影响)。
+> Nginx worker 同样绑 CPU4。ModuleRaw 端点 `/hello/raw` (Receive Fast-Path)。
+>
+> 注意: 本表为 powersave + 单核绑核条件, 与第一节 performance + P-core 4-9 的 322k/347k 不可直接对比;
+> 本报告第一节自有的 governor 对比数据 (ev 64B: performance 322k / powersave 278k, −13.6%) 可佐证差距来源。
+
+```
+ModuleRaw          ev      native_uring   asio_uring    Nginx 1w
+──────────────────────────────────────────────────────────────────
+64B (wrk_small)    240k       207k          239k          212k
+256B (wrk_256)     235k       203k          236k          209k
+1K (wrk_1k)        231k       200k          230k          190k
+4K (wrk_4k)        216k       196k          225k          177k
+64K (wrk_64k)       70k        47k          ~50k ⚠️        78k
+64B 复测            233k       206k          234k           —
+```
+
+> ⚠️ asio_uring 64K: 复现 1 次 Worker 被 signal 9 杀死 (Manager 自动拉起), 复测 49.8k 伴随 34 个
+> wrk timeout。报告 11 记录的 "Receive Fast-Path SubmitRead 竞态" 在 64K 大包下仍可复现, 待修。
+
+### 5.2 各端点开销拆解 (ev, 64B, 同条件)
+
+| vs Nginx 212k@64B | RPS | 比 Nginx | 路径 |
+|:-----------------:|:--:|:-------:|------|
+| ModuleRaw | 236k | 111% | Receive Fast-Path → `SendToClientFast` (C++ 4行) |
+| lua_echo | 188k | 89% | picohttpparser → `lua_pcall` → `SendToClientFast` (Lua 3行) |
+| ModuleHello | 162k | 76% | picohttpparser → `CJsonObject` → `SendToClient` (C++ 400行) |
+
+### 5.3 测量方法教训 (#69 复盘)
+
+1. **压测前必须确认 log_level**: `grep log_level conf/*.json` + 抽查 Worker 日志无 TRACE 行
+2. **对照实验只改一个变量**: 110k vs 322k 的排查走弯路, 因同时存在 TRACE/governor/绑核三个差异
+3. **用旁路服务做对照组**: Nginx 同机数据不降反升, 一票否决 thermal/HT 限频理论
+4. **检查工作区未提交改动**: `git diff HEAD`(含工作区) 而非只比提交间 diff
+5. **杀进程顺序**: 先杀 Manager 再杀 Worker; 反序会触发 Manager 拉起新 Worker 后留下孤儿监听进程,
+   SO_REUSEPORT 下新旧两个 Worker 同时服务, 吞吐虚高 ~40% (本次 asio_uring 339k 假数据的来源)
 
 ### 其他协议 Fast Path / Arena 可行性
 
