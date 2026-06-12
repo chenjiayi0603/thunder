@@ -297,10 +297,19 @@ bool Manager::IoRead(tagManagerIoWatcherData* pData, struct ev_io* watcher)
     {
         return(AcceptServerConn(watcher->fd));
     }
-    // Worker dataFd: 接收子进程传来的客户端 fd
-    if (m_mapWorkerFdPid.find(watcher->fd) != m_mapWorkerFdPid.end())
+    // Worker dataFd: 接收子进程传来的客户端 fd (SCM_RIGHTS)。
+    // 仅 dataFd 走 RecvFdFromWorker；controlFd 上是心跳/协议消息，
+    // 必须走 RecvDataAndDispose 解码分发 (#70: 误把 controlFd 也路由到
+    // RecvFdFromWorker 会吞掉心跳, 导致 Worker 出生 60s 即被误杀)。
+    auto fd_pid_iter = m_mapWorkerFdPid.find(watcher->fd);
+    if (fd_pid_iter != m_mapWorkerFdPid.end())
     {
-        return(RecvFdFromWorker(watcher->fd));
+        auto worker_iter = m_mapWorker.find(fd_pid_iter->second);
+        if (worker_iter != m_mapWorker.end()
+            && worker_iter->second.iDataFd == watcher->fd)
+        {
+            return(RecvFdFromWorker(watcher->fd));
+        }
     }
     return(RecvDataAndDispose(pData, watcher));
 }
@@ -1925,7 +1934,9 @@ bool Manager::CheckWorker()
     {
         return(true);
     }
-    for (auto worker_iter:m_mapWorker)
+    // 必须按引用遍历: 下方 drain 处理心跳会更新 map 内的 dBeatTime,
+    // 按值拷贝会让超时判定读到 drain 之前的过期快照 (#70)
+    for (auto& worker_iter:m_mapWorker)
     {
         LOG4_TRACE("now %lf, worker's dBeatTime %lf, worker_beat %d",ev_now(m_loop), worker_iter.second.dBeatTime,m_iWorkerBeat);
         // 消费 Worker→Manager 共享内存队列

@@ -1794,30 +1794,55 @@ git stash pop
 ### 结论
 
 加载 `libluajit-5.1.so.2` + 3 个 Lua 模块对全进程性能无明显影响 (~150k, conf 恢复后一致)。
-## 🔴 #70 [bug] asio_uring 64K 大包 Worker 崩溃 (signal 9) + wrk timeout
+## ✅ #70 [bug] Manager 误杀首代 Worker: 心跳被 RecvFdFromWorker 吞掉, 出生 60s 即被 SIGKILL
 
-> 2026-06-12 | bug | 状态: 🔴 待修复 | 关联: #67 (当时结论"无实际竞态触发"被本次实证推翻)
+> 2026-06-12 | bug | 状态: ✅ 已修复并验证 (gen-1 空闲135s/gen-2 负载90s 零误杀, ctest 335/335, 全矩阵复测 0 误杀, 线上已重启加载) | 引入: 1d33a9e (06-02 Worker优雅重启) | 原标题"asio_uring 64K 崩溃"为伪相关
 
-### 现象
+### 真实根因 (2026-06-12 strace 实锤)
 
-压测沙箱 (单 Worker 绑核 CPU4, INFO log, etcd 断连), `io_backend: asio_uring`:
+**与 asio_uring / 64K 大包 / 负载均无关** — 纯空闲下首代 Worker 也在出生 +60s 整被杀。
 
-- `wrk -t4 -c100 -d10s -s wrk_64k.lua /hello/raw` 期间 Worker 被 signal 9 杀死,
-  Manager 日志: `error 9: duty <pid> exit and sent signal 17 with code 9` → 自动拉起
-- 复测未崩溃时也有 34 个 wrk timeout, RPS 仅 ~50k (ev 同条件 70k)
-- 64B/256B/1K/4K 均正常且与 ev 持平 (239k/236k/230k/225k), 仅 64K 大包触发
-- 崩溃为偶发, 非每次复现
+因果链 (每步均有 strace/日志直接证据):
 
-### 怀疑方向
+1. **Worker 端**: `SpawnSingleWorker` fork 子进程先 `ShmRingQueue::CloseEventFd(iWorkerToMgrEfd)`
+   (该函数置 `int&` 为 -1) 再构造 Worker → `m_iWorkerToMgrEfd = -1` → `SendToParent` 的
+   shm 分支条件永假 → **所有心跳走 control socket 回退**
+   (strace: `sendto(9, "\r\5\0\0...{\"load\"...", 104)` 每 10s, cmd=5 编码完整正确)
+2. **Manager 端**: 1d33a9e 在 `IoRead` 加了 `if (m_mapWorkerFdPid.find(fd)) → RecvFdFromWorker`,
+   但 `m_mapWorkerFdPid` 同时含 **controlFd 和 dataFd** → control fd 上的心跳被
+   `recv_fd_with_attr()` 当 SCM_RIGHTS fd 传递消息吞掉 (strace: iovec[32,8] recvmsg, 40+40+24
+   字节恰好吃完一拍心跳) → 无 SCM_RIGHTS → return false, **无任何日志**
+3. `dBeatTime` 仅在启动时初始化一次 (Manager.cpp:212) → `CheckWorker` 在 +60s
+   (worker_beat=60, NODE_BEAT=10) 判定 unresponsive → `kill(pid, SIGKILL)` → 自动拉起
 
-1. Receive Fast-Path `SendToClientFast` 后 `SubmitRead` 复用/扩容 pRecvBuff 与 io_uring
-   在途读的缓冲区竞态 (#67 原始猜测, 当时仅在小包下验证排除)
-2. 64K body 跨多次读完成, fast-path "请求不完整回退" 路径与批量提交交互
-3. signal 9 来源待查: OOM killer (内核日志无权限读取) 或 buffer 异常增长
+### 为何一直没发现
 
-### 验证方法
+- 杀戮无声: Worker 被杀后 1ms 内拉起, 服务不中断; 只留 defunct 僵尸 + 一行 INFO 日志
+- 部署服务指纹吻合: Manager 14:13:22 启动, 现存 Worker 14:14:22 出生 (恰 +60s);
+  ps 中 09:29 defunct 僵尸 Worker 同理
+- 压测期间"asio_uring 64K 崩溃" = +60s 死亡时钟恰好落在 64K 时间窗 (伪相关);
+  64K RPS 低 (~50k) 与 wrk timeout 是被杀瞬间连接重置所致
 
-沙箱复现: /tmp/thunder-bench (asio_uring + wrk_64k 循环), 开 core dump / 监控 RSS 增长
+### 排查方法论 (供复盘)
+
+- TRACE 日志法医: Manager 每轮 `now/dBeatTime` 显示 dBeatTime 冻结 60s → 排除 Manager 停摆
+- Worker 日志: 被杀前 2ms 仍在 SendToParent → 排除 Worker 假死
+- 零负载判别实验: 纯空闲 +60s 仍被杀 → 一票否决负载相关全部假说
+- strace -ff 从启动跟踪: 心跳字节被 recvmsg(iovec[32,8]) 模式消费 → 锁定 recv_fd_with_attr
+
+### 修复 (Manager.cpp, 2026-06-12)
+
+1. `IoRead`: 仅 **dataFd** 路由到 `RecvFdFromWorker`; controlFd 走 `RecvDataAndDispose`
+   解码分发 (恢复 1d33a9e 之前行为)
+2. `CheckWorker`: `for (auto worker_iter:m_mapWorker)` 按值拷贝 → 按引用
+   (超时判定原本读的是本轮 drain 之前的过期快照)
+
+### 衍生问题 (另行处理)
+
+- **#72**: SpawnSingleWorker 父子两侧各关错一个 eventfd (父关 MgrToWorker 写端,
+  子关 WorkerToMgr 写端), shm 队列 eventfd 通知双向失效, 退化为 1s/10s 轮询 + socket 回退。
+  设计本意 (ShmRingQueue.hpp "生产者写完写 eventfd") 从未生效
+- asio_uring 64K RPS 偏低 (~50k vs ev 70k) 需在本修复后重测确认是否仍存在
 
 ## 🟡 #71 [工具] 压测脚本杀进程顺序导致孤儿 Worker, SO_REUSEPORT 双进程服务吞吐虚高
 
@@ -1840,3 +1865,29 @@ wrk 连接被内核分流到两个进程 → 吞吐虚高 ~40% (#69 排查中 as
 
 频繁重启压测实例向共享 etcd 注册新 node_id, 打满 255 槽位 ("槽位已满" WARN)。
 压测沙箱应将 etcd endpoint 指向死地址 (如 127.0.0.1:1, 已验证对性能无影响)。
+
+## 🟡 #72 [bug] SpawnSingleWorker 父子各关错一个 eventfd, shm 队列通知机制双向失效
+
+> 2026-06-12 | bug | 状态: 🟡 待修复 (#70 排查中发现, 影响性能非正确性)
+
+### 现象
+
+`Manager.cpp SpawnSingleWorker`:
+- 子进程: `CloseEventFd(iWorkerToMgrEfd)` — 关掉的是**自己作为生产者要写**的 eventfd,
+  且该函数置 `int&` 为 -1, Worker 构造时拿到 -1 → `SendToParent` shm 分支永假,
+  Worker→Manager 全部消息 (心跳/WORKER_READY) 走 socket 回退
+- 父进程: `CloseEventFd(iMgrToWorkerEfd)` — 关掉的是**自己作为生产者要写**的 eventfd
+  → Manager 无法通知 Worker, Worker 靠 1s CheckShareMem 轮询兜底
+
+### 影响
+
+- ShmRingQueue 设计的 eventfd 即时通知 (见 ShmRingQueue.hpp 设计注释) 从未生效
+- Worker→Manager: 完全退化为 socket 路径 (#70 修复后功能正常, 但绕过了 shm 快速路径)
+- Manager→Worker: 消息延迟最高 1s (轮询间隔)
+
+### 修复方向
+
+eventfd 是单一内核对象、读写双方都需要持有: 两处 CloseEventFd 都应删除
+(socketpair 的"各关对端"模式不适用于 eventfd)。修复后需验证:
+Worker beat 走 TryEnqueue+NotifyEventFd, Manager drain 正常; SendToWorker 通知 efd 后
+Worker shm read watcher 即时唤醒。
