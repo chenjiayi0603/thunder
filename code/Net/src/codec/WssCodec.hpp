@@ -8,7 +8,7 @@
 
 #include <memory>
 #include <unordered_map>
-#include "CodecWebSocketPb.hpp"
+#include "CodecWebSocketJson.hpp"
 
 typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
@@ -16,7 +16,7 @@ typedef struct ssl_ctx_st SSL_CTX;
 namespace net
 {
 
-class WssCodec: public CodecWebSocketPb
+class WssCodec: public CodecWebSocketJson
 {
 public:
     struct SslConfig

@@ -55,16 +55,84 @@ Benchmarked against Nginx 1.x on the same hardware (i9-12900H, 1 worker, `wrk -t
 
 > Nginx leads in HTTPS throughput — mature OpenSSL path + kernel sendfile advantage.
 
-**Latency p50** (io_uring batches SSL BIO calls, cutting queue depth):
+**Latency p50**:
 
 | Payload | Thunder ev | Thunder uring | Nginx SSL | vs Nginx (uring) |
 |--------:|:----------:|:-------------:|:---------:|:----------------:|
 | 64 B    | 803 µs     | **402 µs**    | 752 µs    | **1.9× lower**   |
 | 4 KB    | 1.23 ms    | **247 µs**    | 824 µs    | **3.3× lower**   |
 
+> **Why Thunder uring beats both ev and Nginx on latency:**
+>
+> A single HTTPS request triggers 5–10 BIO read/write calls as OpenSSL fragments TLS records.
+>
+> - **Thunder ev** issues each BIO call as a separate `read`/`write` syscall — serial queue buildup → 803 µs.
+> - **Nginx** also runs on epoll internally, so it has the exact same serial BIO cost → 752 µs (similar to Thunder ev).
+> - **Thunder uring** submits all pending BIO ops as one batch in a single `io_uring_enter` — they drain in parallel → **402 µs**.
+>
+> Nginx has no io_uring path; it cannot batch BIO calls. Thunder's pluggable I/O backend is the
+> only one here with that capability, which is why it undercuts Nginx latency by **1.9×** at 64 B
+> and **3.3×** at 4 KB. Throughput stays flat because SSL decryption (CPU) remains the bottleneck,
+> not the I/O queue depth.
+
+### WebSocket (WS) Echo
+
+Measured with a persistent-connection Python benchmark client (`tests/benchmark/ws_bench.py`),
+1 Worker, binary echo, via k8s NodePort (adds ~1 ms compared to direct native connection).
+
+**Throughput (RPS)**:
+
+| Payload | 10 conns | 100 conns |
+|--------:|:--------:|:---------:|
+| 64 B    | 46,765   | 48,736    |
+| 256 B   | 33,240   | 33,846    |
+| 1 KB    | 15,888   | 15,619    |
+| 4 KB    | 4,881    | 5,179     |
+
+**Latency p50 / p99** (10 connections, native path):
+
+| Payload | p50     | p99     |
+|--------:|:-------:|:-------:|
+| 64 B    | 192 µs  | 549 µs  |
+| 256 B   | 270 µs  | 787 µs  |
+| 1 KB    | 564 µs  | 1.7 ms  |
+| 4 KB    | 1.81 ms | 5.9 ms  |
+
+> Connections are persistent — the upgrade handshake happens once, not once per message.
+> The throughput gap vs HTTP is driven by per-frame overhead: every WebSocket message
+> carries an 8-byte binary header plus mandatory client-side XOR masking (4-byte key,
+> full payload mask loop), CPU work that HTTP keep-alive does not have.
+
 > Hardware: i9-12900H 45 W laptop, thermal wall ~4.0 GHz steady state.
-> Methodology: INFO log, performance governor, workers pinned to P-cores, wrk pinned to E-cores.
+> HTTP/HTTPS methodology: INFO log, performance governor, workers pinned to P-cores, wrk pinned to E-cores.
 > Full report: [`docs/reports/10-vs-nginx-benchmark-20260610.md`](docs/reports/10-vs-nginx-benchmark-20260610.md)
+
+### WebSocket Secure (WSS) Echo
+
+Same methodology as WS above but over TLS — `WssCodec` wraps `CodecWebSocketJson` with OpenSSL BIO
+memory buffers. Measured via k8s NodePort 30012.
+
+**Throughput (RPS)**:
+
+| Payload | 10 conns | 100 conns |
+|--------:|:--------:|:---------:|
+| 64 B    | 34,278   | 38,281    |
+| 256 B   | 27,550   | 27,202    |
+| 1 KB    | 12,838   | 12,078    |
+| 4 KB    |  4,386   |  3,762    |
+
+**Latency p50 / p99** (10 connections):
+
+| Payload | p50     | p99     |
+|--------:|:-------:|:-------:|
+| 64 B    | 253 µs  | 846 µs  |
+| 256 B   | 317 µs  | 1.02 ms |
+| 1 KB    | 677 µs  | 2.27 ms |
+| 4 KB    | 1.97 ms | 6.82 ms |
+
+> WSS vs WS overhead: TLS adds ~6–14% latency and ~5–13% RPS loss at 64 B / 10 conns
+> (34 k vs 36 k RPS). At 100 conns and larger payloads the gap narrows — the TLS record
+> layer amortises across frames and the bottleneck shifts to application processing.
 
 ---
 

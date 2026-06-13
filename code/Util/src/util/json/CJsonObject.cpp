@@ -210,7 +210,9 @@ bool CJsonObject::AddEmptySubObject(const std::string& strKey)
         return false;
     }
     yyjson_mut_val* sub = yyjson_mut_obj(m_pDocRef);
-    return yyjson_mut_obj_add_val(m_pDocRef, m_pVal, strKey.c_str(), sub);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    if (!k) return false;
+    return yyjson_mut_obj_add(m_pVal, k, sub);
 }
 
 bool CJsonObject::AddEmptySubArray(const std::string& strKey)
@@ -228,7 +230,9 @@ bool CJsonObject::AddEmptySubArray(const std::string& strKey)
         return false;
     }
     yyjson_mut_val* sub = yyjson_mut_arr(m_pDocRef);
-    return yyjson_mut_obj_add_val(m_pDocRef, m_pVal, strKey.c_str(), sub);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    if (!k) return false;
+    return yyjson_mut_obj_add(m_pVal, k, sub);
 }
 
 CJsonObject& CJsonObject::operator[](const std::string& strKey)
@@ -446,7 +450,10 @@ bool CJsonObject::Add(const std::string& strKey, const CJsonObject& oJsonObject)
     yyjson_mut_val* copied = yyjson_val_mut_copy(m_pDocRef, yyjson_doc_get_root(tmp));
     yyjson_doc_free(tmp);
     if (!copied) return false;
-    return yyjson_mut_obj_add_val(m_pDocRef, m_pVal, strKey.c_str(), copied);
+    // Use copied key to avoid dangling pointer from temporary std::string.
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    if (!k) return false;
+    return yyjson_mut_obj_add(m_pVal, k, copied);
 }
 
 bool CJsonObject::Add(const std::string& strKey, const std::string& strValue)
@@ -457,7 +464,10 @@ bool CJsonObject::Add(const std::string& strKey, const std::string& strValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_strcpy(m_pDocRef, m_pVal, strKey.c_str(), strValue.c_str());
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_strcpy(m_pDocRef, strValue.c_str());
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, int32 iValue)
@@ -468,7 +478,10 @@ bool CJsonObject::Add(const std::string& strKey, int32 iValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_int(m_pDocRef, m_pVal, strKey.c_str(), (int64_t)iValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_int(m_pDocRef, (int64_t)iValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, uint32 uiValue)
@@ -479,7 +492,10 @@ bool CJsonObject::Add(const std::string& strKey, uint32 uiValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_uint(m_pDocRef, m_pVal, strKey.c_str(), (uint64_t)uiValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_uint(m_pDocRef, (uint64_t)uiValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, int64 llValue)
@@ -490,7 +506,10 @@ bool CJsonObject::Add(const std::string& strKey, int64 llValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_int(m_pDocRef, m_pVal, strKey.c_str(), (int64_t)llValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_int(m_pDocRef, (int64_t)llValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, uint64 ullValue)
@@ -501,7 +520,10 @@ bool CJsonObject::Add(const std::string& strKey, uint64 ullValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_uint(m_pDocRef, m_pVal, strKey.c_str(), (uint64_t)ullValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_uint(m_pDocRef, (uint64_t)ullValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, bool bValue, bool /*bValueAgain*/)
@@ -512,7 +534,10 @@ bool CJsonObject::Add(const std::string& strKey, bool bValue, bool /*bValueAgain
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_bool(m_pDocRef, m_pVal, strKey.c_str(), bValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_bool(m_pDocRef, bValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, float fValue)
@@ -523,7 +548,10 @@ bool CJsonObject::Add(const std::string& strKey, float fValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_real(m_pDocRef, m_pVal, strKey.c_str(), (double)fValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_real(m_pDocRef, (double)fValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 bool CJsonObject::Add(const std::string& strKey, double dValue)
@@ -534,7 +562,10 @@ bool CJsonObject::Add(const std::string& strKey, double dValue)
         m_strErrMsg = "not a json object! json array?";
         return false;
     }
-    return yyjson_mut_obj_add_real(m_pDocRef, m_pVal, strKey.c_str(), dValue);
+    yyjson_mut_val* k = yyjson_mut_strcpy(m_pDocRef, strKey.c_str());
+    yyjson_mut_val* v = yyjson_mut_real(m_pDocRef, dValue);
+    if (!k || !v) return false;
+    return yyjson_mut_obj_add(m_pVal, k, v);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -554,11 +585,14 @@ bool CJsonObject::Delete(const std::string& strKey)
 }
 
 // Helper: remove key, add new val. Returns false if key didn't exist.
+// Copies key into the document pool to avoid dangling pointers.
 static bool ObjReplace(yyjson_mut_doc* doc, yyjson_mut_val* obj,
                        const char* key, yyjson_mut_val* newVal)
 {
     if (!yyjson_mut_obj_remove_str(obj, key)) return false;
-    return yyjson_mut_obj_add_val(doc, obj, key, newVal);
+    yyjson_mut_val* k = yyjson_mut_strcpy(doc, key);
+    if (!k) return false;
+    return yyjson_mut_obj_add(obj, k, newVal);
 }
 
 bool CJsonObject::Replace(const std::string& strKey, const CJsonObject& oJsonObject)

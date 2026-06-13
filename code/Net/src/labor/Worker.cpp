@@ -4103,6 +4103,7 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
             E_CODEC_STATUS eCodecStatus;
             if (util::CODEC_HTTP == conn_iter->second->eCodecType
                     || util::CODEC_HTTPS == conn_iter->second->eCodecType
+					|| util::CODEC_WSS == conn_iter->second->eCodecType
             		|| util::CODEC_WEBSOCKET_EX_PB == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_JS == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_PB_APP == conn_iter->second->eCodecType)
@@ -5553,9 +5554,13 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     {
         return CODEC_STATUS_ERR;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+    if (pConn->eCodecType == util::CODEC_HTTPS)
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
+    }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        return static_cast<WssCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
     }
     return pCodec->Encode(oMsgHead, oMsgBody, pBuff);
 }
@@ -5567,9 +5572,13 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     {
         return CODEC_STATUS_ERR;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+    if (pConn->eCodecType == util::CODEC_HTTPS)
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
+    }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        return static_cast<WssCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
     }
     return pCodec->Encode(oHttpMsg, pBuff);
 }
@@ -5637,10 +5646,18 @@ tagConnectionAttr* Worker::CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODE
 	}
     if (eCodecType == util::CODEC_HTTPS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
+        }
+    }
+    else if (eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
         }
     }
 	return(pConn);
@@ -5714,10 +5731,18 @@ tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::str
 	// io_uring mode: IO events deferred to caller (after connect())
     if (eCodecType == util::CODEC_HTTPS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
+        }
+    }
+    else if (eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
         }
     }
 	return pConnAttr;
@@ -5760,12 +5785,20 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
     			pConn->iFd,iManagerControlFd,iManagerDataFd);
     	return false;
     }
-    if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+    if (pConn->eCodecType == util::CODEC_HTTPS)
     {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS); if (codec_iter == mapCodec.end()) codec_iter = mapCodec.find(util::CODEC_WSS);
+        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
+        }
+    }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
         }
     }
     LOG4_TRACE("%s disconnect, identify %s", pConn->szRemoteAddr, pConn->strIdentify.c_str());

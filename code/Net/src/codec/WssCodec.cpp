@@ -13,7 +13,7 @@ namespace net
 {
 
 WssCodec::WssCodec(const std::string& strKey)
-    : CodecWebSocketPb(util::CODEC_WSS, strKey)
+    : CodecWebSocketJson(util::CODEC_WSS, strKey)
 {
     InitLibrary();
 }
@@ -29,12 +29,12 @@ WssCodec::~WssCodec()
 
 E_CODEC_STATUS WssCodec::Encode(const MsgHead& oMsgHead, const MsgBody& oMsgBody, util::CBuffer* pBuff)
 {
-    return CodecWebSocketPb::Encode(oMsgHead, oMsgBody, pBuff);
+    return CodecWebSocketJson::Encode(oMsgHead, oMsgBody, pBuff);
 }
 
 E_CODEC_STATUS WssCodec::Decode(util::CBuffer* pBuff, MsgHead& oMsgHead, MsgBody& oMsgBody)
 {
-    return CodecWebSocketPb::Decode(pBuff, oMsgHead, oMsgBody);
+    return CodecWebSocketJson::Decode(pBuff, oMsgHead, oMsgBody);
 }
 
 E_CODEC_STATUS WssCodec::Decode(tagConnectionAttr* pConn, MsgHead& oMsgHead, MsgBody& oMsgBody)
@@ -85,18 +85,57 @@ E_CODEC_STATUS WssCodec::Decode(tagConnectionAttr* pConn, MsgHead& oMsgHead, Msg
         return CODEC_STATUS_ERR;
     }
 
-    // 4) TLS 解密后的明文直接走 CodecWebSocketPb::Decode (内部 Fast-Path → http_parser 回退)
-    return CodecWebSocketPb::Decode(&pState->oPlainRecvBuff, oMsgHead, oMsgBody);
+    if (pState->oPlainRecvBuff.ReadableBytes() == 0)
+    {
+        return CODEC_STATUS_PAUSE;
+    }
+
+    // 5) 初始连接状态：先走 HTTP Upgrade 握手（明文来自 oPlainRecvBuff，非 pConn->pRecvBuff）。
+    if (pConn->ucConnectStatus == eConnectStatus_init)
+    {
+        if (pState->oPlainRecvBuff.ReadableBytes() < 5)
+        {
+            return CODEC_STATUS_PAUSE;
+        }
+        const char* pRaw = pState->oPlainRecvBuff.GetRawReadBuffer();
+        if (memcmp(pRaw, "GET ", 4) != 0 && memcmp(pRaw, "POST ", 5) != 0)
+        {
+            return CODEC_STATUS_ERR;
+        }
+        HttpMsg oHttpMsg;
+        E_CODEC_STATUS eHttpStatus = CodecWebSocketJson::Decode(&pState->oPlainRecvBuff, oHttpMsg);
+        if (eHttpStatus != CODEC_STATUS_OK)
+        {
+            return eHttpStatus;
+        }
+        auto iter = oHttpMsg.headers().find("Upgrade");
+        std::string strUpgrade;
+        if (iter != oHttpMsg.headers().end())
+        {
+            strUpgrade = iter->second;
+        }
+        if (strcasecmp(strUpgrade.c_str(), "websocket") != 0)
+        {
+            return CODEC_STATUS_ERR;
+        }
+        pConn->ucConnectStatus = eConnectStatus_ok;
+        oMsgBody.set_body(oHttpMsg.SerializeAsString());
+        oMsgHead.set_msgbody_len(oMsgBody.ByteSize());
+        return CODEC_STATUS_OK;
+    }
+
+    // 6) 握手完成后：走 WebSocket 二进制帧解码。
+    return CodecWebSocketJson::Decode(&pState->oPlainRecvBuff, oMsgHead, oMsgBody);
 }
 
 E_CODEC_STATUS WssCodec::Encode(const HttpMsg& oHttpMsg, util::CBuffer* pBuff)
 {
-    return CodecWebSocketPb::Encode(oHttpMsg, pBuff);
+    return CodecWebSocketJson::Encode(oHttpMsg, pBuff);
 }
 
 E_CODEC_STATUS WssCodec::Decode(util::CBuffer* pBuff, HttpMsg& oHttpMsg)
 {
-    return CodecWebSocketPb::Decode(pBuff, oHttpMsg);
+    return CodecWebSocketJson::Decode(pBuff, oHttpMsg);
 }
 
 E_CODEC_STATUS WssCodec::EncodeToConnection(tagConnectionAttr* pConn, const MsgHead& oMsgHead,
@@ -107,7 +146,7 @@ E_CODEC_STATUS WssCodec::EncodeToConnection(tagConnectionAttr* pConn, const MsgH
         return CODEC_STATUS_ERR;
     }
     util::CBuffer oPlain;
-    E_CODEC_STATUS eStatus = CodecWebSocketPb::Encode(oMsgHead, oMsgBody, &oPlain);
+    E_CODEC_STATUS eStatus = CodecWebSocketJson::Encode(oMsgHead, oMsgBody, &oPlain);
     if (eStatus != CODEC_STATUS_OK)
     {
         return eStatus;
@@ -149,7 +188,7 @@ E_CODEC_STATUS WssCodec::EncodeToConnection(tagConnectionAttr* pConn, const Http
         return CODEC_STATUS_ERR;
     }
     util::CBuffer oPlain;
-    E_CODEC_STATUS eStatus = CodecWebSocketPb::Encode(oHttpMsg, &oPlain);
+    E_CODEC_STATUS eStatus = CodecWebSocketJson::Encode(oHttpMsg, &oPlain);
     if (eStatus != CODEC_STATUS_OK)
     {
         return eStatus;
@@ -257,6 +296,13 @@ WssCodec::TlsConnState* WssCodec::EnsureState(tagConnectionAttr* pConn)
             SSL_CTX_load_verify_locations(pNew->pCtx, m_oConfig.strServerCaFile.c_str(), nullptr);
         }
         SSL_CTX_set_verify(pNew->pCtx, m_oConfig.bServerVerifyClient ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, nullptr);
+    }
+    pNew->pSsl = SSL_new(pNew->pCtx);
+    if (pNew->pSsl == nullptr)
+    {
+        SSL_CTX_free(pNew->pCtx);
+        pNew->pCtx = nullptr;
+        return nullptr;
     }
     BIO* pReadBio = BIO_new(BIO_s_mem());
     BIO* pWriteBio = BIO_new(BIO_s_mem());
