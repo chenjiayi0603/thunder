@@ -42,6 +42,9 @@ input:focus,textarea:focus{outline:none;border-color:#e94560;box-shadow:0 0 0 2p
 @keyframes spin{to{transform:rotate(360deg)}}
 .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
 .modal-content{background:#fff;border-radius:8px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.mod-tab{padding:8px 16px;border:none;border-bottom:2px solid transparent;background:none;cursor:pointer;font-size:13px;color:#666;transition:.2s}
+.mod-tab:hover{color:#1a1a2e}
+.mod-tab.active{color:#e94560;border-bottom-color:#e94560;font-weight:bold}
 </style>
 </head>
 <body>
@@ -145,18 +148,18 @@ async function loadNodes() {
 // ── SO 模块配置 Modal ──
 const UPLOAD = location.origin;  // 上传和页面同端口, k8s NodePort 直通
 const TYPE_DIR = {HELLO_HTTP:'HelloHttp',HELLO_HTTPS:'HelloHttps',HELLO_WS:'HelloWs',LOGIC:'Logic',INTERFACE:'Interface'};
+var _modCfgState = {type:'', mods:[], vc:0};
 
 function moduleConfigModalHtml() {
-  return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:600px"><h3 id="modCfgTitle">⚙ 模块</h3>'
+  return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:680px"><h3 id="modCfgTitle">⚙ 模块</h3>'
     + '<div id="modCfgBody"></div></div></div>'
     + '<div id="versionModal" class="modal"><div class="modal-content"><h3>📋 版本历史</h3><div id="versionList"></div>'
     + '<button class="btn mt12" onclick="closeVersionModal()" style="background:#ddd">关闭</button></div></div>';
 }
 
-async function openModuleConfig(type) {
+async function openModuleConfig(type, activeTab) {
   var cfgKey = '/thunder/config/module/' + type;
-  var typeDir = TYPE_DIR[type] || type;
-  document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' SO 模块';
+  document.getElementById('modCfgTitle').innerHTML = '⚙ ' + type + ' 模块管理';
 
   // 读当前 etcd 配置
   var d = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
@@ -167,11 +170,34 @@ async function openModuleConfig(type) {
   // 版本历史计数
   var histKey = '/thunder/config_history/module/' + type + '/';
   var hd = await etcdPost('/v3/kv/range', {key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')});
-  var vc = (hd && hd.kvs) ? hd.kvs.length : 0;
+  _modCfgState = {type: type, mods: curMods, vc: (hd && hd.kvs) ? hd.kvs.length : 0};
 
-  // 上传区
+  var soCount = curMods.filter(function(m) { return m.so_path; }).length;
+  var luaCount = curMods.filter(function(m) { return m.script_path || m.script_content; }).length;
+
+  var tabs = '<div style="display:flex;border-bottom:2px solid #e0e0e0;margin-bottom:12px">'
+    + '<button id="mt-so" class="mod-tab" onclick="switchModTab(\'so\')">SO 模块 (' + soCount + ')</button>'
+    + '<button id="mt-lua" class="mod-tab" onclick="switchModTab(\'lua\')">Lua 脚本 (' + luaCount + ')</button>'
+    + '<button id="mt-custom" class="mod-tab" onclick="switchModTab(\'custom\')">自定义配置</button>'
+    + '</div><div id="mod-tab-content"></div>';
+  document.getElementById('modCfgBody').innerHTML = tabs;
+  document.getElementById('modCfgModal').style.display = 'flex';
+  switchModTab(activeTab || 'so');
+}
+
+function switchModTab(tab) {
+  ['so','lua','custom'].forEach(function(t) {
+    var el = document.getElementById('mt-' + t);
+    if (el) el.className = 'mod-tab' + (t === tab ? ' active' : '');
+  });
+  var s = _modCfgState;
+  if (tab === 'so') renderSoTab(s.type, s.mods, s.vc);
+  else if (tab === 'lua') renderLuaTab(s.type, s.mods, null);
+  else renderCustomTab(s.type, s.mods);
+}
+
+function renderSoTab(type, curMods, vc) {
   var h = '<div class="card" style="padding:12px;margin-bottom:12px;background:#f8f9ff">';
-  // SO 镜像提取 — 列表
   h += '<b style="font-size:13px">📦 SO 镜像列表</b> ';
   h += '<button class="btn btn-sm" onclick="loadSoImages(\'' + escJs(type) + '\')" style="font-size:11px">🔄 刷新</button><br>';
   h += '<div id="soImageList" style="max-height:140px;overflow-y:auto;margin:4px 0">加载中...</div>';
@@ -179,33 +205,109 @@ async function openModuleConfig(type) {
   h += '<input type="text" id="soImageInput" placeholder="或输入: registry/so:v3" style="flex:1;font-family:monospace;font-size:12px">';
   h += '<select id="soFileInput2" style="width:auto;font-family:monospace;font-size:12px"><option value="">选镜像后自动列出文件</option></select>';
   h += '<button class="btn btn-primary btn-sm" onclick="extractAndRefresh(\'' + escJs(type) + '\')">⬇ 提取</button>';
-  h += '</div>';
-  h += '</div>';
+  h += '</div></div>';
   h += '<div id="uploadStatus" style="font-size:12px;margin-top:4px;color:#999"></div>';
-  // 异步加载镜像列表
-  loadSoImages(type);
 
-  // SO 列表 (按 so_path 去重)
+  var soMods = curMods.filter(function(m) { return m.so_path; });
   h += '<table><tr><th>SO 文件</th><th style="width:60px">版本</th><th style="width:80px">操作</th></tr>';
-  if (curMods.length > 0) {
+  if (soMods.length > 0) {
     var seen = {};
-    curMods.forEach(function(m) {
+    soMods.forEach(function(m) {
       if (seen[m.so_path]) return;
       seen[m.so_path] = true;
       h += '<tr>';
-      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(m.so_path || '?') + '</td>';
+      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(m.so_path||'?') + '</td>';
       h += '<td><span class="badge badge-ok">v' + (m.version||'?') + '</span></td>';
       h += '<td><button class="btn btn-primary btn-sm" onclick="triggerUpdate(\'' + escJs(type) + '\',\'' + escJs(m.so_path||'') + '\',' + (m.version||0) + ')">🔄 更新</button></td>';
       h += '</tr>';
     });
   } else {
-    h += '<tr><td colspan="3" style="color:#999">暂无模块 — 请上传 SO 文件</td></tr>';
+    h += '<tr><td colspan="3" style="color:#999">暂无 SO 模块</td></tr>';
   }
   h += '</table>';
+  h += '<div class="flex mt12"><button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')" style="background:#ddd">📋 版本历史 (' + vc + ')</button></div>';
+  document.getElementById('mod-tab-content').innerHTML = h;
+  loadSoImages(type);
+}
 
-  h += '<div class="flex mt12"><button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')">📋 版本历史 (' + vc + ')</button></div>';
-  document.getElementById('modCfgBody').innerHTML = h;
-  document.getElementById('modCfgModal').style.display = 'flex';
+function renderLuaTab(type, curMods, editUrlPath) {
+  var luaMods = curMods.filter(function(m) { return m.script_path || m.script_content; });
+  var h = '';
+  if (luaMods.length === 0) {
+    h = '<p style="color:#999;padding:12px">暂无 Lua 脚本模块</p>';
+  } else {
+    h = '<table><tr><th>URL 路径</th><th>脚本文件</th><th>版本</th><th>状态</th><th style="width:60px">操作</th></tr>';
+    luaMods.forEach(function(m) {
+      h += '<tr>';
+      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(m.url_path||'?') + '</td>';
+      h += '<td style="font-family:monospace;font-size:12px">' + escHtml(m.script_path||'') + '</td>';
+      h += '<td><span class="badge badge-ok">v' + (m.version||'?') + '</span></td>';
+      h += '<td>' + (m.script_content ? '<span class="badge badge-ok">inline</span>' : '<span class="badge badge-warn">file</span>') + '</td>';
+      h += '<td><button class="btn btn-primary btn-sm" onclick="openLuaEditor(\'' + escJs(type) + '\',\'' + escJs(m.url_path) + '\')">✏ 编辑</button></td>';
+      h += '</tr>';
+    });
+    h += '</table>';
+  }
+  if (editUrlPath) {
+    var mod = null;
+    for (var i = 0; i < curMods.length; i++) { if (curMods[i].url_path === editUrlPath) { mod = curMods[i]; break; } }
+    if (mod) {
+      var name = (mod.script_path || 'script.lua').split('/').pop();
+      h += '<div style="border-top:1px solid #eee;padding-top:12px;margin-top:8px">';
+      h += '<div style="font-size:12px;color:#555;margin-bottom:4px">✏ 编辑: <code>' + escHtml(editUrlPath) + '</code></div>';
+      h += '<textarea id="luaScriptEdit" rows="10" style="width:100%;font-family:monospace;font-size:12px">' + escHtml(mod.script_content||'') + '</textarea>';
+      h += '<div class="flex mt12">';
+      h += '<button class="btn btn-primary" onclick="pushLuaScript(\'' + escJs(type) + '\',\'' + escJs(editUrlPath) + '\',\'' + escJs(name) + '\')">🚀 推送</button>';
+      h += '<button class="btn btn-sm" onclick="switchModTab(\'lua\')" style="background:#ddd">取消</button>';
+      h += '</div></div>';
+    }
+  }
+  document.getElementById('mod-tab-content').innerHTML = h;
+}
+
+function openLuaEditor(type, urlPath) {
+  renderLuaTab(type, _modCfgState.mods, urlPath);
+}
+
+async function pushLuaScript(type, urlPath, name) {
+  var content = document.getElementById('luaScriptEdit').value;
+  if (!content.trim()) { toast('脚本内容不能为空', false); return; }
+  try {
+    var r = await fetch(UPLOAD + '/api/lua-scripts', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({node_type: type, name: name, content: content, url_path: urlPath})
+    });
+    var j = await r.json();
+    if (j.ok) { toast('✅ Lua 脚本已推送 v' + j.version, true); openModuleConfig(type, 'lua'); }
+    else { toast('推送失败: ' + (j.error||''), false); }
+  } catch(e) { toast('推送失败: ' + (e.message||''), false); }
+}
+
+function renderCustomTab(type, curMods) {
+  var cfgJson = JSON.stringify({module: curMods}, null, 2);
+  var h = '<div style="font-size:11px;color:#999;margin-bottom:4px">etcd key: <code>/thunder/config/module/' + escHtml(type) + '</code></div>';
+  h += '<textarea id="customCfgJson" rows="14" style="width:100%;font-family:monospace;font-size:12px">' + escHtml(cfgJson) + '</textarea>';
+  h += '<div class="flex mt12">';
+  h += '<button class="btn btn-primary" onclick="saveCustomModCfg(\'' + escJs(type) + '\')">💾 保存</button>';
+  h += '<button class="btn btn-sm" onclick="showModuleVersions(\'' + escJs(type) + '\')" style="background:#ddd">📋 历史 (' + _modCfgState.vc + ')</button>';
+  h += '</div>';
+  document.getElementById('mod-tab-content').innerHTML = h;
+}
+
+async function saveCustomModCfg(type) {
+  var newVal = document.getElementById('customCfgJson').value;
+  try { JSON.parse(newVal); } catch(e) { toast('JSON 格式错误: ' + e.message, false); return; }
+  var cfgKey = '/thunder/config/module/' + type;
+  var cur = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
+  if (cur && cur.kvs && cur.kvs.length > 0) {
+    var oldVal = b64Decode(cur.kvs[0].value);
+    if (oldVal !== newVal) {
+      await etcdPost('/v3/kv/put', {key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()), value: b64Encode(oldVal)});
+    }
+  }
+  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(newVal)});
+  if (r) { toast('✅ 已保存，GracefulRestart 触发中', true); openModuleConfig(type, 'custom'); }
+  else { toast('保存失败', false); }
 }
 
 async function uploadAndRefresh(type) {
