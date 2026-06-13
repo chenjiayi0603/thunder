@@ -5,10 +5,43 @@
   ./server.py --port 8090
 """
 
-import argparse, http.server, json, os, socket, urllib.request
+import argparse, base64, http.server, json, os, socket, urllib.request
 from pathlib import Path
 
 NFS_DIR = Path("/data/thunder/plugins")
+ETCD_URL = os.environ.get("ETCD_URL", "http://127.0.0.1:2379")
+TYPE_DIR = {
+    "HELLO_HTTP": "HelloHttp", "HELLO_HTTPS": "HelloHttps",
+    "HELLO_WS": "HelloWs", "LOGIC": "Logic", "INTERFACE": "Interface",
+}
+
+
+def _etcd_get(key: str) -> str | None:
+    payload = json.dumps({"key": base64.b64encode(key.encode()).decode()}).encode()
+    req = urllib.request.Request(ETCD_URL + "/v3/kv/range", data=payload,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        data = json.loads(urllib.request.urlopen(req, timeout=5).read())
+        kvs = data.get("kvs", [])
+        if kvs:
+            return base64.b64decode(kvs[0]["value"]).decode()
+    except Exception:
+        pass
+    return None
+
+
+def _etcd_put(key: str, value: str) -> bool:
+    payload = json.dumps({
+        "key": base64.b64encode(key.encode()).decode(),
+        "value": base64.b64encode(value.encode()).decode(),
+    }).encode()
+    req = urllib.request.Request(ETCD_URL + "/v3/kv/put", data=payload,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        return True
+    except Exception:
+        return False
 
 
 class UploadServer(http.server.SimpleHTTPRequestHandler):
@@ -17,6 +50,18 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
     upload_base = None  # 上传目标根目录
 
     def do_GET(self):
+        """GET /api/lua-scripts?node_type=HELLO_HTTP — 列出 Lua 脚本及版本"""
+        if self.path.startswith("/api/lua-scripts"):
+            from urllib.parse import parse_qs, unquote
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            params = {k: unquote(v[0]) for k, v in parse_qs(qs).items()}
+            node_type = params.get("node_type", "HELLO_HTTP")
+            scripts = self._lua_list(node_type)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"scripts": scripts}).encode())
+            return
         """GET /api/so-images — 列出可用 SO 镜像"""
         if self.path == "/api/so-images":
             images = []
@@ -108,6 +153,23 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         }).encode())
 
     def do_POST(self):
+        """POST /api/lua-scripts — 上传 Lua 脚本并推送到 etcd"""
+        if self.path == "/api/lua-scripts":
+            cl = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(cl))
+            node_type = body.get("node_type", "HELLO_HTTP")
+            name = body.get("name", "").strip()   # e.g. "echo.lua"
+            content = body.get("content", "")
+            url_path = body.get("url_path", "")   # e.g. "/hello/lua_echo"
+            if not name or not content or not url_path:
+                self.send_error(400, "need name, content, url_path")
+                return
+            result = self._lua_push(node_type, name, content, url_path)
+            self.send_response(200 if result["ok"] else 502)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+            return
         """POST /api/so-extract — 从 SO 镜像提取文件
            POST /api/fetch      — 从远端 URL 拉取 SO 文件"""
         if self.path == "/api/so-extract":
@@ -216,6 +278,71 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
                 with open(nfs_path, "wb") as f:
                     f.write(data)
+
+
+    def _lua_list(self, node_type: str) -> list:
+        """返回 node_type 的 Lua 脚本信息列表（从 etcd 模块配置读取）"""
+        cfg_key = f"/thunder/config/module/{node_type}"
+        raw = _etcd_get(cfg_key)
+        if not raw:
+            return []
+        try:
+            mods = json.loads(raw).get("module", [])
+        except Exception:
+            return []
+        result = []
+        for m in mods:
+            if "script_path" in m or "script_content" in m:
+                result.append({
+                    "url_path": m.get("url_path", ""),
+                    "script_path": m.get("script_path", ""),
+                    "version": m.get("version", 0),
+                    "has_inline": bool(m.get("script_content")),
+                })
+        return result
+
+    def _lua_push(self, node_type: str, name: str, content: str, url_path: str) -> dict:
+        """将 Lua 脚本内容写入本地 + 推送到 etcd 模块配置（自动版本递增）"""
+        # 1. 写本地脚本文件
+        type_dir = TYPE_DIR.get(node_type, node_type)
+        serve_dir = Path(UploadServer.upload_base or os.getcwd())
+        scripts_dir = serve_dir / type_dir / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        script_file = scripts_dir / name
+        script_file.write_text(content, encoding="utf-8")
+
+        # 2. 读当前 etcd 模块配置
+        cfg_key = f"/thunder/config/module/{node_type}"
+        raw = _etcd_get(cfg_key)
+        mods = []
+        if raw:
+            try:
+                mods = json.loads(raw).get("module", [])
+            except Exception:
+                pass
+
+        # 3. 找匹配 url_path 的模块条目并更新
+        updated = False
+        for m in mods:
+            if m.get("url_path") == url_path:
+                m["script_content"] = content
+                m["version"] = m.get("version", 0) + 1
+                updated = True
+                break
+        if not updated:
+            return {"ok": False, "error": f"url_path {url_path!r} not found in etcd module config"}
+
+        # 4. 写回 etcd
+        new_val = json.dumps({"module": mods})
+        ok = _etcd_put(cfg_key, new_val)
+        return {
+            "ok": ok,
+            "node_type": node_type,
+            "url_path": url_path,
+            "script": name,
+            "size": len(content),
+            "version": next(m["version"] for m in mods if m.get("url_path") == url_path),
+        }
 
 
 def main():

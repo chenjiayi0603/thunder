@@ -122,12 +122,29 @@ bool ModuleLua::Init() {
 
     if (m_strScriptPath.empty())
         GetModuleConf().Get("script_path", m_strScriptPath);
-    if (!m_strScriptPath.empty()) {
-        if (luaL_dofile(m_pLua, m_strScriptPath.c_str()) != LUA_OK) return false;
-        lua_getglobal(m_pLua, "handle_request");
-        if (!lua_isfunction(m_pLua, -1)) return false;
-        m_iFuncRef = luaL_ref(m_pLua, LUA_REGISTRYINDEX);
+    std::string scriptContent;
+    GetModuleConf().Get("script_content", scriptContent);
+    if (!scriptContent.empty()) {
+        // etcd 下发的内联脚本内容优先于文件路径
+        if (luaL_loadbuffer(m_pLua, scriptContent.data(), scriptContent.size(), m_strScriptPath.empty() ? "etcd" : m_strScriptPath.c_str()) != LUA_OK) {
+            LOG4_ERROR("ModuleLua: loadbuffer error: %s", lua_tostring(m_pLua, -1));
+            return false;
+        }
+        if (lua_pcall(m_pLua, 0, 0, 0) != LUA_OK) {
+            LOG4_ERROR("ModuleLua: exec error: %s", lua_tostring(m_pLua, -1));
+            return false;
+        }
+    } else if (!m_strScriptPath.empty()) {
+        if (luaL_dofile(m_pLua, m_strScriptPath.c_str()) != LUA_OK) {
+            LOG4_ERROR("ModuleLua: dofile %s error: %s", m_strScriptPath.c_str(), lua_tostring(m_pLua, -1));
+            return false;
+        }
+    } else {
+        return true; // 未配置脚本, 模块加载成功但无处理函数
     }
+    lua_getglobal(m_pLua, "handle_request");
+    if (!lua_isfunction(m_pLua, -1)) return false;
+    m_iFuncRef = luaL_ref(m_pLua, LUA_REGISTRYINDEX);
     return true;
 }
 
