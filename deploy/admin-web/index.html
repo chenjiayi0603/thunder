@@ -153,7 +153,8 @@ var _modCfgState = {type:'', mods:[], vc:0};
 function moduleConfigModalHtml() {
   return '<div id="modCfgModal" class="modal"><div class="modal-content" style="max-width:680px"><h3 id="modCfgTitle">⚙ 模块</h3>'
     + '<div id="modCfgBody"></div></div></div>'
-    + '<div id="versionModal" class="modal"><div class="modal-content"><h3>📋 版本历史</h3><div id="versionList"></div>'
+    + '<div id="versionModal" class="modal"><div class="modal-content" style="max-width:700px"><h3>📋 版本历史</h3><div id="versionList"></div>'
+    + '<div id="histContentPreview" style="display:none;margin-top:8px;background:#f8f8f8;padding:8px;font-family:monospace;font-size:11px;white-space:pre-wrap;max-height:200px;overflow-y:auto;border:1px solid #ddd;border-radius:4px"></div>'
     + '<button class="btn mt12" onclick="closeVersionModal()" style="background:#ddd">关闭</button></div></div>';
 }
 
@@ -258,6 +259,7 @@ function renderLuaTab(type, curMods, editUrlPath) {
       h += '<textarea id="luaScriptEdit" rows="10" style="width:100%;font-family:monospace;font-size:12px">' + escHtml(mod.script_content||'') + '</textarea>';
       h += '<div class="flex mt12">';
       h += '<button class="btn btn-primary" onclick="pushLuaScript(\'' + escJs(type) + '\',\'' + escJs(editUrlPath) + '\',\'' + escJs(name) + '\')">🚀 推送</button>';
+      h += '<button class="btn btn-sm" onclick="showLuaHistory(\'' + escJs(type) + '\',\'' + escJs(editUrlPath) + '\',\'' + escJs(name) + '\')" style="background:#ddd">📋 历史</button>';
       h += '<button class="btn btn-sm" onclick="switchModTab(\'lua\')" style="background:#ddd">取消</button>';
       h += '</div></div>';
     }
@@ -272,6 +274,16 @@ function openLuaEditor(type, urlPath) {
 async function pushLuaScript(type, urlPath, name) {
   var content = document.getElementById('luaScriptEdit').value;
   if (!content.trim()) { toast('脚本内容不能为空', false); return; }
+  // #75 相同内容不推送
+  var curMod = null;
+  for (var i = 0; i < _modCfgState.mods.length; i++) { if (_modCfgState.mods[i].url_path === urlPath) { curMod = _modCfgState.mods[i]; break; } }
+  var oldContent = curMod ? (curMod.script_content || '') : '';
+  if (oldContent && oldContent === content) { toast('内容未变，无需推送', false); return; }
+  // #75 推送前备份旧内容到 Lua 历史
+  if (oldContent) {
+    var histKey = '/thunder/config_history/lua/' + type + '/' + urlPath.replace(/\//g,'_') + '/v' + Date.now();
+    await etcdPost('/v3/kv/put', {key: b64Encode(histKey), value: b64Encode(oldContent)});
+  }
   try {
     var r = await fetch(UPLOAD + '/api/lua-scripts', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -281,6 +293,49 @@ async function pushLuaScript(type, urlPath, name) {
     if (j.ok) { toast('✅ Lua 脚本已推送 v' + j.version, true); openModuleConfig(type, 'lua'); }
     else { toast('推送失败: ' + (j.error||''), false); }
   } catch(e) { toast('推送失败: ' + (e.message||''), false); }
+}
+
+async function showLuaHistory(type, urlPath, name) {
+  var slug = urlPath.replace(/\//g,'_');
+  var histKey = '/thunder/config_history/lua/' + type + '/' + slug + '/';
+  var d = await etcdPost('/v3/kv/range', {key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')});
+  var h = '<p style="font-size:12px;font-family:monospace">' + escHtml(urlPath) + ' Lua 历史</p><hr class="mb8">';
+  if (d && d.kvs && d.kvs.length > 0) {
+    h += '<table><tr><th>版本</th><th>时间</th><th style="width:90px">操作</th></tr>';
+    for (var i = d.kvs.length - 1; i >= 0; i--) {
+      var kv = d.kvs[i], vk = b64Decode(kv.key).replace(histKey,''), vv = b64Decode(kv.value);
+      var dt = new Date(parseInt(vk.substring(1))).toLocaleString();
+      h += '<tr>';
+      h += '<td style="font-size:11px;font-family:monospace">' + escHtml(vk) + '</td>';
+      h += '<td style="font-size:11px">' + dt + '</td>';
+      h += '<td><button class="btn btn-sm" onclick="viewHistoryContent(\'' + escJs(vv) + '\')" style="background:#ddd">👁</button> ';
+      h += '<button class="btn btn-primary btn-sm" onclick="rollbackLua(\'' + escJs(type) + '\',\'' + escJs(urlPath) + '\',\'' + escJs(name) + '\',\'' + escJs(vv) + '\')">↩</button></td>';
+      h += '</tr>';
+    }
+    h += '</table>';
+  } else { h += '<p style="color:#999">暂无历史版本</p>'; }
+  document.getElementById('versionList').innerHTML = h;
+  var prev = document.getElementById('histContentPreview'); if (prev) { prev.style.display='none'; prev._content=''; }
+  document.getElementById('versionModal').style.display = 'flex';
+}
+
+async function rollbackLua(type, urlPath, name, content) {
+  if (!confirm('确要回滚此 Lua 版本？当前脚本将被覆盖。')) return;
+  var curMod = null;
+  for (var i = 0; i < _modCfgState.mods.length; i++) { if (_modCfgState.mods[i].url_path === urlPath) { curMod = _modCfgState.mods[i]; break; } }
+  var oldContent = curMod ? (curMod.script_content || '') : '';
+  if (oldContent) {
+    await etcdPost('/v3/kv/put', {key: b64Encode('/thunder/config_history/lua/' + type + '/' + urlPath.replace(/\//g,'_') + '/v' + Date.now()), value: b64Encode(oldContent)});
+  }
+  try {
+    var r = await fetch(UPLOAD + '/api/lua-scripts', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({node_type: type, name: name, content: content, url_path: urlPath})
+    });
+    var j = await r.json();
+    if (j.ok) { toast('✅ 已回滚 v' + j.version, true); closeVersionModal(); openModuleConfig(type, 'lua'); }
+    else { toast('回滚失败: ' + (j.error||''), false); }
+  } catch(e) { toast('回滚失败: ' + (e.message||''), false); }
 }
 
 function renderCustomTab(type, curMods) {
@@ -296,16 +351,18 @@ function renderCustomTab(type, curMods) {
 
 async function saveCustomModCfg(type) {
   var newVal = document.getElementById('customCfgJson').value;
-  try { JSON.parse(newVal); } catch(e) { toast('JSON 格式错误: ' + e.message, false); return; }
+  var parsed;
+  try { parsed = JSON.parse(newVal); } catch(e) { toast('JSON 格式错误: ' + e.message, false); return; }
+  var normalized = JSON.stringify(parsed);  // 规范化用于比较
   var cfgKey = '/thunder/config/module/' + type;
   var cur = await etcdPost('/v3/kv/range', {key: b64Encode(cfgKey)});
   if (cur && cur.kvs && cur.kvs.length > 0) {
     var oldVal = b64Decode(cur.kvs[0].value);
-    if (oldVal !== newVal) {
-      await etcdPost('/v3/kv/put', {key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()), value: b64Encode(oldVal)});
-    }
+    // #73 相同内容不重启
+    try { if (JSON.stringify(JSON.parse(oldVal)) === normalized) { toast('内容未变，无需保存', false); return; } } catch(e) {}
+    await etcdPost('/v3/kv/put', {key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()), value: b64Encode(oldVal)});
   }
-  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(newVal)});
+  var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(normalized)});
   if (r) { toast('✅ 已保存，GracefulRestart 触发中', true); openModuleConfig(type, 'custom'); }
   else { toast('保存失败', false); }
 }
@@ -453,49 +510,66 @@ async function triggerUpdate(type, soPath, version) {
   if (d && d.kvs && d.kvs.length > 0) {
     try { curCfg = JSON.parse(b64Decode(d.kvs[0].value)); } catch(e) {}
   }
+  // #76 计算新版本后确认
+  var found = false, newVer = 1;
+  curCfg.module.forEach(function(m) {
+    if (m.so_path === soPath) { newVer = (m.version || 0) + 1; found = true; }
+  });
+  if (!found) newVer = 1;
+  if (!confirm(soPath + '\n当前 v' + (found ? (newVer-1) : 0) + ' → 升级到 v' + newVer + '\n确认？')) return;
   // 备份旧值
-  var oldVal = JSON.stringify(curCfg);
   await etcdPost('/v3/kv/put', {
     key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()),
-    value: b64Encode(oldVal)
+    value: b64Encode(JSON.stringify(curCfg))
   });
-  // 更新 so_path 和 version (version=0 时自动+1)
-  var found = false, newVer = version || 1;
-  curCfg.module.forEach(function(m) {
-    if (m.so_path === soPath) { newVer = (m.version || 0) + 1; m.version = newVer; found = true; }
-  });
+  // 写入新版本
+  curCfg.module.forEach(function(m) { if (m.so_path === soPath) { m.version = newVer; } });
   if (!found) curCfg.module.push({so_path: soPath, version: newVer});
   var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(JSON.stringify(curCfg))});
   if (r) {
-    toast(type + ': ' + soPath + ' → v' + version + ' | GracefulRestart 触发中', true);
+    toast(soPath + ' → v' + newVer + ' | GracefulRestart 触发中', true);
     document.getElementById('modCfgModal').style.display = 'none';
   } else {
     toast('更新失败', false);
   }
 }
 
-// 版本历史 & 回滚 (复用节点配置 Modal 的 showVersions/rollback)
+// 版本历史 & 回滚
 async function showModuleVersions(type) {
-  var cfgKey = '/thunder/config/module/' + type;
   var histKey = '/thunder/config_history/module/' + type + '/';
   var d = await etcdPost('/v3/kv/range', {
     key: b64Encode(histKey), range_end: b64Encode(histKey.slice(0,-1)+'0')
   });
-  var h = '<p style="font-size:12px">' + escHtml(type) + ' 版本历史</p><hr class="mb8">';
+  var h = '<p style="font-size:12px;font-family:monospace">' + escHtml(type) + ' 模块配置历史</p><hr class="mb8">';
   if (d && d.kvs && d.kvs.length > 0) {
-    h += '<table><tr><th>版本</th><th>时间</th><th>内容</th><th>操作</th></tr>';
+    h += '<table><tr><th>版本</th><th>时间</th><th style="width:100px">操作</th></tr>';
     for (var i = d.kvs.length - 1; i >= 0; i--) {
       var kv = d.kvs[i], vk = b64Decode(kv.key).replace(histKey,''), vv = b64Decode(kv.value);
-      var ts = parseInt(vk.substring(1)), dt = new Date(ts).toLocaleString();
-      h += '<tr><td style="font-size:11px;font-family:monospace">' + escHtml(vk) + '</td>';
+      var dt = new Date(parseInt(vk.substring(1))).toLocaleString();
+      h += '<tr>';
+      h += '<td style="font-size:11px;font-family:monospace">' + escHtml(vk) + '</td>';
       h += '<td style="font-size:11px">' + dt + '</td>';
-      h += '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(vv) + '</td>';
-      h += '<td><button class="btn btn-primary btn-sm" onclick="triggerRollback(\'' + escJs(type) + '\',\'' + escJs(vv) + '\')">↩ 回滚</button></td></tr>';
+      h += '<td><button class="btn btn-sm" onclick="viewHistoryContent(\'' + escJs(vv) + '\')" style="background:#ddd">👁</button> ';
+      h += '<button class="btn btn-primary btn-sm" onclick="triggerRollback(\'' + escJs(type) + '\',\'' + escJs(vv) + '\')">↩ 回滚</button></td>';
+      h += '</tr>';
     }
     h += '</table>';
   } else { h += '<p style="color:#999">暂无历史版本</p>'; }
   document.getElementById('versionList').innerHTML = h;
+  var prev = document.getElementById('histContentPreview'); if (prev) { prev.style.display='none'; prev._content=''; }
   document.getElementById('versionModal').style.display = 'flex';
+}
+
+function viewHistoryContent(content) {
+  var preview = document.getElementById('histContentPreview');
+  if (!preview) return;
+  if (preview._content === content) {
+    preview.style.display = preview.style.display === 'none' ? 'block' : 'none';
+    return;
+  }
+  preview._content = content;
+  try { preview.textContent = JSON.stringify(JSON.parse(content), null, 2); } catch(e) { preview.textContent = content; }
+  preview.style.display = 'block';
 }
 
 async function triggerRollback(type, oldVal) {
