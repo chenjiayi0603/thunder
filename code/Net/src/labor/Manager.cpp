@@ -275,8 +275,10 @@ bool Manager::OnChildTerminated(struct ev_signal* watcher)
         {
             if (lc.state == WorkerLifecycle::DRAINING && iPid == lc.oldPid)
             {
-                LOG4_INFO("old worker %d (idx %d) graceful exit", iPid, idx);
-                lc.state = WorkerLifecycle::NEW_ACTIVE;
+                LOG4_INFO("old worker %d (idx %d) graceful exit, lifecycle complete → RUNNING", iPid, idx);
+                lc.state = WorkerLifecycle::RUNNING;  // #77 生命周期完成,恢复可重启状态
+                lc.oldPid = -1;
+                lc.newPid = -1;
                 bGracefulExit = true;
                 break;
             }
@@ -2819,6 +2821,7 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
 	                        }
 	                    }
 	                    if (downloadOk) {
+	                        m_oCurrentConf.Replace("module", newConf["module"]);  // #78 避免相同配置重复触发
 	                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
 	                            GracefulRestartWorker(i);
 	                    }

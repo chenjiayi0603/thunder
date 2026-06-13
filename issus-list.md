@@ -1951,3 +1951,70 @@ SO / Lua 版本历史也适用同样逻辑，统一处理。
    - 每行增加"↩ 回滚"按钮，确认后恢复该版本配置并触发 GracefulRestart
 3. 与 #74 统一版本历史 UI 逻辑
 
+
+## ✅ #77 [已修复] WorkerLifecycle 状态机缺少 NEW_ACTIVE → RUNNING 回归 — 第一次优雅重启完成后永远无法再次重启
+
+> 2026-06-13 | bug | 状态: 🔴 待修复 (阻塞后续所有热重载)
+
+### 现象
+
+Manager 收到 etcd 配置变更 → 调用 `GracefulRestartWorker(i)` → 第一次能正常走完重启生命周期。  
+但第二次 Admin 推送配置变更时，日志只输出：  
+```
+WARN: worker 0 not in RUNNING state (3), skip
+```
+State 枚举值 3 = `NEW_ACTIVE`，第二次之后所有 `GracefulRestartWorker` 调用被静默跳过。
+
+### 根因
+
+`WorkerLifecycle` 状态机完整流程：
+```
+RUNNING → STARTING → DRAINING → NEW_ACTIVE → ???（缺！）
+```
+`Manager.cpp:279` 在老 Worker 死亡（SIGCHLD）时将状态设为 `NEW_ACTIVE`，但代码中**没有任何地方把 `NEW_ACTIVE` 回归到 `RUNNING`**。  
+新 Worker 此时已经完全接管，生命周期已结束，应直接回归 `RUNNING`。
+
+### 影响
+
+Admin 推送任何配置变更，**第一次之后全部无效**，进程永远运行旧代码。
+
+### 修复
+
+`Manager.cpp:279`：`lc.state = WorkerLifecycle::NEW_ACTIVE` → `lc.state = WorkerLifecycle::RUNNING`
+
+---
+
+## ✅ #78 [已修复] ConfigUpdated 触发重启后 m_oCurrentConf 未同步 — 相同配置重复触发重启
+
+> 2026-06-13 | bug | 状态: 🟠 待修复
+
+### 现象
+
+每次 etcd watch 收到 `ConfigUpdated` 事件（如重连、重放），Manager 都会比较 `newConf["module"]` 与 `m_oCurrentConf["module"]`，  
+因为 `m_oCurrentConf` 始终是**进程启动时读取的本地配置**，从未被 etcd 下发的配置更新，  
+只要 etcd 版本 > 本地版本，永远为 `changed = true`，无限触发重启。
+
+### 修复
+
+在 `if (changed)` 触发重启前，先把新 module 数组替换到 `m_oCurrentConf`：  
+```cpp
+m_oCurrentConf.Replace("module", newConf["module"]);
+```
+
+---
+
+## 🟡 #79 [bug] 重启进行中收到新配置变更被静默丢弃
+
+> 2026-06-13 | bug | 状态: 🟡 待处理
+
+### 现象
+
+Admin 连续两次推送配置变更（例如先更新 SO 再推 Lua 脚本），若第二次推送时 Worker 仍处于 `STARTING`/`DRAINING` 状态，  
+`GracefulRestartWorker` 会因状态检查直接 `return false`，第二次变更**完全丢失**，  
+Worker 完成第一次重启后仍运行旧 Lua 脚本。
+
+### 修复方向
+
+在 Manager 中增加 `m_oPendingModuleConf` 字段，当重启因状态冲突被跳过时保存待应用配置；  
+Worker 生命周期回归 `RUNNING` 后（#77 修复后的回归点）检查并应用 pending 配置。
+
