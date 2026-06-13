@@ -20,7 +20,6 @@
 #include "cmd/Cmd.hpp"
 #include "step/Step.hpp"
 #include "step/HttpStep.hpp"
-#include "HelloSession.h"
 #include "util/CommonUtils.hpp"
 
 namespace core

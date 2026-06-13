@@ -10,7 +10,6 @@ file(GLOB MODULE_HELLO_SRCS CONFIGURE_DEPENDS "${_src}/ModuleHello/*.cpp")
 
 add_library(ModuleHelloHttps SHARED
   ${MODULE_HELLO_SRCS}
-  "${_src}/HelloSession.cpp"
 )
 set_target_properties(ModuleHelloHttps PROPERTIES OUTPUT_NAME "HelloHttps_ModuleHello" PREFIX "")
 target_compile_features(ModuleHelloHttps PRIVATE cxx_std_20)
