@@ -13,7 +13,7 @@
 #include "labor/Labor.hpp"
 #include "labor/Worker.hpp"
 #include "labor/WorkerThreadPool.hpp"
-#include "logger/CustomLogger.hpp"
+#include "log/CustomLogger.hpp"
 #include "thread/threadpool.h"
 
 #include <coroutine>

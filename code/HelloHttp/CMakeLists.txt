@@ -10,7 +10,6 @@ file(GLOB MODULE_HELLO_SRCS CONFIGURE_DEPENDS "${_src}/ModuleHello/*.cpp")
 
 add_library(ModuleHelloHttp SHARED
   ${MODULE_HELLO_SRCS}
-  "${_src}/CustomLogger.cpp"
   "${_src}/HelloSession.cpp"
 )
 set_target_properties(ModuleHelloHttp PROPERTIES OUTPUT_NAME "HelloHttp_ModuleHello" PREFIX "")
@@ -24,7 +23,6 @@ thunder_plugin_link_net_proto_util(ModuleHelloHttp)
 file(GLOB MODULE_RAW_SRCS CONFIGURE_DEPENDS "${_src}/ModuleRaw/*.cpp")
 add_library(ModuleRawHttp SHARED
   ${MODULE_RAW_SRCS}
-  "${_src}/CustomLogger.cpp"
   "${_src}/HelloSession.cpp"
 )
 set_target_properties(ModuleRawHttp PROPERTIES OUTPUT_NAME "HelloHttp_ModuleRaw" PREFIX "")
@@ -38,7 +36,6 @@ thunder_plugin_link_net_proto_util(ModuleRawHttp)
 file(GLOB MODULE_LUA_SRCS CONFIGURE_DEPENDS "${_src}/ModuleLua/*.cpp")
 add_library(ModuleLuaHttp SHARED
   ${MODULE_LUA_SRCS}
-  "${_src}/CustomLogger.cpp"
   "${_src}/HelloSession.cpp"
 )
 set_target_properties(ModuleLuaHttp PROPERTIES OUTPUT_NAME "HelloHttp_ModuleLua" PREFIX "")

@@ -13,7 +13,7 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "step/Step.hpp"
-#include "logger/CustomLogger.hpp"
+#include "log/CustomLogger.hpp"
 
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
@@ -424,7 +424,7 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 			std::string strLogPreName = strDataLogPath + std::string("/") + getproctitle() + ".";// + std::string(".data");
 
 			log4cplus::initialize();
-			log4cplus::SharedAppenderPtr file_append(new netcustomlog4cplus::FixDailyRollingFileAppender(
+			log4cplus::SharedAppenderPtr file_append(new customlog4cplus::FixDailyRollingFileAppender(
 					strLogPreName,fileExt,
 					(log4cplus::DailyRollingFileSchedule) iLogschedule ,
 					iMaxLogFileSize,iMaxLogFileNum,iMaxHistory,

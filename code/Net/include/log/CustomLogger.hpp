@@ -1,5 +1,5 @@
-#ifndef SRC_netcustomlog4cplus_HPP_
-#define SRC_netcustomlog4cplus_HPP_
+#ifndef NET_LOG_CUSTOMLOGGER_HPP_
+#define NET_LOG_CUSTOMLOGGER_HPP_
 
 #include "log4cplus/fileappender.h"
 #include "log4cplus/logger.h"
@@ -125,6 +125,6 @@ private:
 
 
 
-} // end namespace log4cplus
+} // namespace customlog4cplus
 
 #endif
