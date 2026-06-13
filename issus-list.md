@@ -2057,3 +2057,50 @@ Worker 完成第一次重启后运行的仍是旧配置。
 - 未全部完成时不提前触发
 - pending 消费后 flag 清零不重复
 
+
+---
+
+## 🔵 #81 [优化] CJsonObject 基于 cJSON 2009，建议迁移至现代 C++ JSON 库（支持流式解析）
+
+**当前状态: 🔵 评估中 (2026-06-13)**
+
+### 现状
+
+`CJsonObject` 是对 cJSON (2009, C 语言) 的 C++ 包装，共 3074 行（hpp+cpp），全库有 **482 处引用**，深度耦合。
+
+底层 cJSON 缺陷：
+- 不支持流式解析/生成（必须先将完整 JSON 字符串载入内存）
+- 无 SAX 接口，无 On-Demand 迭代 API
+- 单线程，无 SIMD 优化，大 payload 性能弱
+- 类型安全差，错误处理依赖返回码而非 C++ 异常/result
+
+### 主流候选库对比
+
+| 库 | 流式支持 | 性能 | API 风格 | 引入成本 | 备注 |
+|----|---------|------|---------|---------|------|
+| **simdjson** | ✅ On-Demand（流式迭代） | ⚡ 最快（SIMD）| 迭代器风格 | 单头 / 双文件 | C++17，解析超大 JSON 首选 |
+| **rapidjson** | ✅ SAX（事件流）+ DOM | ⚡ 快 | SAX/DOM 双模 | header-only | C11/C++98，成熟稳定，跨平台 |
+| **nlohmann/json** | ⚠️ SAX 接口存在但繁琐 | 中等 | 直觉 STL 风格 | 单头 | 最易上手，但大 JSON 内存占用高 |
+| **glaze** | ❌ 无流式 | ⚡ 极快（反射） | C++23 反射 | 多头 | 需 C++23，不兼容当前工具链 |
+| **yyjson** | ⚠️ 部分（mutable doc 迭代）| ⚡ 快（SIMD）| C 风格 + C++ 包装 | 单 C 文件 | 比 cJSON 快 10x，迁移成本最低 |
+
+### 推荐方案
+
+**短期（低风险）**：替换底层为 **yyjson**，保留 `CJsonObject` 接口不变。
+- yyjson 纯 C，API 与 cJSON 相近，迁移仅改 `CJsonObject.cpp` 内部实现
+- 流式写出：yyjson 的 `yyjson_mut_doc` + `yyjson_write_opts` 支持增量写
+- 性能提升约 5–10x（SIMD 加速）
+
+**长期（新增场景）**：新增流式 JSON 场景（大响应体/日志流）直接用 **simdjson On-Demand API**，与 `CJsonObject` 并存，不强制全量替换。
+
+### 影响评估
+
+- 全量替换 `CJsonObject`：482 处引用，风险高，需完整回归
+- 仅替换底层实现（yyjson）：仅改 `CJsonObject.cpp`，接口层无变动，风险低
+- 新场景引入 simdjson：零破坏，增量引入
+
+### 验收标准
+
+- [ ] 替换后全量 ctest 342/342 通过
+- [ ] `CJsonObject` 接口行为完全兼容（同 API）
+- [ ] 新增流式场景 benchmark：10MB JSON 解析延迟 < 10ms
