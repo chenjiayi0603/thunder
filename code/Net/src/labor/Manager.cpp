@@ -8,6 +8,7 @@
  * Modify history:
  ******************************************************************************/
 #include <cstdio>
+#include <fstream>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -2764,73 +2765,95 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
     case CenterEventType::ConfigUpdated:
         if (!ev.config_content.empty())
         {
-            if (GetCustomConfigVersionData().SetCustomConfig(ev.config_content))
-            {
-	            LOG4_INFO("OnCenterEvent: custom config updated, bytes=%zu",
-	                      ev.config_content.size());
-
-	            // 检查 so/module 版本是否变化 → 触发优雅重启
-	            util::CJsonObject newConf;
-	            if (newConf.Parse(ev.config_content)) {
-	                auto newSo = newConf["so"];
-	                auto oldSo = m_oCurrentConf["so"];
-	                bool changed = false;
-	                if (oldSo.GetArraySize() != newSo.GetArraySize()) {
-	                    changed = true;
-	                } else {
-	                    for (int i = 0; i < oldSo.GetArraySize(); ++i) {
-	                        std::string op, np; int ov = 0, nv = 0;
-	                        oldSo[i].Get("path", op); newSo[i].Get("path", np);
-	                        oldSo[i].Get("version", ov); newSo[i].Get("version", nv);
-	                        if (op != np || ov != nv) { changed = true; break; }
-	                    }
-	                }
-	                if (!changed) {
-	                    auto newMod = newConf["module"];
-	                    auto oldMod = m_oCurrentConf["module"];
-	                    if (oldMod.GetArraySize() != newMod.GetArraySize()) {
-	                        changed = true;
-	                    } else {
-	                        for (int i = 0; i < oldMod.GetArraySize(); ++i) {
-	                            std::string op, np; int ov = 0, nv = 0;
-	                            oldMod[i].Get("so_path", op); newMod[i].Get("so_path", np);
-	                            oldMod[i].Get("version", ov); newMod[i].Get("version", nv);
-	                            if (op != np || ov != nv) { changed = true; break; }
-	                        }
-	                    }
-	                }
-	                if (changed) {
-	                    LOG4_INFO("so/module version changed, trigger graceful restart");
-	                    // #45: 通过 URL 下载新 SO 文件 (如果配置了 so_url)
-	                    auto newModArr = newConf["module"];
-	                    bool downloadOk = true;
-	                    for (int i = 0; i < newModArr.GetArraySize(); ++i) {
-	                        std::string soUrl;
-	                        if (newModArr[i].Get("so_url", soUrl) && !soUrl.empty()) {
-	                            std::string soPath;
-	                            newModArr[i].Get("so_path", soPath);
-	                            if (!soPath.empty()) {
-	                                std::string outPath = "deploy/" + m_strNodeType + "/" + soPath;
-	                                if (DownloadSoFile(soUrl, outPath)) {
-	                                    LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
-	                                } else {
-	                                    LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
-	                                    downloadOk = false;
-	                                }
-	                            }
-	                        }
-	                    }
-	                    if (downloadOk) {
-	                        m_oCurrentConf.Replace("module", newConf["module"]);  // #78 避免相同配置重复触发
-	                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
-	                            GracefulRestartWorker(i);
-	                    }
-	                }
-	            }
+            // 1. 合法性检查
+            util::CJsonObject newConf;
+            if (!newConf.Parse(ev.config_content)) {
+                LOG4_ERROR("ConfigUpdated: invalid JSON, bytes=%zu", ev.config_content.size());
+                break;
             }
-            else
+
+            // 2. 检查 so/module 版本变化 (需在更新 m_oCurrentConf 之前比较旧值)
+            bool soOrModuleChanged = false;
             {
-                LOG4_ERROR("OnCenterEvent: custom config shm write failed");
+                auto newSo = newConf["so"];
+                auto oldSo = m_oCurrentConf["so"];
+                if (oldSo.GetArraySize() != newSo.GetArraySize()) {
+                    soOrModuleChanged = true;
+                } else {
+                    for (int i = 0; i < oldSo.GetArraySize(); ++i) {
+                        std::string op, np; int ov = 0, nv = 0;
+                        oldSo[i].Get("path", op); newSo[i].Get("path", np);
+                        oldSo[i].Get("version", ov); newSo[i].Get("version", nv);
+                        if (op != np || ov != nv) { soOrModuleChanged = true; break; }
+                    }
+                }
+                if (!soOrModuleChanged) {
+                    auto newMod = newConf["module"];
+                    auto oldMod = m_oCurrentConf["module"];
+                    if (oldMod.GetArraySize() != newMod.GetArraySize()) {
+                        soOrModuleChanged = true;
+                    } else {
+                        for (int i = 0; i < oldMod.GetArraySize(); ++i) {
+                            std::string op, np; int ov = 0, nv = 0;
+                            oldMod[i].Get("so_path", op); newMod[i].Get("so_path", np);
+                            oldMod[i].Get("version", ov); newMod[i].Get("version", nv);
+                            if (op != np || ov != nv) { soOrModuleChanged = true; break; }
+                        }
+                    }
+                }
+            }
+
+            // 3. 合并到 m_oCurrentConf (module / custom / so)
+            {
+                util::CJsonObject tmp;
+                if (newConf.Get("module", tmp)) m_oCurrentConf.Replace("module", tmp);
+                if (newConf.Get("custom", tmp)) m_oCurrentConf.Replace("custom", tmp);
+                if (newConf.Get("so",     tmp)) m_oCurrentConf.Replace("so",     tmp);
+            }
+
+            // 4. 先写文件 (Worker 重启时从文件加载新配置)
+            {
+                std::ofstream fout(m_strConfFile, std::ios::out | std::ios::trunc);
+                if (fout) {
+                    fout << m_oCurrentConf.ToString();
+                    LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
+                } else {
+                    LOG4_ERROR("ConfigUpdated: cannot write config file %s", m_strConfFile.c_str());
+                }
+            }
+
+            // 5. 更新共享内存 (custom 热更, Worker 无需重启即感知)
+            if (!GetCustomConfigVersionData().SetCustomConfig(ev.config_content)) {
+                LOG4_ERROR("ConfigUpdated: custom config shm write failed");
+            } else {
+                LOG4_INFO("ConfigUpdated: custom config shm updated, bytes=%zu", ev.config_content.size());
+            }
+
+            // 6. SO/module 版本变化 → 下载 SO + 优雅重启 (Lua/custom 热更新不重启)
+            if (soOrModuleChanged) {
+                LOG4_INFO("ConfigUpdated: so/module version changed, trigger graceful restart");
+                auto newModArr = newConf["module"];
+                bool downloadOk = true;
+                for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+                    std::string soUrl;
+                    if (newModArr[i].Get("so_url", soUrl) && !soUrl.empty()) {
+                        std::string soPath;
+                        newModArr[i].Get("so_path", soPath);
+                        if (!soPath.empty()) {
+                            std::string outPath = "deploy/" + m_strNodeType + "/" + soPath;
+                            if (DownloadSoFile(soUrl, outPath)) {
+                                LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
+                            } else {
+                                LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
+                                downloadOk = false;
+                            }
+                        }
+                    }
+                }
+                if (downloadOk) {
+                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
+                        GracefulRestartWorker(i);
+                }
             }
         }
         break;

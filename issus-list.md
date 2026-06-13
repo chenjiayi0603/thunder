@@ -2003,6 +2003,34 @@ m_oCurrentConf.Replace("module", newConf["module"]);
 
 ---
 
+## ✅ #80 [已修复] ConfigUpdated 顺序错误 — 应先写文件再处理；custom/Lua 不应触发重启
+
+> 2026-06-13 | bug | 状态: ✅ 已修复
+
+### 现象
+
+1. `ConfigUpdated` 收到新配置时，先触发重启，后（或从不）写本地文件。  
+   Worker fork 出的新进程加载的是旧磁盘文件，若进程全量重启（crash/ops reload）配置也会丢失。
+2. `custom` 配置变更（仅 JSON 字段值变化，module 版本不变）理应热更新，无需 Worker 重启，但流程没有明确区分。
+3. Lua 脚本由 `server.py` 写盘后 Worker 热加载，与 module SO 版本无关，同样不需要重启。
+
+### 修复
+
+`Manager.cpp::ConfigUpdated` 重构为六步顺序：
+
+```
+1. JSON 合法性检查（无效内容直接 break）
+2. 比较旧/新 so + module 版本（在更新 m_oCurrentConf 之前）
+3. 合并 module / custom / so 到 m_oCurrentConf
+4. 先写文件（ofstream 写 m_strConfFile）
+5. 更新共享内存（custom 热更新，Worker 无需重启即感知）
+6. 仅 SO/module 版本变化时触发 GracefulRestart（Lua/custom 不重启）
+```
+
+同时修正 admin-web toast 提示：custom 保存提示"热更新，无需重启"。
+
+---
+
 ## 🟡 #79 [bug] 重启进行中收到新配置变更被静默丢弃
 
 > 2026-06-13 | bug | 状态: 🟡 待处理

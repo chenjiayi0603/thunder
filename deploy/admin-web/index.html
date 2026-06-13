@@ -363,7 +363,7 @@ async function saveCustomModCfg(type) {
     await etcdPost('/v3/kv/put', {key: b64Encode('/thunder/config_history/module/' + type + '/v' + Date.now()), value: b64Encode(oldVal)});
   }
   var r = await etcdPost('/v3/kv/put', {key: b64Encode(cfgKey), value: b64Encode(normalized)});
-  if (r) { toast('✅ 已保存，GracefulRestart 触发中', true); openModuleConfig(type, 'custom'); }
+  if (r) { toast('✅ 已保存（custom 热更新，无需重启）', true); openModuleConfig(type, 'custom'); }
   else { toast('保存失败', false); }
 }
 
