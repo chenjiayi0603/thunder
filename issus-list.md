@@ -2031,18 +2031,29 @@ m_oCurrentConf.Replace("module", newConf["module"]);
 
 ---
 
-## 🟡 #79 [bug] 重启进行中收到新配置变更被静默丢弃
+## ✅ #79 [已修复] 重启进行中收到新配置变更被静默丢弃
 
-> 2026-06-13 | bug | 状态: 🟡 待处理
+> 2026-06-13 | bug | 状态: ✅ 已修复
 
 ### 现象
 
-Admin 连续两次推送配置变更（例如先更新 SO 再推 Lua 脚本），若第二次推送时 Worker 仍处于 `STARTING`/`DRAINING` 状态，  
-`GracefulRestartWorker` 会因状态检查直接 `return false`，第二次变更**完全丢失**，  
-Worker 完成第一次重启后仍运行旧 Lua 脚本。
+Admin 连续两次推送 SO/module 版本变更，第二次到达时 Worker 仍处于 `STARTING`/`DRAINING` 状态，  
+`GracefulRestartWorker` 因状态检查直接 `return false`，第二次变更**完全丢失**，  
+Worker 完成第一次重启后运行的仍是旧配置。
 
-### 修复方向
+### 修复
 
-在 Manager 中增加 `m_oPendingModuleConf` 字段，当重启因状态冲突被跳过时保存待应用配置；  
-Worker 生命周期回归 `RUNNING` 后（#77 修复后的回归点）检查并应用 pending 配置。
+`Manager.hpp` 新增 `bool m_bPendingRestart = false`。
+
+`ConfigUpdated` 第 6 步：若任意 `GracefulRestartWorker(i)` 返回 false（Worker 忙），
+设 `m_bPendingRestart = true`（配置已在步骤 3/4 写入 `m_oCurrentConf` 和文件，只差重启）。
+
+`OnChildTerminated`：`lc.state = RUNNING` 后检查：
+- 若 `m_bPendingRestart && 全部 Worker 均回到 RUNNING` → 清 pending，对所有 Worker 补触发 `GracefulRestartWorker`
+
+单元测试新增 7 个 `PendingRestart.*` 用例覆盖：
+- 全空闲/全忙/部分忙时的 pending 设置行为
+- 最后一个 Worker 完成时补触发重启
+- 未全部完成时不提前触发
+- pending 消费后 flag 清零不重复
 

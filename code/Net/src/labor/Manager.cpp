@@ -281,6 +281,19 @@ bool Manager::OnChildTerminated(struct ev_signal* watcher)
                 lc.oldPid = -1;
                 lc.newPid = -1;
                 bGracefulExit = true;
+                // #79: 所有 Worker 回归 RUNNING 后应用排队的配置变更
+                if (m_bPendingRestart) {
+                    bool allRunning = true;
+                    for (const auto& kv : m_workerLifecycle) {
+                        if (kv.second.state != WorkerLifecycle::RUNNING) { allRunning = false; break; }
+                    }
+                    if (allRunning) {
+                        LOG4_INFO("pending restart: all workers RUNNING, applying queued config");
+                        m_bPendingRestart = false;
+                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
+                            GracefulRestartWorker(i);
+                    }
+                }
                 break;
             }
         }
@@ -2851,8 +2864,15 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                     }
                 }
                 if (downloadOk) {
-                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i)
-                        GracefulRestartWorker(i);
+                    bool anyBusy = false;
+                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
+                        if (!GracefulRestartWorker(i)) anyBusy = true;
+                    }
+                    if (anyBusy) {
+                        // #79: Worker 忙，配置已写文件+内存，等全部空闲后补触发重启
+                        m_bPendingRestart = true;
+                        LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
+                    }
                 }
             }
         }
