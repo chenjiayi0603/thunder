@@ -347,7 +347,7 @@ public:
     void UnloadSoAndDeleteCmd(int iCmd);
     void LoadModule(util::CJsonObject& oModuleConf,bool boForce=false);
     void ReloadModule(util::CJsonObject& oUrlPaths);
-    tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
+    tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject& oConf = util::CJsonObject());
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
     int32 m_iC2SListenFd = -1;

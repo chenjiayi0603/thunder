@@ -40,6 +40,7 @@ struct tagModule
     std::string strSoPath;
     std::string strSymbol;
     std::string strLoadTime = util::GetCurrentTime(20);
+    util::CJsonObject oConf;
     tagModule() = default;
 };
 

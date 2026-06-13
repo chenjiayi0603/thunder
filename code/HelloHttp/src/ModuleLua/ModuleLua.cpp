@@ -120,6 +120,8 @@ bool ModuleLua::Init() {
     });
     lua_pushcfunction(m_pLua, lua_SendToLogic); lua_setglobal(m_pLua, "SendToLogic");
 
+    if (m_strScriptPath.empty())
+        GetModuleConf().Get("script_path", m_strScriptPath);
     if (!m_strScriptPath.empty()) {
         if (luaL_dofile(m_pLua, m_strScriptPath.c_str()) != LUA_OK) return false;
         lua_getglobal(m_pLua, "handle_request");
@@ -147,6 +149,4 @@ bool ModuleLua::AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oI
     return true;
 }
 
-extern "C" net::Module* create_echo() { auto* p = new ModuleLua(); p->SetScriptPath("scripts/echo.lua"); return p; }
-extern "C" net::Module* create_route() { auto* p = new ModuleLua(); p->SetScriptPath("scripts/route.lua"); return p; }
-extern "C" net::Module* create_limit() { auto* p = new ModuleLua(); p->SetScriptPath("scripts/limit.lua"); return p; }
+extern "C" net::Module* create() { return new ModuleLua(); }

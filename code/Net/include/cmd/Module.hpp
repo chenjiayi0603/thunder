@@ -14,6 +14,7 @@
 #include "protocol/http.pb.h"
 #include "Cmd.hpp"
 #include "step/HttpStep.hpp"
+#include "util/json/CJsonObject.hpp"
 
 namespace net
 {
@@ -61,8 +62,19 @@ public:
         m_strModulePath = strModulePaht;
     }
 
+    const util::CJsonObject& GetModuleConf() const
+    {
+        return(m_oModuleConf);
+    }
+
+    void SetModuleConf(const util::CJsonObject& oConf)
+    {
+        m_oModuleConf = oConf;
+    }
+
 private:
     std::string m_strModulePath;
+    util::CJsonObject m_oModuleConf;
 };
 
 } /* namespace net */

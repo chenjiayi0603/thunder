@@ -19,4 +19,4 @@ private:
     int m_iFuncRef = LUA_NOREF;
     std::string m_strScriptPath;
 };
-extern "C" { net::Module* create_echo(); net::Module* create_route(); net::Module* create_limit(); }
+extern "C" { net::Module* create(); }

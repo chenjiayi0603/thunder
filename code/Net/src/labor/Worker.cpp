@@ -5235,13 +5235,13 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
                 module_iter = mapModule.find(strModulePath);
                 if (module_iter == mapModule.end())
                 {
-                    LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion);
+                    LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion, oModuleConf[i]);
                 }
                 else
                 {
                     if (iVersion != module_iter->second->iVersion || boForce)
                     {
-                        LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion);
+                        LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion, oModuleConf[i]);
                     }
                     else
                     {
@@ -5289,7 +5289,7 @@ void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
                 LOG4_WARN("%s not exist!", strSoPath.c_str());
                 continue;
             }
-            LoadSoAndGetModule(url_path, strSoPath, strSymbol, iVersion);
+            LoadSoAndGetModule(url_path, strSoPath, strSymbol, iVersion, module_iter->second->oConf);
         }
         else
         {
@@ -5298,7 +5298,7 @@ void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
     }
 }
 
-tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion)
+tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject& oConf)
 {
     LOG4_TRACE("%s() strModulePath:%s", __FUNCTION__,strModulePath.c_str());
     UnloadSoAndDeleteModule(strModulePath);
@@ -5332,7 +5332,9 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
             pSo->strSoPath = strSoPath;
             pSo->strSymbol = strSymbol;
             pSo->iVersion = iVersion;
+            pSo->oConf = oConf;
             pSo->pModule->SetModulePath(strModulePath);
+            pSo->pModule->SetModuleConf(oConf);
             if (!pSo->pModule->Init())
             {
                 LOG4_FATAL("Module %s %s init error", strModulePath.c_str(), strSoPath.c_str());
