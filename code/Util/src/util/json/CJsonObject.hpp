@@ -1,11 +1,7 @@
 /*******************************************************************************
  * Project:  Util
  * @file     CJsonObject.hpp
- * @brief    Json管理类
- * @author   cjy
- * @date:    2017
- * @note
- * Modify history:
+ * @brief    Json管理类 (yyjson backend)
  ******************************************************************************/
 #ifndef CJSONOBJECT_HPP_
 #define CJSONOBJECT_HPP_
@@ -22,14 +18,24 @@
 #include <map>
 #include <vector>
 #include <unordered_map>
-#include "cJSON.h"
+
+// Global-scope integer typedefs (previously provided by cJSON.h, kept for ABI compatibility).
+#ifndef THUNDER_INT_TYPEDEFS
+#define THUNDER_INT_TYPEDEFS
+typedef int                int32;
+typedef unsigned int       uint32;
+typedef long long int      int64;
+typedef unsigned long long uint64;
+#endif
+
+#include "yyjson.h"
 
 
 namespace util
 {
 
 /**
- * @brief Json管理类
+ * @brief Json管理类 (backed by yyjson)
  */
 class CJsonObject
 {
@@ -58,9 +64,9 @@ public:     // method of ordinary json object
     void GetKeys(std::vector<std::string> &vecKeys);
     bool AddEmptySubObject(const std::string& strKey);
     bool AddEmptySubArray(const std::string& strKey);
-    CJsonObject& operator[](const std::string& strKey);//获取成员,没有时会插入
-    std::string operator()(const std::string& strKey);//只获取成员为原子类型
-    std::string operator()(const std::string& strKey)const;//只获取成员为原子类型
+    CJsonObject& operator[](const std::string& strKey);
+    std::string operator()(const std::string& strKey);
+    std::string operator()(const std::string& strKey)const;
     bool Get(const std::string& strKey, CJsonObject& oJsonObject) const;
     bool Get(const std::string& strKey, std::string& strValue) const;
     bool Get(const std::string& strKey, int32& iValue) const;
@@ -90,11 +96,14 @@ public:     // method of ordinary json object
     bool Replace(const std::string& strKey, float fValue);
     bool Replace(const std::string& strKey, double dValue);
 
+    // Returns true and sets str if the root node is a plain string (not an object/array).
+    bool GetAsString(std::string& str) const;
+
 public:     // method of json array
     int GetArraySize();
-    CJsonObject& operator[](unsigned int uiWhich);//获取数组中获取,没有时会插入
-    std::string operator()(unsigned int uiWhich);//只获取成员为原子类型
-    std::string operator()(unsigned int uiWhich)const;//只获取成员为原子类型
+    CJsonObject& operator[](unsigned int uiWhich);
+    std::string operator()(unsigned int uiWhich);
+    std::string operator()(unsigned int uiWhich)const;
     bool Get(int iWhich, CJsonObject& oJsonObject) const;
     bool Get(int iWhich, std::string& strValue) const;
     bool Get(int iWhich, int32& iValue) const;
@@ -132,18 +141,22 @@ public:     // method of json array
     bool Replace(int iWhich, bool bValue, bool bValueAgain);
     bool Replace(int iWhich, float fValue);
     bool Replace(int iWhich, double dValue);
-    cJSON* GetJsonData()const {return m_pJsonData?m_pJsonData:m_pExternJsonDataRef;}
+
 private:
-    CJsonObject(cJSON* pJsonData);
-    std::string JsonStruct2Str(const cJSON* pJsonStruct)const;
+    // Borrowed sub-object constructor: val and doc are owned by parent.
+    CJsonObject(yyjson_mut_val* pVal, yyjson_mut_doc* pDoc);
+    // Convert atomic val to its string representation (for operator()).
+    static std::string ValToStr(yyjson_mut_val* v);
+
 private:
-    cJSON* m_pJsonData;
-    cJSON* m_pExternJsonDataRef;
+    yyjson_mut_doc* m_pOwnedDoc;    // null in borrowed sub-object mode
+    yyjson_mut_val* m_pVal;         // root val (in owned or parent's doc)
+    yyjson_mut_doc* m_pDocRef;      // allocator doc (= m_pOwnedDoc or parent's)
     std::string m_strErrMsg;
     std::unordered_map<unsigned int, std::unique_ptr<CJsonObject>> m_mapJsonArrayRef;
-	std::unordered_map<std::string, std::unique_ptr<CJsonObject>> m_mapJsonObjectRef;
+    std::unordered_map<std::string, std::unique_ptr<CJsonObject>> m_mapJsonObjectRef;
 };
 
 }
 
-#endif /* CJSONHELPER_HPP_ */
+#endif /* CJSONOBJECT_HPP_ */

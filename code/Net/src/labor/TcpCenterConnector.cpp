@@ -149,10 +149,7 @@ bool TcpCenterConnector::Init(struct ev_loop* loop, CenterEventCallback cb, void
         // CSV 格式: CJsonObject 直接包裹 string 类型,或通过 "center" 键获取
         {
             std::string csv;
-            cJSON* raw = m_oCenterConf.GetJsonData();
-            if (raw && raw->type == cJSON_String && raw->valuestring)
-                csv = raw->valuestring;
-            else
+            if (!m_oCenterConf.GetAsString(csv))
                 m_oCenterConf.Get("center", csv);
 
             if (!csv.empty())
