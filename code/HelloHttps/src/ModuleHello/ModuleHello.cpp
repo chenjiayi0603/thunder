@@ -76,8 +76,10 @@ std::string JsonStrOrDefault(const util::CJsonObject& o, const char* key, const 
 	return def;
 }
 
-net::AsyncTask HelloCoRedisCo(net::StepCo20& step, std::string redisHost, int redisPort)
+net::AsyncTask HelloCoRedisCo(net::StepCo20& step, const util::CJsonObject& obj)
 {
+	const std::string redisHost = JsonStrOrDefault(obj, "redis_host", "127.0.0.1");
+	const int redisPort = JsonIntOrDefault(obj, "redis_port", 6379);
 	net::RedisCoHelper r(&step, redisHost, redisPort);
 	const std::string key = "hello_co20_demo";
 	const std::string val = "ok_from_co20";
@@ -108,8 +110,15 @@ net::AsyncTask HelloCoRedisCo(net::StepCo20& step, std::string redisHost, int re
 	co_return;
 }
 
-net::AsyncTask HelloCoMysqlCo(net::StepCo20& step, util::tagDbConnInfo dbConn)
+net::AsyncTask HelloCoMysqlCo(net::StepCo20& step, const util::CJsonObject& obj)
 {
+	const std::string h = JsonStrOrDefault(obj, "mysql_host", "127.0.0.1");
+	const int p = JsonIntOrDefault(obj, "mysql_port", 3306);
+	const std::string user = JsonStrOrDefault(obj, "mysql_user", "root");
+	const std::string pwd = JsonStrOrDefault(obj, "mysql_password", "thunder");
+	const std::string dbName = JsonStrOrDefault(obj, "mysql_db", "thunder_test");
+	const std::string charset = JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
+	const util::tagDbConnInfo dbConn = MakeTagDbConn(h, static_cast<unsigned int>(p), user, pwd, dbName, charset);
 	// 为了让冒烟测试稳定，改为同步 DBI（避免 MysqlAsyncConn 事件回调时序问题）。
 	util::CMysqlDbi db(dbConn.m_szDbHost,
 	                    dbConn.m_szDbUser,
@@ -447,11 +456,9 @@ bool ModuleHello::TestHelloCoRedis(const net::tagMsgShell& stMsgShell,
                                    const util::CJsonObject& obj)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	const std::string host = hello_co_demo::JsonStrOrDefault(obj, "redis_host", "127.0.0.1");
-	const int port = hello_co_demo::JsonIntOrDefault(obj, "redis_port", 6379);
 	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[host, port](net::StepCo20& step) -> net::AsyncTask {
-			return hello_co_demo::HelloCoRedisCo(step, host, port);
+		[&obj](net::StepCo20& step) -> net::AsyncTask {
+			return hello_co_demo::HelloCoRedisCo(step, obj);
 		});
 }
 
@@ -460,17 +467,9 @@ bool ModuleHello::TestHelloCoMysql(const net::tagMsgShell& stMsgShell,
                                    const util::CJsonObject& obj)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	const std::string h = hello_co_demo::JsonStrOrDefault(obj, "mysql_host", "127.0.0.1");
-	const int p = hello_co_demo::JsonIntOrDefault(obj, "mysql_port", 3306);
-	const std::string user = hello_co_demo::JsonStrOrDefault(obj, "mysql_user", "root");
-	const std::string pwd = hello_co_demo::JsonStrOrDefault(obj, "mysql_password", "thunder");
-	const std::string db = hello_co_demo::JsonStrOrDefault(obj, "mysql_db", "thunder_test");
-	const std::string charset = hello_co_demo::JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
-	const util::tagDbConnInfo dbConn = hello_co_demo::MakeTagDbConn(h, static_cast<unsigned int>(p), user,
-	                                                                pwd, db, charset);
 	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[dbConn](net::StepCo20& step) -> net::AsyncTask {
-			return hello_co_demo::HelloCoMysqlCo(step, dbConn);
+		[&obj](net::StepCo20& step) -> net::AsyncTask {
+			return hello_co_demo::HelloCoMysqlCo(step, obj);
 		});
 }
 
