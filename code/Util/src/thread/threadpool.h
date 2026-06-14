@@ -8,7 +8,7 @@
 #include <thread>
 #include <functional>
 #include <stdexcept>
-#include "concurrentqueue.h"
+#include "concurrentqueue.h"   // moodycamel::ConcurrentQueue — https://github.com/cameron314/concurrentqueue
 
 //线程池最大容量,应尽量设小一点
 #define  THREADPOOL_MAX_NUM 16
@@ -53,7 +53,7 @@ namespace util
  * 与旧版（std::queue + mutex + condvar）对比：
  *   - 4P-4C 典型 offload：2.5x 加速
  *   - 16P-4C 高并发：2.8x 加速
- * 详见 docs/quality/03-threadpool-queue-bench.md
+ * 详见 docs/performance/03-threadpool-queue-bench.md
  *
  * ── 多进程说明 ──
  *

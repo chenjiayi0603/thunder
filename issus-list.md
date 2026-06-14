@@ -2915,7 +2915,7 @@ void resize(unsigned short n);
 
 ## ✅ #94 [已修复] ThreadPool `std::queue + mutex` 全局锁，高并发 offload 入队串行
 
-> 2026-06-14 | 优化 | 状态: ✅ **已修复**（性能基准 + 实施 + 验证） | 详细分析: `docs/quality/03-threadpool-queue-bench.md`
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（性能基准 + 实施 + 验证） | 详细分析: `docs/performance/03-threadpool-queue-bench.md`
 
 ### 现象
 
@@ -3064,7 +3064,7 @@ g_thunderWorkerPool = new std::threadpool(n);  // 从不 delete
 
 **为什么选 unique_ptr 而非 static local**：
 
-原提案（`docs/architecture/20-threadpool-analysis.md`）推荐 static local，但实际分析发现：
+原提案（`docs/performance/20-threadpool-analysis.md`）推荐 static local，但实际分析发现：
 - Worker.cpp:2499 通过 `InitThunderWorkerThreadPool(iPoolThreads)` 配置线程数后初始化
 - static local 只能默认初始化，无法接受运行时参数
 - `unique_ptr` 保留了 `Init(threadCount)` 的语义：第一次调用时按配置创建，后续调用幂等
@@ -3173,3 +3173,39 @@ g_thunderWorkerPool = new std::threadpool(n);  // 从不 delete
 - [ ] `commit` 超限返回 `std::nullopt`
 - [ ] `PoolOffloadAwaiter` 处理 `nullopt`（降级或错误传播）
 - [ ] 补全上表盲点对应用例后重测达标
+
+## 🔵 #97 [优化] RedisCoHelper 连接复用（加连接池）
+
+> 2026-06-14 | 优化 | 状态: 🔵 待做 | 来源: HelloCoRedisCo 性能分析
+
+### 现象
+
+`AutoRedisCmd`（`Worker.cpp:4405`）每次调用都 `redisAsyncConnect` 新建 TCP 连接。
+1000 次 Redis 操作就创建 1000 条连接，严重影响性能。
+
+目前 `AutoRedisCluster`（集群版）已有连接复用逻辑（`mapRedisClusterContext.find`），
+但单机版缺少同等的复用。
+
+### 修复方向
+
+`AutoRedisCmd` 首部增加查重：
+
+```cpp
+// 先查 host:port 是否已有连接
+auto ctxIter = mapRedisContext.find(host + ":" + port);
+if (ctxIter != mapRedisContext.end()) {
+    // 复用，直接 redisAsyncCommandArgv
+} else {
+    // 新建 redisAsyncConnect（现有逻辑）
+}
+```
+
+断线重连已由 `OnRedisDisconnect` → `DelRedisContextAddr` 处理，
+断开后 `mapRedisContext` 自动清理，下次请求自动重建。
+
+### 验收
+
+- [ ] `AutoRedisCmd` 复用同 host:port 的连接
+- [ ] 断线后 `DelRedisContextAddr` 清理映射，下次请求新建
+- [ ] 压测 QPS 高于无连接池版本
+- [ ] 全量 ctest 通过

@@ -154,7 +154,7 @@ Direct leak of 4096 byte(s) allocated from:
 2. 写 benchmark 实测对比（`MutexQueue vs LockFreeQueue`）：确认 **2.5x~3.7x 加速比**
 3. 认为提升足够大，不等火焰图，直接实施替换 + namespace 修复 + 裸指针修复
 4. 单元测试 8/8 通过，全量 build 0 error  
-→ 详情见 `docs/quality/03-threadpool-queue-bench.md`
+→ 详情见 `docs/performance/03-threadpool-queue-bench.md`
 
 ---
 
