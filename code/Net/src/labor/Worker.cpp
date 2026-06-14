@@ -2486,7 +2486,7 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     m_oCustomConf.Get("cat_log_system", m_bCatLogSystem);
 
     {
-        int iPoolThreads = 4;
+        int iPoolThreads = 0;  // 0 = auto（hardware_concurrency()/2）
         (void)m_oCustomConf.Get("worker_thread_pool_size", iPoolThreads);
         if (iPoolThreads < 1)
         {

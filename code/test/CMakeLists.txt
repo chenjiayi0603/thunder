@@ -50,6 +50,7 @@ add_library(thunder_net_sources_for_test OBJECT ${THUNDER_NET_ALL_SOURCES_FOR_TE
 thunder_apply_common_compile_options(thunder_net_sources_for_test)
 target_compile_definitions(thunder_net_sources_for_test PRIVATE THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG)
 thunder_target_include_net(thunder_net_sources_for_test)
+target_include_directories(thunder_net_sources_for_test PRIVATE "${THUNDER_3PARTY}")
 target_compile_features(thunder_net_sources_for_test PRIVATE cxx_std_20)
 
 add_executable(thunder_test_step_co20
@@ -180,6 +181,7 @@ add_executable(thunder_test_util_threadpool
 )
 target_include_directories(thunder_test_util_threadpool PRIVATE
   "${THUNDER_UTIL}/src"
+  "${THUNDER_3PARTY}"      # 供 threadpool.h 找 concurrentqueue.h
 )
 target_compile_features(thunder_test_util_threadpool PRIVATE cxx_std_20)
 target_link_libraries(thunder_test_util_threadpool PRIVATE
@@ -383,3 +385,15 @@ thunder_target_include_net(thunder_bench_backends)
 thunder_link_thirdparty_shared(thunder_bench_backends)
 target_link_libraries(thunder_bench_backends PRIVATE GTest::gtest_main)
 set_target_properties(thunder_bench_backends PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+
+# ---- ThreadPool 队列方案对比 bench（无 Net 链接依赖，仅需 3party/concurrentqueue.h）----
+add_executable(thunder_bench_threadpool_queue
+  labor/bench_threadpool_queue.cpp
+)
+target_compile_features(thunder_bench_threadpool_queue PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_threadpool_queue PRIVATE
+  "${THUNDER_3PARTY}"                    # 3party/concurrentqueue.h
+  "${THUNDER_UTIL}/src"                  # thread/threadpool.h
+)
+target_compile_options(thunder_bench_threadpool_queue PRIVATE -O2)
+target_link_libraries(thunder_bench_threadpool_queue PRIVATE GTest::gtest_main)

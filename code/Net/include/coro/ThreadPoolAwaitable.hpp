@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file ThreadPoolAwaitable.hpp
- * @brief StepCo20 co_await：重 CPU / 阻塞调用卸载到 std::threadpool，经 Labor::PostToEventLoop 回 Worker
+ * @brief StepCo20 co_await：重 CPU / 阻塞调用卸载到 util::threadpool，经 Labor::PostToEventLoop 回 Worker
  * @note 与 future_awaiter_demo 的 FutureAwaiter 类似：awaiter 内持有 std::future；任务在线程池内执行。
  *       本处 future 在池任务 return 时即就绪（任务内已 PostToEventLoop），故事件线程上 await_resume 里
  *       fut_.get() 不会阻塞。勿在事件线程上对未就绪的 future 调用 get()。
@@ -38,14 +38,14 @@ struct PoolOffloadAwaiter
 	using ResultT = std::invoke_result_t<WorkFn, BodyT&&, std::shared_ptr<OutT>&>;
 
 	StepCo20* step_ = nullptr;
-	std::threadpool* pool_ = nullptr;
+	util::threadpool* pool_ = nullptr;
 	BodyT body_;
 	std::shared_ptr<OutT> out_;
 	WorkFn work_;
 	uint32 stepSeq_ = 0;
 	std::future<ResultT> fut_{};
 
-	PoolOffloadAwaiter(StepCo20* s, std::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
+	PoolOffloadAwaiter(StepCo20* s, util::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
 		: step_(s), pool_(&p), body_(std::move(b)), out_(std::move(o)), work_(std::move(w))
 	{
 		if (step_ != nullptr)
@@ -60,6 +60,11 @@ struct PoolOffloadAwaiter
 	{
 		if (step_ == nullptr || pool_ == nullptr)
 		{
+			// 无可用线程池，不能挂起（无人 resume），直接恢复让 await_resume 处理
+			if (h && !h.done())
+			{
+				h.resume();
+			}
 			return;
 		}
 		step_->m_context.handle = h;
@@ -68,7 +73,7 @@ struct PoolOffloadAwaiter
 		WorkFn work = std::move(work_);
 		StepCo20* step = step_;
 		const uint32 seq = stepSeq_;
-		std::threadpool* pool = pool_;
+		util::threadpool* pool = pool_;
 		try
 		{
 			fut_ = pool->commit([body = std::move(body), out, work = std::move(work), step, seq, h]() mutable
@@ -112,6 +117,12 @@ struct PoolOffloadAwaiter
 		catch (...)
 		{
 			LOG4_ERROR("PoolOffloadAwaiter: threadpool commit failed");
+			// 任务未入队，fut_ 保持 invalid。直接 resume 协程，
+			// await_resume 会检查 fut_.valid() 并抛异常通知调用方。
+			if (h && !h.done())
+			{
+				h.resume();
+			}
 		}
 	}
 
@@ -137,7 +148,7 @@ struct PoolOffloadAwaiter
 
 template <class BodyT, class OutT, class WorkFn>
 PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
-	StepCo20* s, std::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
+	StepCo20* s, util::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
 {
 	return PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>>(
 		s, p, std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
@@ -157,7 +168,7 @@ PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
  */
 template <class WorkFn, class... BodyTs,
 	std::enable_if_t<std::is_invocable_v<std::decay_t<WorkFn>, BodyTs...>, int> = 0>
-auto MakePoolOffloadAwaiter(StepCo20* s, std::threadpool& p, WorkFn&& w, BodyTs&&... bodyArgs)
+auto MakePoolOffloadAwaiter(StepCo20* s, util::threadpool& p, WorkFn&& w, BodyTs&&... bodyArgs)
 {
 	using BodyPack = std::tuple<std::decay_t<BodyTs>...>;
 	// std::decay_t 是 C++ 标准库类型萃取工具，通常用于将类型参数变为它的“原始”形式（去除引用、const、volatile、数组等），常用于泛型编程以获得更适合实例化/存储的类型。
@@ -193,7 +204,7 @@ auto MakePoolOffloadAwaiter(StepCo20* s, WorkFn&& w, BodyTs&&... bodyArgs)
 
 /** @brief 池内执行无参 lambda 并返回值（非 void）；等价于 MakePoolOffloadAwaiter(&step, pool, f) */
 template <class F>
-auto RunOnThreadPool(StepCo20& step, std::threadpool& pool, F&& f)
+auto RunOnThreadPool(StepCo20& step, util::threadpool& pool, F&& f)
 {
 	using R = std::invoke_result_t<std::decay_t<F>>;
 	static_assert(!std::is_void_v<R>, "RunOnThreadPool: return type must not be void; use MakePoolOffloadAwaiter (work may return void)");

@@ -31,6 +31,7 @@ target_compile_options(Util PRIVATE
 
 target_include_directories(Util PUBLIC
   "${UTIL_SRC}"
+  "${THUNDER_3PARTY}"      # 供 threadpool.h 找 concurrentqueue.h
 )
 
 target_include_directories(Util PRIVATE

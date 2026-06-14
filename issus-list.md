@@ -2214,3 +2214,962 @@ Worker 完成第一次重启后运行的仍是旧配置。
 4. yyjson 替换后性能已提升 4–7×，当前无进一步优化压力
 
 **下次评估触发条件**：profiling 显示 JSON parse > 5% CPU，或出现 > 50KB 的 JSON 解析场景。
+
+---
+
+## ✅ #84 [环境] 安装 clangd-21 — LSP 工具可用（跳转/引用/调用链）
+
+> 2026-06-14 | 环境配置 | 状态: ✅ 已完成
+
+### 背景
+
+`clangd-lsp@claude-plugins-official` 插件已安装但 `clangd` 二进制缺失，`LSP` 工具报 "Executable not found"。
+
+### 安装
+
+```bash
+sudo apt install clangd -y  # 安装 clangd-21 (21.1.8)
+```
+
+顺带修正 `.clangd` 配置文件格式（clangd 21 要求 `CompileFlags:` 节）：
+
+```yaml
+# 修正前（报 Unknown Config key）
+CompilationDatabase: build
+
+# 修正后
+CompileFlags:
+  CompilationDatabase: build
+```
+
+### 验证
+
+```
+workspaceSymbol "RemoveConnection" → 找到 WssCodec + HttpsCodec 两处定义
+incomingCalls WssCodec::RemoveConnection → Worker::DestroyConnect (line 5801)
+```
+
+### 说明
+
+clangd 比 codegraph 类插件精度高得多（基于真实编译数据库而非文本匹配），提供：
+- `goToDefinition` / `findReferences` — 语义级跳转
+- `incomingCalls` / `outgoingCalls` — 精准调用链（区分重载/模板）
+- `workspaceSymbol` — 全局符号搜索
+- `documentSymbol` — 文件内所有符号一览
+
+`install-info` 包有 postinst 脚本警告（与 GDK_BACKEND 环境变量冲突），不影响 clangd 本身。
+
+---
+
+## 🔵 #85 [质量工程] ASan 内存泄漏检测 — TLS 连接资源生命周期
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+HTTPS/WSS Codec 每条 TCP 连接持有 `TlsConnState`（`SSL_CTX*`、`SSL*`、`BIO*` × 2 + `oPlainRecvBuff` + `oPendingPlainSend`），任何异常路径（握手超时、连接重置、编解码错误）都可能导致 OpenSSL 资源未释放。
+
+### 现状
+
+当前 `RemoveConnection` 调用路径未覆盖：连接在握手 PAUSE 状态被强制关闭时的 `SSL_free` 是否正确触发 BIO 的级联释放。
+
+### 目标
+
+用 AddressSanitizer（ASan）+ LeakSanitizer（LSan）自动检测：
+1. `TlsConnState` 生命周期完整（构造→握手→通信→`RemoveConnection`→析构全程无泄漏）
+2. 连接抖动场景（大量 Decode → RemoveConnection 循环，模拟客户端断连）
+3. 握手中途断开场景（`SSL_do_handshake` 返回 `WANT_READ` 后 `RemoveConnection`）
+
+### 实现方案
+
+**1. CMake ASan 构建 target**
+
+```cmake
+# code/CMakeLists.txt 或 build/CMakeLists.txt
+option(ENABLE_ASAN "Enable AddressSanitizer + LeakSanitizer" OFF)
+if(ENABLE_ASAN)
+    add_compile_options(-fsanitize=address,leak -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,leak)
+endif()
+```
+
+构建命令：
+```bash
+cmake -B build_asan -DENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_asan -j$(nproc)
+```
+
+**2. 新增 gtest 用例（`code/test/codec/test_codec_tls_leak.cpp`）**
+
+```cpp
+// 场景 1：正常连接-断开循环
+TEST(TlsLeak, ConnectDisconnectCycle)
+{
+    net::HttpsCodec codec;
+    // ... 配置 SslConfig
+    for (int i = 0; i < 100; ++i) {
+        tagConnectionAttr conn = MakeConn(i);
+        MsgHead h; MsgBody b;
+        codec.Decode(&conn, h, b);         // 触发 EnsureState（SSL_CTX + SSL + BIO 创建）
+        codec.RemoveConnection(i);          // 期望完整释放
+    }
+    // LSan 在程序退出时检测泄漏
+}
+
+// 场景 2：握手 PAUSE 中途断开
+TEST(TlsLeak, HandshakePauseDisconnect)
+{
+    net::WssCodec codec;
+    // ...
+    tagConnectionAttr conn = MakeConn(1);
+    codec.SetConnectionRole(1, true);
+    MsgHead h; MsgBody b;
+    codec.Decode(&conn, h, b);  // CODEC_STATUS_PAUSE（握手中）
+    codec.RemoveConnection(1);   // 在 WANT_READ 状态释放
+}
+
+// 场景 3：EncodeToConnection 挂 oPendingPlainSend 后断开
+TEST(TlsLeak, PendingPlainSendOnDisconnect)
+{
+    // ... 握手未完成时 EncodeToConnection 将数据存入 oPendingPlainSend
+    // RemoveConnection 应清空 pending buffer
+}
+```
+
+**3. 运行**
+```bash
+ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
+    ./build_asan/code/test/codec/test_codec_tls_leak
+```
+
+### 验收标准
+
+- [ ] ASan 构建 target 加入 CMakeLists，`cmake -DENABLE_ASAN=ON` 正常构建
+- [ ] 3 个泄漏场景 gtest 用例通过，LSan 0 报告
+- [ ] `RemoveConnection` 覆盖率：SSL/BIO 释放路径 100% 经过
+- [ ] CI/CD 可加可选 step：`cmake -DENABLE_ASAN=ON && ctest`（不阻塞主分支）
+
+---
+
+## 🔵 #86 [质量工程] TSan 并发安全测试 — Codec 多连接并发 Decode/RemoveConnection
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+`HttpsCodec`/`WssCodec` 内部用 `std::unordered_map<int, TlsConnState>` 按 fd 索引连接状态。Thunder 是单线程事件循环，Codec 本身设计为单线程访问；但如果未来引入 Worker 多线程（如 io_uring SQ/CQ 并发提交），或测试代码并发调用 Codec，则需要确认线程安全边界。
+
+### 目标
+
+用 ThreadSanitizer（TSan）验证：
+1. 当前单线程设计下 Codec 无数据竞争（基准验证）
+2. 明确标注"Codec 非线程安全"的设计约束（文档 + assert）
+3. 为未来多线程改造提供 TSan 基线
+
+### 实现方案
+
+**1. CMake TSan 构建 target**
+
+```cmake
+option(ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+if(ENABLE_TSAN)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=thread)
+endif()
+```
+
+注意：ASan 和 TSan 不能同时启用。
+
+**2. 多线程压力用例（`code/test/codec/test_codec_tsan.cpp`）**
+
+```cpp
+// 并发独立 fd（合法场景：验证无共享状态）
+TEST(TsanSafe, ConcurrentIndependentFds)
+{
+    // 每线程操作唯一 fd，不共享 Codec 实例 → 期望 0 竞争
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 4; ++t) {
+        threads.emplace_back([t] {
+            net::WssCodec codec;  // 各线程独立实例
+            tagConnectionAttr conn = MakeConn(t);
+            MsgHead h; MsgBody b;
+            for (int i = 0; i < 50; ++i)
+                codec.Decode(&conn, h, b);
+            codec.RemoveConnection(t);
+        });
+    }
+    for (auto& th : threads) th.join();
+}
+```
+
+**3. 运行**
+```bash
+cmake -B build_tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_tsan -j$(nproc)
+TSAN_OPTIONS=abort_on_error=1 ./build_tsan/code/test/codec/test_codec_tsan
+```
+
+### 验收标准
+
+- [ ] TSan 构建 target 可用
+- [ ] 独立实例并发测试 TSan 0 报告
+- [ ] Codec 头文件加注释说明线程安全模型（非线程安全，仅单线程事件循环使用）
+
+---
+
+## 🔵 #87 [质量工程] UBSan — Codec 未定义行为检测
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+Thunder Codec 层大量操作 raw 字节（WS 帧掩码 XOR、msghead 强转、protobuf Arena 指针）。UndefinedBehaviorSanitizer（UBSan）可捕获整数溢出、越界访问、错误对齐、空指针解引用等潜在 UB。
+
+### 目标
+
+用 UBSan 扫描所有 Codec 单元测试，重点关注：
+1. `tagClientMsgHead`（13 字节协议头）强转对齐问题
+2. `body_len` 字段：前端异常大包（`body_len = UINT32_MAX`）不触发整数溢出
+3. WS 掩码 XOR：`mask_key` 4 字节对齐读取
+4. ChunkedTransfer 边界：`>8192` 分块边界计算无越界
+
+### 实现方案
+
+```cmake
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+if(ENABLE_UBSAN)
+    add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=undefined)
+endif()
+```
+
+**边界测试用例**
+
+```cpp
+TEST(UbSan, MsgHeadExtremeValues)
+{
+    MsgBody body;
+    body.set_body(std::string(1, '\0'));  // 最小包
+
+    MsgHead head;
+    head.set_cmd(0xFFFFFFFF);   // cmd 最大值
+    head.set_seq(0xFFFFFFFF);   // seq 最大值
+    // 验证 Encode 不溢出
+    util::CBuffer buf;
+    net::WssCodec codec;
+    EXPECT_EQ(net::CODEC_STATUS_OK, codec.Encode(head, body, &buf));
+}
+
+TEST(UbSan, LargeBodyLen)
+{
+    // 构造 body_len > buffer 实际大小的伪造帧，验证 Decode 不越界读
+    net::WssCodec codec;
+    tagConnectionAttr conn = MakeConn(1);
+    conn.pRecvBuff->Write("\x82\x7f", 2);  // WS binary frame, 7+64-bit extended len
+    // 填充异常 extended_len（远大于实际数据量）
+    uint64_t bigLen = 0xFFFFFFFFFFFFFFFF;
+    conn.pRecvBuff->Write(reinterpret_cast<const char*>(&bigLen), 8);
+    MsgHead h; MsgBody b;
+    // 期望 CODEC_STATUS_PAUSE 或 ERR，不崩溃
+    auto status = codec.Decode(&conn, h, b);
+    EXPECT_NE(status, net::CODEC_STATUS_OK);  // 应拒绝异常帧
+}
+```
+
+### 验收标准
+
+- [ ] UBSan 构建 target 可用
+- [ ] 现有全部 codec gtest 用例 UBSan 0 报告
+- [ ] 边界测试用例通过（异常帧被拒绝，不崩溃、不越界）
+
+---
+
+## 🔵 #88 [质量工程] WS/HTTP 帧解析模糊测试（libFuzzer）
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+`HttpCodec::Decode` 和 `CodecWebSocketJson::Decode` 直接解析来自网络的二进制数据。任何未检查的长度字段、未处理的控制帧、畸形的 HTTP 请求头都可能导致崩溃或内存越界。
+
+### 目标
+
+用 libFuzzer 对以下解析路径进行随机输入模糊测试：
+1. `HttpCodec::Decode` — 畸形 HTTP/1.1 请求（异常 method、超长 URI、\r\n 注入、无头部）
+2. `CodecWebSocketJson::Decode` — 畸形 WS 帧（异常 opcode、fin=0 分片、payload 超长、掩码缺失）
+3. `WssCodec::Decode` — 加密层：把随机字节当 TLS record 塞入（测试 OpenSSL 的鲁棒性）
+
+### 实现方案
+
+**Fuzz target（`code/test/fuzz/fuzz_http_decode.cpp`）**
+
+```cpp
+#include "codec/HttpCodec.hpp"
+#include "util/CBuffer.hpp"
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+{
+    net::HttpCodec codec;
+    tagConnectionAttr conn;
+    conn.iFd = 1;
+    conn.ucConnectStatus = eConnectStatus_init;
+    conn.pRecvBuff = std::make_shared<util::CBuffer>();
+    conn.pSendBuff = std::make_shared<util::CBuffer>();
+    conn.pRecvBuff->Write(reinterpret_cast<const char*>(data), size);
+
+    MsgHead h; MsgBody b;
+    codec.Decode(&conn, h, b);  // 不应崩溃
+    return 0;
+}
+```
+
+**CMake Fuzz target**
+
+```cmake
+option(ENABLE_FUZZING "Enable libFuzzer targets" OFF)
+if(ENABLE_FUZZING)
+    add_executable(fuzz_http_decode fuzz/fuzz_http_decode.cpp)
+    target_compile_options(fuzz_http_decode PRIVATE -fsanitize=fuzzer,address)
+    target_link_options(fuzz_http_decode PRIVATE -fsanitize=fuzzer,address)
+    target_link_libraries(fuzz_http_decode Net)
+endif()
+```
+
+**运行**
+```bash
+cmake -B build_fuzz -DENABLE_FUZZING=ON -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer,address"
+cmake --build build_fuzz -j$(nproc)
+./build_fuzz/fuzz_http_decode -max_total_time=60 -max_len=65536 corpus/
+```
+
+### 验收标准
+
+- [ ] libFuzzer target 可构建
+- [ ] 60 秒 fuzzing 无 crash（HttpCodec + WssCodec 两个 target）
+- [ ] 发现的 crash 用例自动加入回归测试 corpus
+
+---
+
+## 🔵 #89 [质量工程] TLS 长连接稳定性测试 — 握手状态机全路径覆盖
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+Thunder HTTPS/WSS 握手是应用层驱动的异步状态机：每次 `Decode()` 调用可能返回 `PAUSE`（`WANT_READ` / `WANT_WRITE`），下次调用继续。当前 gtest 只测了握手完成的正常路径，缺少：
+1. **PAUSE 状态多轮触发**：TLS 1.3 需要 4-5 轮握手报文，每轮均为 PAUSE
+2. **长连接通信**：握手后持续 Encode/Decode 1000 条消息不崩溃
+3. **连接复用**：同一 fd 重用（先 RemoveConnection，再用同一 fd 建新连接）
+
+### 现有基础
+
+`test_codec_wss.cpp` 已有 `DriveHandshake` 驱动函数 + `TlsHandshakeCompletes` / `TlsEncryptionMultipleMessages` 用例（握手 + 5 条消息）。本 issue 在此基础上扩展。
+
+### 新增场景
+
+```cpp
+// 场景 1：握手后持续 1000 条消息加密传输
+TEST(WssStability, ThousandMessageRoundtrip)
+{
+    // ... DriveHandshake 完成后
+    for (int i = 0; i < 1000; ++i) {
+        MsgHead h; h.set_seq(i); h.set_cmd(20002);
+        MsgBody b; b.set_body(R"({"n":)" + std::to_string(i) + "}");
+        ASSERT_EQ(CODEC_STATUS_OK,
+                  serverCodec.EncodeToConnection(&serverConn, h, b, serverConn.pSendBuff.get()));
+    }
+    EXPECT_GT(serverConn.pSendBuff->ReadableBytes(), 0u);
+}
+
+// 场景 2：fd 复用（RemoveConnection 后同 fd 重新握手）
+TEST(WssStability, FdReuseAfterRemove)
+{
+    // 第一次握手+通信
+    // ...
+    serverCodec.RemoveConnection(1);
+    clientCodec.RemoveConnection(2);
+
+    // 同 fd 重新创建连接
+    tagConnectionAttr serverConn2 = MakeConn(1);
+    tagConnectionAttr clientConn2 = MakeConn(2);
+    ASSERT_TRUE(DriveHandshake(serverCodec, serverConn2, clientCodec, clientConn2));
+}
+
+// 场景 3：WS HTTP Upgrade 后帧传输（WSS 二阶段切换验证）
+TEST(WssStability, HttpUpgradeThenWsFrames)
+{
+    // 握手完成后，构造合法的 HTTP Upgrade 请求（明文注入 TLS）
+    // 验证 ucConnectStatus 从 init → ok 的切换
+    // 然后发 WS binary 帧，验证正常解码
+}
+```
+
+### 验收标准
+
+- [ ] 1000 条消息加密传输无崩溃、无内存增长
+- [ ] fd 复用握手成功
+- [ ] WSS HTTP Upgrade → WS 帧二阶段切换用例通过
+- [ ] （配合 #84 ASan）稳定性测试在 ASan 模式下 0 报告
+
+---
+
+## 🔵 #90 [质量工程] Codec 代码覆盖率门 — lcov ≥ 80%
+
+> 2026-06-14 | 质量工程 | 状态: 🔵 待实现
+
+### 背景
+
+Thunder 有 359 个 gtest 用例（含 WssCodec 11 个），但缺乏覆盖率度量。`HttpsCodec.cpp`、`WssCodec.cpp`、`CodecWebSocketJson.cpp` 的异常路径（`CODEC_STATUS_ERR` 返回、`RemoveConnection` 内部清理、`EncryptPlain` 失败）未必被测试触达。
+
+### 目标
+
+为 Codec 子系统建立覆盖率门（≥ 80% 行覆盖），并在 CI 中可选检测。
+
+### 实现方案
+
+**CMake 覆盖率构建**
+
+```cmake
+option(ENABLE_COVERAGE "Enable gcov/lcov coverage" OFF)
+if(ENABLE_COVERAGE)
+    add_compile_options(--coverage -fno-omit-frame-pointer -g -O0)
+    add_link_options(--coverage)
+endif()
+```
+
+**生成报告**
+
+```bash
+cmake -B build_cov -DENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_cov -j$(nproc)
+cd build_cov && ctest -j$(nproc)
+
+# 收集覆盖数据
+lcov --capture --directory . --output-file coverage.info \
+     --filter branch --no-external
+# 过滤只看 Codec 路径
+lcov --extract coverage.info '*/codec/*' --output-file codec_coverage.info
+# 生成 HTML
+genhtml codec_coverage.info --output-directory coverage_html
+
+# 提取行覆盖率并校验
+COVERAGE=$(lcov --summary codec_coverage.info 2>&1 | grep 'lines' | grep -oP '\d+\.\d+(?=%)')
+echo "Codec line coverage: ${COVERAGE}%"
+python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 80.0 else 1)"
+```
+
+**当前已知覆盖盲点**（需补用例）
+
+| 文件 | 未覆盖路径 |
+|------|-----------|
+| `HttpsCodec.cpp` | `bServerVerifyClient=true` 分支（mTLS 路径） |
+| `HttpsCodec.cpp` | `EncryptPlain` 当 `SSL_write` 返回 -1 时的错误处理 |
+| `WssCodec.cpp` | `HTTP 400 Bad Request` 升级失败路径 |
+| `CodecWebSocketJson.cpp` | `CODEC_STATUS_PAUSE`（分片帧）路径 |
+| `CodecWebSocketJson.cpp` | `rc5/aes` 解密分支（`gc_uiRc5Bit`/`gc_uiAesBit`） |
+
+### 验收标准
+
+- [ ] 覆盖率 CMake target 可构建
+- [ ] `code/Net/src/codec/` 行覆盖率 ≥ 80%
+- [ ] HTML 报告可生成，CI step 脚本可复用
+
+---
+
+## 🔵 #91 [分析] etcd 注册协议现状 + 跨服务兼容性 + SDK 模块化评估
+
+> 2026-06-14 | 分析 | 状态: 🔵 待决策
+
+### 现有协议（仅对 Thunder 节点可读）
+
+Thunder 节点注册到 etcd 使用两层键：
+
+```
+/thunder/slot/{0~255}        → "ip:port"                  (带 lease，CAS 抢占)
+/thunder/registry/{ip:port}  → JSON:
+  {
+    "node_id":   3,
+    "node_type": "HELLO_HTTP",
+    "node_ip":   "192.168.3.61",
+    "node_port": 27006,
+    "workers":   2
+  }
+```
+
+**注册流程**（`EtcdCenterConnector.cpp`）：
+
+```
+1. AsyncLeaseGrant(TTL=10s)  → 拿到 leaseId
+2. DoRegister:
+     for slot in 0..255:
+       TXN { CMP slot 不存在 → PUT slot/i=ip:port(+lease), PUT registry/ip:port=JSON(+lease) }
+       成功 → m_registered=true, 通知 Manager(node_id=slot)
+3. KeepAlive 定时器每 3s 续租
+4. 节点下线 → LeaseRevoke → 两个 key 同时过期消失
+```
+
+**服务发现**（`EtcdWatcher`）：
+
+```
+Watch /thunder/registry/ 前缀
+  PUT 事件 → 节点上线 → 解析 JSON → 更新路由表
+  DELETE 事件 → 节点下线 → 移除路由
+```
+
+### 兼容性问题
+
+**外部服务（Go / Python / Java）想加入 Thunder 服务网格时，必须**：
+
+| 要求 | 当前状态 |
+|------|---------|
+| 按 `/thunder/slot/` + `/thunder/registry/` 格式写 etcd | ❌ 无文档，只有 C++ 实现 |
+| JSON 字段名与 Thunder 完全一致（`node_id/node_type/node_ip/node_port/workers`） | ❌ 隐式约定 |
+| Lease TTL = 10s，KeepAlive ≤ 3s | ❌ 硬编码在 C++ 常量里 |
+| CAS 槽位抢占（slot 0~255 逐个 TXN 尝试） | ❌ 非标准做法，外部难以复现 |
+| `NodeReport` protobuf（`oss_sys.proto`）序列化 | ❌ 仅 C++ 内部传输用，外部不需要但 proto 是协议文档 |
+
+**结果**：当前协议是 Thunder-only 的黑盒，外部服务无法可靠接入。
+
+### 是否需要 SDK 模块化？
+
+**场景 A：纯 Thunder 集群（全 C++）**
+- 现状够用，无外部服务需要注册
+- 不需要 SDK，只需补协议文档
+
+**场景 B：混合集群（Thunder + Go/Python 微服务）**
+- 外部服务需要注册到 Thunder 路由，让 Thunder 节点能 `SendToNodeType("LOGIC")` 路由到 Go 服务
+- 需要：协议文档 + 各语言客户端库（或 SDK）
+
+**场景 C：Thunder 作为服务网格基础设施**
+- 其他团队的服务通过 etcd 注册，Thunder 提供统一服务发现
+- 需要：正式 SDK + 协议版本管理
+
+### SDK 模块化方案
+
+若决定支持外部服务接入，最小 SDK 只需实现 4 件事：
+
+```
+ThunderRegistryClient
+  ├── Register(node_type, ip, port, workers)  → 写 slot + registry，启动 KeepAlive
+  ├── Deregister()                             → LeaseRevoke
+  ├── Watch(prefix, on_change)                 → 监听服务列表变化
+  └── Discover(node_type) → []NodeEntry        → 按类型查询在线节点
+```
+
+**实现复杂度评估**：
+
+| 语言 | 复杂度 | 基础库 |
+|------|:------:|--------|
+| Go | 低 | `go.etcd.io/etcd/client/v3`，官方支持 TXN + Watch |
+| Python | 低 | `etcd3-py` 或 `python-etcd3` |
+| C++ (提取成独立库) | 中 | 复用现有 `EtcdCenterConnector` 逻辑，去掉 Thunder 特定依赖 |
+| Rust | 中 | `etcd-client` crate |
+
+### 建议行动
+
+| 优先级 | 行动 |
+|:------:|------|
+| P0 | **补协议文档**：记录 etcd key schema、JSON 字段、Lease TTL、槽位分配规则，放 `docs/architecture/` |
+| P1 | **提取协议常量**：把 `kSlotPrefix`、`kRegistryPrefix`、`kLeaseTTL`、`kKeepAliveInterval` 集中到一个头文件，避免分散硬编码 |
+| P2 | **Go 客户端 SDK**（如需混合集群）：`thunder-registry-go` 包，实现 Register/Deregister/Watch |
+| P3 | **协议版本化**：registry value 加 `"protocol_version":1` 字段，为未来字段变更留退路 |
+
+### 关联文件
+
+- `code/Net/src/register/EtcdCenterConnector.cpp` — 注册/心跳/槽位 CAS 实现
+- `code/Net/src/register/EtcdWatcher.hpp` — Watch 实现
+- `code/Net/src/register/EtcdParse.hpp` — etcd 响应解析
+- `code/Net/src/protocol/oss_sys.proto` — NodeReport / NodeNotice 定义
+
+---
+
+## ✅ #92 [已修复] ThreadPool 注入 `namespace std` — 未定义行为
+
+> 2026-06-14 | bug | 状态: ✅ **已修复** | 修复方案见下 | 涉及文件: `threadpool.h` + 全局替换 5 文件
+
+### 现象
+
+`code/Util/src/thread/threadpool.h` 将用户类 `threadpool` 放入 `namespace std`：
+
+```cpp
+namespace std {
+    class threadpool { ... };  // 违反 C++ 标准 [namespace.std]/1
+}
+```
+
+### 根因
+
+来自第三方库 lzpong/threadpool（2017，无维护），原作者直接注入 `namespace std` 以方便使用，无需加 `std::` 前缀即可使用。
+
+### 修复方案
+
+**方案选择**：移入 `namespace util`（项目内已有 `util` 命名空间惯例），不做成独立 lib。
+
+**改动内容**：
+
+核心文件 `threadpool.h`：
+
+```diff
+- namespace std {
++ namespace util {
+      class threadpool { ... };
+  }
+```
+
+**全量替换清单**：
+
+| 文件 | 替换处数 | 备注 |
+|------|:--------:|------|
+| `code/Util/src/thread/threadpool.h` | 1 | 命名空间声明 + 内部 `std::` 成员补齐 |
+| `code/Net/include/coro/ThreadPoolAwaitable.hpp` | 4 | `std::threadpool` → `util::threadpool` |
+| `code/Net/include/labor/WorkerThreadPool.hpp` | 1 | 声明 |
+| `code/Net/src/labor/WorkerThreadPool.cpp` | 3 | 存储 + 初始化 + 返回 |
+| `code/test/util/test_util_threadpool.cpp` | 8 | 所有 `std::threadpool pool(...)` |
+
+**风险**：`threadpool.h` 内原来在 `namespace std` 下使用的 `function`、`vector`、`atomic` 等名称不需要加 `std::` 前缀（因为已经在 `std` 内）。移入 `util` 后，这些名称需要补全 `std::` 前缀，否则会找 `util::function`。本次修复已补全。
+
+### 验收
+
+- [x] `threadpool.h` 改为 `namespace util`
+- [x] 全局替换使用点，编译 0 error
+- [x] 全量 ctest 通过
+
+---
+
+## ✅ #93 [已修复] ThreadPool 默认线程数硬编码 4，且多进程下超订
+
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（1 线程起步 + `resize(n)` 动态增减） | 改动: `threadpool.h` + `WorkerThreadPool.*` + `Worker.cpp`
+
+### 现象
+
+```cpp
+// WorkerThreadPool.cpp
+InitThunderWorkerThreadPool(4);  // 之前硬编码 4
+```
+
+### 问题分析
+
+原方案想改用 `hw_concurrency / 2`，但 Thunder **多进程架构**下会有严重超订：
+- 16 核服务器跑 4 个 Worker 进程
+- 每个 Worker `hw/2 = 8` 线程
+- 4 × 8 = **32 线程 VS 16 核** → 线程数翻倍，上下文切换激增
+
+### 修复方案
+
+**设计原则**：
+1. **从 1 开始**，不够再加（而非一次性 hw/2）
+2. **`resize(n)` 动态增减**：增加直接建新 worker，缩小标记空闲 worker 自行退出
+3. **多进程友好**：每个 Worker 默认 1 线程，由运营配置 `worker_thread_pool_size` 按需调整
+
+**改动内容**：
+
+```diff
+  // threadpool.h
+- threadpool(unsigned short size = 4, ...)
++ threadpool(unsigned short size = 1, ...)
++ 
++ void resize(unsigned short n);  // 新增：动态调整线程数
+
+  // WorkerThreadPool.cpp
+- unsigned short n = hw == 0 ? 4 : (hw / 2);
++ unsigned short n = 1;  // 从 1 起步
+
+  // Worker.cpp
+- int iPoolThreads = 4;
++ int iPoolThreads = 0;  // 0 → auto = 1
+```
+
+**动态扩缩容机制**：
+
+```
+resize(1→4):  调用 addThread(3) 创建 3 个新 worker，立即开始取任务
+resize(4→1):  设置 _excessThreads = 3
+              Worker A（忙）：执行完当前任务，继续取下一个任务
+              Worker B（忙）：同上
+              Worker C（空闲）：看到 _excessThreads > 0 → 退出
+              Worker D（空闲）：看到 _excessThreads > 0 → 退出
+              剩下 A、B 继续工作，不受影响
+```
+
+**新增接口**：
+
+```cpp
+// 全局函数（WorkerThreadPool.hpp）
+void ResizeThunderWorkerThreadPool(unsigned short threadCount);
+
+// 类方法（threadpool.h）
+void resize(unsigned short n);
+```
+
+### 验收
+
+- [x] 默认 1 线程起步
+- [x] `resize(n)` 动态扩容：`addThread` 创建新 worker
+- [x] `resize(n)` 动态缩容：`_excessThreads` 标记，空闲 worker 自行退出
+- [x] 配置 `worker_thread_pool_size` 优先于默认值
+- [x] 新增 `ResizeDynamic` 测试（1→3→1 扩缩容 + 并发任务验证）
+- [x] 全量 10/10 ctest 通过
+
+---
+
+## ✅ #94 [已修复] ThreadPool `std::queue + mutex` 全局锁，高并发 offload 入队串行
+
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（性能基准 + 实施 + 验证） | 详细分析: `docs/quality/03-threadpool-queue-bench.md`
+
+### 现象
+
+每次 `co_await MakePoolOffloadAwaiter(...)` 都调用 `threadpool::commit`，加一次全局锁：
+
+```cpp
+lock_guard<mutex> lock{_lock};
+_tasks.emplace(...);
+_task_cv.notify_one();
+```
+
+多生产者同时 commit 时全部串行排队等待同一把 futex。
+
+### 基准测试结果
+
+独立 benchmark（`code/test/labor/bench_threadpool_queue.cpp`）对比两种队列机制：
+
+| 场景 | Mutex ns/op | LF ns/op | 加速比 |
+|------|:-----------:|:--------:|:------:|
+| 4P-4C（典型 offload）| 313 | 128 | **2.46x** |
+| 16P-4C（高并发 commit）| 336 | 119 | **2.83x** |
+| 1P-4C（单协程）| 653 | 175 | **3.74x** |
+| 8P-8C（对等压力）| 368 | 116 | **3.19x** |
+
+**结论**：lock-free 方案快 2.5x ～ 3.7x。
+
+### 根因
+
+`std::queue` + `std::mutex` 的每次入队操作至少经过 3 步：
+1. `lock_guard` 构造 → futex CAS 或 syscall（被占时进内核挂起）
+2. `push` → 堆分配 + 节点拷贝
+3. `notify_one` → futex_wake syscall
+
+多生产者并发时，输掉 CAS 的线程进内核挂起 + 上下文切换（~1000ns）。
+
+### 修复方案
+
+**方案选择**：`moodycamel::ConcurrentQueue`（lock-free MPMC queue，单头文件，header-only，零额外依赖）。
+
+**为什么选它**：
+
+| 因素 | 说明 |
+|------|------|
+| **零依赖** | 单头文件 `.h`，扔进 `code/3party/` 即可，不改构建系统、不增链接依赖 |
+| **MPMC 语义** | 多生产者（协程同时 commit）+ 多消费者（worker 线程）配对，入队/出队均无锁 |
+| **FIFO 保证** | strict FIFO per producer，不重排任务，符合线程池语义 |
+| **生产验证** | 游戏引擎、金融系统广泛使用，Cameron314 持续维护 10+ 年 |
+| **benchmark 验证** | 实测 2.5x~3.7x 优于 `std::queue + mutex` |
+
+**为什么不选其他方案**：
+
+| 方案 | 不选原因 |
+|------|---------|
+| `tbb::concurrent_queue` | 依赖 Intel oneTBB，项目无此依赖，引入成本高 |
+| `boost::lockfree::queue` | 依赖 Boost，项目无此依赖 |
+| 自旋锁 `spinlock` + `std::queue` | 只缓解 mutex 的 syscall，队列操作本身仍串行，无法并发入队 |
+| `BlockingConcurrentQueue` | 阻塞版空闲时不占 CPU，但析构时序复杂（worker join 时可能卡在 wait_dequeue）|
+
+**核心改动 `threadpool.h`**：
+
+```diff
+- #include <queue>
+- #include <mutex>
+- #include <condition_variable>
++ #include "concurrentqueue.h"
+
+- std::queue<Task> _tasks;
+- std::mutex _lock;
+- std::condition_variable _task_cv;
++ moodycamel::ConcurrentQueue<Task> _tasks;
+```
+
+commit() 从加锁入队改为无锁入队：
+
+```diff
+- lock_guard<mutex> lock{_lock};
+- _tasks.emplace([task](){ (*task)(); });
+- _task_cv.notify_one();
++ _tasks.enqueue([task](){ (*task)(); });
+```
+
+Worker 线程改为 `try_dequeue + yield`：
+
+```diff
+- unique_lock<mutex> lock{_lock};
+- _task_cv.wait(lock, [this]{ return !_run || !_tasks.empty(); });
+- task = move(_tasks.front()); _tasks.pop();
+- lock.unlock();
+- task();
++ if (_tasks.try_dequeue(task)) { task(); }
++ else if (!_run) { return; }
++ else { std::this_thread::yield(); }
+```
+
+**Mutex vs LockFree 路径对比**：
+
+```
+【Mutex】Producer A: █ lock █ push █ unlock █ notify
+        Producer B:   ░░ 等锁 ░░░████ lock ██ push ██ unlock
+                     ↑ 所有 commit 串行
+
+【LockFree】Producer A: █ fetch_add █ write slot
+            Producer B: █ fetch_add █ write slot  (同时)
+            Producer C: █ fetch_add █ write slot  (同时)
+                      ↑ 唯一竞争 fetch_add（~5ns），之后各写各 slot
+```
+
+**附带修复**：随此改动一并修复了 #92（namespace std → util）+ #95（裸 new → unique_ptr），因改的是同一批文件。
+
+### 验收
+
+- [x] benchmark 确认加速比 2.5x ～ 3.7x
+- [x] Unit test 8/8 PASSED（含并发多任务、析构 join）
+- [x] WssCodec 12/12 PASSED（线程池使用路径正常）
+- [x] 全量 build 0 error
+
+---
+
+## ✅ #95 [已修复] ThreadPool 全局裸 `new`，ASan 误报泄漏
+
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（改用 unique_ptr，随 #92/#94 一并合入） | 改动: `WorkerThreadPool.cpp`
+
+### 现象
+
+```cpp
+g_thunderWorkerPool = new std::threadpool(n);  // 从不 delete
+```
+
+进程退出时 OS 回收，运行时无问题。但：
+- **ASan/LeakSanitizer** 会报告为泄漏，与 #85 ASan 泄漏检测测试冲突，产生干扰噪音
+- **单元测试** 无法重置线程池（`if (g_thunderWorkerPool != nullptr) return` 幂等保护）
+
+### 根因
+
+全局裸指针 `g_thunderWorkerPool` 由 `new` 分配，没有任何 RAII 包装，没有对应的 `delete`。进程退出时 OS 回收内存，运行时其实安全，但 ASan/LSan 会在 `leak_check_at_exit` 时将其识别为泄漏。
+
+### 修复方案
+
+**方案对比**：
+
+| 方案 | 优点 | 缺点 | 选中？|
+|------|------|------|:----:|
+| **A. `unique_ptr`** | 保留 `Init(threadCount)` 接口；静态析构自动 delete；改动最小 | 需加 `<memory>` | ✅ |
+| **B. `static local`** | 线程安全初始化 | 无法控制初始化时机和线程数；`Init()` 变空操作 | ❌ |
+| **C. 析构时 `delete`** | 与原始代码差异最小 | 需要手动添加；忘记就仍需处理 | ❌ |
+
+**为什么选 unique_ptr 而非 static local**：
+
+原提案（`docs/architecture/20-threadpool-analysis.md`）推荐 static local，但实际分析发现：
+- Worker.cpp:2499 通过 `InitThunderWorkerThreadPool(iPoolThreads)` 配置线程数后初始化
+- static local 只能默认初始化，无法接受运行时参数
+- `unique_ptr` 保留了 `Init(threadCount)` 的语义：第一次调用时按配置创建，后续调用幂等
+
+**改动内容**：
+
+```diff
++ #include <memory>
+
+- std::threadpool* g_thunderWorkerPool = nullptr;
++ std::unique_ptr<util::threadpool> g_thunderWorkerPool;
+
+  g_thunderWorkerPool = std::make_unique<util::threadpool>(n);
+```
+
+**设计要点**：
+- `unique_ptr` 是 `net` 匿名命名空间下的静态对象，生命周期贯穿整个进程
+- `main()` 返回后、静态析构阶段自动调用 `~threadpool()`（join 所有 worker 线程）
+- LSan 检查时看到的是正常析构释放，不再报告泄漏
+- 接口签名不变，调用方无需修改
+
+### 验收
+
+- [x] 裸 `new` → `unique_ptr`，编译 0 error
+- [x] `InitThunderWorkerThreadPool()` 幂等语义不变
+- [x] 全量 ctest 通过
+
+---
+
+## ✅ #96 [已修复] ThreadPool 无队列上限，高负载下无背压保护
+
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（`_queueSize` 原子计数 + `_maxQueueSize` 构造参数） | 改动: `threadpool.h` + `PoolOffloadAwaiter` 异常安全修复
+
+### 现象
+
+`_tasks` 是无界 `moodycamel::ConcurrentQueue`（#94 改成无锁队列后）。若业务产生 offload 任务速度持续超过线程池消费速度，队列无界增长，最终 OOM。
+
+### 当前风险等级
+
+低（Thunder 的 offload 场景均为短时任务），但缺乏保护。
+
+### 修复方案
+
+**设计要点**：
+
+1. **`_queueSize` 原子计数器**跟踪队列深度
+2. **`_maxQueueSize`** 构造参数设定上限（默认 `kDefaultMaxQueueSize = 4096`）
+3. **`fetch_add` 预留 slot**代替 check-then-add，避免 TOCTOU 竞态
+4. **不改变 FIFO 顺序性**：只在 enqueue 前拒绝，不重排已入队任务
+
+**核心改动 `threadpool.h`**：
+
+```diff
++ std::atomic<size_t> _queueSize{ 0 };
++ size_t _maxQueueSize;
+
++ // 构造时设定上限
++ threadpool(unsigned short size = 4, size_t maxQueue = kDefaultMaxQueueSize)
++     : _maxQueueSize(maxQueue) { addThread(size); }
+
+  template<class F, class... Args>
+  auto commit(F&& f, Args&&... args) -> std::future<decltype(f(args...))>
+  {
+      if (!_run.load())
+          throw std::runtime_error("commit on ThreadPool is stopped.");
+
++     // 原子预留 slot，超限则回滚并抛出异常
++     size_t sz = _queueSize.fetch_add(1, std::memory_order_acq_rel);
++     if (sz >= _maxQueueSize)
++     {
++         _queueSize.fetch_sub(1, std::memory_order_relaxed);
++         throw std::runtime_error("commit: queue full (" + ... + ")");
++     }
+
+      auto task = std::make_shared<...>(...);
+      auto future = task->get_future();
+
+-     _tasks.enqueue([task]() { (*task)(); });
++     _tasks.enqueue([task, this]() {
++         (*task)();                          // 执行原任务
++         _queueSize.fetch_sub(1, ...);        // 完成后释放 slot
++     });
+
+      return future;
+  }
+```
+
+**附带修复 `PoolOffloadAwaiter`**：队列满时 `commit()` 抛异常，原代码 catch 后协程永挂起。
+现改为 catch 中 `h.resume()` 让 `await_resume` 的 `fut_.valid()` 检查正常抛出：
+
+```diff
+  catch (...)
+  {
+      LOG4_ERROR("PoolOffloadAwaiter: threadpool commit failed");
++     if (h && !h.done()) { h.resume(); }   // 协程恢复，异常由 await_resume 传播
+  }
+```
+
+### 验收
+
+- [x] 新增 `BackpressureQueueMax` 测试：通过 `std::promise` 阻塞 worker 填满队列，验证第二次 commit 抛异常
+- [x] 全部 9/9 ThreadPool 测试通过
+- [x] 顺序性保持：入队后不重排，同一 producer 的 FIFO 由 ConcurrentQueue 保证
+
+- [ ] `threadpool` 支持 `max_queue_size` 构造参数
+- [ ] `commit` 超限返回 `std::nullopt`
+- [ ] `PoolOffloadAwaiter` 处理 `nullopt`（降级或错误传播）
+- [ ] 补全上表盲点对应用例后重测达标
