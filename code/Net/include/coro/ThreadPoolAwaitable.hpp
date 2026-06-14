@@ -1,10 +1,16 @@
 /*******************************************************************************
  * @file ThreadPoolAwaitable.hpp
- * @brief StepCo20 co_await：重 CPU / 阻塞调用卸载到 util::threadpool，经 Labor::PostToEventLoop 回 Worker
- * @note 与 future_awaiter_demo 的 FutureAwaiter 类似：awaiter 内持有 std::future；任务在线程池内执行。
- *       本处 future 在池任务 return 时即就绪（任务内已 PostToEventLoop），故事件线程上 await_resume 里
- *       fut_.get() 不会阻塞。勿在事件线程上对未就绪的 future 调用 get()。
- *       PoolOffloadAwaiter 持有 std::future<ResultT>；RunOnThreadPool 为其无参 body/out（双 monostate）封装。
+ * @brief StepCo20 co_await：重 CPU / 阻塞调用卸载到 threadpool，经 Labor::PostToEventLoop 回 Worker
+ *
+ * 设计动机：Thunder 是单线程事件循环模型。阻塞 SDK / CPU 密集计算不可直接在事件循环
+ * 中执行。此 awaiter 将工作提交到 util::threadpool，执行完毕后 PostToEventLoop
+ * 回到 Worker 线程 resume 协程。
+ *
+ * 为什么用 threadpool 而非其他方案见 util::threadpool（threadpool.h）的类注释。
+ *
+ * @note 与 future_awaiter_demo 的 FutureAwaiter 类似：awaiter 内持有 std::future；
+ *       本处 future 在池任务 return 时即就绪（任务内已 PostToEventLoop），故
+ *       事件线程上 await_resume 里 fut_.get() 不会阻塞。
  ******************************************************************************/
 #ifndef NET_CORO_THREAD_POOL_AWAITABLE_HPP_
 #define NET_CORO_THREAD_POOL_AWAITABLE_HPP_

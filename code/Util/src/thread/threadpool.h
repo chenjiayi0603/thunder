@@ -19,14 +19,47 @@ namespace util
 /**
  * @brief 基于 moodycamel::ConcurrentQueue 的无锁线程池，带队列上限背压保护
  *
- * 相对原版（lzpong/threadpool）的改进：
- *   - 修复 namespace std UB → 移入 namespace util
- *   - std::queue + mutex 换为 moodycamel::ConcurrentQueue（lock-free MPMC queue）
- *   - worker 线程用 try_dequeue + yield 代替 condvar wait，避开 syscall
- *   - 队列上限 _maxQueueSize：超限时 commit 抛异常（背压保护），不改变 FIFO 顺序
- *   - resize(n)：运行时动态增减线程数，缩小不影响已入队请求
+ * ── Thunder 中的定位 ──
  *
- * 性能对比见 docs/quality/03-threadpool-queue-bench.md
+ * Thunder 是单线程事件循环模型（每个 Worker 一个 libev/io_uring 循环）。
+ * 当业务逻辑需要执行 阻塞调用（同步 SDK、文件读写）或 CPU 密集计算时，
+ * 若直接在事件循环中执行会阻塞整个 Worker，导致所有连接延迟飙升。
+ *
+ * threadpool 的职责就是承接这些阻塞/耗时任务，将事件循环解放出来。
+ * 使用方式：co_await MakePoolOffloadAwaiter() 将任务提交到池，
+ * 完成后通过 PostToEventLoop() 在事件循环上 resume 协程。
+ *
+ * ── 为什么是 threadpool 而不是其他方案 ──
+ *
+ * 方案                    | 为什么不适合 Thunder
+ * ------------------------|--------------------------------------------------
+ * std::execution::par     | 数据并行（对集合元素批量处理），Thunder 是任务并行
+ * 每个模块开独立线程      | 线程数不可控，闲置浪费，难以统一管理
+ * io_uring 全异步         | SDK 不提供异步接口；CPU 密集计算无法异步化
+ * 纯协程（无池）          | 协程只在单线程内协作，不能利用多核
+ * threadpool（当前方案）   | ✅ 通用任务队列 + 多 worker + 协程集成
+ *
+ * ── 设计要点 ──
+ *
+ * 1. namespace util（非 std）：原版注入 namespace std 违反 C++ 标准，已修复
+ * 2. moodycamel::ConcurrentQueue：lock-free MPMC，多生产者并发入队不串行
+ * 3. try_dequeue + yield：避开 mutex + condvar 的 syscall 开销
+ * 4. 队列上限 + 背压（_maxQueueSize）：超限抛异常，防止 OOM，不破坏 FIFO
+ * 5. resize(n) 动态扩缩容：从 1 线程起步，运营配置 worker_thread_pool_size；
+ *    增大直接建新线程，缩小标记空闲 worker 自行退出，不影响执行中的任务
+ *
+ * ── 性能参考 ──
+ *
+ * 与旧版（std::queue + mutex + condvar）对比：
+ *   - 4P-4C 典型 offload：2.5x 加速
+ *   - 16P-4C 高并发：2.8x 加速
+ * 详见 docs/quality/03-threadpool-queue-bench.md
+ *
+ * ── 多进程说明 ──
+ *
+ * Thunder 单机多 Worker 进程，每个 Worker 有独立的 threadpool 实例。
+ * 默认从 1 线程起步而非 auto hardware_concurrency()/2，是因为
+ * 4 个 Worker × hw/2 = 严重超订。应由运营配置 worker_thread_pool_size。
  */
 class threadpool
 {
@@ -53,6 +86,8 @@ private:
 	std::atomic<size_t> _queueSize{ 0 };      // 当前队列深度，用于背压检查
 	size_t _maxQueueSize;                     // 队列上限，构造函数设定
 	std::atomic<int> _excessThreads{ 0 };     // 应退出的多余线程数（resize 缩小用）
+	std::atomic<int> _totalCreated{ 0 };      // 累计创建线程数（addThread）
+	std::atomic<int> _totalExited{ 0 };       // 累计退出线程数（worker exit）
 
 public:
 	/**
@@ -119,8 +154,12 @@ public:
 	size_t maxQueueSize() const { return _maxQueueSize; }
 	/// 空闲线程数量（近似）
 	int idlCount() const { return _idlThrNum.load(std::memory_order_relaxed); }
-	/// 线程池大小（含已退出但未 join 的线程）
-	int thrCount() const { return static_cast<int>(_pool.size()); }
+	/// 当前活跃线程数（累计创建 - 累计退出）
+	int thrCount() const
+	{
+		return _totalCreated.load(std::memory_order_relaxed)
+			 - _totalExited.load(std::memory_order_relaxed);
+	}
 
 	/**
 	 * @brief 动态调整线程数
@@ -134,15 +173,16 @@ public:
 		if (n < 1) n = 1;
 		if (n > THREADPOOL_MAX_NUM) n = THREADPOOL_MAX_NUM;
 
-		size_t cur = _pool.size();
-		if (n > cur)
+		// 用累计创建 - 累计退出 计算当前实际活跃线程数
+		int cur = _totalCreated.load(std::memory_order_acquire)
+				- _totalExited.load(std::memory_order_acquire);
+		if (n > static_cast<unsigned short>(cur))
 		{
 			addThread(static_cast<unsigned short>(n - cur));
 		}
-		else if (static_cast<size_t>(n) < cur)
+		else if (static_cast<int>(n) < cur)
 		{
-			_excessThreads.fetch_add(static_cast<int>(cur - n),
-									 std::memory_order_release);
+			_excessThreads.fetch_add(cur - n, std::memory_order_release);
 		}
 	}
 
@@ -151,7 +191,8 @@ private:
 	{
 		for (; _pool.size() < THREADPOOL_MAX_NUM && size > 0; --size)
 		{
-			_pool.emplace_back([this] {
+			_totalCreated++;
+		_pool.emplace_back([this] {
 				_idlThrNum++;
 				while (true)
 				{
@@ -169,12 +210,14 @@ private:
 					{
 						// resize 缩小：空闲 worker 退出，不影响已有请求
 						_excessThreads.fetch_sub(1, std::memory_order_relaxed);
+						_totalExited++;
 						_idlThrNum--;
 						return;
 					}
 					if (!_run.load(std::memory_order_acquire))
 					{
 						// 线程池已停止
+						_totalExited++;
 						_idlThrNum--;
 						return;
 					}

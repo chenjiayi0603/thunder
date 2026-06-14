@@ -10,20 +10,16 @@
 namespace net
 {
 
-/** @brief 幂等初始化；threadCount==0 → 1 线程起步 */
+/**
+ * @brief 幂等初始化全局 threadpool；threadCount==0 → 1 线程起步
+ *
+ * 默认 1 线程（而非 hw/2）的原因见 WorkerThreadPool.cpp 实现注释。
+ * 运行态调整用 ThunderWorkerThreadPool().resize(n)
+ */
 void InitThunderWorkerThreadPool(unsigned short threadCount);
 
-/** @brief 未显式初始化时首次调用即 1 线程懒初始化 */
+/** @brief 获取全局 threadpool 引用（首次调用时 1 线程懒初始化）*/
 util::threadpool& ThunderWorkerThreadPool();
-
-/**
- * @brief 运行时动态调整全局线程池线程数
- * @param threadCount  目标线程数；0 = 1 线程
- *
- * 增大：直接创建新 worker 线程，新 worker 从队列取任务执行。
- * 缩小：标记空闲 worker 自行退出，不影响正在执行的任务和已入队请求。
- */
-void ResizeThunderWorkerThreadPool(unsigned short threadCount);
 
 } // namespace net
 
