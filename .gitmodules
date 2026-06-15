@@ -47,7 +47,7 @@
 [submodule "code/3party/protobuf"]
 	path = code/3party/protobuf
 	url = https://github.com/protocolbuffers/protobuf.git
-	branch = eaec88fea0b95468f293f89bd08e5a0e5ab8490b
+	branch = b6f9284da830b69be787732ffdaa35049d20a088
 [submodule "code/3party/log4cplus"]
 	path = code/3party/log4cplus
 	url = https://github.com/log4cplus/log4cplus.git
