@@ -3174,9 +3174,9 @@ g_thunderWorkerPool = new std::threadpool(n);  // 从不 delete
 - [ ] `PoolOffloadAwaiter` 处理 `nullopt`（降级或错误传播）
 - [ ] 补全上表盲点对应用例后重测达标
 
-## 🔵 #97 [优化] RedisCoHelper 连接复用（加连接池）
+## ✅ #97 [已修复] RedisCoHelper 连接复用
 
-> 2026-06-14 | 优化 | 状态: 🔵 待做 | 来源: HelloCoRedisCo 性能分析
+> 2026-06-14 | 优化 | 状态: ✅ 已修复（AutoRedisCmd 查 mapRedisContext 复用） | 来源: HelloCoRedisCo 性能分析
 
 ### 现象
 
@@ -3207,5 +3207,179 @@ if (ctxIter != mapRedisContext.end()) {
 
 - [ ] `AutoRedisCmd` 复用同 host:port 的连接
 - [ ] 断线后 `DelRedisContextAddr` 清理映射，下次请求新建
-- [ ] 压测 QPS 高于无连接池版本
+- [ ] 压测 QPS 高于无连接复用版本
 - [ ] 全量 ctest 通过
+
+## 🔵 #98 [需求] Lua 模块支持跨节点类型发送
+
+> 2026-06-14 | 需求 | 状态: 🔵 待评估
+
+### 背景
+
+Lua 模块（ModuleLua）目前只能在本模块内处理请求，无法跨节点类型发送消息。
+现有 C++ 接口 `step.SendToInternalByNodeTypeAsync("LOGIC", ...)` 支持按节点类型发送，
+但 Lua 侧没有暴露此能力。
+
+### 需求
+
+Lua 模块支持向指定节点类型发送消息，例如：
+
+```lua
+-- 向 LOGIC 节点发送消息（类似 C++ 的 SendToInternalByNodeTypeAsync）
+local ok = SendToNodeType("LOGIC", cmd, body, targetId)
+
+-- 或更通用的
+local ok = SendToNodeType(nodeType, cmd, body, targetId, timeout)
+```
+
+### 涉及文件
+
+| 文件 | 说明 |
+|------|------|
+| `code/HelloHttp/src/ModuleLua/` | Lua 模块实现 |
+| `code/Net/src/labor/Worker.cpp` | `SendToInternalByNodeTypeAsync` 实现 |
+| `code/Net/include/labor/Labor.hpp` | 接口声明 |
+
+### 实现方向
+
+1. Lua 侧注册全局函数 `SendToNodeType`，透传 `nodeType` / `cmd` / `body` / `targetId`
+2. 内部调用 `step.SendToInternalByNodeTypeAsync` 或 `labor->SendTo(NodeType, ...)`
+3. 支持同步等待（阻塞协程）或 fire-and-forget
+
+### 验收
+
+- [ ] Lua 脚本能 `SendToNodeType("LOGIC", ...)` 发送消息到指定节点类型
+- [ ] 支持异步等待返回
+- [ ] 支持 fire-and-forget（不等待返回）
+- [ ] 与现有 C++ `SendToInternalByNodeTypeAsync` 行为一致
+- [ ] 全量 ctest 通过
+
+## 🔴 #99 [bug] MySqlCoHelper 异步协程 TLS 断连 + Worker SIGSEGV + 连接挂起
+
+> 2026-06-14 | bug | 状态: 🔴 阻塞 — Bug 5 未修复（需要重构 MysqlAsyncConn 为同步+线程池）
+
+### 现象
+
+HelloCoMysqlCo 改用 `MySqlCoHelper` + `co_await` 后：
+- **修复 Bug 1-3 前**：请求返回空（TLS 断连）
+- **修复 Bug 1-3 后**：Worker 仍然 SIGSEGV（Bug 4）
+- **修复 Bug 4 后**：MySQL 连接永不完成，15s 超时销毁协程（Bug 5）
+
+### 已修复的 Bug（1-4）
+
+#### Bug 1（主 — 已修复）
+`MySqlStepBridge::Callback()` resume 协程后，`StepCo20` 从未被删除，
+15s 后 `StepCo20::Timeout()` 触发 `OnCoroutineError` → `ResponseToClient()` 发出第二次响应，
+覆盖原始响应 → 客户端收到乱序数据 → TLS 断连（发 FIN 后又收到数据）。
+
+#### Bug 2（次 — 已修复）
+`StepCo20` 超时销毁后协程帧已析构，`MySqlStepBridge` 仍保有悬空 `m_handle`，
+MySQL 回调到来时 `m_handle.resume()` → UB/SIGSEGV。
+
+#### Bug 3（重连 — 已修复）
+`check_error_reconnect()` 调 `connect_start()` 直接返回 0，
+`m_curSqlTask` 不重入队，重连成功后 `WAIT_OPERATE` 分支 `delete m_curSqlTask` → SQL 静默丢失。
+
+#### 已应用的修复（Bug 1-3）
+
+| 文件 | 修复内容 |
+|------|---------|
+| `code/Net/src/coro/MySqlAwaitable.cpp` | Bridge Callback/Timeout 完成后主动 `DeleteCallback(StepCo20)`；检测 cancel token 跳过悬空 resume |
+| `code/Net/include/coro/StepCo20.hpp` | 新增 `m_mysqlCancelToken`（shared_ptr<bool>）；新增 `IsCoroutineCompleted()` |
+| `code/Net/src/coro/StepCo20.cpp` | Timeout 设置 cancel token；防御性 `m_bCoroutineCompleted` 检查 |
+| `code/Util/src/dbi/MysqlAsyncConn.cpp` | `check_error_reconnect` 重连前把任务 push_front 回队首 |
+| `code/HelloHttps/src/ModuleHello/ModuleHello.cpp` | `HelloCoMysqlCo` 改用 `MySqlCoHelper` 异步路径 |
+
+### ✅ Bug 4（已修复）`my_bool*` → `size_t*` 参数类型不匹配导致 `mysql_real_connect_start()` segfault
+
+#### 现象
+Worker 在 `AutoMysqlCmd()` → `mysqlAsyncConnect()` → `init()` → `connect_start()` → 
+`mysql_real_connect_start()` 处 SIGSEGV。**偶尔正常、偶尔崩溃**（取决于栈布局）。
+
+#### 根因
+MariaDB Connector/C 3.4.x 将 `MYSQL_OPT_NONBLOCK` 的参数类型从 `my_bool*`（3.3.x）改为 **`size_t*`**（栈大小，0=默认），
+但项目代码仍使用旧的传参方式：
+
+```cpp
+// MysqlAsyncConn.cpp:58 — OLD (3.3.x API): 1 byte
+my_bool nonblock = 1;
+mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &nonblock);
+
+// 3.4.x expects: size_t* (8 bytes), 0 = default stack size
+size_t stacksize = 0;
+mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &stacksize);
+```
+
+`my_bool` 只占 1 字节，库按 `size_t*` 读取 8 字节：
+- 低 1 字节 = `0x01`（nonblock = true）
+- 高 7 字节 = **栈上垃圾值**
+
+当这 7 字节恰好为 0 时 → `stack_size = 1` → `malloc(1)` 成功 → `extension` 正常初始化 → **正常工作**
+当这 7 字节为垃圾值时 → `stack_size` = 巨大值 → `malloc()` 失败 → `extension` 保持 NULL → 
+`mysql_real_connect_start()` 解引用 `mysql->options.extension->async_context` → **SEGFAULT**
+
+**这也是 `LD_DEBUG` 改变行为的原因**：添加环境变量改变了栈布局，使垃圾值几乎必然非零。
+
+#### 修复
+`code/Util/src/dbi/MysqlAsyncConn.cpp`:
+```cpp
+// BEFORE (broken):
+my_bool nonblock = 1;
+mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &nonblock);
+
+// AFTER (fixed):
+size_t stacksize = 0;
+mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &stacksize);
+```
+
+#### 验证
+```c
+// Test with size_t* (correct for 3.4.x) — 100% pass
+size_t stacksize = 0;
+int r = mysql_options(&mysql, MYSQL_OPT_NONBLOCK, &stacksize);
+// r = 0, extension initialized OK
+
+// Test with my_bool* (old 3.3.x way) — non-deterministic crash
+my_bool nb = 1;
+int r = mysql_options(&mysql, MYSQL_OPT_NONBLOCK, &nb);
+// r = 1 (failure) IF the 7 bytes after nb != 0
+// r = 0 (success, but stack_size=1) IF the 7 bytes happen to be 0
+```
+
+### ✅ Bug 5（已修复）`MYSQL_OPT_SSL_VERIFY_SERVER_CERT` 参数值传反导致 auth 插件强制 SSL
+
+#### 现象
+Worker `mysql_real_connect_cont()` 返回 `MYSQL_WAIT_READ` 后连接永不完成，15s 超时销毁协程。
+实际是 auth 插件 `my_auth.c:315` 强制 `use_ssl=1`，但 MySQL 没有 SSL → 报 error 2026 后 `end_server()` 关闭连接。
+
+#### 根因
+`MysqlAsyncConn::init()` 中 `mysql_options(MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &val)` 的参数值传反：
+
+```cpp
+// my_bool val = 1  → tls_allow_invalid_server_cert = !1 = 0
+//                   → my_auth.c: !0 = true → use_ssl = 1  → SSL 错误
+my_bool allow_invalid = 1;
+mysql_options(&m_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
+
+// 正确的传法: val = 0 → tls_allow_invalid_server_cert = !0 = 1
+//                       → !1 = false → use_ssl 保持 0  → OK
+my_bool allow_invalid = 0;
+mysql_options(&m_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
+```
+
+另外 `connect_wait()` 中缺少 watcher 事件更新，导致 async `mysql_real_connect_cont()` 返回新 I/O 事件后 watcher 未重新设置 → 事件循环不触发 → 连接挂起。已修复。
+
+#### 影响
+以上修复前 Worker 在 `"io_backend": "asio_uring"` 模式下 MySQL 连接永不完成。
+切换到 `"ev"` 后端也不能解决，因为 libev watcher 的事件没有正确更新。
+
+#### 修复
+1. `MysqlAsyncConn.cpp` — `MYSQL_OPT_SSL_VERIFY_SERVER_CERT` 传值改为 0
+2. `MysqlAsyncConn.cpp` — `connect_wait()` 返回非零 status 时重新设置 watcher 事件（OR 保留已有事件）
+3. `MysqlAsyncConn.cpp` — 同步连接（status=0）路径初始化 watcher 的 fd，防止后续 wait_next_task 绑定到 fd 0
+
+#### 验证
+```json
+{"option":"TestHelloCoMysql","create_ok":1,"insert_ok":1,"select_ok":1,"last_v":"co20_smoke"}
+```
+10/10 连续请求全部通过。

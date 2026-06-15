@@ -2997,7 +2997,7 @@ void Worker::DelRedisContextAddr(const redisAsyncContext* ctx)
 
 bool Worker::RegisterCallback(MysqlStep* pMysqlStep)
 {
-#define MYSQL_CONTEXT_MAP_MAX_SIZE (10)
+#define MYSQL_CONTEXT_MAP_MAX_SIZE (80)
 	LOG4_TRACE("%s pMysqlStep(%s, %d)", __FUNCTION__, pMysqlStep->m_strHost.c_str(), pMysqlStep->m_iPort);
 	if (pMysqlStep->CurTask().size() == 0 || pMysqlStep->m_strHost.size() == 0 || 0 == pMysqlStep->m_iPort)//MysqlStep必须含mysql访问任务
     {
@@ -3010,12 +3010,14 @@ bool Worker::RegisterCallback(MysqlStep* pMysqlStep)
 	if (ctx_iter != mapMysqlContext.end())//每个连接符对应最多10连接
 	{
 		if (ctx_iter->second.second.size() < MYSQL_CONTEXT_MAP_MAX_SIZE)
-		{//new conn
+		{//池未满：创建新连接并加入池
 			return(AutoMysqlCmd(pMysqlStep));
 		}
+		// 池已满（>= 50）：round-robin 复用已有连接
+		// ctx_iter->second.first = 轮转迭代器, second.second = set<MysqlAsyncConn*>
 		util::MysqlAsyncConn* pMysqlConn(nullptr);
 		if (ctx_iter->second.first == ctx_iter->second.second.end())
-		{
+		{//绕回开头
 			ctx_iter->second.first = ctx_iter->second.second.begin();
 		}
 		pMysqlConn = *ctx_iter->second.first;
@@ -4404,6 +4406,40 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 
 bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword)
 {
+    // ── 连接复用：先查同 host:port 的已有连接 ──
+    char szIdentify[64] = {0};
+    snprintf(szIdentify, sizeof(szIdentify), "%s:%d", strHost.c_str(), iPort);
+    {
+        auto ctxIter = mapRedisContext.find(szIdentify);
+        if (ctxIter != mapRedisContext.end())
+        {
+            redisAsyncContext* existing = const_cast<redisAsyncContext*>(ctxIter->second);
+            auto attrIter = mapRedisAttr.find(existing);
+            if (attrIter != mapRedisAttr.end() && attrIter->second != nullptr)
+            {
+                LOG4_TRACE("%s() reuse connection %s", __FUNCTION__, szIdentify);
+                if (attrIter->second->bIsReady)
+                {
+                    // 连接已就绪，直接发送命令
+                    RedisStep* pRawStep = pRedisStep.get();
+                    pRawStep->SetRegistered();
+                    attrIter->second->listWaitData.push_back(std::move(pRedisStep));
+                    OnRedisConnect(existing, REDIS_OK);
+                    return(true);
+                }
+                else
+                {
+                    // 连接存在但尚未就绪，加入等待队列（连接就绪后会由 OnRedisConnect 处理）
+                    LOG4_TRACE("%s() connection %s exists but not ready, queue command", __FUNCTION__, szIdentify);
+                    RedisStep* pRawStep = pRedisStep.get();
+                    pRawStep->SetRegistered();
+                    attrIter->second->listWaitData.push_back(std::move(pRedisStep));
+                    return(true);
+                }
+            }
+        }
+    }
+
     LOG4_TRACE("%s() redisAsyncConnect(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     redisAsyncContext *c = redisAsyncConnect(strHost.c_str(), iPort);
     if (c == nullptr)

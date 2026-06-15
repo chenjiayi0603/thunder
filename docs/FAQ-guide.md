@@ -192,7 +192,7 @@ MySQL 目前使用同步 DBI，无协程版。`MySqlAwaitable` 存在但未在�
 
 | 场景 | 数据 | 对比 |
 |------|:----:|:----:|
-| Echo 空响应 | 124k QPS | 基线 |
+| Echo 空响应（/hello/raw）| 133~141k QPS | HTTPS，1 Worker 绑核，wrk c100，见报告 §10 |
 | Redis 协程 | 12k QPS | 单连接，无连接池 |
 | ThreadPool 队列 vs mutex | 2.5x~3.7x | ConcurrentQueue 优势 |
 | ThreadPool vs TBB CPU密集 | 等同 | 两者均满 20 核 |

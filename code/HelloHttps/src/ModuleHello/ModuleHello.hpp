@@ -54,6 +54,8 @@ private:
                           const util::CJsonObject& oJson);
     bool TestHelloCoMysql(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
                           const util::CJsonObject& oJson);
+    bool TestHelloPoolMysql(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg,
+                          const util::CJsonObject& oJson);
 
     //pb
     void Base64Encode(const char* data,unsigned int datalen,std::string &strEncode);

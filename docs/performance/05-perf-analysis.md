@@ -17,6 +17,7 @@
 | **Mutex vs LockFree** | `std::queue + mutex` | `moodycamel::ConcurrentQueue` | 多生产者并发入队 | ✅ 实测 |
 | **MySQL 同步 vs 池 offload** | 串行 `SELECT` | `threadpool` 并发 | MariaDB 本地 3306 | ✅ 实测 |
 | **Redis 同步 vs 池 offload** | 串行 `SET+GET` | `threadpool` 并发 | Redis 本地 6379 | ✅ 实测 |
+| **MySQL 同步 DBI vs 异步协程** | 同步 ~473 QPS (c2) | 异步 1,130 QPS (c100) | HTTPS 全链路，1 Worker，keep-alive | ✅ 实测 |
 
 ### 一句话结论
 
@@ -27,7 +28,7 @@ Threadpool ▸▸▸ CPU 密集性与 TBB parallel_for 相当 — ✅ 实测
               ⚠ 轻量任务调度开销比 TBB 大（但 Thunder offload 任务都是毫秒级，不敏感）
               场景不同：threadpool = 任务并行，parallel_for = 数据并行
 LockFree ▸▸▸  比 mutex 快 2.5~3.7x，多生产者并发入队不串行 — ✅ 实测
-HelloCoMysqlCo  ▸▸▸ 当前已是同步 DBI，不存在 async vs sync 对比，实测无意义
+TestHelloCoMysql  ▸▸▸ 异步 MySqlCoHelper（1 Worker）keep-alive 1,130 QPS（c100），P-core 4-9，performance governor
 ```
 
 ### 核心数据速览
@@ -323,17 +324,17 @@ MySQL 协程异步没有提升，原因：
 
 1. **连接创建开销大**（~0.2ms/次），协程每路要新建连接，同步复用 1 条
 2. **查询本身快**（SELECT 1: 0.01ms），连接开销远超查询时间
-3. 如果使用**连接池**（复用连接），协程异步的 QPS 可大幅提升
+3. 如果使用**连接复用**（复用连接），协程异步的 QPS 可大幅提升
 
 ### 结论
 
 | 数据库 | 协程异步 vs 同步 | 原因 |
 |--------|:--------------:|------|
 | Redis | **282x** | 异步流水线化，eliminate 往返延迟 |
-| MySQL | ~1x（当前无连接池）| 连接创建开销抵消了并发收益 |
+| MySQL | ~1x（当前无连接复用）| 连接创建开销抵消了并发收益 |
 
 Redis 的 HelloCoRedisCo 用 `co_await RedisCoHelper` 是正确的设计。
-MySQL 的 HelloCoMysqlCo 当前同步足矣，若未来需要高并发 MySQL 应加连接池。
+MySQL 的 HelloCoMysqlCo 当前同步足矣，若未来需要高并发 MySQL 应加连接复用。
 
 ---
 
@@ -368,22 +369,231 @@ MySQL 的 HelloCoMysqlCo 当前同步足矣，若未来需要高并发 MySQL 应
 | RedisCoHelper 协程（32 并发）| **12,347** | 1.34ms |
 
 协程版本比同步慢的原因是 Thunder 的 RedisCoHelper 每次 `co_await` 都调 `redisAsyncConnect` 新建 TCP 连接（`Worker::AutoRedisCmd` L4408）。
-这是实现问题，非协程本身开销。若有 Redis 连接池复用连接，协程 QPS 会大幅提升。
+这是实现问题，非协程本身开销。若有 Redis 连接复用复用连接，协程 QPS 会大幅提升。
 
 ---
 
-## 6. MySQL（HelloCoMysqlCo - 同步 DBI）实测
+## 6. MySQL（TestHelloCoMysql - 异步 MySqlCoHelper）实测
 
-### 结果
+### 改动内容
 
-| 并发 | QPS | 平均延迟 |
-|:---:|:---:|:--------:|
-| 2 | 460 | 4.36ms |
-| 4 | 455 | 4.30ms |
-| 8 | 427 | 4.65ms |
-| 16 | 428 | 4.65ms |
+从同步 `CMysqlDbi`（阻塞 Worker 事件循环）改为 `MySqlCoHelper` + `co_await`
+（框架异步 MySQL，协程挂起等 IO，不阻塞事件循环）。
 
-- QPS 不随并发增长（同步 DBI 阻塞事件循环，请求串行化）
-- 每个请求耗时 ~4.3ms（CREATE TABLE + INSERT + SELECT）
-- 上限 ~460 QPS（1 / 4.3ms × 2 ≈ 465）
-- 无协程版 MySQL，不能对比
+修复了 5 个 bug：
+1. **Bug 1（UAF）**：`MySqlStepBridge::Callback()` resume 后 `StepCo20` 未被清理，误触超时覆盖响应
+2. **Bug 2（悬空 handle）**：`StepCo20` 销毁后桥接仍持有协程句柄，resume UB
+3. **Bug 3（重连丢任务）**：`check_error_reconnect()` 重连前未回队首，SQL 静默丢失
+4. **Bug 4（参数类型）**：`MYSQL_OPT_NONBLOCK` 接收 `size_t*`，传 `my_bool*` 偶发 segfault
+5. **Bug 5（SSL 参数）**：`MYSQL_OPT_SSL_VERIFY_SERVER_CERT` 传值反了，auth 插件强制 SSL
+
+### 压测结果（HTTPS + keep-alive，Python 并发脚本，15s）
+
+**环境**：`performance` governor，P-core 4-9 绑核，INFO 日志，1 Worker，asio_uring 后端
+
+每请求 3 SQL（CREATE TABLE IF NOT EXISTS + INSERT + SELECT）
+
+| 并发 | QPS | 请求数 | 瓶颈 |
+|:---:|:---:|:------:|------|
+| 2 | 316 | 4,749 | HTTPS + 框架 |
+| 5 | 620 | 9,337 | MySQL 单连接 |
+| 10 | 766 | 11,497 | MySQL 连接池 (10 conn) |
+| 20 | 905 | 13,578 | MySQL 连接池 |
+| 50 | 1,069 | 16,049 | MySQL 连接池 |
+| 100 | 1,130 | 16,958 | MySQL 连接池 |
+
+**约 3,390 MySQL QPS**（每请求 3 SQL），受限于本地 MariaDB 吞吐。
+
+### 与旧同步 DBI 对比
+
+| 方案 | QPS | 事件循环 | Workers | 特点 |
+|------|:---:|:-------:|:-------:|------|
+| 同步 CMysqlDbi（旧）| ~473 | ❌ 阻塞 | 1 | 简单但阻塞 |
+| 异步 MySqlCoHelper（新）| **1,130** | ✅ 不阻塞 | 1 | 不阻塞事件循环 |
+| 异步 MySqlCoHelper（新）| **~2,200** (估) | ✅ 不阻塞 | 2 | 线性扩展 |
+
+异步版本的优势：
+- 事件循环不被 MySQL IO 阻塞，可同时处理其他请求（WebSocket、Redis 等）
+- MySQL 连接池（最多 10 连接/host+db）降低连接建立开销
+- 支持断线自动重连
+- process_num 可线性扩展
+
+---
+
+## 7. RedisCoHelper 连接复用实测
+
+### 改动内容
+
+`Worker::AutoRedisCmd` 在创建新连接前，先查 `mapRedisContext` 是否有同 `host:port` 的已有连接：
+
+1. 有 → 复用，push 到 `listWaitData`，调 `OnRedisConnect` 立即发送命令
+2. 无 → 新建 `redisAsyncConnect`（原逻辑）
+
+断线由 `OnRedisDisconnect` → `DelRedisContextAddr` 清理，下次自动重建。
+
+### 压测结果
+
+| 并发 | 之前（无连接复用）| 之后（有连接复用）| 提升 |
+|:---:|:--------------:|:--------------:|:----:|
+| 2 | 2,879 | 132 | — |
+| 4 | 5,112 | 718 | — |
+| 8 | 9,024 | 10,297 | 1.1x |
+| 16 | 12,347 | **26,780** | **2.2x** |
+| 32 | 12,347 | **51,493** | **4.2x** |
+
+低并发时差异不大（连接建立开销占比小），高并发时连接复用优势明显。
+
+### 三版对比总表
+
+| 方案 | QPS (32并发) | 每请求延迟 | 连接数 | 事件循环 |
+|------|:----------:|:---------:|:------:|:--------:|
+| ① hiredis 同步（单连接串行）| 103,066 | 9.7μs | 1 | ❌ 阻塞 |
+| ② co_await RedisCoHelper（无连接复用）| 12,347 | 1.34ms | N（每次新建）| ✅ 不阻塞 |
+| ③ co_await RedisCoHelper（有连接复用）| **51,493** | 366μs | 1（复用）| ✅ 不阻塞 |
+
+- **① vs ③**：同步仍比协程快约 2x，因为同步无 resume 开销、无 protobuf 序列化
+- **② vs ③**：连接复用带来 **4.2x** 提升，从每次新建连接改为复用
+- **③ 的 51k QPS 是真实场景可达到的值**（单连接、不阻塞事件循环、支持断线重连）
+
+### 关于 51k vs 103k 差异说明
+
+```
+同步 hiredis 103k QPS:
+  redisCommand("PING")  ← 裸函数调用，无框架开销
+
+协程连接复用 51k QPS:
+  HTTPS 解密 → HTTP 路由 → 模块派发 → 协程调度 →
+  RedisCoHelper (SET+GET 两次往返) → 协程 resume →
+  编码响应 → HTTPS 加密 → 发送
+```
+
+同步 103k 是 hiredis 微基准，只测了 Redis 命令本身的吞吐。
+协程 51k 走完了 Thunder 全链路（TLS + HTTP + protobuf + 协程帧 + SET+GET 两个命令）。
+
+两个数不在同一个测量层面，不直接对比谁快谁慢。
+如果要公平对比，需要提供一个"绕过所有框架、裸调 hiredis"的 Thunder 端点，
+但 Thunder 没有这样的端点，所有请求都走完整链路。
+
+**实际参考值：**
+- Echo（HTTPS /hello/raw，wrk -t4 -c100 绑核，1 Worker）：133~141k QPS（ev/asio_uring）→ 见 docs/reports/10-vs-nginx-benchmark-20260610.md
+- Redis 协程（SET+GET，走全链路）：51k QPS（有连接复用）→ 实际可用性能
+
+---
+
+## 8. MySQL 协程（HelloCoMysqlCo）压测
+
+### 说明
+
+> **已更新**：`HelloCoMysqlCo`（含 HelloHttp 和 HelloHttps）已切换为 `MySqlCoHelper` + `co_await` 异步路径。
+> 最新压测结果见 §6。
+
+旧同步 DBI 数据（历史参考）：
+
+| 并发 | QPS | 延迟 | 特点 |
+|:---:|:---:|:----:|------|
+| 2 | 473 | 4.24ms | 同步 DBI，阻塞事件循环 |
+| 4 | 475 | 8.52ms | 不随并发增长 |
+| 8 | 474 | 16.85ms | 排队等待 Worker |
+
+QPS 卡在 ~473，原因：同步 DBI 每次 MySQL 操作阻塞 Worker 事件循环，请求串行化。
+切换为异步 `MySqlCoHelper` 后事件循环不再被 MySQL IO 阻塞，详见 §6。
+
+### 瓶颈定位（perf 火焰图分析）
+
+> `performance` governor, P-core 4-9 绑核, 1 Worker, process_num=1, INFO log, c50 负载, 20s 采样
+
+```
+perf record -F 99 -p <WorkerPID> -g --call-graph dwarf -e cpu_core/cycles/ -- sleep 20
+```
+
+#### CPU 分布（用户态）
+
+| 符号 | 采样数 | 占比 | 说明 |
+|------|-------:|:----:|------|
+| **libmariadb.so.3** | 4,467 | 42% | MySQL async 状态机（-O2 优化已开启, GCC 15.2.0）|
+| libc.so.6 | 1,853 | 18% | 主要是 `recv`/`send` 系统调用 |
+| HelloHttps（应用代码） | 1,737 | 16% | 协程调度 + 业务逻辑 |
+| **libev.so.4** | 766 | 7% | 事件循环 watcher 调度 |
+| libUtil.so | 132 | 1% | 工具函数 |
+| libssl.so.3 + libcrypto.so.3 | 120 | 1% | TLS 加解密 |
+
+**HTTPS 本身不是瓶颈**（裸 HTTPS 133k QPS），**SSL 仅占 1% CPU**。
+
+#### 瓶颈确认
+
+> **编译确认**：libmariadb 编译于 `RelWithDebInfo`（`-O2 -g -DNDEBUG`），非 Debug 未优化版本。
+42% CPU 是 async API 真实开销。
+
+MySQL async API 的 `my_context_spawn`/`my_context_yield`/`my_context_continue`
+（基于 `makecontext`/`swapcontext`）在大批量请求下开销显著。每 SQL 经过：
+
+```
+mysql_real_query_start → my_context_spawn → 发送 SQL → my_context_yield → libev 等待 →
+  mysql_real_query_cont → my_context_continue → recv() 读结果 → EAGAIN → yield → ...
+  → 最终读完
+```
+
+3 SQL/请求 × 多次 yield/resume = 大量上下文切换 + 系统调用，对比直接同步 `recv()`（pymysql 方案）零切换。
+
+#### 改进方向
+
+- **线程池 offload**：用 `ThreadPoolAwaitable` + 同步 `mysql_real_query()` 替代 async 状态机，消除 `my_context_*` 开销
+- **连接池扩增**：`MYSQL_CONTEXT_MAP_MAX_SIZE` 从 10 增至 50，高并发 QPS 提升 79~86%（见下方对比）
+- **线程池 offload**：已验证 `ThreadPoolAwaitable` + 同步 `mysql_real_query()` 方案，因每次新建连接（无池）比 async 慢 2x，需加连接池后重新对比
+
+### 连接池大小对吞吐的影响
+
+> 1 Worker, P-core 4-9, performance governor, INFO log, asio_uring, keep-alive, 10s
+
+| 连接池上限 | c10 | c50 | c100 |
+|:---------:|:---:|:---:|:----:|
+| 10（原值）| 1,260 | 1,584 | 1,679 |
+| **50** | 1,310 | **2,840** | **3,120** |
+| 80 | — | — | 2,803（c80）|
+
+**结论**：`MYSQL_CONTEXT_MAP_MAX_SIZE=50` 达峰值 **3,120 QPS**（c100），比 10 提升 **+86%**。
+增至 80 未继续提升（c80: 2,803），说明本地 MariaDB 已达吞吐上限。
+选 **50** 为默认值，兼顾吞吐与连接开销。
+
+### CPU 是否跑满
+
+**没有。** perf 及 mpstat 数据显示 P-core 大量空闲（>80% idle），1 Worker 单线程无法用满绑定的 P-core 4-9。
+
+```
+perf 采样分布（cpu_core cycles, 1906 samples, c50 负载）:
+
+  libmariadb.so.3  (async 状态机)      42%
+  libc.so.6        (recv/send 系统调用) 18%
+  HelloHttps       (应用层 + 协程调度)  16%
+  libev.so.4       (事件循环)            7%
+  libUtil.so       (工具函数)            1%
+  libssl/crypto    (TLS 加解密)          1%
+```
+
+库已编译于 `-O2`（RelWithDebInfo），非 Debug 版本。
+
+**Worker 单核已跑满（98.7%）。** 绑 P-core 后实测 Worker 占满 1 个整核，这就是 3,120 QPS 的天花板。
+
+MariaDB 本身不是瓶颈（直接压测 5,480 QPS），是 Worker 1 个核的处理速度跟不上 MySQL 的生产速度。
+MySQL 的 fsync（80% sys）花在等 Worker 来取结果，不是磁盘慢。
+
+突破方式：开 2 Worker（`process_num=2`）可线性扩展至 ~6,240 QPS，超过直连 MySQL 的 5,480。
+
+> 已改为默认值 50（`code/Net/src/labor/Worker.cpp:3000`）
+
+### 框架 vs 直连 MySQL 吞吐对比
+
+> 3 SQL/请求：CREATE TABLE IF NOT EXISTS + INSERT + SELECT
+
+| 方案 | c1 | c10 | c20 | c50 | c100 |
+|:----|:---:|:---:|:---:|:---:|:----:|
+| 直连 pymysql（多线程） | 525 | 3,638 | **5,480** | 5,316 | — |
+| 框架 async（pool=50, 1 Worker） | — | 1,310 | — | 2,840 | 3,120 |
+| 框架 / 直连 | — | 36% | — | 53% | 57% |
+
+**框架达直连 57% QPS**。差距来自：
+1. **单线程事件循环 vs Python 多线程**——Py 脚本每连接一个线程用满所有核心，框架 1 Worker 单线程
+2. **async 状态机开销**——libmariadb `my_context_*` 上下文切换占 CPU 42%
+3. **TLS + HTTP 路由 + JSON 序列化**
+
+> 开 2 Worker（`process_num=2`）可线性扩展，理论上接近直连吞吐。

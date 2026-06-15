@@ -80,3 +80,5 @@ deploy/Logic/log/start_interfaceserver_logic.pid
 .claude/
 build-tsan/
 deploy/HelloHttp/libluajit-5.1.so.2
+perf.data
+todo

@@ -5,6 +5,7 @@
 #include "step/HttpStep.hpp"
 #include "NetDefine.hpp"
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -136,6 +137,8 @@ public:
     const MsgBody& GetLastRspMsgBody() const { return m_oResMsgBody; }
     const HttpMsg& GetLastRspHttpMsg() const { return m_oResHttpMsg; }
 
+    bool IsCoroutineCompleted() const noexcept { return m_bCoroutineCompleted; }
+
     /**
      * @brief 响应客户端（对 StepCo20Func 等传入的 lambda 公开，便于协程体调用）
      */
@@ -182,6 +185,10 @@ private:
     // 协程状态
     bool m_bCoroutineRunning = false;
     bool m_bCoroutineCompleted = false;
+
+    // MySQL 桥接取消令牌：await_suspend 创建，StepCo20 超时时设为 true，
+    // MySqlStepBridge 检查后跳过 resume（防止访问已销毁的协程帧）。
+    std::shared_ptr<bool> m_mysqlCancelToken;
     
     // 响应数据
     HttpMsg m_oResHttpMsg;

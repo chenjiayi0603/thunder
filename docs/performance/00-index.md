@@ -52,7 +52,7 @@
 
 | 场景 | 测量值 | 对比 |
 |------|:------:|:----:|
-| Echo 空响应 | 124k QPS | HTTP 基线 |
+| Echo 空响应（/hello/raw）| 133~141k QPS | HTTPS，1 Worker 绑核，ev/asio，见报告 §10 |
 | Redis 协程（HelloCoRedisCo）| 12k QPS | 32 并发，无连接池 |
 | MySQL 同步（HelloCoMysqlCo）| 460 QPS | 同步 DBI，阻塞事件循环 |
 | ThreadPool 入队（ConcurrentQueue）| 7.8 Mop/s | 4P-4C，比 mutex 快 2.5x |

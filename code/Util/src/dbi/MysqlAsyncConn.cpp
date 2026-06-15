@@ -55,8 +55,12 @@ int MysqlAsyncConn::init(const char* ip, int port, const char* user, const char*
 	mysql_init(&m_mysql);
 	// 让 MySQL Client 进入真正的非阻塞模式，
 	// 否则 mysql_real_connect_start/mysql_real_query_start 的状态机可能无法按预期触发 cont 回调。
-	my_bool nonblock = 1;
-	mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &nonblock);
+	// MariaDB Connector/C 3.4.x 期望 size_t*（栈大小，0=默认），不是 my_bool*。
+	// 传 my_bool* 导致栈上 7 字节垃圾被读作 size_t → malloc 失败 → segfault。
+	my_bool allow_invalid = 0;  // 0 = tls_allow_invalid_server_cert=1, 防止 auth 插件强制 use_ssl=1
+	mysql_options(&m_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
+	size_t stacksize = 0;
+	mysql_options(&m_mysql, MYSQL_OPT_NONBLOCK, &stacksize);
 	unsigned int uiTimeOut = 3;
 	mysql_options(&m_mysql, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<char*>(&uiTimeOut));
 	mysql_options(&m_mysql, MYSQL_OPT_COMPRESS, nullptr);
@@ -154,8 +158,17 @@ int MysqlAsyncConn::check_error_reconnect(SqlTask* task)
 	 * 2006 (CR_SERVER_GONE_ERROR) : MySQL服务器不可用
 	 * 2013 (CR_SERVER_LOST) : 查询过程中丢失了与MySQL服务器的连接
 	 * mysql_ping 这个函数的返回值和文档说明有出入，返回0并不能保证连接是可用的
+	 *
+	 * Bug 3 修复：重连前把当前任务重新入队首，使重连成功后的 WAIT_OPERATE 状态
+	 * 能正确 fetch_next_task() 并执行，而不是悄悄丢弃（原实现调用 connect_start()
+	 * 后直接 return 0，WAIT_OPERATE 中执行 delete m_curSqlTask 导致任务丢失）。
 	 */
 	if (task->iErrno == 2006 || task->iErrno == 2013) {
+		// 重置错误状态，放回队首，重连成功后重试
+		task->iErrno = 0;
+		task->errmsg.clear();
+		m_SqlTaskList.push_front(task);
+		m_curSqlTask = nullptr;
 		connect_start();
 		return 0;
 	}
@@ -181,6 +194,14 @@ int MysqlAsyncConn::connect_start()
 	} else {
 		mysql_set_character_set(&m_mysql, m_dbcharacterset);
 		m_state = WAIT_OPERATE;
+		// 同步连接：仍需初始化 watcher，否则后续 wait_next_task()
+		// 因 m_watcher.fd==0 把 MySQL 事件绑定到 fd 0（stdin）→ 永不触发。
+		if (!m_boInit) {
+			int socket = mysql_get_socket(&m_mysql);
+			if (socket > 0) {
+				ev_io_init(&m_watcher, libev_io_cb, socket, EV_WRITE);
+			}
+		}
 		wait_next_task();
 	}
 	return 0;
@@ -213,6 +234,13 @@ int MysqlAsyncConn::connect_wait(struct ev_loop* loop, ev_io* watcher, int event
 			}
 			return 1;
 		}
+		// Bug 5 修复：connect_wait 返回非零 status 表示需要继续等待 I/O，
+		// 必须重新设置 watcher 事件，否则后续 I/O 事件永不触发 → 连接挂起。
+		int waitevent = mysql_status_to_event(status);
+		m_state = CONNECT_WAITING;
+		ev_io_stop(m_loop, &m_watcher);
+		ev_io_set(&m_watcher, m_watcher.fd, m_watcher.events | waitevent);
+		ev_io_start(m_loop, &m_watcher);
 	}
 	return 0;
 }

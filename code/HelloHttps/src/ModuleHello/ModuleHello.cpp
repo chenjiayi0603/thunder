@@ -20,10 +20,12 @@
 #include "Interface.hpp"
 #include "coro/StepCo20Func.hpp"
 #include "coro/RedisAwaitable.hpp"
+#include "coro/MySqlAwaitable.hpp"
 #include "dbi/MysqlDbi.hpp"
 #include "coro/ThreadPoolAwaitable.hpp"
 #include "labor/WorkerThreadPool.hpp"
 #include "dbi/Dbi.hpp"
+#include <mysql.h>
 
 MUDULE_CREATE(core::ModuleHello);
 
@@ -119,13 +121,8 @@ net::AsyncTask HelloCoMysqlCo(net::StepCo20& step, const util::CJsonObject& obj)
 	const std::string dbName = JsonStrOrDefault(obj, "mysql_db", "thunder_test");
 	const std::string charset = JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
 	const util::tagDbConnInfo dbConn = MakeTagDbConn(h, static_cast<unsigned int>(p), user, pwd, dbName, charset);
-	// 为了让冒烟测试稳定，改为同步 DBI（避免 MysqlAsyncConn 事件回调时序问题）。
-	util::CMysqlDbi db(dbConn.m_szDbHost,
-	                    dbConn.m_szDbUser,
-	                    dbConn.m_szDbPwd,
-	                    dbConn.m_szDbName,
-	                    dbConn.m_szDbCharSet,
-	                    dbConn.m_uiDbPort);
+
+	net::MySqlCoHelper db(&step, dbConn);
 
 	const std::string createSql =
 	    "CREATE TABLE IF NOT EXISTS hello_co20_demo (id INT AUTO_INCREMENT PRIMARY KEY, v VARCHAR(128))";
@@ -134,50 +131,109 @@ net::AsyncTask HelloCoMysqlCo(net::StepCo20& step, const util::CJsonObject& obj)
 	const std::string selectSql =
 	    "SELECT v FROM hello_co20_demo ORDER BY id DESC LIMIT 1";
 
-	const int createRet = db.ExecSql(createSql);
-	const int createErrno = db.GetErrno();
-	const std::string createErr = db.GetError();
-
-	const int insertRet = db.ExecSql(insertSql);
-	const int insertErrno = db.GetErrno();
-	const std::string insertErr = db.GetError();
-
-	util::T_vecResultSet vec;
-	const int selectRet = db.ExecSql(selectSql, vec);
-	const int selectErrno = db.GetErrno();
-	const std::string selectErr = db.GetError();
+	const net::MySqlReply createRsp = co_await db.Exec(createSql);
+	const net::MySqlReply insertRsp = co_await db.Exec(insertSql);
+	const net::MySqlReply selectRsp = co_await db.Query(selectSql);
 
 	util::CJsonObject j;
 	j.Add("option", "TestHelloCoMysql");
-	j.Add("create_ok", createRet == 0 ? 1 : 0);
-	j.Add("insert_ok", insertRet == 0 ? 1 : 0);
-	j.Add("select_ok", selectRet == 0 && !vec.empty() ? 1 : 0);
+	j.Add("create_ok", createRsp.IsOk() ? 1 : 0);
+	j.Add("insert_ok", insertRsp.IsOk() ? 1 : 0);
+	j.Add("select_ok", selectRsp.IsOk() && selectRsp.result && !selectRsp.result->empty() ? 1 : 0);
 
-	if (createRet != 0)
+	if (!createRsp.IsOk())
 	{
-		j.Add("create_err", createErr);
-		j.Add("create_errno", static_cast<util::int64>(createErrno));
+		j.Add("create_err", createRsp.errMsg);
+		j.Add("create_errno", static_cast<util::int64>(createRsp.errNo));
 	}
-	if (insertRet != 0)
+	if (!insertRsp.IsOk())
 	{
-		j.Add("insert_err", insertErr);
-		j.Add("insert_errno", static_cast<util::int64>(insertErrno));
+		j.Add("insert_err", insertRsp.errMsg);
+		j.Add("insert_errno", static_cast<util::int64>(insertRsp.errNo));
 	}
-	if (selectRet != 0)
+	if (!selectRsp.IsOk())
 	{
-		j.Add("select_err", selectErr);
-		j.Add("select_errno", static_cast<util::int64>(selectErrno));
+		j.Add("select_err", selectRsp.errMsg);
+		j.Add("select_errno", static_cast<util::int64>(selectRsp.errNo));
 	}
 
-	if (!vec.empty())
+	if (selectRsp.result && !selectRsp.result->empty())
 	{
-		const util::T_mapRow& row = vec[0];
+		const util::T_mapRow& row = (*selectRsp.result)[0];
 		const auto it = row.find("v");
 		if (it != row.end())
 		{
 			j.Add("last_v", it->second);
 		}
 	}
+	step.ResponseToClient(200, j.ToString());
+	co_return;
+}
+
+// ThreadPool + 同步 MySQL API 版本，用于对比 async API 开销
+net::AsyncTask HelloPoolMysqlCo(net::StepCo20& step, const util::CJsonObject& obj)
+{
+	const std::string h = JsonStrOrDefault(obj, "mysql_host", "127.0.0.1");
+	const int p = JsonIntOrDefault(obj, "mysql_port", 3306);
+	const std::string user = JsonStrOrDefault(obj, "mysql_user", "root");
+	const std::string pwd = JsonStrOrDefault(obj, "mysql_password", "thunder");
+	const std::string dbName = JsonStrOrDefault(obj, "mysql_db", "thunder_test");
+	const std::string charset = JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
+
+	const std::string createSql =
+	    "CREATE TABLE IF NOT EXISTS hello_co20_demo (id INT AUTO_INCREMENT PRIMARY KEY, v VARCHAR(128))";
+	const std::string insertSql =
+	    "INSERT INTO hello_co20_demo (v) VALUES ('co20_smoke')";
+	const std::string selectSql =
+	    "SELECT v FROM hello_co20_demo ORDER BY id DESC LIMIT 1";
+
+	struct MysqlResult { int createOk{0}; int insertOk{0}; int selectOk{0}; std::string errMsg; };
+
+	const MysqlResult res = co_await net::MakePoolOffloadAwaiter(
+	    &step,
+	    [h, p, user, pwd, dbName, charset,
+	     createSql, insertSql, selectSql]() -> MysqlResult {
+		MYSQL mysql;
+		mysql_init(&mysql);
+		my_bool allow_invalid = 0;
+		mysql_options(&mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
+		my_bool recon = 1;
+		mysql_options(&mysql, MYSQL_OPT_RECONNECT, &recon);
+		unsigned int to = 3;
+		mysql_options(&mysql, MYSQL_OPT_CONNECT_TIMEOUT, (const char*)&to);
+
+		MYSQL* ret = mysql_real_connect(&mysql, h.c_str(), user.c_str(), pwd.c_str(),
+			dbName.c_str(), p, nullptr, 0);
+		if (ret == nullptr) {
+			MysqlResult r;
+			r.errMsg = mysql_error(&mysql);
+			mysql_close(&mysql);
+			return r;
+		}
+
+		MysqlResult r;
+		auto exec = [&](const std::string& sql) -> bool {
+			if (mysql_real_query(&mysql, sql.c_str(), sql.size()) != 0) {
+				r.errMsg = mysql_error(&mysql);
+				return false;
+			}
+			MYSQL_RES* result = mysql_store_result(&mysql);
+			if (result) mysql_free_result(result);
+			return true;
+		};
+		if (!exec(createSql)) { mysql_close(&mysql); return r; } r.createOk = 1;
+		if (!exec(insertSql)) { mysql_close(&mysql); return r; } r.insertOk = 1;
+		if (!exec(selectSql)) { mysql_close(&mysql); return r; } r.selectOk = 1;
+		mysql_close(&mysql);
+		return r;
+	    });
+
+	util::CJsonObject j;
+	j.Add("option", "TestHelloPoolMysql");
+	j.Add("create_ok", res.createOk);
+	j.Add("insert_ok", res.insertOk);
+	j.Add("select_ok", res.selectOk);
+	if (!res.errMsg.empty()) j.Add("errMsg", res.errMsg);
 	step.ResponseToClient(200, j.ToString());
 	co_return;
 }
@@ -243,6 +299,10 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell,const HttpMsg& oInH
 	else if ("TestHelloCoMysql" == strOption)
 	{
 		return TestHelloCoMysql(stMsgShell, oInHttpMsg, obj);
+	}
+	else if ("TestHelloPoolMysql" == strOption)
+	{
+		return TestHelloPoolMysql(stMsgShell, oInHttpMsg, obj);
 	}
 	else
 	{
@@ -470,6 +530,17 @@ bool ModuleHello::TestHelloCoMysql(const net::tagMsgShell& stMsgShell,
 	return net::LaunchCo(stMsgShell, oInHttpMsg,
 		[&obj](net::StepCo20& step) -> net::AsyncTask {
 			return hello_co_demo::HelloCoMysqlCo(step, obj);
+		});
+}
+
+bool ModuleHello::TestHelloPoolMysql(const net::tagMsgShell& stMsgShell,
+                                   const HttpMsg& oInHttpMsg,
+                                   const util::CJsonObject& obj)
+{
+	LOG4_TRACE("%s()", __FUNCTION__);
+	return net::LaunchCo(stMsgShell, oInHttpMsg,
+		[&obj](net::StepCo20& step) -> net::AsyncTask {
+			return hello_co_demo::HelloPoolMysqlCo(step, obj);
 		});
 }
 

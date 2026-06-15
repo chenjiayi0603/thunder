@@ -211,7 +211,14 @@ E_CMD_STATUS StepCo20::Callback(const tagMsgShell& stMsgShell,
 E_CMD_STATUS StepCo20::Timeout()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    
+
+    // 若协程已通过 MySQL 路径正常完成，MySqlStepBridge::Callback() 会调用
+    // DeleteCallback(this) 并停止计时器，此处不应再到达；加此防御以防万一。
+    if (m_bCoroutineCompleted)
+    {
+        return STATUS_CMD_COMPLETED;
+    }
+
     ++m_uiTimeOutCounter;
     if (m_uiTimeOutCounter < m_uiTimeOutMax)
     {
@@ -226,10 +233,16 @@ E_CMD_STATUS StepCo20::Timeout()
         }
         return STATUS_CMD_RUNNING;
     }
-    
+
     LOG4_ERROR("%s() timeout exceeded. uiTimeOutCounter(%u) uiTimeOutMax(%u) uiTimeOutRetry(%u)",
                __FUNCTION__, m_uiTimeOutCounter, m_uiTimeOutMax, m_uiTimeOutRetry);
-    
+
+    // 通知尚未完成的 MySqlStepBridge 不要再 resume 已即将销毁的协程帧。
+    if (m_mysqlCancelToken)
+    {
+        *m_mysqlCancelToken = true;
+    }
+
     OnCoroutineError(ERR_TIMEOUT, "operation timeout");
     return STATUS_CMD_FAULT;
 }
