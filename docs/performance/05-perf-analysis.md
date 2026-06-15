@@ -574,10 +574,16 @@ perf 采样分布（cpu_core cycles, 1906 samples, c50 负载）:
 
 **Worker 单核已跑满（98.7%）。** 绑 P-core 后实测 Worker 占满 1 个整核，这就是 3,120 QPS 的天花板。
 
-MariaDB 本身不是瓶颈（直接压测 5,480 QPS），是 Worker 1 个核的处理速度跟不上 MySQL 的生产速度。
-MySQL 的 fsync（80% sys）花在等 Worker 来取结果，不是磁盘慢。
+Worker 的 CPU 分布：
+- **60% 在 MySQL 驱动**（libmariadb async 切换 42% + recv/send 系统调用 18%）
+- 16% 应用逻辑（协程调度 + 路由 + JSON）
+- 7% libev 事件循环
+- 1% TLS
 
-突破方式：开 2 Worker（`process_num=2`）可线性扩展至 ~6,240 QPS，超过直连 MySQL 的 5,480。
+去掉 async 切换（换成 threadpool + sync API）能省出大半 CPU。
+
+MariaDB 本身不是瓶颈（直接压测 5,480 QPS），是 1 个核的处理速度跟不上。
+突破方式：开 2 Worker（`process_num=2`）可线性扩展至 ~6,240 QPS，超过直连。
 
 > 已改为默认值 50（`code/Net/src/labor/Worker.cpp:3000`）
 

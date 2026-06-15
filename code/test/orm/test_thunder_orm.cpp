@@ -36,8 +36,8 @@ util::tagDbConnInfo mysqlConnFromEnv()
     const char* port = std::getenv("THUNDER_ORM_MYSQL_PORT");
     std::strncpy(c.m_szDbHost, host ? host : "127.0.0.1", sizeof(c.m_szDbHost) - 1);
     std::strncpy(c.m_szDbUser, user ? user : "root", sizeof(c.m_szDbUser) - 1);
-    std::strncpy(c.m_szDbPwd, pwd ? pwd : "", sizeof(c.m_szDbPwd) - 1);
-    std::strncpy(c.m_szDbName, db ? db : "test", sizeof(c.m_szDbName) - 1);
+    std::strncpy(c.m_szDbPwd, pwd ? pwd : "thunder", sizeof(c.m_szDbPwd) - 1);
+    std::strncpy(c.m_szDbName, db ? db : "thunder_test", sizeof(c.m_szDbName) - 1);
     std::strncpy(c.m_szDbCharSet, "utf8", sizeof(c.m_szDbCharSet) - 1);
     c.m_uiDbPort = static_cast<unsigned int>(port ? std::atoi(port) : 3306);
     return c;
