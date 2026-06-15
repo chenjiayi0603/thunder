@@ -51,9 +51,12 @@ if $K8S_MODE; then
     trigger_restart() { local pod=$1 pid=$2; kexec "$pod" "kill -SIGUSR2 $pid" || true; }
 else
     HELLO_URL="http://127.0.0.1:27006"
-    kexec() { sh -c "$*"; }
-    get_mgr_pid() { ps aux | awk -v p="$2" '$NF==p{print $2}' | head -1; }
-    trigger_restart() { kill -SIGUSR2 "$2" || true; }
+    HELLO_CONTAINER="thunder-deploy-hello-1"
+    # Docker-compose 模式: 在容器内操作 (避免宿主机的旧 zombie 进程干扰)
+    # $1 = pod name (忽略), $2..$N = 要执行的命令
+    kexec() { local _pod="$1"; shift; docker exec "$HELLO_CONTAINER" sh -c "$*" 2>/dev/null; }
+    get_mgr_pid() { docker exec "$HELLO_CONTAINER" ps aux 2>/dev/null | awk -v p="$2" '$NF==p{print $2}' | head -1; }
+    trigger_restart() { docker exec "$HELLO_CONTAINER" kill -SIGUSR2 "$2" 2>/dev/null || true; }
 fi
 
 check() { local n="$1" e="$2" c="$3"; local out; out=$(eval "$c" 2>/dev/null) || true
@@ -96,6 +99,10 @@ if $RUN_RESTART; then
 # 基线: Worker 存在, Echo 可用
 check_ge "Worker 进程存在 (基线)" 1 \
     "kexec '$HELLO_POD' 'ps aux | grep Hello_robot_W0 | grep -v grep | wc -l' 2>/dev/null || echo 0"
+for i in $(seq 1 10); do
+    curl -sf --max-time 1 -X POST -d '{"option":"Echo"}' "${HELLO_URL}/hello/hello" 2>/dev/null | grep -q '"code":0' && break
+    sleep 1
+done
 check "Echo 可用 (基线)" '"code":0' \
     "curl -sf --max-time 5 -X POST -d '{\"option\":\"Echo\"}' ${HELLO_URL}/hello/hello 2>/dev/null"
 
@@ -115,6 +122,12 @@ elif [ -n "${NEW_PID:-}" ]; then
 else
     echo -e "  ${RED}❌${NC} Worker 重启后无进程"; FAIL=$((FAIL+1))
 fi
+
+# 等待新 Worker 就绪
+for i in $(seq 1 10); do
+    curl -sf --max-time 1 -X POST -d '{"option":"Echo"}' "${HELLO_URL}/hello/hello" 2>/dev/null | grep -q '"code":0' && break
+    sleep 1
+done
 
 # 验证: Echo 仍然可用
 check "重启后 Echo 可用" '"code":0' \

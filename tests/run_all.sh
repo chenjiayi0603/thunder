@@ -54,6 +54,17 @@ for mode in fire_forget default; do
 done
 echo -e "${GREEN}  ✅ lua${NC}"
 
-# smoke (Lua 段)
-bash tests/test_smoke.sh --hello 2>&1 | grep -E "Lua|SendToNodeType|✅|PASS"
+# smoke
+bash tests/test_smoke.sh --hello 2>&1 | grep -E "✅|PASS" | tail -10
+
+# graceful restart
+echo "  graceful restart..."
+GR_OUT=$(bash tests/test_graceful_restart.sh --restart 2>&1) && \
+  echo "$GR_OUT" | grep -q "全部通过" && \
+  echo -e "${GREEN}  ✅ graceful restart${NC}" || {
+    echo -e "${RED}  ❌ graceful restart${NC}"
+    echo "$GR_OUT" | grep -E "✅|❌"
+    exit 1
+  }
+
 echo -e "${GREEN}===== pass =====${NC}"
