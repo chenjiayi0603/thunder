@@ -154,14 +154,6 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        MY_IP=$$(hostname -I | cut -d' ' -f1)
-        if [ -n "$$MY_IP" ]; then
-          mkdir -p /tmp/conf
-          for f in conf/*.json; do
-            sed "s|0\\.0\\.0\\.0|$$MY_IP|g" "$$f" > "/tmp/conf/$$(basename $$f)"
-          done
-          export THUNDER_CONF_DIR=/tmp/conf
-        fi
         ./node.sh start
         exec tail -f /dev/null
     deploy:
@@ -194,14 +186,6 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        MY_IP=$$(hostname -I | cut -d' ' -f1)
-        if [ -n "$$MY_IP" ]; then
-          mkdir -p /tmp/conf
-          for f in conf/*.json; do
-            sed "s|0\\.0\\.0\\.0|$$MY_IP|g" "$$f" > "/tmp/conf/$$(basename $$f)"
-          done
-          export THUNDER_CONF_DIR=/tmp/conf
-        fi
         ./node.sh start
         exec tail -f /dev/null
     deploy:
@@ -228,14 +212,6 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        MY_IP=$$(hostname -I | cut -d' ' -f1)
-        if [ -n "$$MY_IP" ]; then
-          mkdir -p /tmp/conf
-          for f in conf/*.json; do
-            sed "s|0\\.0\\.0\\.0|$$MY_IP|g" "$$f" > "/tmp/conf/$$(basename $$f)"
-          done
-          export THUNDER_CONF_DIR=/tmp/conf
-        fi
         ./node.sh start
         exec tail -f /dev/null
     deploy:
@@ -269,14 +245,6 @@ services:
         set -e
         chmod +x ./node.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
         ./scripts/gen_self_signed_https_cert.sh || true
-        MY_IP=$$(hostname -I | cut -d' ' -f1)
-        if [ -n "$$MY_IP" ]; then
-          mkdir -p /tmp/conf
-          for f in conf/*.json; do
-            sed "s|0\\.0\\.0\\.0|$$MY_IP|g" "$$f" > "/tmp/conf/$$(basename $$f)"
-          done
-          export THUNDER_CONF_DIR=/tmp/conf
-        fi
         ./node.sh start
         exec tail -f /dev/null
     deploy:
@@ -307,14 +275,6 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        MY_IP=$$(hostname -I | cut -d' ' -f1)
-        if [ -n "$$MY_IP" ]; then
-          mkdir -p /tmp/conf
-          for f in conf/*.json; do
-            sed "s|0\\.0\\.0\\.0|$$MY_IP|g" "$$f" > "/tmp/conf/$$(basename $$f)"
-          done
-          export THUNDER_CONF_DIR=/tmp/conf
-        fi
         ./node.sh start
         exec tail -f /dev/null
     deploy:

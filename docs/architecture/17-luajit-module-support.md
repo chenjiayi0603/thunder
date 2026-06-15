@@ -1,6 +1,6 @@
 # LuaJIT 模块支持 — 设计文档
 
-> 日期: 2026-06-10 | 更新: 2026-06-11 | 状态: ✅ 已实现
+> 日期: 2026-06-10 | 更新: 2026-06-15 | 状态: ✅ 已实现
 
 ## 背景
 
@@ -326,6 +326,10 @@ Lua 做 **gatekeeper**，不做业务处理。业务逻辑和数据操作仍在 
 - **状态隔离**: 多 .lua 脚本共享一个 lua_State 还是独立？推荐共享 + 沙箱
 - **调试**: `lua_Debug` + `luaL_traceback` 提供错误信息
 - **lua_pcall vs lua_call vs lua_resume**: 当前两处 (`handle_request` L140, `SendToLogic` 回调 L59) 用 `lua_pcall`(有 errfunc 保护)。`lua_call` 无 errfunc 开销, 实测可 +5-10%, 但 Lua 错误会导致 worker 直接 abort。`lua_resume` 适合回调有耗时逻辑时防阻塞事件循环。可考虑脚本声明 `#resume: true` 按需切换。
+
+## 扩展阅读
+
+- [21-lua-send-to-node-type.md](21-lua-send-to-node-type.md) — Lua 通用跨节点类型发送（`SendToNodeType`），替代硬编码的 `SendToLogic`
 
 ## 参考
 

@@ -31,61 +31,180 @@ static int headers_index(lua_State* L) {
     lua_pushstring(L, it != h->end() ? it->second.c_str() : ""); return 1;
 }
 
-// ── LogicStep: 发到 LOGIC 等响应 ──
-class LogicStep : public net::Step
+// ── NodeTypeStep: 向指定节点类型发送消息（支持回调异步 / fire-and-forget）──
+class NodeTypeStep : public net::Step
 {
 public:
-    LogicStep(ModuleLua* mod, net::tagMsgShell shell, int cbRef, std::string body)
-        : net::Step(shell), m_pMod(mod), m_iCbRef(cbRef), m_shell(shell), m_body(std::move(body)) {}
+    NodeTypeStep(ModuleLua* mod, net::tagMsgShell shell, int cbRef,
+                 std::string nodeType, uint32 cmd, std::string body,
+                 std::string targetId)
+        : net::Step(shell), m_pMod(mod), m_iCbRef(cbRef), m_shell(shell)
+        , m_nodeType(std::move(nodeType)), m_cmd(cmd), m_body(std::move(body))
+        , m_targetId(std::move(targetId)) {}
+
     virtual net::E_CMD_STATUS Timeout() override {
-        GetLabor()->SendToClientFast(m_shell, R"({"code":1,"msg":"logic timeout"})", 33);
-        luaL_unref(m_pMod->GetLua(), LUA_REGISTRYINDEX, m_iCbRef);
+        GetLabor()->SendToClientFast(m_shell, R"({"code":1,"msg":"sendtonodetype timeout"})", 38);
+        if (m_iCbRef != LUA_NOREF)
+            luaL_unref(m_pMod->GetLua(), LUA_REGISTRYINDEX, m_iCbRef);
         return net::STATUS_CMD_RUNNING;
     }
+
     virtual net::E_CMD_STATUS Emit(int, const std::string&, const std::string&) override {
         // seq 必须回填为本 Step 的序列号: 框架靠回包头里的 seq 在 mapCallbackStep 中
-        // 找回本 Step 并触发 Callback (见 Worker.cpp mapCallbackStep.find(oInMsgHead.seq()))。
-        // 缺 seq → LOGIC 回包 seq=0 → 匹配不到 → Callback 永不触发 → 超时。
-        MsgHead h; h.set_cmd(GET_TOKEN_GEN); h.set_seq(GetSequence());
-        MsgBody b; b.set_body(m_body);
+        // 找回本 Step 并触发 Callback。缺 seq → 回包 seq=0 → 匹配不到 → 永不触发。
+        MsgHead h;
+        h.set_cmd(m_cmd);
+        h.set_seq(GetSequence());
+        MsgBody b;
+        b.set_body(m_body);
+        if (!m_targetId.empty())
+            b.set_targetid(m_targetId);
         h.set_msgbody_len(static_cast<uint32_t>(b.ByteSizeLong()));
-        GetLabor()->SendToSession("LOGIC", h, b);
+
+        if (m_iCbRef != LUA_NOREF)
+        {
+            // 异步等待回调: 使用 SendToSession (按 targetId 一致性哈希 / 轮询)
+            GetLabor()->SendToSession(m_nodeType, h, b);
+        }
+        else
+        {
+            // Fire-and-forget: 广播到该类型所有节点，不期待回包
+            GetLabor()->SendToNodeType(m_nodeType, h, b);
+        }
         return net::STATUS_CMD_RUNNING;
     }
+
     virtual net::E_CMD_STATUS Callback(const net::tagMsgShell&, const MsgHead&, const MsgBody& oBody, void*) override {
+        if (m_iCbRef == LUA_NOREF)
+            return net::STATUS_CMD_COMPLETED;
+
         lua_State* L = m_pMod->GetLua();
         lua_rawgeti(L, LUA_REGISTRYINDEX, m_iCbRef);
         lua_pushlstring(L, oBody.body().data(), oBody.body().size());
-        if (lua_pcall(L, 1, 1, 0) == LUA_OK && lua_isstring(L, -1)) {
-            size_t len; const char* resp = lua_tolstring(L, -1, &len);
-            GetLabor()->SendToClientFast(m_shell, resp, len); lua_pop(L, 1);
+        if (lua_pcall(L, 1, 1, 0) == LUA_OK && lua_isstring(L, -1))
+        {
+            size_t len;
+            const char* resp = lua_tolstring(L, -1, &len);
+            GetLabor()->SendToClientFast(m_shell, resp, len);
+            lua_pop(L, 1);
         }
         luaL_unref(L, LUA_REGISTRYINDEX, m_iCbRef);
         return net::STATUS_CMD_RUNNING;
     }
+
 private:
-    ModuleLua* m_pMod; int m_iCbRef; net::tagMsgShell m_shell; std::string m_body;
+    ModuleLua* m_pMod;
+    int m_iCbRef;
+    net::tagMsgShell m_shell;
+    std::string m_nodeType;
+    uint32 m_cmd;
+    std::string m_body;
+    std::string m_targetId;
 };
 
-// ── SendToLogic Lua 绑定 ──
-static int lua_SendToLogic(lua_State* L)
+// ── SendToNodeType Lua 绑定 ──
+// 签名: SendToNodeType(nodeType, cmd, body, [targetId], [timeout], [callback])
+//   nodeType  (string, 必填)  目标节点类型
+//   cmd       (number, 必填)  命令字
+//   body      (string, 必填)  消息体
+//   targetId  (string, 可选)  目标标识（一致性哈希路由）
+//   timeout   (number, 可选)  超时秒数（默认 0.5）
+//   callback  (function, 可选) 异步回调函数; 缺省时 fire-and-forget
+static int lua_SendToNodeType(lua_State* L)
 {
-    size_t blen; const char* body = lua_tolstring(L, 1, &blen);
-    if (!body || !lua_isfunction(L, 2)) { lua_pushboolean(L, 0); return 1; }
-    int cbRef = luaL_ref(L, LUA_REGISTRYINDEX);
+    int n = lua_gettop(L);
+    if (n < 3) { lua_pushboolean(L, 0); return 1; }
+
+    const char* nodeType = lua_tostring(L, 1);
+    if (!nodeType) { lua_pushboolean(L, 0); return 1; }
+
+    int cmd = static_cast<int>(lua_tointeger(L, 2));
+
+    size_t blen;
+    const char* body = lua_tolstring(L, 3, &blen);
+    if (!body) { lua_pushboolean(L, 0); return 1; }
+
+    // 解析可选参数 (4..n): targetId(string), timeout(number), callback(function)
+    std::string targetId;
+    double timeoutSec = 0.5;
+    int cbRef = LUA_NOREF;
+
+    for (int i = 4; i <= n; i++)
+    {
+        if (lua_isfunction(L, i))
+        {
+            lua_pushvalue(L, i);
+            cbRef = luaL_ref(L, LUA_REGISTRYINDEX);
+        }
+        else if (lua_isstring(L, i))
+        {
+            const char* s = lua_tostring(L, i);
+            if (s) targetId = s;
+        }
+        else if (lua_isnumber(L, i))
+        {
+            timeoutSec = lua_tonumber(L, i);
+        }
+    }
+
     lua_pushstring(L, "__module_instance"); lua_rawget(L, LUA_REGISTRYINDEX);
-    auto* self = (ModuleLua*)lua_touserdata(L, -1); lua_pop(L, 1);
-    if (!self) { lua_pushboolean(L, 0); return 1; }
+    auto* self = static_cast<ModuleLua*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    if (!self)
+    {
+        if (cbRef != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, cbRef);
+        lua_pushboolean(L, 0); return 1;
+    }
+
     lua_pushstring(L, "__current_shell"); lua_rawget(L, LUA_REGISTRYINDEX);
-    auto* curShell = (net::tagMsgShell*)lua_touserdata(L, -1); lua_pop(L, 1);
+    auto* curShell = static_cast<net::tagMsgShell*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
     net::tagMsgShell shell = curShell ? *curShell : net::tagMsgShell();
-    auto* step = new LogicStep(self, shell, cbRef, std::string(body, blen));
-    net::Step* baseStep = step; // 基类指针: Emit 可见默认参数(ERR_OK=0, 空 str)
+
+    auto* step = new NodeTypeStep(self, shell, cbRef,
+                                  nodeType, static_cast<uint32>(cmd),
+                                  std::string(body, blen), targetId);
+    step->SetTimeout(timeoutSec);
+    net::Step* baseStep = step;
     bool ok = GetLabor()->RegisterCallback(std::unique_ptr<net::Step>(step));
-    // 框架规范: RegisterCallback 后必须显式 Emit 发送消息
-    if (ok) {
+    if (ok)
+    {
         baseStep->Emit(0);
     }
+    else if (cbRef != LUA_NOREF)
+    {
+        luaL_unref(L, LUA_REGISTRYINDEX, cbRef);
+    }
+    lua_pushboolean(L, ok ? 1 : 0);
+    return 1;
+}
+
+// ── SendToLogic 兼容封装（内部委托给 SendToNodeType 模式）──
+static int lua_SendToLogic(lua_State* L)
+{
+    // 保持原签名: SendToLogic(body, callback)
+    // 调度到 NodeTypeStep(nodeType="LOGIC", cmd=GET_TOKEN_GEN, ...)
+    size_t blen; const char* body = lua_tolstring(L, 1, &blen);
+    if (!body || !lua_isfunction(L, 2)) { lua_pushboolean(L, 0); return 1; }
+
+    lua_pushstring(L, "__module_instance"); lua_rawget(L, LUA_REGISTRYINDEX);
+    auto* self = static_cast<ModuleLua*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    if (!self) { lua_pushboolean(L, 0); return 1; }
+
+    lua_pushstring(L, "__current_shell"); lua_rawget(L, LUA_REGISTRYINDEX);
+    auto* curShell = static_cast<net::tagMsgShell*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    net::tagMsgShell shell = curShell ? *curShell : net::tagMsgShell();
+
+    int cbRef = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    auto* step = new NodeTypeStep(self, shell, cbRef,
+                                  "LOGIC", GET_TOKEN_GEN,
+                                  std::string(body, blen), "");
+    net::Step* baseStep = step;
+    bool ok = GetLabor()->RegisterCallback(std::unique_ptr<net::Step>(step));
+    if (ok) baseStep->Emit(0);
     lua_pushboolean(L, ok ? 1 : 0);
     return 1;
 }
@@ -118,6 +237,7 @@ bool ModuleLua::Init() {
         if (shell) GetLabor()->SendToClientFast(*shell, b, len);
         return 0;
     });
+    lua_pushcfunction(m_pLua, lua_SendToNodeType); lua_setglobal(m_pLua, "SendToNodeType");
     lua_pushcfunction(m_pLua, lua_SendToLogic); lua_setglobal(m_pLua, "SendToLogic");
 
     if (m_strScriptPath.empty())

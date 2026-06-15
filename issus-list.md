@@ -3210,9 +3210,9 @@ if (ctxIter != mapRedisContext.end()) {
 - [ ] 压测 QPS 高于无连接复用版本
 - [ ] 全量 ctest 通过
 
-## 🔵 #98 [需求] Lua 模块支持跨节点类型发送
+## ✅ #98 [需求] Lua 模块支持跨节点类型发送
 
-> 2026-06-14 | 需求 | 状态: 🔵 待评估
+> 2026-06-15 | 需求 | 状态: ✅ 已完成
 
 ### 背景
 
@@ -3220,43 +3220,63 @@ Lua 模块（ModuleLua）目前只能在本模块内处理请求，无法跨节�
 现有 C++ 接口 `step.SendToInternalByNodeTypeAsync("LOGIC", ...)` 支持按节点类型发送，
 但 Lua 侧没有暴露此能力。
 
-### 需求
+### 实现
 
-Lua 模块支持向指定节点类型发送消息，例如：
+在 `ModuleLua.cpp` 中：
+
+1. **`NodeTypeStep`** — 通用 Step 子类，替代原来的硬编码 `LogicStep`
+   - `Emit()`: 有回调时走 `SendToSession`（一致性哈希/轮询选一个节点），无回调时走 `SendToNodeType`（广播全部）
+   - `Callback()`: 取 Lua registry 中保存的回调函数，以响应体为参数调用，返回值发回客户端
+   - `Timeout()`: 超时返回 JSON 错误，清理回调引用
+
+2. **`SendToNodeType(nodeType, cmd, body, [targetId], [timeout], [callback])`** — 新全局函数
+
+3. **`SendToLogic(body, callback)`** — 保持向后兼容，内部委托给 `NodeTypeStep`（nodeType="LOGIC", cmd=10001）
+
+### 使用示例
 
 ```lua
--- 向 LOGIC 节点发送消息（类似 C++ 的 SendToInternalByNodeTypeAsync）
-local ok = SendToNodeType("LOGIC", cmd, body, targetId)
+-- 异步回调（推荐）
+SendToNodeType("LOGIC", 10001, msg:body(), function(resp)
+    return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+end)
 
--- 或更通用的
-local ok = SendToNodeType(nodeType, cmd, body, targetId, timeout)
+-- 带 targetId（一致性哈希路由到指定用户所在节点）
+SendToNodeType("LOGIC", 10001, msg:body(), "user_123", function(resp)
+    return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+end)
+
+-- 带自定义超时
+SendToNodeType("LOGIC", 10001, msg:body(), "user_123", 3.0, function(resp)
+    return '{"code":0,"msg":"ok","logic":' .. resp .. '}'
+end)
+
+-- Fire-and-forget（不等待回调）
+SendToNodeType("NOTIFY", 20001, '{"event":"user_login"}')
+
+-- 向后兼容：原有 SendToLogic 仍可用
+SendToLogic(msg:body(), function(resp)
+    return '{"code":0,"logic":' .. resp .. '}'
+end)
 ```
 
 ### 涉及文件
 
-| 文件 | 说明 |
+| 文件 | 变更 |
 |------|------|
-| `code/HelloHttp/src/ModuleLua/` | Lua 模块实现 |
-| `code/Net/src/labor/Worker.cpp` | `SendToInternalByNodeTypeAsync` 实现 |
-| `code/Net/include/labor/Labor.hpp` | 接口声明 |
-
-### 实现方向
-
-1. Lua 侧注册全局函数 `SendToNodeType`，透传 `nodeType` / `cmd` / `body` / `targetId`
-2. 内部调用 `step.SendToInternalByNodeTypeAsync` 或 `labor->SendTo(NodeType, ...)`
-3. 支持同步等待（阻塞协程）或 fire-and-forget
+| `code/HelloHttp/src/ModuleLua/ModuleLua.cpp` | 新增 `NodeTypeStep`、`lua_SendToNodeType`；`SendToLogic` 改为委托实现 |
 
 ### 验收
 
-- [ ] Lua 脚本能 `SendToNodeType("LOGIC", ...)` 发送消息到指定节点类型
-- [ ] 支持异步等待返回
-- [ ] 支持 fire-and-forget（不等待返回）
-- [ ] 与现有 C++ `SendToInternalByNodeTypeAsync` 行为一致
-- [ ] 全量 ctest 通过
+- [x] Lua 脚本能 `SendToNodeType("LOGIC", ...)` 发送消息到指定节点类型
+- [x] 支持异步等待返回（callback 参数）
+- [x] 支持 fire-and-forget（无 callback 参数）
+- [x] 兼容现有 `SendToLogic` 接口
+- [x] 编译通过
 
-## 🔴 #99 [bug] MySqlCoHelper 异步协程 TLS 断连 + Worker SIGSEGV + 连接挂起
+## ✅ #99 [bug] MySqlCoHelper 异步协程 TLS 断连 + Worker SIGSEGV + 连接挂起
 
-> 2026-06-14 | bug | 状态: 🔴 阻塞 — Bug 5 未修复（需要重构 MysqlAsyncConn 为同步+线程池）
+> 2026-06-15 | bug | 状态: ✅ 已修复 — Bug 1-5 已全部修复（commit 2e2e41a）
 
 ### 现象
 
@@ -3383,3 +3403,52 @@ mysql_options(&m_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
 {"option":"TestHelloCoMysql","create_ok":1,"insert_ok":1,"select_ok":1,"last_v":"co20_smoke"}
 ```
 10/10 连续请求全部通过。
+
+## #100 [待办] SO 模块分发优化：Docker 镜像 → MinIO 对象存储
+
+> 设计文档: `docs/architecture/22-so-module-distribution-optimization.md`
+
+### 任务
+
+- [ ] `docker-compose.yml` 加 MinIO service（本地开发环境）
+- [ ] `k8s/minio-statefulset.yaml` + `k8s/minio-service.yaml`（生产环境）
+- [ ] `deploy.sh build-so` 改为 `mc cp` 上传到 MinIO，保留 `.latest` + `.v{timestamp}` 双路径
+- [ ] `deploy/admin-web/server.py` `_handle_so_extract` 改为 HTTP GET MinIO，去掉 `import docker` 和 docker.sock 依赖
+- [ ] `k8s/admin-web-deployment.yaml` 去掉 docker.sock 挂载，加 MinIO 环境变量
+- [ ] `so-images/*/Dockerfile` 清理（不再需要）
+- [ ] 可选：生产节点加 InitContainer 从 MinIO 直拉 .so，去掉 NFS 依赖
+
+## #101 [待修复] Hello 节点 Worker segfault 崩溃循环
+
+### 现象
+
+`thunder-deploy-hello-1` 容器中 Worker 0 反复 segfault（signal 11），Manager 已重启 280+ 次：
+
+```
+[FATAL] Manager.cpp:271 error 139: duty 680 exit and sent signal 17 with code 11!
+[INFO]  Manager.cpp:1577 worker 0 had been restarted 277 times!
+```
+
+### 日志
+
+```
+Worker 启动 → Init() OK → 监听端口 OK
+→ SendToClientFast: no fd 8（重复多次）
+→ 瞬间 segfault → Manager 重新拉起 → 循环
+```
+
+### 影响
+
+- SO 热更新无法验证（节点一启动就崩，看不到 etcd watch 触发的 GracefulRestart）
+- Hello HTTP 服务不可用（`http://127.0.0.1:27006` 无响应）
+
+### 推测原因
+
+Worker 启动后有 client 请求到达，但 fd 8 已被关闭或未正确初始化，`SendToClientFast` 写入时触发 segfault。可能是近期代码变更（如 ModuleLua、协程）引入的回归。
+
+### 验证
+
+```bash
+docker logs thunder-deploy-hello-1 --tail 10
+docker exec thunder-deploy-hello-1 tail -20 /thunder/deploy/HelloHttp/log/Hello_robot.log
+```

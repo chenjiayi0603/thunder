@@ -10,6 +10,9 @@
 #   ./deploy.sh test regression 回归   全量自动化回归 (提交前必跑) ~5min
 #   ./deploy.sh test perf      性能   wrk 压测                   ~1min
 #
+# === 一键全量 ===
+#   ./tests/run_all.sh          构建 → 部署 → 全部测试 (推荐提交前使用)
+#
 # === 常用命令 ===
 #   ./deploy.sh build           cmake configure + build + install
 #   ./deploy.sh test unit       C++ 单元测试 + Python 单元测试

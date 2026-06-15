@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import pytest
 import requests
 
 
-BASE = "https://127.0.0.1:27443/hello/hello"
+_HOST = os.getenv("E2E_HOST", "127.0.0.1")
+BASE = f"https://{_HOST}:27443/hello/hello"
 
 
 @pytest.mark.integration

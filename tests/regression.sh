@@ -46,6 +46,8 @@ if ss -tln 2>/dev/null | grep -q ':27006 '; then
     # 冒烟
     curl -sf http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}' | grep -q '"code":0' \
         && green "  ✅ HTTP Echo" || red "  ❌ HTTP Echo"
+    curl -sf http://127.0.0.1:27006/hello/lua_node_type -d '{"mode":"fire_forget"}' | grep -q '"fire_forget_ok"' \
+        && green "  ✅ Lua SendToNodeType fire-forget" || red "  ❌ Lua SendToNodeType fire-forget"
     curl -sf http://127.0.0.1:27008/Interface/gentoken -d '{"option":"GenKey"}' | grep -q '"code":0' \
         && green "  ✅ GenKey" || red "  ❌ GenKey"
     curl -sf http://127.0.0.1:26000/admin -d '{"cmd":"show","args":["center"]}' | grep -q "leader" \

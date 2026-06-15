@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import os
 import requests
 import pytest
 import time
@@ -16,7 +17,8 @@ import subprocess
 from pathlib import Path
 from helpers.runtime import docker_dir
 
-BASE_URL = "http://127.0.0.1:27008/Interface/gentoken"
+_HOST = os.getenv("E2E_HOST", "127.0.0.1")
+BASE_URL = f"http://{_HOST}:27008/Interface/gentoken"
 ADMIN_PORTS = (26000, 26022, 26032)
 
 
@@ -25,7 +27,7 @@ def _get_leaders(http_session: requests.Session) -> set[str]:
     for port in ADMIN_PORTS:
         try:
             r = http_session.post(
-                f"http://127.0.0.1:{port}/admin",
+                f"http://{_HOST}:{port}/admin",
                 json={"cmd": "show", "args": ["center"]},
                 timeout=10,
             )
@@ -74,7 +76,7 @@ def test_center_leader_failover(http_session: requests.Session) -> None:
     for port in ADMIN_PORTS:
         try:
             r = http_session.post(
-                f"http://127.0.0.1:{port}/admin",
+                f"http://{_HOST}:{port}/admin",
                 json={"cmd": "show", "args": ["center"]},
                 timeout=10,
             )

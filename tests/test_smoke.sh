@@ -228,9 +228,6 @@ check "Lua echo (POST)                         [curl->Hello:${PORT_HELLO}->Lua]"
 LUA_LIMIT_LONG=$(python3 -c "print('x'*101)")
 check "Lua limit body>100 (POST)              [curl->Hello:${PORT_HELLO}->Lua]" '"body too long"' "curl -sf --max-time 5 'http://${NODE_IP}:${PORT_HELLO}/hello/lua_limit' -d '${LUA_LIMIT_LONG}'"
 
-LUA_LIMIT_LONG=$(python3 -c "print('x'*101)")
-check "Lua limit body>100 (POST)              [curl->Hello:${PORT_HELLO}->Lua]" '"body too long"' "curl -sf --max-time 5 'http://${NODE_IP}:${PORT_HELLO}/hello/lua_limit' -d '${LUA_LIMIT_LONG}'"
-
 LUA_ROUTE_RESP=$(curl -sf --max-time 10 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_route" -d '{"option":"Echo"}' 2>/dev/null)
 # 必须 LOGIC 可达: {"code":0,"msg":"ok","logic":...}  (含 logic 字段=LOGIC 真实回包)
 # 不可达/超时则是 {"code":1,"msg":"logic timeout"}，判失败
@@ -238,6 +235,30 @@ if echo "$LUA_ROUTE_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin);
     PASS=$((PASS+1)); echo -e "${GREEN}  [PASS] Lua route -> LOGIC (resp=${LUA_ROUTE_RESP})${NC}"
 else
     FAIL=$((FAIL+1)); echo -e "${RED}  [FAIL] Lua route -> LOGIC: ${LUA_ROUTE_RESP}${NC}"
+fi
+
+# SendToNodeType: fire-and-forget
+LUA_NT_FF=$(curl -sf --max-time 5 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_node_type" \
+    -d '{"mode":"fire_forget"}' 2>/dev/null)
+check "Lua SendToNodeType fire-and-forget (POST) [curl->Hello:${PORT_HELLO}->Lua]" \
+    '"fire_forget_ok"' "echo '${LUA_NT_FF}'"
+
+# SendToNodeType: async callback
+LUA_NT_ASYNC=$(curl -sf --max-time 10 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_node_type" \
+    -d '{"mode":"async"}' 2>/dev/null)
+if echo "$LUA_NT_ASYNC" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('code')==0 and d.get('mode')=='async'" 2>/dev/null; then
+    PASS=$((PASS+1)); echo -e "${GREEN}  [PASS] Lua SendToNodeType async (resp=${LUA_NT_ASYNC})${NC}"
+else
+    FAIL=$((FAIL+1)); echo -e "${RED}  [FAIL] Lua SendToNodeType async: ${LUA_NT_ASYNC}${NC}"
+fi
+
+# SendToNodeType: async with targetId
+LUA_NT_TARGET=$(curl -sf --max-time 10 "http://${NODE_IP}:${PORT_HELLO}/hello/lua_node_type" \
+    -d '{"mode":"async_target","targetId":"smoke_test_user"}' 2>/dev/null)
+if echo "$LUA_NT_TARGET" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('code')==0 and d.get('targetId')=='smoke_test_user'" 2>/dev/null; then
+    PASS=$((PASS+1)); echo -e "${GREEN}  [PASS] Lua SendToNodeType targetId (resp=${LUA_NT_TARGET})${NC}"
+else
+    FAIL=$((FAIL+1)); echo -e "${RED}  [FAIL] Lua SendToNodeType targetId: ${LUA_NT_TARGET}${NC}"
 fi
 
 

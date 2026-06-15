@@ -1,8 +1,9 @@
 """etcd Admin API 端到端测试 (替代旧 Center Raft admin)"""
 from __future__ import annotations
-import json, base64, requests, pytest
+import json, base64, os, requests, pytest
 
-ETCD_URL = "http://127.0.0.1:2379"
+_ETCD_HOST = os.getenv("E2E_ETCD_HOST", "127.0.0.1")
+ETCD_URL = f"http://{_ETCD_HOST}:2379"
 
 def _range(prefix: str) -> list[dict]:
     pb = prefix.encode()

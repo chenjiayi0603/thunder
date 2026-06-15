@@ -6,6 +6,8 @@ pytest 会话级 fixture：本地模式下负责构建、安装、Docker 编排�
 from __future__ import annotations
 
 import os
+import socket
+import subprocess
 import time
 from pathlib import Path
 
@@ -199,8 +201,32 @@ def service_readiness(mode: str, docker_stack: object) -> None:
     - local 额外等 6379（Redis）、3306（MySQL），与 compose 内依赖一致。
     """
     del docker_stack  # 仅用于声明 fixture 顺序
-    _phase("等待端口 27006 / 27008 / 27443 就绪（每项最长约 90s）…")
-    ensure_ports("127.0.0.1", [27006, 27008, 27443], timeout_s=90.0)
+
+    # 检测宿主机 IP（Docker host network 模式下端口可能绑定在宿主机 IP 上）
+    host_ips = []
+    # 优先用 E2E_HOST 环境变量（由 run_all.sh 传入）
+    env_host = os.getenv("E2E_HOST")
+    if env_host:
+        host_ips.append(env_host)
+    host_ips.append("127.0.0.1")
+    try:
+        out = subprocess.check_output(["hostname", "-I"], text=True).strip()
+        for ip in out.split():
+            ip = ip.strip()
+            if ip and ip not in host_ips and not ip.startswith("127."):
+                host_ips.append(ip)
+    except Exception:
+        pass
+
+    _phase(f"等待端口 27006 / 27008 / 27443 就绪（hosts={host_ips}，每项最长约 90s）…")
+    for host in host_ips:
+        try:
+            ensure_ports(host, [27006, 27008, 27443], timeout_s=90.0)
+            break  # 某个 host 全部端口就绪
+        except AssertionError:
+            continue
+    else:
+        raise AssertionError(f"port not ready on any host: {host_ips}")
     if mode == "local":
         _phase("等待 Redis/MySQL 6379 / 3306 就绪（每项最长约 120s）…")
         ensure_ports("127.0.0.1", [6379, 3306], timeout_s=120.0)

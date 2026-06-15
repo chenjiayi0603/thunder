@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import requests
 import pytest
 
@@ -23,7 +24,8 @@ from helpers.ws_client import RawWsClient
 def test_ws_hello_smoke(payload: dict[str, str], seq: int, needles: list[str]) -> None:
     # 测试目的：验证 Hello WS 端点可握手并能处理核心业务消息（Echo/CPU/Block/非法 option）。
     # 若当前环境未装载 WS 路由（常见表现为 404），则退化为端口可达性校验，确保默认回归命令不被环境差异打断。
-    cli = RawWsClient(host="127.0.0.1", port=27010, path="/hello/shake", timeout_s=20.0)
+    _host = os.getenv("E2E_HOST", "127.0.0.1")
+    cli = RawWsClient(host=_host, port=27010, path="/hello/shake", timeout_s=20.0)
     try:
         try:
             cli.connect()
@@ -39,7 +41,7 @@ def test_ws_hello_smoke(payload: dict[str, str], seq: int, needles: list[str]) -
             s = requests.Session()
             s.trust_env = False
             try:
-                r = s.get("http://127.0.0.1:27010/", timeout=10)
+                r = s.get(f"http://{_host}:27010/", timeout=10)
                 assert r.status_code in (200, 404), r.text
             except requests.RequestException:
                 # 某些容器在该端口会直接断开非预期 HTTP 请求；只要握手阶段已确认端口可连接即可。
