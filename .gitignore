@@ -15,6 +15,7 @@ deploy/bin/Center
 deploy/bin/Hello
 deploy/bin/Interface
 deploy/bin/Logic
+deploy/bin/HelloWss
 deploy/Center/bin/Center
 deploy/Interface/bin/Interface
 code/Net/src/Hello
@@ -89,3 +90,4 @@ deploy/HelloHttps/bin/Logic
 deploy/HelloWs/bin/HelloHttp
 deploy/HelloWs/bin/Interface
 deploy/HelloWs/bin/Logic
+deploy/HelloWss/bin/HelloWss
