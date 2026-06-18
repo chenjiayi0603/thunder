@@ -101,8 +101,26 @@ async function loadNodes() {
     range_end: b64Encode('/thunder/registry0')
   });
   if (!d || !d.kvs) {
+    // etcd 不可达
     document.getElementById('content').innerHTML = '<div class="card"><p style="color:#999">无法获取节点数据 (etcd 不可达?)</p></div>';
     return;
+  }
+  if (d.kvs.length === 0) {
+    // etcd 为空，尝试从本地配置同步
+    var syncStatus = document.getElementById('content');
+    syncStatus.innerHTML = '<div class="card"><p>⏳ etcd 无注册数据，正在同步本地配置...</p></div>';
+    try {
+      var r = await fetch(location.origin + '/api/sync-config', {method: 'POST'});
+      var result = await r.json();
+      if (result.ok && result.synced.length > 0) {
+        console.log('sync ok:', result.synced);
+        // 同步后再读一次
+        setTimeout(loadNodes, 3000);
+        return;
+      }
+    } catch(e) {
+      console.log('sync failed:', e);
+    }
   }
   // 按类型分组
   var types = {}, typeOrder = [];

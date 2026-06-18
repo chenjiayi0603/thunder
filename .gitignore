@@ -82,3 +82,9 @@ build-tsan/
 deploy/HelloHttp/libluajit-5.1.so.2
 perf.data
 todo
+deploy/HelloHttps/bin/HelloHttp
+deploy/HelloHttps/bin/Interface
+deploy/HelloHttps/bin/Logic
+deploy/HelloWs/bin/HelloHttp
+deploy/HelloWs/bin/Interface
+deploy/HelloWs/bin/Logic

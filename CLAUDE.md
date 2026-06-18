@@ -1,3 +1,20 @@
+## 会话开头必读
+
+每次新会话开始，**必须先读 `TEST_STATUS.md`**，了解当前测试状态和待做事项，避免重复测试：
+
+```bash
+cat TEST_STATUS.md
+```
+
+测试跑完后立即更新：
+
+```bash
+tests/save_status.sh          # 跑完整测试 + 更新状态
+tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
+```
+
+---
+
 ## deploytest — Thunder 本地部署测试
 
 当用户说"deploytest"或"本地部署测试"时：

@@ -1866,9 +1866,9 @@ wrk 连接被内核分流到两个进程 → 吞吐虚高 ~40% (#69 排查中 as
 频繁重启压测实例向共享 etcd 注册新 node_id, 打满 255 槽位 ("槽位已满" WARN)。
 压测沙箱应将 etcd endpoint 指向死地址 (如 127.0.0.1:1, 已验证对性能无影响)。
 
-## 🟡 #72 [bug] SpawnSingleWorker 父子各关错一个 eventfd, shm 队列通知机制双向失效
+## ✅ #72 [已修复] SpawnSingleWorker 父子各关错一个 eventfd, shm 队列通知机制双向失效
 
-> 2026-06-12 | bug | 状态: 🟡 待修复 (#70 排查中发现, 影响性能非正确性)
+> 2026-06-12 | bug | 状态: ✅ 已修复 2026-06-18 | 原始 bug，自 62979e5 (feat: ShmRingQueue) 起从未生效
 
 ### 现象
 
@@ -1891,6 +1891,18 @@ eventfd 是单一内核对象、读写双方都需要持有: 两处 CloseEventFd
 (socketpair 的"各关对端"模式不适用于 eventfd)。修复后需验证:
 Worker beat 走 TryEnqueue+NotifyEventFd, Manager drain 正常; SendToWorker 通知 efd 后
 Worker shm read watcher 即时唤醒。
+
+### 修复
+
+`Manager.cpp SpawnSingleWorker` 中删除 fork 后的两处提前 CloseEventFd:
+
+- 子进程中删除 `CloseEventFd(iWorkerToMgrEfd)` — Worker 需持有此 fd 向 Manager 发信号
+- 父进程中删除 `CloseEventFd(iMgrToWorkerEfd)` — Manager 需持有此 fd 向 Worker 发信号
+
+evenfd 两端同一对象，不应仿照 socketpair 关闭对端。Worker 关闭 (RemoveWorker) 和
+Manager 析构时的 CloseEventFd 调用保留，确保资源正确回收。
+
+**验证**: ctest 355/355 通过，E2E 全通过（30 passed, 2 skipped）。
 
 ## ✅ #73 [已修复] Admin 自定义配置 — 相同内容不触发重启，仅提示
 
@@ -3418,37 +3430,317 @@ mysql_options(&m_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &allow_invalid);
 - [ ] `so-images/*/Dockerfile` 清理（不再需要）
 - [ ] 可选：生产节点加 InitContainer 从 MinIO 直拉 .so，去掉 NFS 依赖
 
-## #101 [待修复] Hello 节点 Worker segfault 崩溃循环
+## ⚪ #101 [已自愈] Hello 节点 Worker segfault 崩溃循环
 
-### 现象
+> 2026-06-16 | 状态: ⚪ 已自愈（当前无复现，暂存档）
 
-`thunder-deploy-hello-1` 容器中 Worker 0 反复 segfault（signal 11），Manager 已重启 280+ 次：
+### 现象（历史）
+
+`thunder-deploy-hello-1` 容器中 Worker 0 反复 segfault（signal 11），Manager 已重启 280+ 次。
+
+### 现状（2026-06-16）
+
+Hello 服务正常响应（`curl http://127.0.0.1:27006/hello/hello → {"code":0}`），日志无 FATAL/segfault。推测与 #102~#104 中 etcd keepalive 频繁中断引发的重注册循环有关，修复后自愈。
+
+---
+
+## ✅ #102 [已关闭] EtcdCenterConnector — FailAll 超时让 keepalive 计数异常飙升
+
+> 2026-06-16 | bug | 状态: ✅ 已关闭（#107 Phase E 删除 EtcdCenterConnector/EtcdHttpConn，根因代码不再存在）
+
+### 根因（历史）
+
+`EtcdHttpConn` 单连接队列：selfAudit 的 `/v3/kv/range` 超时触发 `FailAll()`，把队列里所有待发 keepalive 一并取消 → `m_keepAliveFailCount` 单次 +2 → 5 次就 ConnectionLost（本应 15s 才触发）。
+
+### 修复方式
+
+`#107 Phase B1`：`EtcdGrpcConnector` 使用独立 gRPC KeepAlive stream，与 KV 操作完全隔离，根本消除此问题。
+`#107 Phase E`（2026-06-18）：`EtcdCenterConnector` / `EtcdHttpConn` 全部删除，根因代码不再存在。
+
+---
+
+## ✅ #103 [已修复] EtcdCenterConnector — HTTP 错误被误当"slot已占"，导致"所有槽位已满"误报
+
+> 2026-06-16 | bug | 状态: ✅ 已修复
+
+### 根因
+
+`AsyncTryClaimSlot` 对 HTTP 错误和 txn `succeeded=false` 返回同一 `cb(false)` → `OnRegScan` 把 HTTP 错误当成"slot 被占"，继续尝试下一个 → 255 次 HTTP 错误后报"所有槽位已满"。
+
+### 修复
+
+`AsyncTryClaimSlot` 回调增加 `bool httpErr` 参数；`OnRegScan` 遇到 HTTP 错误立即中止（`OnRegDone(false, "HTTP连接不稳定,稍后重试")`），不再遍历 255 个槽位。
+
+```cpp
+// EtcdCenterConnector.cpp
+if (httpErr) { OnRegDone(false, "HTTP连接不稳定,稍后重试"); }
+else         { ++m_regSlot; OnRegScan(); }
+```
+
+---
+
+## ✅ #104 [已修复] EtcdCenterConnector — SelfAudit 超时用 nodeId=0 触发 AsyncRebind，写入无效 slot/0
+
+> 2026-06-16 | bug | 状态: ✅ 已修复
+
+### 根因
+
+`SelfAuditRegistry` 查询超时时 `found=false, nid=0` → `useNodeId = m_nodeId = 0` → `AsyncRebindRegistration(0, ...)` → 写入 `/thunder/slot/0`（合法范围 1-255），浪费 txn 且产生脏数据。
+
+### 修复
+
+在 `SelfAuditRegistry` 增加守卫：
+
+```cpp
+if (useNodeId == 0) { ETCD_LOG_WARN("SelfAudit — nodeId=0 跳过 rebind"); return; }
+```
+
+---
+
+## ✅ #105 [已修复] EtcdCenterConnector — ConnectionRestored 时 nodeId=0 的节点永远无法拿到合法 nodeId
+
+> 2026-06-16 | bug | 状态: ✅ 已修复
+
+### 根因
+
+注册失败（#103 触发"所有槽位已满"）后，keepalive 恢复 → `ConnectionRestored` → `m_registered=true`，但 `m_nodeId` 仍为 0。节点永远带着无效 nodeId 运行。
+
+### 修复
+
+`OnKeepAliveTimer` 中 keepalive 成功但 `nodeId==0` 时触发 `DoRegister` 重新注册：
+
+```cpp
+if (m_nodeId == 0) {
+    ETCD_LOG_WARN("keepalive ok but nodeId=0, 重新注册");
+    DoRegister(m_nodeIp, m_nodePort, m_nodeType);
+    return;
+}
+m_registered = true; Emit(ConnectionRestored);
+```
+
+---
+
+## ⚪ #106 [停止推进] etcd 迁移计划 — HTTP gateway 方案，被 #107 替代
+
+> 2026-06-16 | **已停止** | 当前 `EtcdHttpConn` + HTTP gateway 实现不再继续；
+> Phase 4/5 不再推进。待 #107（etcd-cpp-apiv3 gRPC 方案）完成后整体替换。
+
+去掉自研 Center，业务节点全面接入 etcd。下面按 Phase 逐条记录当前状态。
+
+---
+
+### Phase 0 — 骨架 + 数据模型 ✅ 已完成
+
+- [x] 新增 `EtcdCenterConnector` 骨架（Init/Destroy/Name/ReportNodeStatus/IsConnected）
+- [x] `center_backend: tcp|etcd` 配置开关，工厂选实例
+- [x] 定义 etcd key schema（`/thunder/slot/` `/thunder/registry/` `/thunder/config/`）
+- [x] 配 `tcp` 时 ctest 全量 + E2E 全绿
+
+---
+
+### Phase 1 — 注册 + node_id 分配 ✅ 已完成（修复 #103/104/105）
+
+- [x] Init：连 etcd endpoints，`LeaseGrant(TTL=10s)`
+- [x] Register：幂等查 registry/{ip:port}，槽位 txn 抢占，写 slot+registry
+- [x] libev 定时器每 ~3s `POST /v3/lease/keepalive`
+- [x] HTTP 错误 vs txn 失败区分（#103 已修复）
+- [x] SelfAudit nodeId=0 守卫（#104 已修复）
+- [x] ConnectionRestored 时 nodeId=0 触发重注册（#105 已修复）
+- [ ] **🟡 keepalive 独立连接**：`EtcdHttpConn` FailAll 连带取消 keepalive，虚高失败计数（#102 根本修复待做）
+
+---
+
+### Phase 2 — 路由发现（watch → RouteUpdated → shm）✅ 已完成
+
+- [x] `EtcdWatcher` 监听 `/thunder/registry/` 前缀，chunked 增量解析
+- [x] watch 事件 → `OnWatchAsync()` → 组装 `NodeNotice` → `RouteUpdated` → shm 写入
+- [x] `last_revision` 记录，断线按 revision 重连补漏
+- [x] 全在 Manager 主循环，无独立线程
+
+---
+
+### Phase 3 — 配置（watch → ConfigUpdated → shm）✅ 已完成
+
+- [x] watch `/thunder/config/` 前缀 → `ConfigUpdated` → 现有配置 shm 路径不动
+- [x] Manager 注册成功后将 `conf["module"]` 同步写入 etcd（`/thunder/config/module/{nodeType}`）
+
+---
+
+### Phase 4 — 部署替换（单例 + 集群）✅ 完成（由 #107 Phase C 完成）
+
+- [x] docker-compose 3 节点 etcd（#107 Phase C，2026-06-18）
+- [x] 各业务节点配置 3 个 endpoint（`etcd_endpoints` 逗号分隔）
+- [x] E2E 3 节点全通（30 passed，2 skipped）
+- [ ] 杀 1 个 etcd 节点验证容错（Raft 理论可用，未自动化测试）
+
+---
+
+### Phase 5 — Admin 替代脚本 ✅ 完成（由 #107 Phase D 完成）
+
+- [x] `deploy/scripts/admin.py`：`nodes / routes / status / config {list|get|set}`
+- [x] 兼容 shim：`admin_nodes.py` / `admin_config.py` / `admin_status.sh`
+- [x] `deploy.sh admin <sub> [args]` 透传正确
+
+---
+
+### Phase 6 — 下线 Center + 全回归 ✅ 已完成
+
+- [x] `code/Center/` 已删除
+- [x] `deploy/Center/` 已清空（仅剩空 bin/）
+- [x] 全功能回归：ctest 355/355，E2E 30/30（#107 Phase E，2026-06-18）
+- [ ] TSan 验证（未来工作）
+
+---
+
+## ✅ #107 [已完成] etcd 迁移全量实现 — gRPC 方案（etcd-cpp-apiv3）
+
+> 2026-06-16 开始 | 完成 2026-06-18 | 分支: `chore/protobuf-6.33-downgrade`
+>
+> **目标**: 用 [etcd-cpp-apiv3](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3)（gRPC 原生）
+> 实现 #106 迁移计划中所有功能目标，完整替换自研 `EtcdHttpConn` + HTTP gateway 方案。
+>
+> **与 #106 的关系**: 功能目标完全相同（注册/keepalive/watch/配置/集群/回归），
+> 实现层从 HTTP gateway 换成 gRPC，同时根本修复 #102（keepalive 被 FailAll 取消）。
+
+---
+
+### 依赖链
 
 ```
-[FATAL] Manager.cpp:271 error 139: duty 680 exit and sent signal 17 with code 11!
-[INFO]  Manager.cpp:1577 worker 0 had been restarted 277 times!
+etcd-cpp-apiv3  ←  gRPC v1.81.1（源码编译，vendor 进 3party）  ←  protobuf 33.5 / 6.33.5（✅ 已有）
 ```
 
-### 日志
+**版本确认（2026-06-16）**：
+- protobuf：33.5（C++ 包 6.33.5），已编译在 `code/3party/lib/libprotobuf.so.33.5.0`
+- gRPC：**v1.81.1**（最新稳定，`requirements.txt` 要求 `protobuf>=6.33.5,<7.0.0`，精确匹配）
+- etcd-cpp-apiv3：v0.15.4（最新稳定）
+- 构建方式：**全部源码编译，vendor 进 `code/3party/`，与 protobuf 同等处理，Thunder 链接全部 vendored 库**
+
+---
+
+### Phase A — 环境准备（依赖层）
+
+#### A1：protobuf 33.5 / 6.33.5 编译 ✅ 已完成（2026-06-16）
+
+- [x] ctest 375/376 通过（1 flaky `ThreadPool.BackpressureQueueMax`，单独跑即过，与 protobuf 无关）
+- [x] ProtoCodec/ProtoMsg/ProtoCoor 编解码往返验证通过
+- [x] `code/3party/lib/libprotobuf.so.33.5.0`、`libabsl_*.so.2505.0.0` 已就绪
+
+#### A2：gRPC v1.81.1 源码编译 ✅ 已完成（2026-06-16）
+
+- [x] 克隆 gRPC v1.81.1，使用 vendored protobuf 33.5（`Protobuf_DIR=/tmp/pb335_stage/lib/cmake/protobuf`，`-DgRPC_PROTOBUF_PROVIDER=package`）
+- [x] 编译输出静态库：`libgrpc.a`、`libgrpc++.a` 及 `grpc_cpp_plugin`（位于 `/tmp/grpc181_stage/`）
+- [x] 头文件已就绪（`/tmp/grpc181_stage/include/grpc/`、`grpc++/`）
+- [ ] vendor 进 `code/3party/`（待集成阶段执行）
+
+#### A3：etcd-cpp-apiv3 v0.15.4 编译 + 基础操作验证 ✅ 已完成（2026-06-16）
+
+- [x] 克隆 etcd-cpp-apiv3 v0.15.4，指向 vendored gRPC + protobuf
+- [x] 编译 `libetcd-cpp-api-core.so`（位于 `/tmp/etcd_stage/lib/`）
+- [x] 基础操作全部验证通过（本地 etcd 2379）：
+  - `put` ✅ / `get` ✅ / `watch` ✅ / `lease grant` ✅ / `keep_alive` ✅
+- [ ] vendor 进 `code/3party/`（待集成阶段执行）
+
+---
+
+### Phase B — 新 EtcdGrpcConnector 实现（对应 #106 Phase 0+1+2+3）
+
+> 保持 `CenterConnector` 接口不变，Manager 侧零改动。新建 `EtcdGrpcConnector`，
+> 用 `center_backend: etcd_grpc` 配置开关选实例（过渡期保留旧 `etcd` 后端）。
+
+#### B1：骨架 + 注册 + node_id（对应 #106 Phase 0/1）✅ 完成（2026-06-16）
+
+**线程模型（已确认 2026-06-16）**：
 
 ```
-Worker 启动 → Init() OK → 监听端口 OK
-→ SendToClientFast: no fd 8（重复多次）
-→ 瞬间 segfault → Manager 重新拉起 → 循环
+libev 主线程                    gRPC 专属线程
+─────────────                   ─────────────────────────
+Init() → 启动线程      →→→     etcd::SyncClient
+Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
+                      ←←←     ev_async 通知 → Emit(Registered)
+                      ←←←     KeepAlive stream（独立，根本修复 #102）
+                      ←←←     Watch stream → ev_async → RouteUpdated（B2）
 ```
 
-### 影响
+- gRPC 专属线程：所有 etcd 操作（`etcd::SyncClient`），阻塞但隔离
+- `ev_async`：gRPC 线程 → libev 主线程的安全通知通道
+- KeepAlive stream 独立于 KV 操作，不会被 FailAll 取消（修复 #102）
 
-- SO 热更新无法验证（节点一启动就崩，看不到 etcd watch 触发的 GracefulRestart）
-- Hello HTTP 服务不可用（`http://127.0.0.1:27006` 无响应）
+**实现清单**：
+- [x] 新建 `code/Net/src/register/EtcdGrpcConnector.{hpp,cpp}`
+- [x] CMake 接入 etcd-cpp-apiv3 + gRPC（临时指向 `/tmp/etcd_stage`、`/tmp/grpc181_stage`）
+- [x] `Init()`：启动 gRPC 线程，`leaseGrant(TTL=10s)`，启动 KeepAlive stream
+- [x] `Register()`：幂等查 registry → 槽位 txn 抢占 → `ev_async` 回调 Emit(Registered)
+- [x] `Destroy()`：停止 gRPC 线程，撤销租约
+- [x] 验证：注册成功 → nodeId 非 0；槽位 txn 原子性验证通过（smoke test ALL PASS）
 
-### 推测原因
+**txn 语义确认**：`error_code==0 && is_ok()==true` = 槽位抢到；`error_code==101` = 槽位已占（继续扫）
 
-Worker 启动后有 client 请求到达，但 fd 8 已被关闭或未正确初始化，`SendToClientFast` 写入时触发 segfault。可能是近期代码变更（如 ModuleLua、协程）引入的回归。
+#### B2：路由发现（对应 #106 Phase 2）✅ 完成（2026-06-17）
 
-### 验证
+- [x] gRPC `Watch` 流监听 `/thunder/registry/` 前缀（recursive=true）
+- [x] 初始快照 `client.ls(kRegistryPrefix)` + watch fromRevision 保证无缝衔接
+- [x] watch 事件 → 组装 `NodeNotice` proto → `RouteUpdated` 事件推送（ev_async）
+- [x] `m_nodeRegistry` mutex 保护（gRPC 线程写、Watcher 线程更新，ev_async 通知主线程）
+- [x] 验证（live etcd 127.0.0.1:2379）：节点注册 → watch 到 → RouteUpdated 触发
 
-```bash
-docker logs thunder-deploy-hello-1 --tail 10
-docker exec thunder-deploy-hello-1 tail -20 /thunder/deploy/HelloHttp/log/Hello_robot.log
-```
+#### B3：配置下发（对应 #106 Phase 3）✅ 完成（2026-06-17）
+
+- [x] gRPC `Watch` 流监听 `/thunder/config/` 前缀，按 `m_myNodeType` 过滤配置 key
+- [x] `PutConfig()` 通过命令队列转发到 gRPC 线程执行 `client.put(configKey, value, leaseId)`
+- [x] 验证（live etcd 127.0.0.1:2379）：PutConfig 写入 → config watch 回调 → ConfigUpdated 推送
+
+---
+
+### Phase C — 部署与集群（对应 #106 Phase 4）✅ 完成（2026-06-18）
+
+- [x] docker-compose 3 节点 etcd（peer 端口 2380/2382/2384，YAML anchor 共享配置）
+- [x] 各业务节点配置 3 个 endpoint（`etcd_endpoints` 逗号分隔）
+- [x] E2E 3 节点 etcd 全通（30 passed，2 skipped 单节点限制）
+- [ ] 杀 1 个 etcd 节点 → 集群仍可用（Raft 容错，待人工验证）
+- [ ] EtcdGrpcConnector 多端点 failover（目前只连第一个，gRPC channel 内置但未验证）
+
+---
+
+### Phase D — Admin 脚本（对应 #106 Phase 5）✅ 完成（2026-06-18）
+
+在 `deploy/scripts/` 下：
+
+- [x] **`admin.py`**（主实现）：`nodes`、`routes`、`status`、`config {list|get|set}` 子命令
+  - 自动从 `Logic.json` 读取 3 个 etcd 端点
+  - `status` 显示全部 3 节点健康 + 集群 revision/raft_term/members
+  - `nodes` 正确解析 `ip:port`（修复旧版 node_type 前缀 bug）
+- [x] **`admin_nodes.py` / `admin_config.py` / `admin_status.sh`**：转发至 `admin.py` 的兼容 shim
+- [x] `deploy.sh admin <sub> [args...]` 透传修复（`_ADMIN_ARGS` 保存全部参数，修复 config list 丢 sub-arg 的 bug）
+
+---
+
+### Phase E — 清理 + 全回归（对应 #106 Phase 6）✅ 完成（2026-06-18）
+
+- [x] 删除 `EtcdHttpConn` / `EtcdWatcher` / `EtcdParse`
+- [x] 删除 `EtcdCenterConnector`，移除 Manager `"etcd"` 工厂分支
+- [x] 全量 ctest 355/355（100%）+ E2E 全通
+- [ ] TSan 验证（gRPC 回调线程与 Manager libev 主循环无数据竞争）
+
+---
+
+### 状态总览
+
+| Phase | 内容 | 状态 |
+|-------|------|:---:|
+| A1 | protobuf 33.5 / 6.33.5 编译（vendored） | ✅ 完成 |
+| A2 | gRPC v1.81.1 源码编译（临时目录验证） | ✅ 完成 |
+| A3 | etcd-cpp-apiv3 v0.15.4 编译 + 5项基础操作验证 | ✅ 完成 |
+| B1 | 注册 + node_id + keepalive | ✅ 完成 |
+| B2 | 路由发现（watch → shm） | ✅ 完成 |
+| B3 | 配置下发（config watch） | ✅ 完成 |
+| B（接入）| Manager 工厂 + deploy config 切换 etcd-grpc | ✅ 完成（2026-06-17） |
+| B（崩溃修复）| SIGABRT / stack smashing 根因修复 | ✅ 完成（2026-06-18） |
+| C  | 3 节点 etcd 部署 + E2E | ✅ 完成（2026-06-18） |
+| D  | Admin 脚本 | ✅ 完成（2026-06-18） |
+| E  | 清理旧代码 + 全回归 | ✅ 完成（2026-06-18） |
+
+### 关联
+
+- #102：✅ 已关闭（Phase E 删除 EtcdHttpConn，根因代码不再存在）
+- #106：HTTP gateway 方案已停止推进，本 issue 全面替代

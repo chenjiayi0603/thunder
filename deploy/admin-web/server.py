@@ -170,6 +170,14 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(result).encode())
             return
+        """POST /api/sync-config — 从本地配置文件初始化 etcd module 配置"""
+        if self.path == "/api/sync-config":
+            result = self._sync_config()
+            self.send_response(200 if result["ok"] else 502)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+            return
         """POST /api/so-extract — 从 SO 镜像提取文件
            POST /api/fetch      — 从远端 URL 拉取 SO 文件"""
         if self.path == "/api/so-extract":
@@ -278,6 +286,41 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
                 with open(nfs_path, "wb") as f:
                     f.write(data)
+
+
+    def _sync_config(self) -> dict:
+        """从本地配置文件同步 module 配置到 etcd（新服务器初始化时自动调用）"""
+        import json as _json, os, glob
+        deploy_dir = os.path.join(os.path.dirname(__file__), "..")
+        # 每个类型只读一个主配置文件：{TypeDir}/conf/{TypeDir}.json
+        # e.g. HelloHttp/conf/HelloHttp.json, Logic/conf/Logic.json
+        synced = []; errors = []
+        cfg_map = {}  # node_type -> modules
+        for node_type, type_dir in TYPE_DIR.items():
+            conf_file = os.path.join(deploy_dir, type_dir, "conf", f"{type_dir}.json")
+            if not os.path.exists(conf_file):
+                # 降级：配目录下第一个有 module 段的 json
+                for f in sorted(glob.glob(os.path.join(deploy_dir, type_dir, "conf", "*.json"))):
+                    conf_file = f; break
+            try:
+                with open(conf_file) as f:
+                    cfg = _json.load(f)
+                mods = cfg.get("module", [])
+                if mods:
+                    cfg_map[node_type] = mods
+            except Exception as e:
+                errors.append({"type": node_type, "file": conf_file, "error": str(e)})
+
+        for node_type, modules in cfg_map.items():
+            try:
+                cfg_key = f"/thunder/config/module/{node_type}"
+                val = _json.dumps({"module": modules})
+                _etcd_put(cfg_key, val)
+                synced.append({"type": node_type, "modules": len(modules)})
+            except Exception as e:
+                errors.append({"type": node_type, "error": str(e)})
+
+        return {"ok": len(errors) == 0, "synced": synced, "errors": errors}
 
 
     def _lua_list(self, node_type: str) -> list:

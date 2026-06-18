@@ -2,7 +2,7 @@
 
 **关联评估**: `docs/architecture/evaluations/etcd_as_center_evaluation.md`
 **复杂度**: MEDIUM-HIGH
-**状态**: 待确认 / 未开始
+**状态**: Phase 1-3 已实现，运行中发现若干 keepalive/注册 bug（#102-#105）已修复
 
 ---
 
@@ -132,6 +132,17 @@
 
 ---
 
+## 已知 Bug（生产运行发现，2026-06-16）
+
+| # | 问题 | 严重 | 状态 |
+|---|---|---|---|
+| #103 | `AsyncTryClaimSlot` HTTP 错误被当 slot 已占，255 次遍历后误报"所有槽位已满" | 高 | ✅ 已修复 |
+| #104 | `SelfAuditRegistry` 超时时以 nodeId=0 触发 rebind，写无效 `/thunder/slot/0` | 中 | ✅ 已修复 |
+| #105 | 注册失败后 keepalive 恢复 → ConnectionRestored，但 nodeId 永远是 0 | 高 | ✅ 已修复 |
+| #102 | `EtcdHttpConn` 单连接队列：selfAudit 超时触发 FailAll 把 keepalive 一并取消，keepalive 失败计数虚高 | 中 | 🟡 待根本修复（建议独立 keepalive 连接） |
+
+---
+
 ## Risks
 
 | 风险 | 可能性 | 缓解 |
@@ -142,6 +153,7 @@
 | Center 有隐藏职责未迁移 | 低 | Phase 6 前 grep 确认业务侧只依赖 `CenterConnector` |
 | 3 节点 etcd 运维新增负担 | 低 | etcd 运维成熟,docker-compose 标准化 |
 | watch 收敛延迟 vs 现状推送 | 中 | Phase 2 测收敛延迟,与现状对比 |
+| EtcdHttpConn 单连接队列导致 keepalive 和 audit 请求互相影响 | 已确认 | #102 待修复：独立 keepalive 连接或优先队列 |
 
 ---
 

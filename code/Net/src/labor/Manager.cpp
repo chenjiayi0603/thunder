@@ -20,7 +20,7 @@
 #include "labor/Worker.hpp"
 #include "labor/Loader.hpp"
 #include "labor/TcpCenterConnector.hpp"
-#include "register/EtcdCenterConnector.hpp"
+#include "register/EtcdGrpcConnector.hpp"
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
@@ -1431,7 +1431,6 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         CloseSocket(m_iS2SListenFd);
         close(iControlFds[0]);
         close(iDataFds[0]);
-        ShmRingQueue::CloseEventFd(iWorkerToMgrEfd);
         x_sock_set_block(iControlFds[1], 0);
         x_sock_set_block(iDataFds[1], 0);
         Worker* pWorker = new Worker(m_strWorkPath, iControlFds[1], iDataFds[1], workerIndex, m_oCurrentConf,
@@ -1448,7 +1447,6 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
     {
         close(iControlFds[1]);
         close(iDataFds[1]);
-        ShmRingQueue::CloseEventFd(iMgrToWorkerEfd);
         x_sock_set_block(iControlFds[0], 0);
         x_sock_set_block(iDataFds[0], 0);
 
@@ -2638,9 +2636,8 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
         return p;
     }
 
-    if (connectorType == "etcd")
+    if (connectorType == "etcd-grpc")
     {
-        // 创建 etcd 后端：如果 center 配置不含 etcd_endpoints，从顶层注入
         util::CJsonObject centerConf = m_oCurrentConf["center"];
         std::string eps;
         centerConf.Get("etcd_endpoints", eps);
@@ -2648,17 +2645,9 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
         {
             m_oCurrentConf.Get("etcd_endpoints", eps);
             if (!eps.empty())
-            {
-                // 注意: center 在 JSON 中可能是个纯字符串(如 "127.0.0.1:27000")，
-                // CJsonObject[\"center\"] 在那种情况下会返回包含该字符串的对象，
-                // Add 操作不应破坏原有值
                 centerConf.Add("etcd_endpoints", eps);
-            }
         }
-        auto p = std::make_unique<EtcdCenterConnector>(centerConf);
-        p->SetLogger(GetLogger());  // 注入本节点 logger, 否则 etcd 日志打到无 appender 的硬编码 category 被丢弃 (issus #12)
-        p->SetUpstreamTypes(m_setUpstreamTypes);  // 路由按需下发(#38)
-        return p;
+        return std::make_unique<net::EtcdGrpcConnector>(centerConf);
     }
 
     LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
