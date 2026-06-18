@@ -55,6 +55,7 @@ err()  { echo -e "${RED}✘${NC} $*"; }
 # ─── 参数解析 ───────────────────────────────────
 CMD="${1:-help}"; shift || true
 _ADMIN_SUB="${1:-}"  # admin nodes/status/config 透传
+_ADMIN_ARGS=("$@")   # save all remaining args before the option-parse loop shifts them
 FORCE=false; SKIP_BUILD=false; KEEP_DOCKER=false; VERBOSE=false; MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -298,6 +299,7 @@ cmd_test_e2e() {
     #     只清 etcd: mariadb 清了要重新初始化(慢), redis 是缓存无需清。
     log "清理 etcd bind-mount (hermetic)..."
     rm -rf "${DOCKER_DIR}/data/etcd"/* 2>/dev/null || true
+    rm -rf "${DOCKER_DIR}/data/etcd1" "${DOCKER_DIR}/data/etcd2" "${DOCKER_DIR}/data/etcd3" 2>/dev/null || true
 
     # 2. Docker build
     log "docker compose build..."
@@ -336,7 +338,7 @@ cmd_test_e2e() {
     echo -e "${BOLD}--- [E2E Tests] pytest ---${NC}"
     local e2e_result=0
     cd "${TESTS_DIR}"
-    python3 -m pytest e2e/ -v -s --tb=short -m "integration or smoke" 2>&1 || e2e_result=$?
+    python3 -m pytest e2e/ -v -s --tb=short -m "integration or smoke" --mode=external 2>&1 || e2e_result=$?
 
     # 6. Cleanup
     if [[ "${KEEP_DOCKER}" != "true" ]]; then
@@ -513,7 +515,7 @@ case "${CMD}" in
         cmd_status
         ;;
     admin)
-        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "$_ADMIN_SUB" "${@:2}"
+        python3 "${PROJECT_DIR}/deploy/scripts/admin.py" "${_ADMIN_ARGS[@]}"
         ;;
     clean)
         cmd_clean

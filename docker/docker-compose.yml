@@ -45,6 +45,18 @@ x-thunder-ulimits: &thunder-ulimits
       soft: 67108864
       hard: 67108864
 
+# etcd 节点公共配置（YAML 锚点），仅用于 merge，不作为服务启动
+x-etcd-common: &etcd-common
+  image: quay.io/coreos/etcd:v3.5.21
+  network_mode: host
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 256M
+      reservations:
+        memory: 64M
+
 services:
   redis:
     image: redis:7-alpine
@@ -107,35 +119,84 @@ services:
       retries: 30
       start_period: 35s
 
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.21
-    network_mode: host
-    command:
-      - etcd
-      - --name=etcd1
-      - --data-dir=/etcd-data
-      - --listen-client-urls=http://127.0.0.1:2379
-      - --advertise-client-urls=http://127.0.0.1:2379
-      - --enable-v2=false
-      - --auto-compaction-mode=periodic
-      - --auto-compaction-retention=1
+  # 3 节点 etcd Raft 集群（Phase C）
+  # - 客户端端口: etcd1=2379, etcd2=2381, etcd3=2383
+  # - Peer 端口:  etcd1=2380, etcd2=2382, etcd3=2384
+  # - Thunder 服务连接 etcd1 (port 2379)；集群内部自动转发到 leader
+  # - 初次启动前务必清空旧数据: rm -rf docker/data/etcd{1,2,3}
+  etcd1:
+    <<: *etcd-common
+    environment:
+      ETCD_NAME: etcd1
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2379
+      ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2380
+      ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
+      ETCD_INITIAL_CLUSTER_TOKEN: thunder-etcd-cluster
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_AUTO_COMPACTION_MODE: periodic
+      ETCD_AUTO_COMPACTION_RETENTION: "1"
+      ETCD_ENABLE_V2: "false"
     volumes:
-      - ./data/etcd:/etcd-data
-    deploy:
-      resources:
-        limits:
-          cpus: "0.50"
-          memory: 256M
-        reservations:
-          memory: 64M
-    # etcd v3.5.x 是 distroless 镜像，无 /bin/sh 也无 curl，CMD-SHELL/curl 永远失败
-    # (issus #21)。改用镜像自带的 etcdctl，CMD 形式（不经 shell）直连本地端点。
+      - ./data/etcd1:/etcd-data
+    # etcd distroless 镜像无 shell，用 etcdctl CMD 形式。
+    # endpoint health 需要集群 quorum，三节点全部加入后才 healthy。
     healthcheck:
       test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
       interval: 2s
       timeout: 3s
-      retries: 15
-      start_period: 3s
+      retries: 30
+      start_period: 5s
+
+  etcd2:
+    <<: *etcd-common
+    environment:
+      ETCD_NAME: etcd2
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2381
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2381
+      ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2382
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2382
+      ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
+      ETCD_INITIAL_CLUSTER_TOKEN: thunder-etcd-cluster
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_AUTO_COMPACTION_MODE: periodic
+      ETCD_AUTO_COMPACTION_RETENTION: "1"
+      ETCD_ENABLE_V2: "false"
+    volumes:
+      - ./data/etcd2:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2381", "endpoint", "health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  etcd3:
+    <<: *etcd-common
+    environment:
+      ETCD_NAME: etcd3
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2383
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2383
+      ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2384
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2384
+      ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
+      ETCD_INITIAL_CLUSTER_TOKEN: thunder-etcd-cluster
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_AUTO_COMPACTION_MODE: periodic
+      ETCD_AUTO_COMPACTION_RETENTION: "1"
+      ETCD_ENABLE_V2: "false"
+    volumes:
+      - ./data/etcd3:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2383", "endpoint", "health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
 
   logic:
@@ -146,7 +207,7 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      etcd:
+      etcd1:
         condition: service_healthy
     command:
       - bash
@@ -178,7 +239,7 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      etcd:
+      etcd1:
         condition: service_healthy
     command:
       - bash
@@ -204,7 +265,7 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      etcd:
+      etcd1:
         condition: service_healthy
     command:
       - bash
@@ -236,7 +297,7 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      etcd:
+      etcd1:
         condition: service_healthy
     command:
       - bash
@@ -267,7 +328,7 @@ services:
     depends_on:
       logic:
         condition: service_healthy
-      etcd:
+      etcd1:
         condition: service_healthy
     command:
       - bash

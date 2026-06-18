@@ -36,7 +36,9 @@ try:
         slot_ips.add(base64.b64decode(kv.get('value', '')).decode())
     reg_ips = set()
     for kv in kvs:
-        reg_ips.add(base64.b64decode(kv['key']).decode()[len('/thunder/registry/'):])
+        path = base64.b64decode(kv['key']).decode()[len('/thunder/registry/'):]
+        # key format: {node_type}/{ip}:{port} — extract only the addr part
+        reg_ips.add(path.split('/', 1)[1] if '/' in path else path)
     if slot_ips and reg_ips and slot_ips != reg_ips:
         status = 0
         errs.append('slot_registry_mismatch')
