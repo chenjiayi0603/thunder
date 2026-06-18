@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstring>
 #include <sys/wait.h>
+#include <poll.h>
 #include <unistd.h>
 #include "labor/types/ShmRingQueue.hpp"
 
@@ -218,7 +219,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     if (pid == 0)
     {
         // ====== Child: simulates Worker ======
-        close(efd_wkr_to_mgr);
+        // Do NOT close efd_wkr_to_mgr here — child is the producer for that direction.
+        // (Closing it before use was the original #72 bug: set var to -1, breaking notification.)
 
         uint32_t cmd, seq, out_len;
         char buf[4096];
@@ -244,10 +246,11 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
                 ShmRingQueue::NotifyEventFd(efd_wkr_to_mgr);
             }
 
+            // Wait for parent to signal via eventfd (poll avoids spin and proves notification fires).
+            struct pollfd pfd = {efd_mgr_to_wkr, POLLIN, 0};
+            poll(&pfd, 1, 200);  // 200ms timeout; bust out if signal doesn't arrive
             uint64_t ev;
-            ssize_t ret = read(efd_mgr_to_wkr, &ev, sizeof(ev));
-            if (ret > 0) {} // consumed
-            else if (errno != EAGAIN) break;
+            read(efd_mgr_to_wkr, &ev, sizeof(ev));  // drain (EAGAIN is fine)
         }
 
         while (!q_wkr_to_mgr->TryEnqueue(0xFFFF, static_cast<uint32_t>(received), "done", 4)) {}
@@ -262,7 +265,7 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     else
     {
         // ====== Parent: simulates Manager ======
-        close(efd_mgr_to_wkr);
+        // Do NOT close efd_mgr_to_wkr here — parent is the producer for that direction.
 
         for (uint32_t i = 0; i < kMsgs; ++i)
         {
@@ -294,9 +297,11 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
                 EXPECT_GT(out_len, 5u);
             }
 
+            // Wait for child to signal via eventfd.
+            struct pollfd pfd = {efd_wkr_to_mgr, POLLIN, 0};
+            poll(&pfd, 1, 200);
             uint64_t ev;
-            ssize_t ret = read(efd_wkr_to_mgr, &ev, sizeof(ev));
-            if (ret < 0 && errno != EAGAIN) break;
+            read(efd_wkr_to_mgr, &ev, sizeof(ev));  // drain
         }
 
         EXPECT_EQ(responses, kMsgs + 1u);
@@ -549,4 +554,53 @@ TEST(ShmRingQueueUnit, Count_TracksMessages)
     EXPECT_TRUE(q->TryDequeue(cmd, seq, buf, out_len));
     EXPECT_EQ(q->Count(), 1u);
     ShmRingQueue::Destroy(q);
+}
+
+// Regression test for #72: eventfd must remain open in both parent and child after fork.
+// If either side closes its producer-fd before use (the original bug), poll() times out
+// and this test fails — proving the fast-path notification is broken.
+TEST(ShmRingQueueE2E, EventFdNotificationAcrossFork)
+{
+    int efd_to_child  = ShmRingQueue::CreateEventFd();  // parent writes, child reads
+    int efd_to_parent = ShmRingQueue::CreateEventFd();  // child writes, parent reads
+    ASSERT_GE(efd_to_child,  0);
+    ASSERT_GE(efd_to_parent, 0);
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+
+    if (pid == 0)
+    {
+        // Child: wait for parent's signal, then reply.
+        // Must NOT close efd_to_parent here (that was the #72 bug).
+        struct pollfd pfd = {efd_to_child, POLLIN, 0};
+        int ret = poll(&pfd, 1, 500);  // 500ms — far longer than actual µs latency
+        if (ret <= 0) _exit(1);        // timed out → notification broken
+
+        uint64_t ev;
+        read(efd_to_child, &ev, sizeof(ev));
+
+        ShmRingQueue::NotifyEventFd(efd_to_parent);
+        ShmRingQueue::CloseEventFd(efd_to_child);
+        ShmRingQueue::CloseEventFd(efd_to_parent);
+        _exit(0);
+    }
+    else
+    {
+        // Parent: signal child, then wait for reply.
+        // Must NOT close efd_to_child here (that was the #72 bug).
+        ShmRingQueue::NotifyEventFd(efd_to_child);
+
+        struct pollfd pfd = {efd_to_parent, POLLIN, 0};
+        int ret = poll(&pfd, 1, 500);
+        EXPECT_GT(ret, 0) << "eventfd reply from child timed out — eventfd broken across fork (#72)";
+
+        int status;
+        waitpid(pid, &status, 0);
+        EXPECT_TRUE(WIFEXITED(status));
+        EXPECT_EQ(WEXITSTATUS(status), 0) << "child: parent's eventfd signal never arrived";
+
+        ShmRingQueue::CloseEventFd(efd_to_child);
+        ShmRingQueue::CloseEventFd(efd_to_parent);
+    }
 }
