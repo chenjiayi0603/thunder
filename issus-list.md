@@ -3744,3 +3744,32 @@ Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
 
 - #102：✅ 已关闭（Phase E 删除 EtcdHttpConn，根因代码不再存在）
 - #106：HTTP gateway 方案已停止推进，本 issue 全面替代
+
+---
+
+## ✅ #108 [已修复] `x-etcd-common` 误作服务启动占用端口 2380/2379
+
+> 2026-06-18 | 构建/环境 bug | 状态: ✅ 已修复
+
+### 现象
+
+`./deploy.sh test e2e` 每次都失败，`docker compose up -d` 报 `etcd1-1 exited(1)`，日志：
+
+```
+listen tcp 127.0.0.1:2380: bind: address already in use
+```
+
+`etcd2`, `etcd3` 健康，唯独 `etcd1` 无法绑定 2380。原因：`x-etcd-common` 是写在 `services:` 块**内部**的服务条目，Docker Compose 把它作为真实服务启动，占据了 2379/2380。
+
+### 根本原因
+
+`docker/docker-compose.yml` 中 `x-etcd-common: &etcd-common` 被缩进在 `services:` 下，而非文件顶层。Docker Compose 规范只对**顶层** `x-` 键视为扩展（不启动容器）；在 `services:` 内部，`x-` 只是普通服务名。
+
+### 修复
+
+1. 将 `x-etcd-common: &etcd-common` 块从 `services:` 内部**移到顶层**（与 `x-thunder-node`、`x-thunder-ulimits` 同级）。
+2. `deploy.sh test e2e` 中 pytest 调用加 `--mode=external`，避免 conftest 再次执行 docker lifecycle（`deploy.sh` 已管理完整生命周期）。
+
+### 验证
+
+`docker compose config --services` 输出无 `x-etcd-common`（仅 10 个真实服务）。`./deploy.sh test e2e` 连续两次全通。

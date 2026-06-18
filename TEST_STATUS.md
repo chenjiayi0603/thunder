@@ -12,7 +12,7 @@
 | 日期 | 2026-06-18 |
 | 分支 | `chore/protobuf-6.33-downgrade` |
 | 操作人 | Claude |
-| 阶段 | Phase E 完成：旧 HTTP etcd 代码全部删除 |
+| 阶段 | #72 eventfd fix + E2E docker-compose 修复（x-etcd-common 锚点移至顶层） |
 
 ---
 
@@ -20,7 +20,7 @@
 
 | 项 | 状态 | 备注 |
 |----|:---:|------|
-| `./deploy.sh build` | ✅ 0 error | `build/` 目录，RelWithDebInfo |
+| `./deploy.sh build` | ✅ 0 error | protobuf 6.33.5 分支 |
 | protobuf 降级分支构建 | ✅ 0 error | protobuf 7.35 → 6.33.5，ProtoCodec 编解码验证通过 |
 
 ---
@@ -29,8 +29,8 @@
 
 | 项 | 状态 | 备注 |
 |----|:---:|------|
-| 上次运行 | 2026-06-18 | 分支 `chore/protobuf-6.33-downgrade` |
-| 结果 | ✅ **355/355** | Phase E 删除旧 EtcdParse/EtcdHttpConn 测试（-21），100% 通过 |
+| 上次运行 | 2026-06-18 12:14 |
+| 结果 | ❌ ? pass / ? fail |  |
 | 命令 | `cd build && ctest -j4 --output-on-failure` | |
 
 ---
@@ -49,8 +49,8 @@
 
 | 项 | 状态 | 备注 |
 |----|:---:|------|
-| 上次运行 | 2026-06-18 | 分支 `chore/protobuf-6.33-downgrade`，3 节点 Raft + Phase E cleanup |
-| 结果 | ✅ **全部通过** | 30 passed，2 skipped（etcd_cluster_consistency 需 multi-member list） |
+| 上次运行 | 2026-06-18 | 分支 `chore/protobuf-6.33-downgrade`，#72 fix + docker-compose 修复 |
+| 结果 | ✅ **全部通过** | 2× 确认（E2E + --mode=external 修复后再次全通） |
 | 命令 | `./deploy.sh test e2e` | |
 
 ---
@@ -81,8 +81,8 @@
 | 项 | 阻塞原因 | 关联 |
 |----|---------|------|
 | Phase D：Admin 脚本更新 | ✅ 完成 | #107 Phase D |
-| TSan 验证 | 需独立 build_tsan 构建 + E2E | 未来工作 |
-| EtcdGrpcConnector 多端点 failover | 目前只用第一个端点 | 未来工作 |
+| TSan 验证 | ✅ 完成 | 37 races 全在 gRPC/abseil 内部，Thunder 源码 0 race；报告：`docs/reports/tsan-and-raft-failover-2026-06-18.md` |
+| EtcdGrpcConnector 多端点 failover | 🟡 待做 | 目前只连第一个端点，gRPC channel 内置但未验证 |
 
 ---
 

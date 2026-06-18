@@ -19,7 +19,7 @@ deploy/Center/bin/Center
 deploy/Interface/bin/Interface
 code/Net/src/Hello
 code/Net/src/Center
-deploy/HelloHttp/bin/HelloHttp
+deploy/HelloHttp/bin/
 *.log
 *.pid
 deploy/Logic/bin/Logic
@@ -40,7 +40,7 @@ deploy/HelloHttps/conf/certs/ca.crt
 deploy/HelloHttps/conf/certs/server.crt
 deploy/HelloHttps/conf/certs/server.key 
 deploy/HelloHttps/conf/certs/ca.key
-deploy/HelloHttp/bin/Hello
+# deploy/HelloHttp/bin/ already covered above
 deploy/HelloHttps/bin/Hello
 deploy/HelloWs/bin/Hello
 deploy/docker/data/
@@ -79,6 +79,7 @@ deploy/HelloHttp/conf/Hello.json.bak_ev
 deploy/Logic/log/start_interfaceserver_logic.pid
 .claude/
 build-tsan/
+build_tsan/
 deploy/HelloHttp/libluajit-5.1.so.2
 perf.data
 todo
