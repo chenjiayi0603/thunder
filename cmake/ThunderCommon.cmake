@@ -1,5 +1,9 @@
 # Thunder 工程公共路径与编译选项（由根 CMakeLists include）
 set(THUNDER_ROOT "${CMAKE_SOURCE_DIR}" CACHE INTERNAL "")
+
+# etcd-cpp-apiv3 headers vendored into code/3party/include/etcd/ (Phase E)
+set(ETCD_STAGE "${CMAKE_SOURCE_DIR}/code/3party" CACHE PATH "etcd-cpp-apiv3 install root")
+set(GRPC_STAGE "" CACHE PATH "gRPC stage — unused, gRPC is statically linked in libetcd-cpp-api-core.so")
 set(THUNDER_CODE "${THUNDER_ROOT}/code" CACHE INTERNAL "")
 set(THUNDER_3PARTY "${THUNDER_CODE}/3party" CACHE INTERNAL "")
 set(THUNDER_UTIL "${THUNDER_CODE}/Util" CACHE INTERNAL "")
@@ -166,5 +170,13 @@ function(thunder_link_thirdparty_shared _target)
 
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
     target_link_directories(${_target} PRIVATE /usr/lib64)
+  endif()
+
+  # etcd-cpp-apiv3 (Phase E: vendored headers in code/3party/include, .so in code/3party/lib)
+  # --disable-new-dtags: use DT_RPATH (inherited by transitive deps) instead of DT_RUNPATH
+  if(EXISTS "${THUNDER_3PARTY}/include/etcd/SyncClient.hpp")
+    target_include_directories(${_target} PRIVATE "${THUNDER_3PARTY}/include")
+    target_link_libraries(${_target} PRIVATE etcd-cpp-api-core)
+    target_link_options(${_target} PRIVATE -Wl,--disable-new-dtags)
   endif()
 endfunction()

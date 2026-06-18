@@ -35,17 +35,12 @@ def test_interface_genkey_verifykey_chain(http_session: requests.Session) -> Non
     # Interface→Logic S2S：3s 超时，不通直接失败
     warmup = http_session.post(BASE_URL, json={"option": "GenKey"}, timeout=3)
     assert warmup.status_code == 200, warmup.text
-        w = warmup.json()
-        last = w
-        t = w.get("token")
-        k = w.get("key")
-        if t and k:
-            token, key = t, k
-            break
-        # "logic step failed" = 路由尚未就绪，继续等待
-        time.sleep(1.0)
+    w = warmup.json()
+    last = w
+    token = w.get("token")
+    key = w.get("key")
 
-    assert token and key, f"Route to LOGIC never established after 30s: {last}"
+    assert token and key, f"Route to LOGIC never established: {last}"
     assert str(last.get("msg", "")) == "success", last
 
     verify = http_session.post(

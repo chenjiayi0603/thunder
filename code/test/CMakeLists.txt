@@ -51,6 +51,8 @@ thunder_apply_common_compile_options(thunder_net_sources_for_test)
 target_compile_definitions(thunder_net_sources_for_test PRIVATE THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG)
 thunder_target_include_net(thunder_net_sources_for_test)
 target_include_directories(thunder_net_sources_for_test PRIVATE "${THUNDER_3PARTY}")
+# EtcdGrpcConnector.cpp 需要 etcd-cpp-apiv3 头文件（vendored in code/3party/include）
+target_include_directories(thunder_net_sources_for_test PRIVATE "${THUNDER_3PARTY}/include")
 target_compile_features(thunder_net_sources_for_test PRIVATE cxx_std_20)
 
 add_executable(thunder_test_step_co20
@@ -139,41 +141,6 @@ target_link_libraries(thunder_test_util_json PRIVATE
   Threads::Threads
 )
 gtest_discover_tests(thunder_test_util_json)
-
-# ---- EtcdParse 纯解析/决策逻辑 (issus #19 / #20) ----
-add_executable(thunder_test_etcd_parse
-  labor/test_etcd_parse.cpp
-)
-target_include_directories(thunder_test_etcd_parse PRIVATE
-  "${THUNDER_NET_SRC}"
-  "${THUNDER_UTIL}/src"
-)
-target_compile_features(thunder_test_etcd_parse PRIVATE cxx_std_20)
-target_link_directories(thunder_test_etcd_parse PRIVATE
-  "${THUNDER_3PARTY}/lib"
-)
-target_link_libraries(thunder_test_etcd_parse PRIVATE
-  GTest::gtest_main
-  Util
-  mariadb
-  hiredis_vip
-  curl
-  Threads::Threads
-)
-set_target_properties(thunder_test_etcd_parse PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
-gtest_discover_tests(thunder_test_etcd_parse)
-
-# ---- EtcdHttpConn 集成测试 (issus #24, 需真实 etcd, 不可达则 SKIP) ----
-add_executable(thunder_test_etcd_http_conn
-  labor/test_etcd_http_conn.cpp
-  $<TARGET_OBJECTS:thunder_net_sources_for_test>
-)
-target_compile_features(thunder_test_etcd_http_conn PRIVATE cxx_std_20)
-thunder_target_include_net(thunder_test_etcd_http_conn)
-thunder_link_thirdparty_shared(thunder_test_etcd_http_conn)
-target_link_libraries(thunder_test_etcd_http_conn PRIVATE GTest::gtest_main)
-set_target_properties(thunder_test_etcd_http_conn PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
-gtest_discover_tests(thunder_test_etcd_http_conn DISCOVERY_MODE PRE_TEST)
 
 # ---- ThreadPool 线程池 ----
 add_executable(thunder_test_util_threadpool

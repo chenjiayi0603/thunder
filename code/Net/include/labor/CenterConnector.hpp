@@ -11,9 +11,8 @@
  *
  *   角色关系:
  *     Manager (业务) → CenterConnector (策略接口)
- *           → TcpCenterConnector  — 现有 TCP + Protobuf 协议
- *           → (未来) HttpCenterConnector
- *           → (未来) EtcdCenterConnector
+ *           → TcpCenterConnector    — TCP + Protobuf 协议
+ *           → EtcdGrpcConnector     — etcd gRPC（unary polling）
  ******************************************************************************/
 #ifndef CENTER_CONNECTOR_HPP_
 #define CENTER_CONNECTOR_HPP_
