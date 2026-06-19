@@ -3747,6 +3747,202 @@ Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
 
 ---
 
+## 🟡 #114 [需求] SO 热更新 + Lua 热更新端到端验证
+
+> 2026-06-19 | 需求 | 状态: 🟡 待实现
+
+### 需求
+
+验证 SO 模块热更新和 Lua 脚本热更新的完整链路是否真正生效。
+
+### 验证步骤
+
+#### SO 热更新
+
+```bash
+# 1. 构建目标 SO
+./deploy.sh build-so HelloHttp_ModuleOrder
+
+# 2. 通过 Admin 接口提取并下发
+curl -X POST http://localhost:8090/api/so-extract \
+  -F "file=ModuleOrder.so"
+
+# 3. 验证服务加载新 SO 并正常响应
+curl -s http://localhost:27006/hello/order -d '{"option":"Test"}'
+# 预期：新版本逻辑生效，响应符合新 SO 行为
+```
+
+#### Lua 热更新
+
+```bash
+# 1. Admin 下发新 Lua 脚本版本
+# 2. 确认 Worker 重载脚本（日志中出现 reload）
+# 3. 验证新逻辑生效（请求返回值符合新脚本）
+# 4. 确认旧逻辑不再执行
+```
+
+### 验收标准
+
+- SO 热更新：build → extract → 服务加载 → 请求验证，全链路无中断
+- Lua 热更新：Admin 下发 → Worker 重载 → 新逻辑生效，热更新期间无 500 错误
+- 两种热更新均需展示完整命令输出，不接受"应该成功"的推断
+
+### 关联
+
+- #110 Lua 热更新有效性验证
+
+---
+
+## 🟡 #113 [bug] HELLO_HTTP 节点未注册到 etcd — Lua SendToNodeType 超时
+
+> 2026-06-19 | bug | 状态: 🟡 待修复（根因已确认）
+
+### 现象
+
+本地 Docker Compose E2E/smoke 测试（`./deploy.sh test e2e`）中：
+
+- etcd 注册节点：HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC（共 4 个）
+- **HELLO_HTTP 节点缺失**，未出现在 Docker etcd 注册表
+- 导致 Lua SendToNodeType → LOGIC 超时（3 条 smoke 用例失败）
+- Hello HTTP 本身正常运行（HTTP/Redis/MySQL/WebSocket 全部通过）
+
+### 根因（已确认）
+
+**k3s Thunder Hello pod 与 Docker Compose hello 容器端口冲突**：
+
+```
+k3s pod thunder-hello-cb8c7f76c-2jrnq (Running, hostNetwork)
+  └── Hello_robot Manager (pid 13541, port 27006)
+      └── Hello_robot_W0 (pid 13543, 15:54启动)
+
+Docker Compose hello container 尝试绑定 27006 → bind: address already in use
+  └── Hello Manager 启动，但 Worker 无法启动 → 无进程注册 etcd
+```
+
+k3s Thunder 使用 hostNetwork 模式，直接占用主机 27006（Hello内部通信端口）。  
+其他服务（WS/HTTPS/INTERFACE/LOGIC）对应的 k3s pod 未 Running 或端口不冲突，故正常注册。
+
+### 影响
+
+- `#98 Lua 跨节点发送` 在本地 Docker 环境**从未真正验证通过**
+- smoke 测试 Lua 段 3 条固定失败
+- 根本上是测试环境隔离问题，**代码无 bug**
+
+### 修复方案
+
+在 `./deploy.sh test e2e` 启动 Docker Compose 之前，先 scale down k3s Thunder Hello pod；测完后 scale 回来：
+
+```bash
+# E2E 开始前
+kubectl scale deployment thunder-hello --replicas=0 -n thunder
+
+# Docker Compose E2E 执行
+docker compose up -d && ... && pytest tests/e2e/
+
+# E2E 结束后恢复
+kubectl scale deployment thunder-hello --replicas=1 -n thunder
+```
+
+或在 `deploy.sh` 中增加端口冲突预检（`lsof -i :27006`），发现占用则提示用户先 scale down。
+
+### 关联
+
+- #98 Lua SendToNodeType
+- #112 回归测试流程规范
+- #114 SO热更新 + Lua热更新端到端验证
+
+---
+
+## 🟡 #112 [需求] 优化回归测试流程 — 启动/过程/结果三段式规范
+
+> 2026-06-19 | 需求 | 状态: 🟡 待实现
+
+### 背景
+
+当前回归测试存在"跑了不等于测过"的问题：
+- E2E 30/30 通过，但 Lua SendToNodeType 从未真正在 Docker 环境验证
+- smoke 部分失败被忽略或未记录
+- 测试结果只有通过数，没有每条用例的实际输出
+- 无法区分"环境原因跳过"和"功能真正正常"
+
+### 需求
+
+制定回归测试三段式规范，每次回归必须产出完整记录：
+
+#### 第一段：启动过程
+
+必须记录并确认：
+- 服务启动命令及输出（`./deploy.sh up` 完整日志）
+- 各容器健康状态（`docker compose ps` 输出）
+- etcd 注册节点列表（`admin.py nodes` 输出，含 node_type/addr/lease）
+- 所有预期节点均已注册（HELLO_HTTP / HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC 等）
+- 若有节点缺失，**停止测试，先排查注册问题**
+
+#### 第二段：测试过程
+
+每条用例必须展示：
+- 实际执行的命令
+- 完整响应内容（不截断）
+- 通过 ✅ / 失败 ❌ 明确标注
+- 失败原因（是功能问题、环境问题还是超时）
+
+禁止：
+- 只贴总数（"30/30"）不贴用例明细
+- 服务未就绪就开始测试
+- 用例超时算"跳过"而非失败
+
+#### 第三段：测试结果
+
+结果文件必须包含：
+- 测试时间、分支、commit hash
+- 各服务注册状态截图/文本
+- 每条用例结论（含跳过原因）
+- 未通过项的根因分析
+- 结论：**全通 / 部分通过（列明未通过项）/ 未通过**
+
+### 实现方式
+
+- 更新 `tests/save_status.sh`：自动捕获 etcd 注册状态写入 TEST_STATUS.md
+- 更新 `tests/test_smoke.sh`：失败时输出完整响应，不静默截断
+- 在 CLAUDE.md 中写明：smoke 有失败项 = 未通过，不得标记为"通过"
+
+### 关联
+
+- #108 E2E 修复
+- Lua SendToNodeType smoke 失败问题（HELLO_HTTP 未注册 etcd）
+
+---
+
+## 🟡 #111 [需求] CoMysql vs 多线程 MySQL 性能对比测试
+
+> 2026-06-19 | 需求 | 状态: 🟡 待实现
+
+### 需求
+
+对比 Thunder 协程 MySQL（CoMysql）与传统多线程 MySQL 客户端在相同并发压力下的 QPS 和 RT 表现，形成量化结论。
+
+### 测试方案
+
+- **CoMysql**：Thunder Worker 内协程方式调用（当前实现）
+- **多线程 MySQL**：等量线程数的同步阻塞客户端（基准对照组）
+- 控制变量：相同 MySQL 实例、相同 SQL、相同并发数、相同机器
+- 压测工具：wrk / ab / 自定义脚本，持续 30s+
+
+### 输出指标
+
+| 指标 | CoMysql | 多线程 MySQL |
+|------|---------|------------|
+| QPS | ? | ? |
+| RT P50 | ? | ? |
+| RT P99 | ? | ? |
+| CPU 占用 | ? | ? |
+
+### 关联
+
+- #99 MySqlCoHelper 异步协程 TLS 断连修复
+
+---
+
 ## 🟡 #110 [需求] Lua 模块 Admin 下发热更新有效性验证
 
 > 2026-06-19 | 需求 | 状态: 🟡 待实现

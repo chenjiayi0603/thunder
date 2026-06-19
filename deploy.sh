@@ -301,6 +301,26 @@ cmd_test_e2e() {
     rm -rf "${DOCKER_DIR}/data/etcd"/* 2>/dev/null || true
     rm -rf "${DOCKER_DIR}/data/etcd1" "${DOCKER_DIR}/data/etcd2" "${DOCKER_DIR}/data/etcd3" 2>/dev/null || true
 
+    # 1c. 端口冲突预检 — 检查 Thunder 关键内部端口是否被 k8s/k3s 进程占用
+    #     使用 ss 而非 lsof，因为 lsof 无法看到 root 进程的 fd（非 root 用户）
+    log "端口冲突预检 (27006/27007/27010/27011/27443/27444)..."
+    local conflict_ports=()
+    for port in 27006 27007 27010 27011 27443 27444; do
+        if ss -tlnH "sport = :${port}" 2>/dev/null | grep -q ":${port}"; then
+            conflict_ports+=("${port}")
+        fi
+    done
+    if [[ ${#conflict_ports[@]} -gt 0 ]]; then
+        err "端口冲突：${conflict_ports[*]}"
+        err "以上端口被占用（可能是 k3s/k8s Thunder pod），Docker Compose E2E 无法正确启动 Worker"
+        err "请先 scale down 对应 k8s deployment，例如："
+        err "  kubectl scale deployment thunder-hello --replicas=0 -n thunder"
+        err "  kubectl scale deployment thunder-hello-ws --replicas=0 -n thunder"
+        err "  kubectl scale deployment thunder-hello-https --replicas=0 -n thunder"
+        err "待 E2E 完成后再 scale back to 1"
+        exit 1
+    fi
+
     # 2. Docker build
     log "docker compose build..."
     ( cd "${DOCKER_DIR}" && docker compose build ) || {

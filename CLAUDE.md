@@ -26,11 +26,13 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 ./deploy.sh test unit    # C++ gtest (~250 cases) + Python pytest (64 cases)，全部通过才继续
 ```
 
-### 第二步：E2E 集成测试
+### 第二步：E2E 集成测试（Docker Compose）
 ```bash
-./deploy.sh test e2e     # Docker compose up → 等待服务就绪 → pytest E2E (25 cases) → docker compose down
+./deploy.sh test e2e     # Docker compose up → 等待服务就绪 → pytest E2E → docker compose down
 ```
 等价于手动流程：`./deploy.sh build` → `./deploy.sh up` → 等待端口 → `./deploy.sh test e2e --skip-build` → `./deploy.sh down`
+
+> **deploytest 全程基于 Docker Compose**，不依赖 k8s，所有服务在容器内运行。
 
 ### E2E 覆盖范围
 
@@ -42,7 +44,30 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 | **HelloWs** | WebSocket 连接→消息收发→断开、异常重连 |
 | **Interface** | API 端点、参数校验、错误处理、插件加载→卸载 |
 | **跨服务** | Manager-Worker 通信、心跳机制、全链路交互 |
+| **Worker 优雅重启** | SIGTERM → 排空在途连接 → Manager 自动重启 Worker → 新 Worker 正常服务；验证：新 Worker 进程存在 + curl 正常 + 无 FATAL 日志 |
 | **性能** | QPS、延迟 P99、内存占用 (真实 I/O) |
+
+### 未覆盖项（待补充 E2E）
+
+| 项目 | 当前状态 | 说明 |
+|------|---------|------|
+| **Lua SendToNodeType** | ❌ smoke 失败 | HELLO_HTTP 注册 etcd 问题待修（#113） |
+| **SO 热更新** | ⚠️ 未验证 | build-so → extract → 服务加载新 SO 全链路 |
+| **Lua 热更新** | ⚠️ 未验证 | Admin 下发新脚本 → Worker 重载 → 新逻辑生效（#110） |
+| **etcd 节点注册完整性** | ⚠️ 未验证 | 确认所有预期 node_type 均出现在 etcd 注册表 |
+
+### 第三步：Smoke 测试
+
+```bash
+# 先确认 etcd 注册节点完整
+python3 tests/admin.py nodes
+# 预期：HELLO_HTTP / HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC 均出现
+# 若有缺失 → 停止，先排查注册问题，不得继续 smoke
+
+# 再跑 smoke
+tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
+# 预期：0 失败；有任何失败 = 未通过
+```
 
 ### 测试后清理
 ```bash
@@ -51,6 +76,9 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 
 ### 规则
 - 单元测试通过不算整体通过，E2E 必须也通过
+- **E2E 通过不算 smoke 通过** — E2E 和 smoke 覆盖范围不同，必须分开跑、分开确认
+- **smoke 有任何失败项 = 未通过** — 禁止只报总数（"15/18"），必须逐条列出失败项及原因
+- **必须先确认所有预期服务节点已注册到 etcd，再开始 smoke 测试** — 若节点缺失，停止测试先排查注册问题，不得继续跑并把失败归咎于"超时"
 - 失败则分析日志、修复、重试，最多 3 次
 - 部分通过 = 未通过，要么全通要么明确列出未通过项及原因
 - 模拟测试通过 ≠ 测试通过，硬件限制的标注"当前环境无法测试"及原因
@@ -133,73 +161,6 @@ git checkout -- tests/e2e/conftest.py tests/e2e/test_https_hello.py
 - **Python unit**: 133/133 通过
 - **E2E**: 20/21 通过 (允许 genkey_verifykey etcd 路由预存失败)
 - 失败项标注原因 + 是否与本次改动相关
-## Worker 优雅重启 — 回归测试
-
-### 测试范围
-
-改动涉及 `Worker.cpp`, `Manager.cpp`, `CW.hpp`, 影响:
-- Worker 生命周期 (fork/exit)
-- Manager 子进程管理 (OnChildTerminated)
-- CMD 消息路由 (DisposeDataFromWorker)
-
-### 单元测试 (本地, 零依赖)
-
-```bash
-# 排空逻辑测试 (7 cases)
-cd build/code/test && ctest -R WorkerDrain --output-on-failure
-
-# 覆盖:
-#   WorkerDrain.IdleConnectionsClosedOnEnterDrain    — 空闲连接立即关闭
-#   WorkerDrain.ActiveConnectionsNotClosed           — 在途连接保留
-#   WorkerDrain.DrainCompleteWhenAllDone             — 全部完成=true
-#   WorkerDrain.S2SConnectionsSkipped                — S2S连接不排空
-#   WorkerDrain.NewConnectionsRejectedDuringDrain    — 排空拒绝新连接
-#   WorkerDrain.AcceptNormalWhenNotDraining          — 正常模式正常accept
-#   WorkerDrain.DrainTimeoutDetection                — 超时检测
-```
-
-### 集成测试 (需 Docker)
-
-```bash
-# 全链路 E2E (验证 Manager/Worker 未破坏)
-./deploy.sh test e2e --skip-build
-
-# 手动验证优雅重启流程:
-# 1. 确认 Worker 正常运行
-docker compose -p thunder-test exec hello ps aux | grep robot_W0
-
-# 2. 发 SIGTERM 给 Worker (模拟排空)
-docker compose -p thunder-test exec hello kill -TERM $(pgrep robot_W0)
-
-# 3. 等新 Worker 启动 (Manager 会自动 RestartWorker)
-sleep 5
-
-# 4. 确认新 Worker 在运行且服务正常
-docker compose -p thunder-test exec hello ps aux | grep robot_W0
-curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
-# 预期: {"code":0,"msg":"ok"}
-
-# 5. 确认 Manager 日志无 FATAL 错误
-docker compose -p thunder-test logs hello 2>&1 | grep -i "fatal\|error" | tail -5
-# 预期: 无新错误 (只有旧的启动日志)
-```
-
-### 两层回归
-
-```
-单功能快速回归 (改了什么测什么):
-  ctest -R WorkerDrain               ← 只跑排空测试, 5秒
-  ctest -R CenterRaft                ← 只跑 Raft 测试
-  python3 -m pytest tests/unit/test_token_verify.py  ← 只跑 token 测试
-
-全功能回归 (改任何代码后必跑):
-  ./deploy.sh build                  ← 编译
-  ./deploy.sh test unit --skip-build ← 341 单元测试
-  ./deploy.sh test e2e  --skip-build ← 26+ Docker E2E
-  手动冒烟 7 项                      ← 核心链路 curl
-```
-
-**单功能回归 = 快速验证改动没写错。全功能回归 = 验证改动没破坏其他模块。** 两个都要过。
 
 ## 触发词：rearrange
 
@@ -441,6 +402,9 @@ kubectl -n thunder rollout restart deployment thunder-admin-web
 - ❌ 改完代码不跑测试就提交
 - ❌ 说"已验证"但不展示完整输出
 - ❌ 部分通过就说"测试通过"
+- ❌ E2E 通过就说"smoke 也通过"（两者覆盖范围不同，必须分别跑）
+- ❌ smoke 有失败项却汇报"全部通过"或只报通过数不报失败数
+- ❌ 节点未注册到 etcd 就开始跑 smoke，把路由超时当"预期失败"忽略
 
 ## Agent 行为准则
 
