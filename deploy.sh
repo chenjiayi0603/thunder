@@ -306,7 +306,7 @@ cmd_test_e2e() {
     log "端口冲突预检 (27006/27007/27010/27011/27443/27444)..."
     local conflict_ports=()
     for port in 27006 27007 27010 27011 27443 27444; do
-        if ss -tlnH "sport = :${port}" 2>/dev/null | grep -q ":${port}"; then
+        if ss -tlnH 2>/dev/null | grep -qE ":${port}[[:space:]]"; then
             conflict_ports+=("${port}")
         fi
     done
