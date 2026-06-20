@@ -73,6 +73,7 @@ _check_sub("${THUNDER_3PARTY}/hiredis-vip/Makefile" "hiredis-vip")
 _check_sub("${THUNDER_3PARTY}/mariadb-connector-c/CMakeLists.txt" "mariadb-connector-c")
 _check_sub("${THUNDER_3PARTY}/mongo-c-driver/CMakeLists.txt" "mongo-c-driver")
 _check_sub("${THUNDER_3PARTY}/log4cplus/CMakeLists.txt" "log4cplus")
+_check_sub("${THUNDER_3PARTY}/etcd-cpp-apiv3/CMakeLists.txt" "etcd-cpp-apiv3")
 if(NOT EXISTS "${THUNDER_3PARTY}/log4cplus/threadpool/ThreadPool.h")
   message(FATAL_ERROR
     "log4cplus 缺少嵌套子模块 threadpool（需 ThreadPool.h）。请在仓库根执行:\n"
@@ -235,6 +236,62 @@ ExternalProject_Add(ep_protobuf
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
+# --- gRPC（静态库，供 etcd-cpp-apiv3 静态链入 libetcd-cpp-api-core.so）---
+# 不作为子模块（仓库过大）；GIT_SHALLOW=ON 在构建时下载指定 tag。
+# 依赖顺序：ep_c_ares、ep_protobuf 先安装到 EP_STAGE，gRPC 通过
+#   -DgRPC_PROTOBUF_PROVIDER=package / -DgRPC_CARES_PROVIDER=package 复用它们。
+# absl 随 protobuf install 一起进入 EP_STAGE，gRPC 也通过 CMAKE_PREFIX_PATH 找到它。
+ExternalProject_Add(ep_grpc
+  DEPENDS ep_c_ares ep_protobuf
+  GIT_REPOSITORY https://github.com/grpc/grpc.git
+  GIT_TAG        v1.66.5
+  GIT_SHALLOW    TRUE
+  GIT_PROGRESS   TRUE
+  PREFIX         "${EP_BUILD_ROOT}/grpc"
+  BINARY_DIR     "${EP_BUILD_ROOT}/grpc/build"
+  CMAKE_ARGS
+    ${_ep_cmake}
+    ${_THUNDER_EP_OPENSSL_ARGS}
+    "-DCMAKE_PREFIX_PATH=${EP_STAGE}"
+    -DBUILD_SHARED_LIBS=OFF
+    -DgRPC_PROTOBUF_PROVIDER=package
+    -DgRPC_ABSL_PROVIDER=package
+    -DgRPC_CARES_PROVIDER=package
+    -DgRPC_SSL_PROVIDER=package
+    -DgRPC_ZLIB_PROVIDER=package
+    -DgRPC_RE2_PROVIDER=module
+    -DgRPC_BUILD_TESTS=OFF
+    -DgRPC_BUILD_GRPC_CPP_PLUGIN=ON
+    -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF
+    -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF
+    -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF
+    -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF
+    -DgRPC_BUILD_GRPC_PYTHON_PLUGIN=OFF
+    -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF
+  BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
+  INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
+)
+
+# --- etcd-cpp-apiv3 v0.15.4（子模块，仅 core：SyncClient + Watcher）---
+# BUILD_ETCD_CORE_ONLY=ON → 不需要 cpprestsdk（异步 HTTP 客户端），仅编译 gRPC 传输层。
+# gRPC 静态链入 libetcd-cpp-api-core.so；protobuf 仍为动态链接（libprotobuf.so.33.x）。
+ExternalProject_Add(ep_etcd_cpp_apiv3
+  DEPENDS ep_protobuf ep_grpc
+  PREFIX     "${EP_BUILD_ROOT}/etcd-cpp-apiv3"
+  SOURCE_DIR "${THUNDER_3PARTY}/etcd-cpp-apiv3"
+  BINARY_DIR "${EP_BUILD_ROOT}/etcd-cpp-apiv3/build"
+  CMAKE_ARGS
+    ${_ep_cmake}
+    "-DCMAKE_PREFIX_PATH=${EP_STAGE}"
+    "-DProtobuf_ROOT=${EP_STAGE}"
+    -DBUILD_ETCD_CORE_ONLY=ON
+    -DBUILD_ETCD_TESTS=OFF
+    -DBUILD_SHARED_LIBS=ON
+    -DETCD_W_STRICT=OFF
+  BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
+  INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
+)
+
 add_custom_target(thunder_3party_all DEPENDS
   ep_c_ares
   ep_libev
@@ -245,6 +302,8 @@ add_custom_target(thunder_3party_all DEPENDS
   ep_log4cplus
   ep_curl
   ep_protobuf
+  ep_grpc
+  ep_etcd_cpp_apiv3
 )
 
 # 使用 bash 显式执行，避免依赖 chmod +x（WSL/Windows 挂载盘或部分 FS 上 chmod 会失败导致整 target 报错）

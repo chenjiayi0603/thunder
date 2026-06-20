@@ -49,7 +49,6 @@ docs/center_vs_nacos_advantages.md
 claude-cli/
 code/3party/
 !code/3party/etcd-cpp-apiv3
-!code/3party/build_etcd.sh
 code/3party/lib
 deploy/Center/plugins
 deploy/Logic/plugins

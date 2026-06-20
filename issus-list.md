@@ -4597,30 +4597,33 @@ code/3party/         ← 整体忽略（build 产物）
 !code/3party/etcd-cpp-apiv3  ← 子模块例外
 ```
 
-**Step 3 ✅ — 构建脚本**
+**Step 3 ✅ — ExternalProject_Add 接入 CMakeLists**
 
-`code/3party/build_etcd.sh`：从子模块源码编译 gRPC + etcd-cpp-apiv3，安装到 `code/3party/include+lib`。
+在 `code/3party/CMakeLists.txt` 加入 `ep_grpc` + `ep_etcd_cpp_apiv3`，与其他三方库完全一致的模式：
 
 ```bash
-# 新机器克隆后执行：
+# 新机器克隆后（与其他库一样）：
 git submodule update --init --recursive
-bash code/3party/build_etcd.sh          # 默认 --mode=build-grpc（~30min）
+cmake -S . -B build && cmake --build build --target thirdparty_deploy
 ./deploy.sh build
 ```
 
-**为何需要单独编译 gRPC（注意）**
+- `ep_grpc`：GIT_SHALLOW 下载 gRPC v1.66.5，DEPENDS ep_c_ares + ep_protobuf，静态编译（链入 etcd .so）
+- `ep_etcd_cpp_apiv3`：用 submodule 源码，DEPENDS ep_grpc + ep_protobuf，BUILD_ETCD_CORE_ONLY=ON（只要 SyncClient + Watcher，不需 cpprestsdk）
 
-系统 gRPC 1.51 链接了系统 protobuf 3.21，与本项目 protobuf 5.x（`libprotobuf.so.33.5.0`）ABI 不兼容。混用会导致运行时 symbol 冲突崩溃。因此构建脚本默认拉取 gRPC v1.66.5 源码，在本项目 protobuf/abseil 之上重新编译。
+**为何 gRPC 不作为子模块**
+
+gRPC 仓库 ~300MB，改用 ExternalProject GIT_SHALLOW=ON 只拉 tag 快照，与 protobuf 用 FetchContent 拉 absl 的思路一致。
+
+**为何不能直接用系统 gRPC 1.51**
+
+系统 gRPC 1.51 链接系统 protobuf 3.21，与本项目 `libprotobuf.so.33.5.0`（protobuf 5.x）ABI 不兼容，混用会 symbol 冲突崩溃。ep_grpc 通过 `gRPC_PROTOBUF_PROVIDER=package` + `CMAKE_PREFIX_PATH` 指向本项目 protobuf，确保 ABI 一致。
 
 ### 待完成
 
-**Step 4 — ExternalProject_Add 自动化（deferred）**
+**Step 4 — 删除 vendored 文件（在干净机器验证 thirdparty_deploy 通过后）**
 
-将 gRPC + etcd-cpp-apiv3 接入 `code/3party/CMakeLists.txt`，使 `cmake --build` 自动构建无需手动运行 build_etcd.sh。需要先将 gRPC 作为独立 ExternalProject 或 submodule 加入。复杂度较高，单独推进。
-
-**Step 5 — 删除 vendored 文件（build_etcd.sh 验证后）**
-
-`code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so` 在新机器验证 build_etcd.sh 生成的 .so 构建+smoke 全通过后删除。
+`code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so` 在新机器跑 thirdparty_deploy 后构建+smoke 全通过后删除。
 
 ---
 

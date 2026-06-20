@@ -2,7 +2,7 @@
 set(THUNDER_ROOT "${CMAKE_SOURCE_DIR}" CACHE INTERNAL "")
 
 # etcd-cpp-apiv3: submodule at code/3party/etcd-cpp-apiv3 (v0.15.4)
-# Run code/3party/build_etcd.sh to build and install into code/3party/include+lib
+# Built by thirdparty_deploy target (ep_grpc + ep_etcd_cpp_apiv3 in 3party/CMakeLists.txt)
 set(ETCD_STAGE "${CMAKE_SOURCE_DIR}/code/3party" CACHE PATH "etcd-cpp-apiv3 install root")
 set(GRPC_STAGE "" CACHE PATH "gRPC stage — unused, gRPC is statically linked in libetcd-cpp-api-core.so")
 set(THUNDER_CODE "${THUNDER_ROOT}/code" CACHE INTERNAL "")
