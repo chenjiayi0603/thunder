@@ -73,6 +73,7 @@ _check_sub("${THUNDER_3PARTY}/hiredis-vip/Makefile" "hiredis-vip")
 _check_sub("${THUNDER_3PARTY}/mariadb-connector-c/CMakeLists.txt" "mariadb-connector-c")
 _check_sub("${THUNDER_3PARTY}/mongo-c-driver/CMakeLists.txt" "mongo-c-driver")
 _check_sub("${THUNDER_3PARTY}/log4cplus/CMakeLists.txt" "log4cplus")
+_check_sub("${THUNDER_3PARTY}/grpc/CMakeLists.txt" "grpc")
 _check_sub("${THUNDER_3PARTY}/etcd-cpp-apiv3/CMakeLists.txt" "etcd-cpp-apiv3")
 if(NOT EXISTS "${THUNDER_3PARTY}/log4cplus/threadpool/ThreadPool.h")
   message(FATAL_ERROR
@@ -236,19 +237,16 @@ ExternalProject_Add(ep_protobuf
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
-# --- gRPC（静态库，供 etcd-cpp-apiv3 静态链入 libetcd-cpp-api-core.so）---
-# 不作为子模块（仓库过大）；GIT_SHALLOW=ON 在构建时下载指定 tag。
-# 依赖顺序：ep_c_ares、ep_protobuf 先安装到 EP_STAGE，gRPC 通过
-#   -DgRPC_PROTOBUF_PROVIDER=package / -DgRPC_CARES_PROVIDER=package 复用它们。
-# absl 随 protobuf install 一起进入 EP_STAGE，gRPC 也通过 CMAKE_PREFIX_PATH 找到它。
+# --- gRPC v1.71.2（子模块，静态库，供 etcd-cpp-apiv3 静态链入 libetcd-cpp-api-core.so）---
+# 所有外部依赖均用 package 模式复用项目已有库，不再拉 gRPC 自己的 third_party 子模块：
+#   protobuf / absl → ep_protobuf 安装到 EP_STAGE
+#   c-ares          → ep_c_ares  安装到 EP_STAGE
+#   re2 / zlib / OpenSSL → 系统包（libre2-dev zlib1g-dev libssl-dev）
 ExternalProject_Add(ep_grpc
   DEPENDS ep_c_ares ep_protobuf
-  GIT_REPOSITORY https://github.com/grpc/grpc.git
-  GIT_TAG        v1.66.5
-  GIT_SHALLOW    TRUE
-  GIT_PROGRESS   TRUE
-  PREFIX         "${EP_BUILD_ROOT}/grpc"
-  BINARY_DIR     "${EP_BUILD_ROOT}/grpc/build"
+  PREFIX     "${EP_BUILD_ROOT}/grpc"
+  SOURCE_DIR "${THUNDER_3PARTY}/grpc"
+  BINARY_DIR "${EP_BUILD_ROOT}/grpc/build"
   CMAKE_ARGS
     ${_ep_cmake}
     ${_THUNDER_EP_OPENSSL_ARGS}
@@ -259,7 +257,7 @@ ExternalProject_Add(ep_grpc
     -DgRPC_CARES_PROVIDER=package
     -DgRPC_SSL_PROVIDER=package
     -DgRPC_ZLIB_PROVIDER=package
-    -DgRPC_RE2_PROVIDER=module
+    -DgRPC_RE2_PROVIDER=package
     -DgRPC_BUILD_TESTS=OFF
     -DgRPC_BUILD_GRPC_CPP_PLUGIN=ON
     -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF
