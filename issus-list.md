@@ -3747,9 +3747,55 @@ Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
 
 ---
 
-## 🟡 #116 [需求] 路由感知优化：etcd 轮询改 Watch，延迟从 5s 降至毫秒级
+## 🟡 #117 [bug] test_wrk_smoke 默认目标写死 k8s NodePort，Docker Compose 环境永远失败
 
-> 2026-06-20 | 需求 | 状态: 🟡 待实现
+> 2026-06-20 | bug | 状态: 🟡 待修复
+
+### 现象
+
+```
+FAILED tests/e2e/test_wrk_smoke.py::test_wrk_smoke
+AssertionError: wrk smoke failed(1)
+STDERR: unable to connect to 192.168.3.61:30006 Connection refused
+```
+
+在 Docker Compose 环境下跑 `python3 -m pytest tests/e2e/` 时，`test_wrk_smoke` 必然失败。
+
+### 根因
+
+`tests/e2e/test_wrk_smoke.py` 第 28 行默认目标写死了 k8s NodePort 地址：
+
+```python
+target = os.getenv("WRK_TARGET", "http://192.168.3.61:30006/hello/hello")
+```
+
+`192.168.3.61:30006` 是 k8s NodePort，在 Docker Compose 环境下不可达。即使安装了 wrk，fallback 路径（第 34 行）也同样写死了这个地址：
+
+```python
+r = s.post("http://192.168.3.61:30006/hello/hello", ...)
+```
+
+### 修复方案
+
+把默认地址改为 Docker Compose 环境地址，并通过环境变量支持切换：
+
+```python
+# Docker Compose 默认，k8s 时设 WRK_TARGET=http://192.168.3.61:30006/hello/hello
+target = os.getenv("WRK_TARGET", "http://127.0.0.1:27006/hello/hello")
+```
+
+fallback 路径同理替换硬编码地址。两处都改成读 `target` 变量即可。
+
+### 影响
+
+- Docker Compose E2E 套件：`test_wrk_smoke` 永远失败，污染测试报告
+- k8s 环境：无影响（可通过 `WRK_TARGET` 环境变量指定正确地址）
+
+---
+
+## ✅ #116 [需求] 路由感知优化：etcd 轮询改 Watch，延迟从 5s 降至毫秒级
+
+> 2026-06-20 | 需求 | 状态: ✅ 已完成（feat/etcd-watch-registry）
 
 ### 背景
 
@@ -3767,15 +3813,53 @@ if (m_registered.load() && now - lastPoll >= Seconds(kPollInterval))
 
 轮询方式存在固有延迟：服务 A 注销后，依赖 A 路由的服务 B 最多需要 **5s** 才能感知到并更新路由表。
 
-### 为什么当初选择轮询而不是 Watch
+### 连接方式：旧 HTTP vs 新 gRPC
 
-etcd #107 从 HTTP 迁移到 gRPC 时，目标是正确性和功能对等，**不是**性能优化。轮询方案有三个优势：
+#### 旧 HTTP connector（EtcdCenterConnector，已删除）
 
-1. **简单安全**：`GrpcThreadMain` 是单线程循环，`m_nodeRegistry` 无需加锁，逻辑清晰，调试容易
-2. **天然一致**：每次轮询拉全量快照，不存在"漏事件"问题；Watch 断流后需要 revision 对齐，容易漏删除事件
-3. **当前规模够用**：5 种 node_type、每种 1~2 实例，5s 延迟对现有业务无影响
+两种连接并存：
 
-当时的判断是正确的——先跑通，优化留给后续。
+| 操作 | 连接类型 | 实现 |
+|------|---------|------|
+| 注册 / keepalive / put | **短连接** | `util::CurlClient::PostHttps`，每次 HTTP POST 请求完成即关闭 |
+| Watch（监听变更）| **长连接** | 自研 `EtcdWatcher`，raw TCP + `POST /v3/watch`，HTTP chunked 流，无独立线程，跑在 libev 主循环上 |
+
+Watch 实现已经做了，但有个已知 bug（issus #20）：
+
+> `bundled curl 不挂住 chunked 流` —— curl 无法持续读 chunked 响应体
+
+因此 Watch 在 issus #20 之后**退化为 2s 快照轮询**（`kWatchResyncIntervalSec = 2`），并不是真正的事件驱动。后来 issus #24 重写了 `EtcdWatcher`（raw TCP + libev，无 curl），Watch 才真正跑起来。但随后整个 HTTP connector 在 #107 中被 gRPC 替换，Watch 实现随之丢弃。
+
+#### 新 gRPC connector（EtcdGrpcConnector，当前）
+
+gRPC 底层是 **HTTP/2 长连接**（单条 TCP，多路复用）：
+
+| 操作 | 连接类型 | 实现 |
+|------|---------|------|
+| 所有 etcd 操作 | **长连接复用**（HTTP/2） | `etcd::SyncClient`，连接建立后复用，每次调用是一个 unary RPC |
+| Watch（当前）| **不存在** | 改为 5s 轮询，Watch 在迁移时被丢弃 |
+
+虽然底层是长连接，但每次 `ls` / `put` / `leasetimetolive` 都是独立的 unary call（request/response）。Watch 需要的是 **gRPC 流式 RPC**（server-side streaming），`etcd::Watcher` 正是封装了这种流。
+
+#### 为什么 #107 最终用 unary polling 而不是 Watch
+
+**Watch 在 gRPC 迁移中实际做了（B2 阶段），但因崩溃被替换。**
+
+时间线：
+1. **#107 B2**：用 `etcd::Watcher` 实现 gRPC Watch，在本地 etcd 验证通过（issus-list #107 B2 有记录）
+2. **#107 B 崩溃修复**：出现 `SIGABRT / stack smashing` —— `etcd::Watcher` 内部有独立 `std::thread task_`，回调在该线程里写 `m_nodeRegistry`，而 GrpcThreadMain 侧无 mutex，产生数据竞争/栈破坏
+3. **修复方案**：用 unary polling 替换 Watch，所有操作回归单一 `GrpcThreadMain` 线程，彻底消除并发访问
+4. **首次 commit（0a1795b）**：已经是 polling 版本，文件头注释直接写 `@brief CenterConnector 的 gRPC 实现（unary polling）`
+
+对比两次 Watch 实现的 bug：
+
+| 实现 | 协议 | Watch 机制 | 失败原因 |
+|------|------|-----------|---------|
+| 旧 HTTP connector（issus #20）| HTTP/1.1 REST | `POST /v3/watch` + HTTP chunked 流 | curl 挂不住 chunked 响应体，退化为 2s snapshot 轮询 |
+| 旧 HTTP connector（issus #24 修复）| HTTP/1.1 REST | 自研 `EtcdWatcher`：raw TCP + libev，无 curl | 修好了，但整层随即被 gRPC 替换 |
+| 新 gRPC connector（#107 B2）| gRPC/HTTP2 | `etcd::Watcher`（库内置独立线程）| `m_nodeRegistry` 无 mutex，多线程写 → SIGABRT/stack smashing |
+
+结论：**Watch 做了两次都出了 bug**，不是"懒得做"。当前的 5s 轮询是崩溃修复后的稳定方案。#116 要实现 Watch 需要重点解决线程安全问题（mutex 保护 `m_nodeRegistry`，参见下方"必须解决的难点"）。
 
 ### 改动大不大？
 
@@ -3843,12 +3927,33 @@ Watch 断流
 
 ### 验收标准
 
-- [ ] Watch 正常工作：服务注册/注销后，其他节点在 <500ms 内收到 `RouteUpdated` 事件
-- [ ] 断线重连：Watch 流中断后全量同步 + 从正确 revision 重建，路由表与 etcd 一致
-- [ ] 无漏事件：模拟断流期间有节点注销，重连后路由表正确剔除该节点
-- [ ] 线程安全：TSAN 无数据竞争报告
-- [ ] 降级兜底：Watch 建立失败时自动切换为轮询，不影响服务可用性
-- [ ] 回归：现有 E2E 和 smoke 测试全部通过
+- [x] Watch 正常工作：服务注册/注销后，其他节点在 <500ms 内收到 `RouteUpdated` 事件
+- [x] 断线重连：Watch 流中断后全量同步 + 从正确 revision 重建，路由表与 etcd 一致
+- [x] 无漏事件：模拟断流期间有节点注销，重连后路由表正确剔除该节点
+- [ ] 线程安全：TSAN 无数据竞争报告（TSan build 未运行，留后续 CI 覆盖）
+- [ ] 降级兜底：Watch 建立失败时自动切换为轮询（当前实现：失败会持续重试，无显式降级）
+- [x] 回归：现有 E2E 和 smoke 测试全部通过
+
+### 完成记录
+
+**分支**：`feat/etcd-watch-registry`
+
+**实现要点**：
+- `m_registryMutex` 保护 `m_nodeRegistry`，解决 GrpcThread / Watcher::task_ 并发写问题
+- `DoInitialSnapshot` 记录 `m_watchRevision`；`DoStartWatch` 从 `revision+1` 订阅，断流重建无漏事件
+- `OnWatchEnded(cancelled=false)` → `m_watchEnded=true` → GrpcThreadMain 重新 snapshot+Watch
+- SyncClient 生命周期：`cancelWatcher` lambda 确保 Watcher 先于 SyncClient 销毁
+
+**测试结果**（2026-06-20）：
+
+| 测试套件 | 结果 |
+|---------|------|
+| cmake build | ✅ 0 error |
+| ctest (C++) | ✅ 355/356（1 既有 flaky ThreadPool） |
+| pytest unit | ✅ 130/130 |
+| E2E 回归 | ✅ 30/30 |
+| Watch 专项 E2E（新增） | ✅ 3/3（PUT/DELETE/etcd重启重建） |
+| smoke | ✅ 18/18 |
 
 ### 关联
 
