@@ -3747,6 +3747,291 @@ Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
 
 ---
 
+## 🟡 #116 [需求] 路由感知优化：etcd 轮询改 Watch，延迟从 5s 降至毫秒级
+
+> 2026-06-20 | 需求 | 状态: 🟡 待实现
+
+### 背景
+
+当前 `EtcdGrpcConnector` 通过定时轮询感知注册表变化（`kPollInterval=5s`）：
+
+```cpp
+// EtcdGrpcConnector.cpp:304
+if (m_registered.load() && now - lastPoll >= Seconds(kPollInterval))
+{
+    DoPollRegistry(etcdClient);   // 全量 ls /thunder/registry/
+    DoPollConfig(etcdClient);
+    lastPoll = now;
+}
+```
+
+轮询方式存在固有延迟：服务 A 注销后，依赖 A 路由的服务 B 最多需要 **5s** 才能感知到并更新路由表。
+
+### 为什么当初选择轮询而不是 Watch
+
+etcd #107 从 HTTP 迁移到 gRPC 时，目标是正确性和功能对等，**不是**性能优化。轮询方案有三个优势：
+
+1. **简单安全**：`GrpcThreadMain` 是单线程循环，`m_nodeRegistry` 无需加锁，逻辑清晰，调试容易
+2. **天然一致**：每次轮询拉全量快照，不存在"漏事件"问题；Watch 断流后需要 revision 对齐，容易漏删除事件
+3. **当前规模够用**：5 种 node_type、每种 1~2 实例，5s 延迟对现有业务无影响
+
+当时的判断是正确的——先跑通，优化留给后续。
+
+### 改动大不大？
+
+`etcd::Watcher` 头文件已经存在（`code/3party/include/etcd/Watcher.hpp`），库已经编译进来，**API 层面无需新增依赖**。
+
+但改动不是简单的"替换一个函数调用"：
+
+#### 必须解决的难点
+
+**1. 线程安全（新增复杂度）**
+
+Watcher 的回调运行在它自己内部的独立线程（`std::thread task_`），而 `m_nodeRegistry` 目前只在 `GrpcThreadMain` 中访问（无锁）。Watch 后回调线程和 GrpcThread 会并发访问 `m_nodeRegistry`，**必须加 mutex**。
+
+```
+当前：GrpcThread → DoPollRegistry → m_nodeRegistry（单线程，无锁）
+Watch 后：GrpcThread（keepalive/命令）↔ m_nodeRegistry ← Watcher 回调线程（并发！）
+```
+
+**2. 断线重连 + revision 对齐（新增复杂度）**
+
+Watch 流可能因 etcd 重启、网络抖动中断。断流后直接重建 Watch 会漏掉中间的 DELETE 事件，导致路由表残留已下线的节点。
+
+正确做法：
+```
+Watch 断流
+  → 全量 ls /thunder/registry/（拿到当前 revision R）
+  → 更新 m_nodeRegistry
+  → 从 revision R 开始重建 Watch（fromIndex = R+1）
+```
+
+需要存储最后一次 `etcd_index`/revision 并在重连时传入。
+
+**3. Watcher 生命周期管理**
+
+`etcd::Watcher` 不可拷贝/移动，需用 `unique_ptr` 持有，在 `Stop` 时调用 `Cancel()` 并等待。
+
+#### 改动范围评估
+
+| 文件 | 改动内容 | 行数 |
+|------|---------|------|
+| `EtcdGrpcConnector.hpp` | 新增 `unique_ptr<Watcher>`、`mutex`、`revision` 成员 | ~10 行 |
+| `EtcdGrpcConnector.cpp` | 新增 `DoStartWatch()`、`OnWatchEvent()`；修改 `GrpcThreadMain` 主循环；`DoPollRegistry` 加锁或移除 | ~80~100 行 |
+
+**总体：中等改动，约 100 行，主要风险在重连边界条件和线程安全。**
+
+### 业界做法
+
+| 方式 | 延迟 | 实现复杂度 |
+|------|------|-----------|
+| 轮询（当前 Thunder）| 最多 5s | 低，天然一致 |
+| etcd Watch | 毫秒级 | 中，需处理断流/revision |
+| Consul blocking query | ~秒级长轮询 | 低，服务端阻塞 |
+| Nacos 长轮询 | ~秒级 | 低 |
+| Kubernetes Informer | 毫秒级 | 高，有本地缓存 |
+
+### 需求
+
+将 `DoPollRegistry` 的定时轮询改为 etcd gRPC Watch：
+
+1. 注册成功后对 `/thunder/registry/` 前缀建立 Watch（`recursive=true`）
+2. Watch 回调线程收到 PUT/DELETE 事件 → 加锁更新 `m_nodeRegistry` → `AssembleAndPushRouteUpdated()`
+3. Watch 断流（`wait_callback(false)`）→ 全量 ls 重建快照 → 从当前 revision 重建 Watch
+4. `DoPollConfig` 保持 5s 轮询（配置变更频率低，Watch 收益小）
+5. Watch 建立失败时降级为轮询
+
+### 验收标准
+
+- [ ] Watch 正常工作：服务注册/注销后，其他节点在 <500ms 内收到 `RouteUpdated` 事件
+- [ ] 断线重连：Watch 流中断后全量同步 + 从正确 revision 重建，路由表与 etcd 一致
+- [ ] 无漏事件：模拟断流期间有节点注销，重连后路由表正确剔除该节点
+- [ ] 线程安全：TSAN 无数据竞争报告
+- [ ] 降级兜底：Watch 建立失败时自动切换为轮询，不影响服务可用性
+- [ ] 回归：现有 E2E 和 smoke 测试全部通过
+
+### 关联
+
+- #115 etcd 全链路稳定性测试（5s 轮询延迟是该测试的关键约束，Watch 实现后重新评估测试超时参数）
+- `code/Net/src/register/EtcdGrpcConnector.cpp:304`（当前轮询实现）
+
+---
+
+## 🟡 #115 [需求] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
+
+> 2026-06-20 | 需求 | 状态: 🟡 待实现
+
+### 背景
+
+#113 暴露了注册静默失败的问题。进一步梳理发现，etcd 在 Thunder 中承担三个核心职责，目前均缺乏完整的稳定性测试：
+
+1. **注册**：服务启动后将自身写入 etcd
+2. **路由下发**：其他节点（如 Interface）从 etcd 获取路由表，才能向目标 node_type 转发请求
+3. **下线剔除**：服务停止后，etcd 租约过期，路由表中对应节点被移除
+
+任一环节异常都会导致请求路由失败，但当前测试只验证请求是否通，不验证这三个环节本身。
+
+### Thunder 下线注销机制分析
+
+#### 当前实现（已支持主动注销）
+
+Thunder 在正常关闭路径下会主动撤销 etcd lease：
+
+```
+SIGTERM
+  → Manager::Destroy()                          # Manager.cpp:1281
+  → m_pCenterConnector->Destroy()               # Manager.cpp:1287
+  → EtcdGrpcConnector::Destroy()                # EtcdGrpcConnector.cpp:96
+  → PostCmd({CmdType::Stop})
+  → GrpcThread 收到 Stop
+  → etcdClient.leaserevoke(m_leaseId)  ✅ 主动注销，注册项立即从 etcd 删除
+```
+
+主动 leaserevoke 后注册项**立即**消失，不需要等 TTL。
+
+#### 与业界做法对比
+
+| 框架 | 注销方式 | 盲点 |
+|------|---------|------|
+| **Thunder** | 主动 leaserevoke（SIGTERM）+ TTL 兜底 | kill -9 时 leaserevoke 不执行 |
+| **Consul** | 主动 deregister + health check TTL | 同上 |
+| **Nacos（阿里）** | 主动 deregisterInstance + 心跳超时 30s 剔除 | 同上 |
+| **Eureka（Netflix）** | 主动 cancel + 90s 超时 | TTL 窗口最长 90s |
+| **gRPC + etcd（Go 主流）** | 主动 leaserevoke + TTL 兜底 | 与 Thunder 完全一致 |
+
+Thunder 的实现与 gRPC/etcd 生态标准做法一致，属于业界主流。
+
+#### leaserevoke 做了什么
+
+etcd lease 是一个"生命绑定"机制：注册时所有写入的 key 都绑定到同一个 lease ID，leaserevoke 触发后 etcd **原子删除**该 lease 下的全部 key。
+
+Thunder 注册时写入了两个 key（均绑定同一 lease）：
+
+```
+/thunder/slot/{node_id}                    → "ip:port"          （slot 表：node_id → 地址）
+/thunder/registry/{node_type}/{ip}:{port}  → JSON{node_id,...}  （registry 表：节点详情）
+```
+
+leaserevoke 后这两个 key **同时消失**，其他节点下一次 DoPollRegistry 轮询时（间隔 `kPollInterval=5s`）感知变化，调用 `AssembleAndPushRouteUpdated()` 更新本地路由表，将该节点从路由中剔除。
+
+所以完整的下线剔除 + 通知链路是：
+
+```
+Service A 注销（leaserevoke / TTL 过期）
+  → etcd 原子删除 /thunder/slot/{nid} + /thunder/registry/{type}/{addr}
+
+Service B（DoPollRegistry，每 5s 轮询一次，非 Watch）
+  → 检测到 registry 变化（fresh != m_nodeRegistry）
+  → AssembleAndPushRouteUpdated()
+  → PushEvent(CenterEventType::RouteUpdated) → Worker 更新路由表
+  → 路由表中 A 节点消失 → 后续发往 A-type 的请求返回 "no route"
+```
+
+**Thunder 用轮询（kPollInterval=5s），不是 etcd Watch**，因此存在最多 5s 的感知延迟：
+
+```
+t=0     leaserevoke → etcd key 删除
+t=0~5s  Service B 路由表仍含死节点 → 路由到 A 失败（连接拒绝 / 超时）
+t≤5s    DoPollRegistry 检测变化 → RouteUpdated → 路由表剔除 A
+t>5s    Service B 路由正常，不再路由到 A
+```
+
+这整条链路都需要测试，不能只验证 leaserevoke 本身。
+
+**与业界对比**：etcd Watch 可做到毫秒级通知，Consul/Nacos 也支持 Watch/长轮询。Thunder 当前 5s 轮询延迟在服务较少时可接受，但高频注销场景（滚动重启）会造成 5s 窗口内大量失败请求，值得评估是否改用 Watch（可作为后续优化需求）。
+
+#### 盲点：kill -9 场景
+
+```
+kill -9 Manager
+  → Destroy() 不执行 → leaserevoke 不发生
+  → 只能靠 TTL 自然过期（默认配置的 TTL 秒数内）
+  → TTL 窗口期间：路由表仍含死节点 → 请求超时或报错
+```
+
+**关键问题**：TTL 窗口内消费方发出的请求行为未明确验证：
+- 是返回明确错误（"no route" / connection refused）？
+- 还是无限挂起直到 TCP 超时？
+
+这是场景 3（强杀后 TTL 剔除）和场景 4（崩溃清理）需要重点验证的核心行为。
+
+### 需求描述
+
+设计并实现覆盖注册 → 路由下发 → 下线剔除完整链路的稳定性测试：
+
+#### 场景 1：注册完整性
+
+- 所有预期节点（HELLO_HTTP / HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC）启动后必须全部出现在 etcd 注册表
+- 断言：节点数量、node_type 枚举、lease 存在
+- 任一节点缺失 = 测试失败
+
+#### 场景 2：路由下发验证
+
+- 注册完成后，验证各消费方节点已拿到正确路由：
+  - Interface 路由表中存在 LOGIC 节点（可通过 Interface 日志或 etcd 路由键确认）
+  - Hello 路由表中存在 LOGIC 节点（Lua SendToNodeType 前提）
+- **功能验证**：路由拿到后，发起真实请求验证路由可用：
+  - `curl Interface → GenKey` → 成功（Interface→Logic S2S 可达）
+  - `curl Hello → Lua SendToNodeType → LOGIC` → 成功
+  - `curl Hello → Lua SendToNodeType async` → 成功
+
+#### 场景 3：服务下线 → 路由剔除验证
+
+- 正常停止某个 Worker（SIGTERM）或 kill Manager
+- 断言：
+  - etcd 中对应租约在 TTL 时间内（默认配置的 TTL）过期并消失
+  - 消费方路由表同步更新（对应节点从路由表移除）
+  - 下线后发往该节点的请求返回明确错误（非超时挂起）
+
+#### 场景 4：服务重启 → 重新注册 → 路由恢复
+
+- Worker 崩溃（kill -9）→ Manager 自动重启 → 重新注册到 etcd → 路由恢复
+- 断言：
+  - 新 Worker 进程存在
+  - etcd 中重新出现该节点（新 lease）
+  - 重启后再次发起请求成功（路由已恢复可用）
+
+#### 场景 5：etcd 抖动后自动重注册 + 路由恢复
+
+- 重启单个 etcd 节点（模拟抖动，持续 5~10s）
+- 恢复后断言：
+  - 服务在合理时间内（30s）重新注册
+  - 路由表恢复
+  - Lua SendToNodeType 等功能重新可用
+
+#### 场景 6：租约续约长跑
+
+- 正常负载下持续运行（5min），每 10s 轮询一次注册表
+- 断言：注册项始终存在，无意外租约丢失
+
+### 验收标准
+
+- [ ] 场景 1（注册完整性）：加入 E2E 为显式断言（当前 smoke 有检查但非 E2E 级别）
+- [ ] 场景 2（路由下发 + 功能验证）：E2E 中已有请求验证，补充路由表本身的断言
+- [ ] 场景 3（SIGTERM 正常下线 → leaserevoke → 通知 B）：
+  - 验证 leaserevoke 后 `/thunder/slot/{nid}` 和 `/thunder/registry/{type}/{addr}` **同时**从 etcd 消失
+  - 验证依赖 A 的服务 B 在 DoPollRegistry 轮询周期内（≤5s）收到 `RouteUpdated` 事件
+  - 验证 B 路由表中 A 节点消失（路由剔除生效）
+  - 验证 B 路由表更新后，发往 A-type 的请求返回明确错误（非挂起）
+  - 验证 5s 窗口内（B 尚未感知）B 发往 A 的请求的实际行为（连接拒绝 / 超时，需记录）
+- [ ] 场景 4（kill -9 强杀 → TTL 兜底 → 通知 B）：
+  - 验证 TTL 窗口内两个 key 仍存在（leaserevoke 未发生）
+  - 验证 TTL 到期后 key 自动消失
+  - 验证 B 在 TTL 过期后的下一次 DoPollRegistry 轮询（≤5s）收到 `RouteUpdated` 事件并剔除路由
+  - 验证 TTL 窗口内 B 发往 A 的请求行为（明确错误 vs 超时挂起，记录实际行为）
+- [ ] 场景 5（崩溃后重启 → 重新注册 → 路由恢复）：已有 Worker 优雅重启测试，扩展覆盖路由恢复断言
+- [ ] 场景 6（etcd 抖动）：复用 `tests/chaos_etcd.sh`，补全重注册 + leaserevoke 链路 + 路由恢复断言
+- [ ] 场景 7（长跑）：新增专项脚本，可选跑（非默认 E2E 流程）
+
+### 关联
+
+- #113 HELLO_HTTP 未注册（暴露缺少注册稳定性验证）
+- #112 回归测试流程规范
+- tests/chaos_etcd.sh（现有混沌测试，可复用场景 5）
+- CLAUDE.md deploytest E2E 覆盖范围表（场景 3/4 可补充到未覆盖项）
+
+---
+
 ## 🟡 #114 [需求] SO 热更新 + Lua 热更新端到端验证
 
 > 2026-06-19 | 需求 | 状态: 🟡 待实现
