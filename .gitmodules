@@ -16,7 +16,7 @@
 # mongo-c-driver     e97ed96 1.11.0-2340-ge97ed96e1d                   e97ed96e1d1c96ca57cfa0639a42798a67c71836
 # protobuf           eaec88f v33-dev-1017-geaec88fea                   eaec88fea0b95468f293f89bd08e5a0e5ab8490b
 # etcd-cpp-apiv3     ba62163 v0.15.4                                    ba6216385fc332b23d95683966824c2b86c2474e
-# grpc               c65cf15 v1.71.2                                    c65cf153238102c16f5f11573767384ef112d17a
+# grpc               e84a8a2 v1.81.1                                    e84a8a2f04095f2772ba42a4abccde4f9243e75b
 #
 [submodule "code/3party/libev"]
 	path = code/3party/libev
@@ -65,4 +65,4 @@
 [submodule "code/3party/grpc"]
 	path = code/3party/grpc
 	url = https://github.com/grpc/grpc.git
-	branch = c65cf153238102c16f5f11573767384ef112d17a
+	branch = e84a8a2f04095f2772ba42a4abccde4f9243e75b

@@ -259,6 +259,8 @@ ExternalProject_Add(ep_grpc
     -DgRPC_ZLIB_PROVIDER=package
     -DgRPC_RE2_PROVIDER=package
     -DgRPC_BUILD_TESTS=OFF
+    "-DCMAKE_C_FLAGS=-Wno-deprecated-declarations"
+    "-DCMAKE_CXX_FLAGS=-Wno-deprecated-declarations"
     -DgRPC_BUILD_GRPC_CPP_PLUGIN=ON
     -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF
     -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF
