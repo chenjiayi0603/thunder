@@ -4525,6 +4525,105 @@ ThreadPool 支持 Work Stealing 调度：空闲线程主动从其他线程的任
 
 ---
 
+## 🟡 #119 [需求] etcd-cpp-apiv3 纳入 git submodule 管理，实现可复现构建
+
+> 2026-06-20 | 依赖管理 | 状态: 🟡 部分完成（Step 1-2 已做，Step 3-4 待做）
+
+### 背景
+
+`etcd-cpp-apiv3`（gRPC 客户端库）当前以 **vendored 预编译** 方式存在于仓库外：
+
+```
+code/3party/include/etcd/   ← 头文件，手动 cp 自 /tmp 编译产物
+code/3party/lib/libetcd-cpp-api-core.so  ← 预编译 .so（x86_64）
+```
+
+两者均被 `.gitignore`（`code/3party/` 整体忽略），**不在版本控制内**。其他依赖（libev / hiredis / protobuf 等）均通过 `.gitmodules` + `ExternalProject_Add` 管理，唯独 etcd-cpp-apiv3 缺失，导致：
+
+- 新机器 `git clone + git submodule update --init` 后无法直接构建（缺头文件和 .so）
+- 无法追溯当前使用的具体 commit/tag
+
+### 目标
+
+将 etcd-cpp-apiv3 纳入和其他三方库相同的管理体系，使 `git submodule update --init --recursive` + `cmake` 能在干净环境完整构建。
+
+### 需要做的事（4 步）
+
+**Step 1 — 加 git submodule**
+
+```bash
+git submodule add https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3.git \
+    code/3party/etcd-cpp-apiv3
+```
+
+- 自动更新 `.gitmodules`（与 libev/protobuf 等并列）
+- 需加 `--force`，因为 `code/3party/` 在 `.gitignore` 中
+- 需确定并 pin 正确的 commit/tag（当前 .so 由 absl lts_20250512 构建，可据此定位版本）
+
+**Step 2 — 更新 .gitignore**
+
+```
+# 现在: code/3party/ 整体忽略
+# 改为: 保留 submodule 目录，只忽略 build 产物
+```
+
+- 移除或收窄 `code/3party/` 的 gitignore 规则
+- 或对 `code/3party/etcd-cpp-apiv3` 加 `!code/3party/etcd-cpp-apiv3` 排除规则
+
+**Step 3 — 接入 3party/CMakeLists.txt**
+
+仿照 `ep_protobuf` 加 `ExternalProject_Add(ep_etcd_cpp_apiv3)`，将构建产物 install 到 `${EP_STAGE}/include` 和 `${EP_STAGE}/lib`（与现有 vendored 路径相同，CMake 链接侧零改动）。
+
+etcd-cpp-apiv3 构建依赖：grpc + protobuf（项目内已有）。
+
+**Step 4 — 删除 vendored 文件 + 更新文档**
+
+- 删除 `code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so`
+- 更新 `docs/architecture/02-etcd-designed.md` 依赖库章节
+
+### 已完成（2026-06-20）
+
+**Step 1 ✅ — submodule 已加入**
+
+```
+code/3party/etcd-cpp-apiv3/  ← v0.15.4（commit ba62163）
+.gitmodules                  ← 自动更新，注释表已补充
+```
+
+**Step 2 ✅ — .gitignore 已更新**
+
+```
+code/3party/         ← 整体忽略（build 产物）
+!code/3party/etcd-cpp-apiv3  ← 子模块例外
+```
+
+**Step 3 ✅ — 构建脚本**
+
+`code/3party/build_etcd.sh`：从子模块源码编译 gRPC + etcd-cpp-apiv3，安装到 `code/3party/include+lib`。
+
+```bash
+# 新机器克隆后执行：
+git submodule update --init --recursive
+bash code/3party/build_etcd.sh          # 默认 --mode=build-grpc（~30min）
+./deploy.sh build
+```
+
+**为何需要单独编译 gRPC（注意）**
+
+系统 gRPC 1.51 链接了系统 protobuf 3.21，与本项目 protobuf 5.x（`libprotobuf.so.33.5.0`）ABI 不兼容。混用会导致运行时 symbol 冲突崩溃。因此构建脚本默认拉取 gRPC v1.66.5 源码，在本项目 protobuf/abseil 之上重新编译。
+
+### 待完成
+
+**Step 4 — ExternalProject_Add 自动化（deferred）**
+
+将 gRPC + etcd-cpp-apiv3 接入 `code/3party/CMakeLists.txt`，使 `cmake --build` 自动构建无需手动运行 build_etcd.sh。需要先将 gRPC 作为独立 ExternalProject 或 submodule 加入。复杂度较高，单独推进。
+
+**Step 5 — 删除 vendored 文件（build_etcd.sh 验证后）**
+
+`code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so` 在新机器验证 build_etcd.sh 生成的 .so 构建+smoke 全通过后删除。
+
+---
+
 ## ✅ #108 [已修复] `x-etcd-common` 误作服务启动占用端口 2380/2379
 
 > 2026-06-18 | 构建/环境 bug | 状态: ✅ 已修复

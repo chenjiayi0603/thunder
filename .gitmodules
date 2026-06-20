@@ -15,6 +15,7 @@
 # mariadb-connector-c 532350d v3.4.8-15-g532350d8                       532350d8fc56c7783085d7a4f7747737883f84f7
 # mongo-c-driver     e97ed96 1.11.0-2340-ge97ed96e1d                   e97ed96e1d1c96ca57cfa0639a42798a67c71836
 # protobuf           eaec88f v33-dev-1017-geaec88fea                   eaec88fea0b95468f293f89bd08e5a0e5ab8490b
+# etcd-cpp-apiv3     ba62163 v0.15.4                                    ba6216385fc332b23d95683966824c2b86c2474e
 #
 [submodule "code/3party/libev"]
 	path = code/3party/libev
@@ -56,3 +57,7 @@
 	path = code/3party/asio
 	url = https://github.com/chriskohlhoff/asio.git
 	branch = bd500f0a018db9a845ebaaed5c0318343ae9f497
+[submodule "code/3party/etcd-cpp-apiv3"]
+	path = code/3party/etcd-cpp-apiv3
+	url = https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3.git
+	branch = ba6216385fc332b23d95683966824c2b86c2474e
