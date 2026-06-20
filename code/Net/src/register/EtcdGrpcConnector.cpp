@@ -1,13 +1,14 @@
 /*******************************************************************************
  * Project:  Net
  * @file     EtcdGrpcConnector.cpp
- * @brief    CenterConnector 的 gRPC 实现（unary polling）
+ * @brief    CenterConnector 的 gRPC 实现（Watch 事件驱动）
  ******************************************************************************/
 #include "EtcdGrpcConnector.hpp"
 
 #include <etcd/SyncClient.hpp>
 #include <etcd/Response.hpp>
 #include <etcd/Value.hpp>
+#include <etcd/Watcher.hpp>
 #include <etcd/v3/Transaction.hpp>
 
 #include "protocol/oss_sys.pb.h"
@@ -25,7 +26,7 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 
 static constexpr int      kLeaseTTL         = 30;   // seconds
 static constexpr int      kKeepAliveRefresh = 10;   // unary keepalive interval
-static constexpr int      kPollInterval     = 5;    // registry + config poll interval
+static constexpr int      kPollInterval     = 5;    // config poll interval
 static constexpr uint32_t kMaxSlot          = 255;
 static constexpr const char* kRegistryPrefix = "/thunder/registry/";
 static constexpr const char* kConfigPrefix   = "/thunder/config/";
@@ -202,10 +203,21 @@ void EtcdGrpcConnector::PostCmd(Cmd cmd)
 
 void EtcdGrpcConnector::GrpcThreadMain()
 {
+    // etcdClient 必须比 m_watcher 活得长：
+    // Stop 时先 Cancel/reset m_watcher（join Watcher::task_），再让 etcdClient 析构。
+    etcd::SyncClient etcdClient(m_endpoint);
+
+    auto cancelWatcher = [this] {
+        if (m_watcher)
+        {
+            m_watcher->Cancel();
+            m_watcher.reset();
+        }
+    };
+
     try
     {
 
-    etcd::SyncClient etcdClient(m_endpoint);
     GLOG_INFO("GrpcThread: connected to " << m_endpoint);
 
     etcd::Response leaseResp = etcdClient.leasegrant(kLeaseTTL);
@@ -231,11 +243,9 @@ void EtcdGrpcConnector::GrpcThreadMain()
 
     while (true)
     {
-        // Wait up to 1 second for a command, then handle periodic tasks
         std::unique_lock<std::mutex> lk(m_cmdMutex);
         m_cmdCv.wait_for(lk, kWaitTick, [this] { return !m_cmdQueue.empty(); });
 
-        // Drain all pending commands first
         while (!m_cmdQueue.empty())
         {
             Cmd cmd = std::move(m_cmdQueue.front());
@@ -245,6 +255,7 @@ void EtcdGrpcConnector::GrpcThreadMain()
             if (cmd.type == CmdType::Stop)
             {
                 GLOG_INFO("GrpcThread: received Stop");
+                cancelWatcher();   // join Watcher::task_ before etcdClient destroyed
                 if (m_leaseId)
                 {
                     etcdClient.leaserevoke(m_leaseId);
@@ -277,7 +288,8 @@ void EtcdGrpcConnector::GrpcThreadMain()
                     ev.node_id    = m_nodeId;
                     GLOG_INFO("GrpcThread: registered node_id=" << m_nodeId);
                     DoInitialSnapshot(etcdClient);
-                    lastPoll = Clock::now();  // reset poll timer
+                    DoStartWatch(etcdClient);
+                    lastPoll = Clock::now();
                 }
                 else
                 {
@@ -292,8 +304,17 @@ void EtcdGrpcConnector::GrpcThreadMain()
         }
         lk.unlock();
 
-        // Periodic tasks
         auto now = Clock::now();
+
+        // Watch 断流后重建：先 join 旧 Watcher，再快照，再启动新 Watcher
+        if (m_watchEnded.load() && m_registered.load())
+        {
+            GLOG_WARN("GrpcThread: Watch ended, rebuilding snapshot + Watch");
+            m_watchEnded = false;
+            m_watcher.reset();   // join task_，确保 OnWatchEvent 不再并发
+            DoInitialSnapshot(etcdClient);
+            DoStartWatch(etcdClient);
+        }
 
         if (m_leaseId && now - lastKeepalive >= Seconds(kKeepAliveRefresh))
         {
@@ -303,7 +324,6 @@ void EtcdGrpcConnector::GrpcThreadMain()
 
         if (m_registered.load() && now - lastPoll >= Seconds(kPollInterval))
         {
-            DoPollRegistry(etcdClient);
             DoPollConfig(etcdClient);
             lastPoll = now;
         }
@@ -312,6 +332,7 @@ void EtcdGrpcConnector::GrpcThreadMain()
     } // try
     catch (const std::exception& e)
     {
+        cancelWatcher();   // join Watcher::task_ before etcdClient goes out of scope
         GLOG_ERROR("GrpcThread: uncaught exception: " << e.what());
         CenterEvent ev{};
         ev.type   = CenterEventType::ConnectionLost;
@@ -331,7 +352,6 @@ bool EtcdGrpcConnector::DoRegisterGrpc(etcd::SyncClient& client,
     const std::string ipPort      = ip + ":" + std::to_string(port);
     const std::string registryKey = BuildRegistryKey(nodeType, ip, port);
 
-    // 查是否已有注册键（重启幂等）
     auto getResp = client.get(registryKey);
     if (getResp.error_code() == 0 && !getResp.value().as_string().empty())
     {
@@ -355,7 +375,6 @@ bool EtcdGrpcConnector::DoRegisterGrpc(etcd::SyncClient& client,
         }
     }
 
-    // 按 hash(ip:port)%255+1 扫槽
     const uint32_t startSlot = static_cast<uint32_t>(
         std::hash<std::string>{}(ipPort) % kMaxSlot) + 1;
 
@@ -386,7 +405,8 @@ bool EtcdGrpcConnector::DoRegisterGrpc(etcd::SyncClient& client,
 }
 
 // ============================================================
-// 初始路由快照（gRPC 线程，注册完成后调用一次）
+// 初始路由快照（gRPC 线程）
+// 调用时 m_watcher 为 nullptr（首次注册或 reset() 后），无并发写 m_nodeRegistry。
 // ============================================================
 
 void EtcdGrpcConnector::DoInitialSnapshot(etcd::SyncClient& client)
@@ -398,25 +418,113 @@ void EtcdGrpcConnector::DoInitialSnapshot(etcd::SyncClient& client)
         return;
     }
 
-    m_nodeRegistry.clear();
-    for (const auto& v : resp.values())
-    {
-        const std::string& fullKey = v.key();
-        if (fullKey.size() <= strlen(kRegistryPrefix)) continue;
-        std::string rest  = fullKey.substr(strlen(kRegistryPrefix));
-        auto        slash = rest.find('/');
-        if (slash == std::string::npos) continue;
-        std::string ipPort = rest.substr(slash + 1);
-        if (ipPort.rfind(':') == std::string::npos) continue;
-        m_nodeRegistry[ipPort] = v.as_string();
-    }
+    m_watchRevision = resp.index();   // Watch 从此 revision+1 开始，不漏事件
 
-    GLOG_INFO("DoInitialSnapshot: " << m_nodeRegistry.size() << " nodes");
-    AssembleAndPushRouteUpdated();
+    {
+        std::lock_guard<std::mutex> lk(m_registryMutex);
+        m_nodeRegistry.clear();
+        for (const auto& v : resp.values())
+        {
+            const std::string& fullKey = v.key();
+            if (fullKey.size() <= strlen(kRegistryPrefix)) continue;
+            std::string rest  = fullKey.substr(strlen(kRegistryPrefix));
+            auto        slash = rest.find('/');
+            if (slash == std::string::npos) continue;
+            std::string ipPort = rest.substr(slash + 1);
+            if (ipPort.rfind(':') == std::string::npos) continue;
+            m_nodeRegistry[ipPort] = v.as_string();
+        }
+        GLOG_INFO("DoInitialSnapshot: " << m_nodeRegistry.size()
+                  << " nodes, revision=" << m_watchRevision);
+        AssembleAndPushRouteUpdated();
+    }
 }
 
 // ============================================================
-// 租约续约（gRPC 线程，unary: timetolive + re-grant if running low）
+// 启动 Watch（gRPC 线程，DoInitialSnapshot 之后调用）
+// ============================================================
+
+void EtcdGrpcConnector::DoStartWatch(etcd::SyncClient& client)
+{
+    m_watchEnded = false;
+    // fromIndex = m_watchRevision + 1：快照已包含 revision 及之前的状态，Watch 从下一个事件开始
+    m_watcher = std::make_unique<etcd::Watcher>(
+        client,
+        kRegistryPrefix,
+        m_watchRevision + 1,
+        [this](etcd::Response resp) { OnWatchEvent(std::move(resp)); },
+        [this](bool cancelled)      { OnWatchEnded(cancelled); },
+        true   // recursive: 匹配 kRegistryPrefix 下所有 key
+    );
+    GLOG_INFO("DoStartWatch: watching " << kRegistryPrefix
+              << " from revision=" << (m_watchRevision + 1));
+}
+
+// ============================================================
+// Watch 事件回调（Watcher 内部线程）
+// ============================================================
+
+void EtcdGrpcConnector::OnWatchEvent(etcd::Response resp)
+{
+    if (resp.error_code() != 0)
+    {
+        GLOG_WARN("OnWatchEvent: error " << resp.error_code()
+                  << " " << resp.error_message());
+        return;
+    }
+
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lk(m_registryMutex);
+        for (const auto& ev : resp.events())
+        {
+            if (!ev.has_kv()) continue;
+            const std::string& fullKey = ev.kv().key();
+            if (fullKey.size() <= strlen(kRegistryPrefix)) continue;
+            std::string rest  = fullKey.substr(strlen(kRegistryPrefix));
+            auto        slash = rest.find('/');
+            if (slash == std::string::npos) continue;
+            std::string ipPort = rest.substr(slash + 1);
+            if (ipPort.rfind(':') == std::string::npos) continue;
+
+            if (ev.event_type() == etcd::Event::EventType::PUT)
+            {
+                m_nodeRegistry[ipPort] = ev.kv().as_string();
+                changed = true;
+                GLOG_INFO("OnWatchEvent: PUT " << ipPort);
+            }
+            else if (ev.event_type() == etcd::Event::EventType::DELETE_)
+            {
+                m_nodeRegistry.erase(ipPort);
+                changed = true;
+                GLOG_INFO("OnWatchEvent: DELETE " << ipPort);
+            }
+        }
+
+        if (changed)
+            AssembleAndPushRouteUpdated();
+    }
+}
+
+// ============================================================
+// Watch 结束回调（Watcher 内部线程，etcd 断连或主动 Cancel 时触发）
+// ============================================================
+
+void EtcdGrpcConnector::OnWatchEnded(bool cancelled)
+{
+    if (cancelled)
+    {
+        GLOG_INFO("OnWatchEnded: Watch normally cancelled (Stop path)");
+        return;   // Stop 路径：GrpcThreadMain 主动 Cancel，不需要重建
+    }
+    GLOG_WARN("OnWatchEnded: Watch stream ended unexpectedly, will rebuild");
+    m_watchEnded = true;
+    // 通过 m_cmdCv 唤醒 GrpcThreadMain（避免等满 1s tick）
+    m_cmdCv.notify_one();
+}
+
+// ============================================================
+// 租约续约（gRPC 线程，unary）
 // ============================================================
 
 void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
@@ -434,7 +542,6 @@ void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
     if (remainTTL > kLeaseTTL / 2)
         return;
 
-    // Re-grant a new lease and re-put the keys
     auto newLease = client.leasegrant(kLeaseTTL);
     if (newLease.error_code() != 0)
     {
@@ -451,46 +558,9 @@ void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
 
     client.put(slotKey, ipPort,   newLeaseId);
     client.put(regKey,  regValue, newLeaseId);
-
-    // Revoke old lease after re-registration succeeds
     client.leaserevoke(m_leaseId);
     m_leaseId = newLeaseId;
     GLOG_INFO("DoKeepalive: re-granted lease=" << m_leaseId);
-}
-
-// ============================================================
-// 注册表轮询（gRPC 线程，unary ls）
-// ============================================================
-
-void EtcdGrpcConnector::DoPollRegistry(etcd::SyncClient& client)
-{
-    auto resp = client.ls(kRegistryPrefix);
-    if (resp.error_code() != 0)
-    {
-        GLOG_WARN("DoPollRegistry: ls failed: " << resp.error_message());
-        return;
-    }
-
-    // 构建新快照
-    std::map<std::string, std::string> fresh;
-    for (const auto& v : resp.values())
-    {
-        const std::string& fullKey = v.key();
-        if (fullKey.size() <= strlen(kRegistryPrefix)) continue;
-        std::string rest  = fullKey.substr(strlen(kRegistryPrefix));
-        auto        slash = rest.find('/');
-        if (slash == std::string::npos) continue;
-        std::string ipPort = rest.substr(slash + 1);
-        if (ipPort.rfind(':') == std::string::npos) continue;
-        fresh[ipPort] = v.as_string();
-    }
-
-    if (fresh != m_nodeRegistry)
-    {
-        m_nodeRegistry = std::move(fresh);
-        GLOG_INFO("DoPollRegistry: registry changed, " << m_nodeRegistry.size() << " nodes");
-        AssembleAndPushRouteUpdated();
-    }
 }
 
 // ============================================================
@@ -503,7 +573,7 @@ void EtcdGrpcConnector::DoPollConfig(etcd::SyncClient& client)
 
     const std::string cfgKey = std::string(kConfigPrefix) + "module/" + m_myNodeType;
     auto resp = client.get(cfgKey);
-    if (resp.error_code() != 0) return;  // key不存在或错误，忽略
+    if (resp.error_code() != 0) return;
 
     const std::string val = resp.value().as_string();
     if (val == m_lastConfigValue) return;
@@ -517,7 +587,7 @@ void EtcdGrpcConnector::DoPollConfig(etcd::SyncClient& client)
 }
 
 // ============================================================
-// 组装路由快照并推送（仅 gRPC 线程调用）
+// 组装路由快照并推送（调用方须持有 m_registryMutex）
 // ============================================================
 
 void EtcdGrpcConnector::AssembleAndPushRouteUpdated()

@@ -1,26 +1,32 @@
 /*******************************************************************************
  * Project:  Net
  * @file     EtcdGrpcConnector.hpp
- * @brief    CenterConnector 的 gRPC 实现（unary polling — 避免 gRPC streaming ABI 冲突）
+ * @brief    CenterConnector 的 gRPC 实现（Watch 事件驱动 + keepalive unary）
  * @author   cjy
  * @date:    2026年6月16日
  * @note
  *   线程模型:
- *     libev 主线程                   gRPC 专属线程（单线程）
+ *     libev 主线程                   gRPC 专属线程（GrpcThreadMain）
  *     ─────────────                  ──────────────────────────────────────
  *     Init() → 启动线程   →→→      LeaseGrant（unary）
- *     ReportNodeStatus    →→→      SlotTxn（unary） → snapshot（ls unary）
+ *     ReportNodeStatus    →→→      SlotTxn（unary） → snapshot → DoStartWatch
  *                         ←←←      ev_async → Registered / RouteUpdated / ConfigUpdated
  *     PutConfig           →→→      client.put（unary）
- *     Destroy()           →→→      revoke lease（unary）
+ *     Destroy()           →→→      PostCmd(Stop) → Cancel Watcher → revoke lease
  *
- *   周期任务（在 gRPC 线程的命令循环中，wait_for 超时触发）:
- *     每 kKeepAliveRefresh 秒: leasekeepalive（unary），防租约过期
- *     每 kPollInterval 秒:     ls(registry) + get(config)，检测变化并推送事件
+ *                                   Watcher 内部线程（etcd::Watcher::task_）
+ *                                   ─────────────────────────────────────────
+ *                                   Watch stream → OnWatchEvent → RouteUpdated
+ *                                   Watch ended  → OnWatchEnded → m_watchEnded=true
+ *
+ *   周期任务（gRPC 线程，每 1s tick）:
+ *     每 kKeepAliveRefresh 秒: leasetimetolive + 必要时 re-grant（unary）
+ *     每 kPollInterval 秒:     DoPollConfig（unary get，Watch 只覆盖 registry）
+ *     m_watchEnded==true:      DoInitialSnapshot + DoStartWatch（重建 Watch）
  *
  *   线程安全:
- *     - etcd::SyncClient 只在 gRPC 线程使用（无 Watch 内部线程）
- *     - m_nodeRegistry 只在 gRPC 线程读写（无锁）
+ *     - etcd::SyncClient 只在 gRPC 线程使用
+ *     - m_nodeRegistry 由 m_registryMutex 保护（GrpcThread 写快照，Watcher 线程写事件）
  *     - m_eventQueue 由 m_eventMutex 保护
  *     - m_cmdQueue 由 m_cmdMutex + m_cmdCv 保护
  *     - ev_async_send 是线程安全的（libev 保证）
@@ -42,7 +48,9 @@
 #include "labor/CenterConnector.hpp"
 #include "util/json/CJsonObject.hpp"
 
-namespace etcd { class SyncClient; }
+#include <etcd/Response.hpp>
+
+namespace etcd { class SyncClient; class Watcher; }
 
 namespace net
 {
@@ -109,9 +117,17 @@ private:
                         const std::string& ip, uint32_t port,
                         const std::string& nodeType, uint32_t workerNum);
     void DoInitialSnapshot(etcd::SyncClient& client);
+    void DoStartWatch(etcd::SyncClient& client);
     void DoKeepalive(etcd::SyncClient& client);
-    void DoPollRegistry(etcd::SyncClient& client);
     void DoPollConfig(etcd::SyncClient& client);
+
+    // ---- Watcher 回调（Watcher 内部线程） ----
+
+    void OnWatchEvent(etcd::Response resp);
+    void OnWatchEnded(bool cancelled);
+
+    // ---- 路由组装（调用方须持有 m_registryMutex 或确保无并发） ----
+
     void AssembleAndPushRouteUpdated();
 
     // ---- 事件推送（任意线程 → libev 线程） ----
@@ -173,9 +189,16 @@ private:
     uint32_t    m_myNodePort{0};
     uint32_t    m_myWorkerNum{0};
 
-    // ---- 路由表（仅 gRPC 线程读写，无锁） ----
+    // ---- 路由表（m_registryMutex 保护，GrpcThread 和 Watcher 线程均访问） ----
 
-    std::map<std::string, std::string> m_nodeRegistry;  ///< ip:port → JSON value
+    std::mutex                          m_registryMutex;
+    std::map<std::string, std::string>  m_nodeRegistry;  ///< ip:port → JSON value
+
+    // ---- Watch 状态（GrpcThread 读写；m_watchEnded 由 Watcher 线程写） ----
+
+    std::unique_ptr<etcd::Watcher> m_watcher;
+    std::atomic<bool>              m_watchEnded{false};
+    int64_t                        m_watchRevision{0};  ///< ls 快照时拿到的 revision
 
     // ---- 配置轮询状态（仅 gRPC 线程） ----
 
