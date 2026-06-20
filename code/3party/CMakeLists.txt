@@ -280,15 +280,23 @@ ExternalProject_Add(ep_etcd_cpp_apiv3
   PREFIX     "${EP_BUILD_ROOT}/etcd-cpp-apiv3"
   SOURCE_DIR "${THUNDER_3PARTY}/etcd-cpp-apiv3"
   BINARY_DIR "${EP_BUILD_ROOT}/etcd-cpp-apiv3/build"
-  CMAKE_ARGS
-    ${_ep_cmake}
-    "-DCMAKE_PREFIX_PATH=${EP_STAGE}"
-    "-DProtobuf_ROOT=${EP_STAGE}"
-    -DBUILD_ETCD_CORE_ONLY=ON
-    -DBUILD_ETCD_TESTS=OFF
-    -DBUILD_SHARED_LIBS=ON
-    -DETCD_W_STRICT=OFF
-  BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
+  PATCH_COMMAND sed -i "s/cmake_minimum_required.*VERSION 3\\.3/cmake_minimum_required (VERSION 3.5/" <SOURCE_DIR>/CMakeLists.txt
+  # grpc_cpp_plugin 动态链 libprotoc.so.33.5.0，需要 LD_LIBRARY_PATH 指向 EP_STAGE/lib
+  CONFIGURE_COMMAND
+    ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${EP_STAGE}/lib"
+    ${CMAKE_COMMAND}
+      -S <SOURCE_DIR> -B <BINARY_DIR>
+      -G "${CMAKE_GENERATOR}"
+      ${_ep_cmake}
+      "-DCMAKE_PREFIX_PATH=${EP_STAGE}"
+      "-DProtobuf_ROOT=${EP_STAGE}"
+      -DBUILD_ETCD_CORE_ONLY=ON
+      -DBUILD_ETCD_TESTS=OFF
+      -DBUILD_SHARED_LIBS=ON
+      -DETCD_W_STRICT=OFF
+  BUILD_COMMAND
+    ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${EP_STAGE}/lib"
+    ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel 1
   INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
 )
 
