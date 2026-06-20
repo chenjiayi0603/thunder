@@ -255,12 +255,15 @@ void EtcdGrpcConnector::GrpcThreadMain()
             if (cmd.type == CmdType::Stop)
             {
                 GLOG_INFO("GrpcThread: received Stop");
-                cancelWatcher();   // join Watcher::task_ before etcdClient destroyed
+                // leaserevoke 优先（快，<1s），确保在 docker stop 10s 超时前完成注销。
+                // cancelWatcher 可能因 gRPC Watch stream 关闭慢而阻塞，放在后面无妨。
+                // etcdClient 仍比 m_watcher 活得长（return 后才析构）。
                 if (m_leaseId)
                 {
                     etcdClient.leaserevoke(m_leaseId);
                     m_leaseId = 0;
                 }
+                cancelWatcher();   // join Watcher::task_ before etcdClient destroyed
                 return;
             }
 

@@ -57,6 +57,7 @@ start_all() {
 
 stop_all() {
   local server_bin
+  local killed_pids=()
   for server_bin in "${SERVER_BIN}"/*; do
     [[ -f "${server_bin}" ]] || continue
     local bin_name conf_file target_server target_server_tag target_port running_pid
@@ -72,7 +73,17 @@ stop_all() {
     if [[ -n "${running_pid}" ]]; then
       echo "kill ${running_pid}    ${target_server}"
       kill "${running_pid}"
+      killed_pids+=("${running_pid}")
     fi
+  done
+  local i pid
+  for i in $(seq 1 25); do
+    local all_gone=true
+    for pid in "${killed_pids[@]+"${killed_pids[@]}"}"; do
+      kill -0 "${pid}" 2>/dev/null && { all_gone=false; break; }
+    done
+    ${all_gone} && return 0
+    sleep 1
   done
 }
 

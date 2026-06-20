@@ -209,6 +209,7 @@ services:
         condition: service_healthy
       etcd1:
         condition: service_healthy
+    stop_grace_period: 30s
     command:
       - bash
       - -c
@@ -216,7 +217,9 @@ services:
         set -e
         chmod +x ./node.sh 2>/dev/null || true
         ./node.sh start
-        exec tail -f /dev/null
+        trap './node.sh stop --yes' TERM INT
+        tail -f /dev/null &
+        wait $! || true
     deploy:
       resources:
         limits:
@@ -241,6 +244,7 @@ services:
         condition: service_healthy
       etcd1:
         condition: service_healthy
+    stop_grace_period: 30s
     command:
       - bash
       - -c
@@ -248,7 +252,9 @@ services:
         set -e
         chmod +x ./node.sh 2>/dev/null || true
         ./node.sh start
-        exec tail -f /dev/null
+        trap './node.sh stop' TERM INT
+        tail -f /dev/null &
+        wait $! || true
     deploy:
       resources:
         limits:
@@ -267,6 +273,7 @@ services:
         condition: service_healthy
       etcd1:
         condition: service_healthy
+    stop_grace_period: 30s
     command:
       - bash
       - -c
@@ -274,7 +281,9 @@ services:
         set -e
         chmod +x ./node.sh 2>/dev/null || true
         ./node.sh start
-        exec tail -f /dev/null
+        trap './node.sh stop' TERM INT
+        tail -f /dev/null &
+        wait $! || true
     deploy:
       resources:
         limits:
@@ -299,6 +308,7 @@ services:
         condition: service_healthy
       etcd1:
         condition: service_healthy
+    stop_grace_period: 30s
     command:
       - bash
       - -c
@@ -307,7 +317,9 @@ services:
         chmod +x ./node.sh ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
         ./scripts/gen_self_signed_https_cert.sh || true
         ./node.sh start
-        exec tail -f /dev/null
+        trap './node.sh stop' TERM INT
+        tail -f /dev/null &
+        wait $! || true
     deploy:
       resources:
         limits:
@@ -330,6 +342,7 @@ services:
         condition: service_healthy
       etcd1:
         condition: service_healthy
+    stop_grace_period: 30s
     command:
       - bash
       - -c
@@ -337,7 +350,9 @@ services:
         set -e
         chmod +x ./node.sh 2>/dev/null || true
         ./node.sh start
-        exec tail -f /dev/null
+        trap './node.sh stop --yes' TERM INT
+        tail -f /dev/null &
+        wait $! || true
     deploy:
       resources:
         limits:

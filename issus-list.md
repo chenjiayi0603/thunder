@@ -3747,6 +3747,156 @@ Manager 调 Register   →→→     LeaseGrant → SlotTxn → Register
 
 ---
 
+## ✅ #118 [bug] SIGTERM 路径 leaserevoke 不可靠 — Manager 守护化后脱离 tini 信号转发链
+
+> 2026-06-20 | bug | 状态: ✅ 已修复
+
+### 现象
+
+服务正常关闭（`docker compose stop`）后，etcd 中的注册 key 不能立即消失，而是等到 TTL 自然过期（约 10~30s）才消失。
+
+预期行为：`Manager::Destroy()` → `leaserevoke()` → key 立即删除（< 1s）。
+
+### 根因（已通过 ps -eo pid,ppid,pgid,sess 实测验证）
+
+**根本原因：Hello_robot 守护化（daemonize → setsid）后脱离 tini 的信号转发链，根本收不到 SIGTERM。**
+
+```
+容器内进程会话（SESS）分布：
+
+SESS=1   PID=1   docker-init（tini）
+SESS=1   PID=7   tail              ← tini 的直接子进程，收到 SIGTERM 后退出
+SESS=33  PID=33  Hello_robot       ← 独立 session！tini 不转发信号
+SESS=33  PID=35  Hello_robot_W0
+```
+
+启动流程：
+```
+容器 CMD：bash -c '... ./node.sh start; exec tail -f /dev/null'
+  └─ bash 运行 node.sh start
+       └─ Hello_robot 启动 → double-fork + setsid() → 进入 SESS=33 → bash 父进程退出
+  └─ bash exec tail（bash 变成 tail，PID=7，SESS=1）
+
+docker compose stop → SIGTERM → tini(PID=1)
+  └─ tini 转发给 SESS=1 子进程：tail(PID=7) → tail 退出
+  └─ Hello_robot(SESS=33) 从未收到 SIGTERM
+  └─ tini 退出 → Docker 发 SIGKILL 清理 cgroup → Hello_robot 被 SIGKILL
+  → leaserevoke 永远不执行
+```
+
+次要原因（即使 SIGTERM 能到达）：  
+`cancelWatcher()` 中 `m_watcher->Cancel()` 等待 gRPC Watch 流关闭，可能超过 docker stop 默认 10s 超时，导致 SIGKILL 打断。
+
+### 已做的部分修复（方案 B，代码层）
+
+已将 GrpcThread Stop 路径改为"先 leaserevoke，再 cancelWatcher"：
+
+```cpp
+// EtcdGrpcConnector.cpp（已修改）
+if (cmd.type == CmdType::Stop) {
+    // leaserevoke 优先（快，<1s）
+    if (m_leaseId) { etcdClient.leaserevoke(m_leaseId); m_leaseId = 0; }
+    cancelWatcher();   // 再 join Watcher::task_（可能慢，但 leaserevoke 已完成）
+    return;
+}
+```
+
+效果：若 Hello_robot **能收到 SIGTERM**（非 Docker 容器环境、或直接 kill 进程），leaserevoke 保证在 cancelWatcher 阻塞前完成。
+
+### 实际修复（方案 B + 方案 C 双层修复，均已合入）
+
+**方案 B（C++ 层，已合入）**：Stop 路径先 leaserevoke 再 cancelWatcher，确保信号到达时 leaserevoke 最优先。  
+**方案 C（容器层，已合入）**：全部 5 个业务服务（logic/hello/hello_ws/hello_https/interface）：
+
+```bash
+# docker-compose.yml command 改为（每个业务服务）:
+set -e
+chmod +x ./node.sh 2>/dev/null || true
+./node.sh start
+trap './node.sh stop' TERM INT   # bash(SESS=1) 收到 docker-init 转发的 SIGTERM
+tail -f /dev/null &              # tail 作为 bash 子进程运行
+wait $! || true                  # bash 保持存活，可被中断
+```
+
+**三行代码含义：**
+
+| 行 | 含义 |
+|----|------|
+| `trap '...' TERM INT` | 注册信号处理器。bash 收到 SIGTERM / SIGINT 时，执行 `./node.sh stop` 而不是直接退出 |
+| `tail -f /dev/null &` | 在后台启动永不退出的进程，让 bash 有东西可以 `wait`。`$!` 是它的 PID |
+| `wait $! \|\| true` | bash 阻塞在此等待 tail。收到 SIGTERM 时 `wait` 被中断 → trap 触发 → `node.sh stop` → leaserevoke。`\|\| true` 防止 `wait` 被中断返回非零时 `set -e` 杀掉脚本 |
+
+**为什么不用 `exec tail -f /dev/null`（原来的写法）：**  
+`exec` 会把当前 bash 进程**替换**成 tail，bash 消失了，trap 也跟着消失，永远收不到信号。
+
+**完整信号流程：**
+
+```
+docker stop
+  → SIGTERM → docker-init(PID1)
+  → docker-init 转发给 bash(PID7，SESS=1，直接子进程)
+  → bash 的 wait $! 被中断
+  → trap 触发：./node.sh stop
+      → node.sh 找到 Manager PID → kill（SIGTERM）
+      → Manager 收到 SIGTERM → Destroy() → leaserevoke ✅（<1s）
+      → node.sh kill -0 轮询，等 Manager 退出
+  → trap 返回 → bash 退出 → docker-init 退出
+```
+
+同时，所有 `do_stop()` / `stop_all()` / `stop_in_conf()` 加了 `kill -0` 轮询等待：
+
+```bash
+kill "${pid}"           # 发 SIGTERM，立刻返回，不等进程退出
+local i
+for i in $(seq 1 25); do
+  kill -0 "${pid}" 2>/dev/null || { echo "stopped."; return 0; }
+  # kill -0 = 探测信号，不杀进程，只检查 PID 是否还活着
+  # 进程还活 → kill -0 成功(0) → || 右边不执行 → 继续等
+  # 进程已死 → kill -0 失败   → || 右边执行   → return 0
+  sleep 1
+done
+# 25s 超时后 for 结束，docker 的 SIGKILL 兜底
+```
+
+**为什么必须轮询：**  
+`kill "${pid}"` 只是"发信号"，发完立刻返回。没有轮询时，`node.sh stop` 瞬间返回 → bash trap 结束 → bash 退出 → docker-init 退出 → Docker 向 cgroup 发 SIGKILL，Manager 的 leaserevoke 根本没时间跑完。有了轮询，bash 阻塞到 Manager 真正退出（此时 leaserevoke 已完成）才允许容器停下来。
+
+- 各服务加 `stop_grace_period: 30s`，docker 不会在 10s 后提前 SIGKILL
+
+### 验证结果（2026-06-20）
+
+```
+[+] docker compose stop hello ...
+[+] stop 命令返回，耗时 1.2s
+[✓] key 从 5 降至 4，耗时 1.2s — leaserevoke 生效
+```
+
+修复前：key 在 ~19.4s 后靠 TTL 自然过期  
+修复后：key 在 **1.2s 内**立即删除 ✅
+
+### 进程会话对比
+
+```
+修复前：
+  PID=7   tail (SESS=1)    ← tini 直接子进程
+  PID=33  Hello_robot (SESS=33) ← 不接收 tini 的 SIGTERM 转发
+
+修复后：
+  PID=7   bash (SESS=1)    ← tini 直接子进程，收到 SIGTERM 运行 trap
+  PID=33  Hello_robot (SESS=33) ← 收到 bash trap 调用 node.sh stop 发出的 SIGTERM
+  PID=56  tail (SESS=1)    ← bash 的后台子进程
+```
+
+### 关联
+
+- #116 Watch 实现（已完成）
+- `EtcdGrpcConnector.cpp` Stop 路径（方案 B）
+- `docker/docker-compose.yml` 5 个业务服务 command（方案 C）
+- `deploy/*/node.sh` do_stop/stop_all/stop_in_conf（wait 循环）
+- `tests/e2e/test_etcd_stability.py::test_s3_stop_deregister_and_route_removal`（需更新断言）
+
+---
+
 ## 🟡 #117 [bug] test_wrk_smoke 默认目标写死 k8s NodePort，Docker Compose 环境永远失败
 
 > 2026-06-20 | bug | 状态: 🟡 待修复
@@ -3962,9 +4112,9 @@ Watch 断流
 
 ---
 
-## 🟡 #115 [需求] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
+## ✅ #115 [需求] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
 
-> 2026-06-20 | 需求 | 状态: 🟡 待实现
+> 2026-06-20 | 需求 | 状态: ✅ 已完成（S1–S6 全部通过，S6 5分钟长跑无租约丢失）
 
 ### 背景
 
@@ -4183,9 +4333,9 @@ curl -s http://localhost:27006/hello/order -d '{"option":"Test"}'
 
 ---
 
-## 🟡 #113 [bug] HELLO_HTTP 节点未注册到 etcd — Lua SendToNodeType 超时
+## ✅ #113 [bug] HELLO_HTTP 节点未注册到 etcd — Lua SendToNodeType 超时
 
-> 2026-06-19 | bug | 状态: 🟡 待修复（根因已确认）
+> 2026-06-19 | bug | 状态: ✅ 已修复（deploy.sh 端口冲突预检已合入，commit 6d2de45）
 
 ### 现象
 

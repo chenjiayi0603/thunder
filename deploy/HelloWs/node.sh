@@ -54,6 +54,11 @@ do_stop() {
   if [[ -n "${pid}" ]]; then
     echo "kill ${pid}    ${BIN_NAME}"
     kill "${pid}"
+    local i
+    for i in $(seq 1 25); do
+      kill -0 "${pid}" 2>/dev/null || { echo "${BIN_NAME}(${pid}) stopped."; return 0; }
+      sleep 1
+    done
   else
     echo "no running process found for ${BIN_NAME}"
   fi
