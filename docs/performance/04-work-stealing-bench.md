@@ -40,9 +40,43 @@ t0 ─────────────────────────�
 
 ---
 
-## 3. 设计约束
+## 3. 并发模型
 
-`WorkerDeque::push()` 设计为**单 tail 写者**（single-writer），不支持多线程并发 push。  
+### 3.1 每个 WorkerDeque 是 SPMC
+
+```
+commit 线程          worker[0]           worker[1]   worker[2]
+    │                    │                    │           │
+    │ push()             │ dequeue()          │           │
+    ▼  （写 tail）        ▼  （CAS head）      ▼           ▼
+_submit_deques[0]                       steal_into(src)（CAS head）
+  [ring buffer]    ◄── 取自己的任务      ◄── 偷任务（空闲时）
+```
+
+- **tail**：只有 commit 线程写 → Single Producer
+- **head**：owner `dequeue()` 和其他 worker 的 `steal_into()` 都 CAS head → Multiple Consumer
+
+每个 WorkerDeque 是 **SPMC**，不是 SPSC。
+
+### 3.2 整体结构：多个 SPMC + 一个 MPMC
+
+```
+WorkStealingPool
+├── _submit_deques[0]   SPMC  ← commit 写 tail；worker[0] 取，其他 worker 可偷
+├── _submit_deques[1]   SPMC  ← commit 写 tail；worker[1] 取，其他 worker 可偷
+├── _submit_deques[…]   SPMC
+├── _local_deques[0]    SPMC  ← worker[0] steal_into 写 tail；worker[0] 取，其他 worker 可偷
+├── _local_deques[1]    SPMC  ← worker[1] steal_into 写 tail；worker[1] 取，其他 worker 可偷
+├── _local_deques[…]    SPMC
+└── global_q            MPMC  ← commit/drain 写；任意 worker 取（moodycamel）
+```
+
+LF 方案只有一个 MPMC（global_q），所有 worker 争一个 head。
+WS 方案把 MPMC 拆成了 N 个 SPMC + 1 个兜底 MPMC，正常路径无争用。
+
+### 3.3 设计约束
+
+`WorkerDeque::push()` 设计为**单 tail 写者**，不支持多线程并发 push。  
 Thunder 的 `commit()` 在真实场景中由单一事件循环线程调用（per-worker 进程的 coroutine 框架），天然满足此约束。
 
 因此本 bench **生产者固定为 1 个线程**，模拟 Thunder 的事件循环，worker 数量作为唯一变量。
