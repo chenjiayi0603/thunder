@@ -4,12 +4,16 @@
  * 前置条件（全满足才会执行，否则自动跳过）：
  *   1. THUNDER_E2E_ENABLED=1
  *   2. docker compose -f deploy/docker/docker-compose.yml up -d center
- *   3. HelloHttp 模块已部署在 127.0.0.1:16068（默认端口）
+ *   3. HelloHttp 模块已部署（access_port 默认 27006，见 tests/ports.env）
  *
  * 运行方式：
- *   cd deploy/docker && docker compose up -d center hello
- *   THUNDER_E2E_ENABLED=1 THUNDER_E2E_HELLO_HOST=127.0.0.1 \
- *     THUNDER_E2E_HELLO_PORT=16068 ctest --test-dir code/test -R ThunderE2E
+ *   ./deploy.sh up
+ *   THUNDER_E2E_ENABLED=1 ctest --test-dir build/code/test -R ThunderE2ESmoke
+ *
+ * 端口说明（见 tests/ports.env）：
+ *   THUNDER_HELLO_HTTP_PORT=27006  ← Hello HTTP access_port（测试用这个）
+ *   inner_port=27007               ← Manager↔Worker 内部端口，不对外
+ *   16068                          ← Manager 管理端口，docker-compose healthcheck 用，不是 HTTP 服务
  */
 
 #include <gtest/gtest.h>
@@ -36,7 +40,7 @@ std::string helloHost()
 int helloPort()
 {
     const char* p = std::getenv("THUNDER_E2E_HELLO_PORT");
-    return p ? std::atoi(p) : 16068;
+    return p ? std::atoi(p) : 27006;
 }
 
 struct CurlGlobal
@@ -107,36 +111,13 @@ TEST_F(ThunderE2ESmoke, CenterHealthCheck)
     curl_easy_cleanup(curl);
 }
 
-TEST_F(ThunderE2ESmoke, HelloHttpGet)
+TEST_F(ThunderE2ESmoke, HelloHttpPost)
 {
     auto* curl = curl_easy_init();
     ASSERT_NE(nullptr, curl);
 
-    std::string url = "http://" + helloHost() + ":" + std::to_string(helloPort()) + "/";
-    std::string resp;
-
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-
-    CURLcode res = curl_easy_perform(curl);
-    EXPECT_EQ(res, CURLE_OK) << "HTTP GET failed: " << curl_easy_strerror(res);
-
-    long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    EXPECT_EQ(httpCode, 200L);
-
-    curl_easy_cleanup(curl);
-}
-
-TEST_F(ThunderE2ESmoke, HelloHttpPostEcho)
-{
-    auto* curl = curl_easy_init();
-    ASSERT_NE(nullptr, curl);
-
-    std::string url = "http://" + helloHost() + ":" + std::to_string(helloPort()) + "/echo";
-    std::string body = R"({"msg":"thunder_e2e_test"})";
+    std::string url = "http://" + helloHost() + ":" + std::to_string(helloPort()) + "/hello/hello";
+    std::string body = R"({"option":"Hello"})";
     std::string resp;
 
     struct curl_slist* headers = nullptr;
@@ -152,12 +133,50 @@ TEST_F(ThunderE2ESmoke, HelloHttpPostEcho)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
 
     CURLcode res = curl_easy_perform(curl);
-    EXPECT_EQ(res, CURLE_OK) << "HTTP POST failed: " << curl_easy_strerror(res);
+    EXPECT_EQ(res, CURLE_OK) << "HTTP POST /hello/hello failed: " << curl_easy_strerror(res);
 
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     EXPECT_EQ(httpCode, 200L);
-    EXPECT_NE(resp.find("thunder_e2e_test"), std::string::npos);
+    EXPECT_NE(resp.find("\"code\""), std::string::npos) << "resp: " << resp;
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+}
+
+TEST_F(ThunderE2ESmoke, HelloHttpMultiPost)
+{
+    // 连续发 5 次请求验证 WorkStealingPool 持续调度正常
+    auto* curl = curl_easy_init();
+    ASSERT_NE(nullptr, curl);
+
+    std::string url = "http://" + helloHost() + ":" + std::to_string(helloPort()) + "/hello/hello";
+    std::string body = R"({"option":"Hello"})";
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    for (int i = 0; i < 5; ++i)
+    {
+        std::string resp;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+
+        CURLcode res = curl_easy_perform(curl);
+        EXPECT_EQ(res, CURLE_OK) << "request " << i << " failed: " << curl_easy_strerror(res);
+
+        long httpCode = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        EXPECT_EQ(httpCode, 200L) << "request " << i;
+
+        curl_easy_reset(curl);
+    }
 
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);

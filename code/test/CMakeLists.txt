@@ -157,6 +157,35 @@ target_link_libraries(thunder_test_util_threadpool PRIVATE
 )
 gtest_discover_tests(thunder_test_util_threadpool)
 
+# ---- WorkerDeque work-stealing deque ----
+add_executable(thunder_test_util_worker_deque
+  util/test_util_worker_deque.cpp
+)
+target_include_directories(thunder_test_util_worker_deque PRIVATE
+  "${THUNDER_UTIL}/src"
+)
+target_compile_features(thunder_test_util_worker_deque PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_util_worker_deque PRIVATE
+  GTest::gtest_main
+  Threads::Threads
+)
+gtest_discover_tests(thunder_test_util_worker_deque)
+
+# ---- WorkStealingPool 集成测试 ----
+add_executable(thunder_test_util_work_stealing_pool
+  util/test_util_work_stealing_pool.cpp
+)
+target_include_directories(thunder_test_util_work_stealing_pool PRIVATE
+  "${THUNDER_UTIL}/src"
+  "${THUNDER_3PARTY}"
+)
+target_compile_features(thunder_test_util_work_stealing_pool PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_util_work_stealing_pool PRIVATE
+  GTest::gtest_main
+  Threads::Threads
+)
+gtest_discover_tests(thunder_test_util_work_stealing_pool)
+
 # ---- Proto 序列化 (coor/msg) ----
 add_executable(thunder_test_proto
   proto/test_proto_coor.cpp
@@ -364,3 +393,15 @@ target_include_directories(thunder_bench_threadpool_queue PRIVATE
 )
 target_compile_options(thunder_bench_threadpool_queue PRIVATE -O2)
 target_link_libraries(thunder_bench_threadpool_queue PRIVATE GTest::gtest_main)
+
+# ---- Work Stealing vs 单全局队列 对比基准 ----
+add_executable(thunder_bench_work_stealing
+  labor/bench_work_stealing.cpp
+)
+target_compile_features(thunder_bench_work_stealing PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_work_stealing PRIVATE
+  "${THUNDER_3PARTY}"      # concurrentqueue.h
+  "${THUNDER_UTIL}/src"   # thread/threadpool.h, thread/work_stealing_pool.h
+)
+target_compile_options(thunder_bench_work_stealing PRIVATE -O2)
+target_link_libraries(thunder_bench_work_stealing PRIVATE GTest::gtest_main Threads::Threads)

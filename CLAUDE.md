@@ -15,6 +15,19 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 
 ---
 
+## 测试术语约定
+
+| 说法 | 对应脚本 | 说明 |
+|------|---------|------|
+| **冒烟测试** | `tests/test_smoke.sh` | 核心链路快速验证，需 Docker 集群在线 |
+| **端到端测试** | `tests/e2e/`（`./deploy.sh test e2e`）| pytest 全链路，Docker Compose 自动起停 |
+| **单元测试** | `tests/unit/`（ctest + pytest tests/unit/）| 零外部依赖 |
+| **回归测试** | 三项全部：smoke + e2e + unit | 三项均通过才算回归通过 |
+
+E2E 通过 ≠ 冒烟通过，覆盖范围不同，必须分开跑、分开确认。
+
+---
+
 ## deploytest — Thunder 本地部署测试
 
 当用户说"deploytest"或"本地部署测试"时：

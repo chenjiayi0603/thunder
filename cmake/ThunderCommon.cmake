@@ -1,7 +1,8 @@
 # Thunder 工程公共路径与编译选项（由根 CMakeLists include）
 set(THUNDER_ROOT "${CMAKE_SOURCE_DIR}" CACHE INTERNAL "")
 
-# etcd-cpp-apiv3 headers vendored into code/3party/include/etcd/ (Phase E)
+# etcd-cpp-apiv3: submodule at code/3party/etcd-cpp-apiv3 (v0.15.4)
+# Built by thirdparty_deploy target (ep_grpc + ep_etcd_cpp_apiv3 in 3party/CMakeLists.txt)
 set(ETCD_STAGE "${CMAKE_SOURCE_DIR}/code/3party" CACHE PATH "etcd-cpp-apiv3 install root")
 set(GRPC_STAGE "" CACHE PATH "gRPC stage — unused, gRPC is statically linked in libetcd-cpp-api-core.so")
 set(THUNDER_CODE "${THUNDER_ROOT}/code" CACHE INTERNAL "")
@@ -172,7 +173,8 @@ function(thunder_link_thirdparty_shared _target)
     target_link_directories(${_target} PRIVATE /usr/lib64)
   endif()
 
-  # etcd-cpp-apiv3 (Phase E: vendored headers in code/3party/include, .so in code/3party/lib)
+  # etcd-cpp-apiv3: source in code/3party/etcd-cpp-apiv3 (submodule, v0.15.4)
+  # built by code/3party/build_etcd.sh → installs headers+.so into code/3party/include+lib
   # --disable-new-dtags: use DT_RPATH (inherited by transitive deps) instead of DT_RUNPATH
   if(EXISTS "${THUNDER_3PARTY}/include/etcd/SyncClient.hpp")
     target_include_directories(${_target} PRIVATE "${THUNDER_3PARTY}/include")

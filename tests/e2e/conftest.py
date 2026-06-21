@@ -16,6 +16,29 @@ import requests
 
 from helpers.runtime import ensure_ports, require_ok, run_cmd
 
+# ── 端口常量（单一来源：tests/ports.env）─────────────────────────────────────
+# 加载 ports.env 文件，文件不存在则使用默认值；环境变量优先（k8s/CI 场景可覆盖）
+def _load_ports_env() -> None:
+    ports_file = Path(__file__).parent.parent / "ports.env"
+    if not ports_file.exists():
+        return
+    for line in ports_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if key and val and key not in os.environ:
+            os.environ[key] = val
+
+_load_ports_env()
+
+HELLO_HTTP_PORT  = int(os.environ.get("THUNDER_HELLO_HTTP_PORT",  "27006"))
+INTERFACE_PORT   = int(os.environ.get("THUNDER_INTERFACE_PORT",   "27008"))
+HELLO_HTTPS_PORT = int(os.environ.get("THUNDER_HELLO_HTTPS_PORT", "27043"))
+HELLO_WS_PORT    = int(os.environ.get("THUNDER_HELLO_WS_PORT",    "27010"))
+
 
 def _phase(msg: str) -> None:
     """会话 setup 很长且无子进程输出时，避免误以为卡死（需配合 pytest -s 才实时落到终端）。"""
@@ -33,7 +56,7 @@ def _wait_cluster_route_ready(timeout_s: float = 90.0) -> None:
     deadline = time.time() + timeout_s
     last_msg = "cluster route not ready"
     admin_ports = (26000, 26022, 26032)
-    genkey_url = "http://127.0.0.1:27008/Interface/gentoken"
+    genkey_url = f"http://127.0.0.1:{INTERFACE_PORT}/Interface/gentoken"
     with requests.Session() as s:
         s.trust_env = False
         while time.time() < deadline:
@@ -197,7 +220,7 @@ def service_readiness(mode: str, docker_stack: object) -> None:
     等待业务与依赖端口就绪，避免用例刚开跑就连不上。
 
     依赖 docker_stack：保证 compose 起来后才轮询端口。
-    - 27006：Hello HTTP；27008：Interface；27443：Hello HTTPS（与 smoke/integration 用例一致）。
+    - 端口来自 tests/ports.env（THUNDER_HELLO_HTTP_PORT / THUNDER_INTERFACE_PORT / THUNDER_HELLO_HTTPS_PORT）。
     - local 额外等 6379（Redis）、3306（MySQL），与 compose 内依赖一致。
     """
     del docker_stack  # 仅用于声明 fixture 顺序
@@ -218,10 +241,10 @@ def service_readiness(mode: str, docker_stack: object) -> None:
     except Exception:
         pass
 
-    _phase(f"等待端口 27006 / 27008 / 27443 就绪（hosts={host_ips}，每项最长约 90s）…")
+    _phase(f"等待端口 {HELLO_HTTP_PORT}/{INTERFACE_PORT}/{HELLO_HTTPS_PORT} 就绪（hosts={host_ips}，每项最长约 90s）…")
     for host in host_ips:
         try:
-            ensure_ports(host, [27006, 27008, 27443], timeout_s=90.0)
+            ensure_ports(host, [HELLO_HTTP_PORT, INTERFACE_PORT, HELLO_HTTPS_PORT], timeout_s=90.0)
             break  # 某个 host 全部端口就绪
         except AssertionError:
             continue

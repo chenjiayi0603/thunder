@@ -20,7 +20,7 @@
 #include "labor/Worker.hpp"
 #include "labor/WorkerThreadPool.hpp"
 #include "log/CustomLogger.hpp"
-#include "thread/threadpool.h"
+#include "thread/work_stealing_pool.h"
 
 #include <coroutine>
 #include <future>
@@ -44,14 +44,14 @@ struct PoolOffloadAwaiter
 	using ResultT = std::invoke_result_t<WorkFn, BodyT&&, std::shared_ptr<OutT>&>;
 
 	StepCo20* step_ = nullptr;
-	util::threadpool* pool_ = nullptr;
+	util::WorkStealingPool* pool_ = nullptr;
 	BodyT body_;
 	std::shared_ptr<OutT> out_;
 	WorkFn work_;
 	uint32 stepSeq_ = 0;
 	std::future<ResultT> fut_{};
 
-	PoolOffloadAwaiter(StepCo20* s, util::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
+	PoolOffloadAwaiter(StepCo20* s, util::WorkStealingPool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
 		: step_(s), pool_(&p), body_(std::move(b)), out_(std::move(o)), work_(std::move(w))
 	{
 		if (step_ != nullptr)
@@ -79,7 +79,7 @@ struct PoolOffloadAwaiter
 		WorkFn work = std::move(work_);
 		StepCo20* step = step_;
 		const uint32 seq = stepSeq_;
-		util::threadpool* pool = pool_;
+		util::WorkStealingPool* pool = pool_;
 		try
 		{
 			fut_ = pool->commit([body = std::move(body), out, work = std::move(work), step, seq, h]() mutable
@@ -154,7 +154,7 @@ struct PoolOffloadAwaiter
 
 template <class BodyT, class OutT, class WorkFn>
 PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
-	StepCo20* s, util::threadpool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
+	StepCo20* s, util::WorkStealingPool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
 {
 	return PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>>(
 		s, p, std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
@@ -174,7 +174,7 @@ PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
  */
 template <class WorkFn, class... BodyTs,
 	std::enable_if_t<std::is_invocable_v<std::decay_t<WorkFn>, BodyTs...>, int> = 0>
-auto MakePoolOffloadAwaiter(StepCo20* s, util::threadpool& p, WorkFn&& w, BodyTs&&... bodyArgs)
+auto MakePoolOffloadAwaiter(StepCo20* s, util::WorkStealingPool& p, WorkFn&& w, BodyTs&&... bodyArgs)
 {
 	using BodyPack = std::tuple<std::decay_t<BodyTs>...>;
 	// std::decay_t 是 C++ 标准库类型萃取工具，通常用于将类型参数变为它的“原始”形式（去除引用、const、volatile、数组等），常用于泛型编程以获得更适合实例化/存储的类型。
@@ -210,7 +210,7 @@ auto MakePoolOffloadAwaiter(StepCo20* s, WorkFn&& w, BodyTs&&... bodyArgs)
 
 /** @brief 池内执行无参 lambda 并返回值（非 void）；等价于 MakePoolOffloadAwaiter(&step, pool, f) */
 template <class F>
-auto RunOnThreadPool(StepCo20& step, util::threadpool& pool, F&& f)
+auto RunOnThreadPool(StepCo20& step, util::WorkStealingPool& pool, F&& f)
 {
 	using R = std::invoke_result_t<std::decay_t<F>>;
 	static_assert(!std::is_void_v<R>, "RunOnThreadPool: return type must not be void; use MakePoolOffloadAwaiter (work may return void)");

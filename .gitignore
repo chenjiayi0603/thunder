@@ -48,6 +48,8 @@ deploy/docker/data/
 docs/center_vs_nacos_advantages.md
 claude-cli/
 code/3party/
+!code/3party/etcd-cpp-apiv3
+!code/3party/grpc
 code/3party/lib
 deploy/Center/plugins
 deploy/Logic/plugins
@@ -79,8 +81,8 @@ deploy/HelloHttp/conf/Hello.json.bak
 deploy/HelloHttp/conf/Hello.json.bak_ev
 deploy/Logic/log/start_interfaceserver_logic.pid
 .claude/
-build-tsan/
-build_tsan/
+build-tsan*/
+build_tsan*/
 deploy/HelloHttp/libluajit-5.1.so.2
 perf.data
 todo
@@ -91,3 +93,7 @@ deploy/HelloWs/bin/HelloHttp
 deploy/HelloWs/bin/Interface
 deploy/HelloWs/bin/Logic
 deploy/HelloWss/bin/HelloWss
+.build-3party/
+build_release/
+liburing-dev_*.deb
+so-images/

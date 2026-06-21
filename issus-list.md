@@ -6,6 +6,8 @@
 
 ---
 
+---
+
 ## 测试执行结果 (2026-06-03)
 
 | 阶段 | 结果 | 备注 |
@@ -4297,19 +4299,33 @@ kill -9 Manager
 
 ### 验证步骤
 
+> 参考：[docs/architecture/24-so-images-current-usage.md](docs/architecture/24-so-images-current-usage.md)  
+> so-images/ 现有模块：HelloHttp_ModuleHello、HelloHttp_ModuleRaw、HelloHttps_ModuleHello、HelloWs_CmdHello、HelloWs_ModuleShake、Interface_ModuleInterface、Logic_CmdGetToken
+
 #### SO 热更新
 
 ```bash
-# 1. 构建目标 SO
-./deploy.sh build-so HelloHttp_ModuleOrder
+# 前提：服务已通过 docker-compose up 运行
 
-# 2. 通过 Admin 接口提取并下发
+# 1. 构建 SO 镜像（以 HelloHttp_ModuleHello 为例）
+./deploy.sh build-so HelloHttp_ModuleHello
+# 预期：输出 so-hello_modulehello:latest  XMB
+
+# 2. 确认镜像存在
+docker images so-hello_modulehello
+
+# 3. 通过 Admin API 提取并下发
 curl -X POST http://localhost:8090/api/so-extract \
-  -F "file=ModuleOrder.so"
+  -H 'Content-Type: application/json' \
+  -d '{"image":"so-hello_modulehello:latest","file":"HelloHttp_ModuleHello.so","type":"HELLO"}'
+# 预期：返回成功响应
 
-# 3. 验证服务加载新 SO 并正常响应
-curl -s http://localhost:27006/hello/order -d '{"option":"Test"}'
-# 预期：新版本逻辑生效，响应符合新 SO 行为
+# 4. 验证 .so 写入服务目录
+ls -la deploy/HelloHttp/plugins/
+
+# 5. 验证 etcd 下发 → 服务加载新 SO → 请求正常
+curl -s http://localhost:27006/hello/hello -d '{"option":"Hello"}'
+# 预期：code=0，新 SO 逻辑生效，无 500 错误
 ```
 
 #### Lua 热更新
@@ -4507,9 +4523,9 @@ kubectl scale deployment thunder-hello --replicas=1 -n thunder
 
 ---
 
-## 🟡 #109 [需求] 线程池支持 Work Stealing
+## 🟡 #109 [进行中] 线程池支持 Work Stealing — 接入框架 + E2E 验证
 
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
+> 2026-06-19 | 需求 | 状态: 🟡 Phase A/B 完成，Phase C 接入中
 
 ### 需求
 
@@ -4519,9 +4535,132 @@ ThreadPool 支持 Work Stealing 调度：空闲线程主动从其他线程的任
 
 当前 ThreadPool（#92~#96 已完成基础修复）使用共享队列 + mutex，高并发时仍存在负载不均问题。Work Stealing 是解决该问题的标准方案（参考 Intel TBB、Go runtime、Tokio）。
 
+### 完成情况
+
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| A | WorkerDeque（SPMC ring buffer，13 测试）| ✅ 完成 |
+| B | WorkStealingPool（两组 deque，TSan 零竞争，18 测试）| ✅ 完成 |
+| C | 框架接入（替换 util::threadpool）+ E2E 验证 | 🟡 进行中 |
+
+### 性能结论
+
+单生产者场景 WS 比 LF 快 **2.17x～3.59x**（详见 `docs/performance/04-work-stealing-bench.md`）
+
+### 接入任务（Phase C）
+
+- [ ] 找到框架内所有使用 `util::threadpool` 的调用点
+- [ ] 替换为 `util::WorkStealingPool`
+- [ ] 全量构建 0 error
+- [ ] deploytest unit 通过
+- [ ] deploytest E2E 通过
+- [ ] smoke 通过
+
 ### 关联
 
 - #92~#96 ThreadPool 系列修复
+
+---
+
+## 🟡 #119 [需求] etcd-cpp-apiv3 纳入 git submodule 管理，实现可复现构建
+
+> 2026-06-20 | 依赖管理 | 状态: 🟡 部分完成（Step 1-2 已做，Step 3-4 待做）
+
+### 背景
+
+`etcd-cpp-apiv3`（gRPC 客户端库）当前以 **vendored 预编译** 方式存在于仓库外：
+
+```
+code/3party/include/etcd/   ← 头文件，手动 cp 自 /tmp 编译产物
+code/3party/lib/libetcd-cpp-api-core.so  ← 预编译 .so（x86_64）
+```
+
+两者均被 `.gitignore`（`code/3party/` 整体忽略），**不在版本控制内**。其他依赖（libev / hiredis / protobuf 等）均通过 `.gitmodules` + `ExternalProject_Add` 管理，唯独 etcd-cpp-apiv3 缺失，导致：
+
+- 新机器 `git clone + git submodule update --init` 后无法直接构建（缺头文件和 .so）
+- 无法追溯当前使用的具体 commit/tag
+
+### 目标
+
+将 etcd-cpp-apiv3 纳入和其他三方库相同的管理体系，使 `git submodule update --init --recursive` + `cmake` 能在干净环境完整构建。
+
+### 需要做的事（4 步）
+
+**Step 1 — 加 git submodule**
+
+```bash
+git submodule add https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3.git \
+    code/3party/etcd-cpp-apiv3
+```
+
+- 自动更新 `.gitmodules`（与 libev/protobuf 等并列）
+- 需加 `--force`，因为 `code/3party/` 在 `.gitignore` 中
+- 需确定并 pin 正确的 commit/tag（当前 .so 由 absl lts_20250512 构建，可据此定位版本）
+
+**Step 2 — 更新 .gitignore**
+
+```
+# 现在: code/3party/ 整体忽略
+# 改为: 保留 submodule 目录，只忽略 build 产物
+```
+
+- 移除或收窄 `code/3party/` 的 gitignore 规则
+- 或对 `code/3party/etcd-cpp-apiv3` 加 `!code/3party/etcd-cpp-apiv3` 排除规则
+
+**Step 3 — 接入 3party/CMakeLists.txt**
+
+仿照 `ep_protobuf` 加 `ExternalProject_Add(ep_etcd_cpp_apiv3)`，将构建产物 install 到 `${EP_STAGE}/include` 和 `${EP_STAGE}/lib`（与现有 vendored 路径相同，CMake 链接侧零改动）。
+
+etcd-cpp-apiv3 构建依赖：grpc + protobuf（项目内已有）。
+
+**Step 4 — 删除 vendored 文件 + 更新文档**
+
+- 删除 `code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so`
+- 更新 `docs/architecture/02-etcd-designed.md` 依赖库章节
+
+### 已完成（2026-06-20）
+
+**Step 1 ✅ — submodule 已加入**
+
+```
+code/3party/etcd-cpp-apiv3/  ← v0.15.4（commit ba62163）
+.gitmodules                  ← 自动更新，注释表已补充
+```
+
+**Step 2 ✅ — .gitignore 已更新**
+
+```
+code/3party/         ← 整体忽略（build 产物）
+!code/3party/etcd-cpp-apiv3  ← 子模块例外
+```
+
+**Step 3 ✅ — ExternalProject_Add 接入 CMakeLists**
+
+在 `code/3party/CMakeLists.txt` 加入 `ep_grpc` + `ep_etcd_cpp_apiv3`，与其他三方库完全一致的模式：
+
+```bash
+# 新机器克隆后（与其他库一样）：
+git submodule update --init --recursive
+cmake -S . -B build && cmake --build build --target thirdparty_deploy
+./deploy.sh build
+```
+
+- `ep_grpc`：GIT_SHALLOW 下载 gRPC v1.66.5，DEPENDS ep_c_ares + ep_protobuf，静态编译（链入 etcd .so）
+- `ep_etcd_cpp_apiv3`：用 submodule 源码，DEPENDS ep_grpc + ep_protobuf，BUILD_ETCD_CORE_ONLY=ON（只要 SyncClient + Watcher，不需 cpprestsdk）
+
+**为何 gRPC 不作为子模块**
+
+gRPC 仓库 ~300MB，改用 ExternalProject GIT_SHALLOW=ON 只拉 tag 快照，与 protobuf 用 FetchContent 拉 absl 的思路一致。
+
+**为何不能直接用系统 gRPC 1.51**
+
+系统 gRPC 1.51 链接系统 protobuf 3.21，与本项目 `libprotobuf.so.33.5.0`（protobuf 5.x）ABI 不兼容，混用会 symbol 冲突崩溃。ep_grpc 通过 `gRPC_PROTOBUF_PROVIDER=package` + `CMAKE_PREFIX_PATH` 指向本项目 protobuf，确保 ABI 一致。
+
+### 待完成
+
+**Step 4 — 删除 vendored 文件（在干净机器验证 thirdparty_deploy 通过后）**
+
+`code/3party/include/etcd/` 和 `code/3party/lib/libetcd-cpp-api-core.so` 在新机器跑 thirdparty_deploy 后构建+smoke 全通过后删除。
 
 ---
 
