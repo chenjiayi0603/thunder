@@ -94,3 +94,6 @@ deploy/HelloWs/bin/Interface
 deploy/HelloWs/bin/Logic
 deploy/HelloWss/bin/HelloWss
 .build-3party/
+build_release/
+liburing-dev_*.deb
+so-images/

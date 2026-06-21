@@ -173,40 +173,80 @@ cmd_build() {
 # ─── SO 镜像构建 ─────────────────────────────────
 SO_IMAGE_DIR="${PROJECT_DIR}/so-images"
 
-# 扫描 so-images/ 下所有子目录作为 SO 模块名
-get_so_modules() {
-    find "${SO_IMAGE_DIR}" -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sort
+# 已知 SO 模块列表（so-images/ 不入 git，由此列表驱动）
+# 格式: "ModuleDirName"  →  自动从 deploy/{ServicePrefix}/plugins/ 查找对应 .so
+ALL_SO_MODULES=(
+    HelloHttp_ModuleHello
+    HelloHttp_ModuleRaw
+    HelloHttps_ModuleHello
+    HelloWs_CmdHello
+    HelloWs_ModuleShake
+    Interface_ModuleInterface
+    Logic_CmdGetToken
+)
+
+# 从 deploy/ 找到指定模块的源 .so 路径（全名优先，回退到短名）
+find_so_source() {
+    local mod="$1"                             # e.g. Interface_ModuleInterface
+    local svc="${mod%%_*}"                     # e.g. Interface
+    local plugin_dir="${PROJECT_DIR}/deploy/${svc}/plugins"
+
+    # 优先: 全名匹配 (如 HelloHttp_ModuleHello.so)
+    if [[ -f "${plugin_dir}/${mod}.so" ]]; then
+        echo "${plugin_dir}/${mod}.so"
+        return
+    fi
+    # 回退: 短名匹配 (如 ModuleInterface.so, CmdGetToken.so)
+    local short="${mod#*_}"
+    if [[ -f "${plugin_dir}/${short}.so" ]]; then
+        echo "${plugin_dir}/${short}.so"
+        return
+    fi
+    echo ""
 }
 
 cmd_build_so() {
     local target="${MODE:-all}"
 
     if [[ "$target" == "all" ]]; then
-        for mod in $(get_so_modules); do
+        for mod in "${ALL_SO_MODULES[@]}"; do
             build_one_so_module "$mod"
         done
-    elif [[ -d "${SO_IMAGE_DIR}/${target}" ]]; then
-        build_one_so_module "$target"
     else
-        warn "SO 模块不存在: ${target}"
+        # 检查是否在已知列表里
+        local found=0
+        for mod in "${ALL_SO_MODULES[@]}"; do
+            [[ "$mod" == "$target" ]] && { found=1; break; }
+        done
+        if [[ "$found" -eq 1 ]]; then
+            build_one_so_module "$target"
+        else
+            warn "SO 模块不存在: ${target}  (已知模块: ${ALL_SO_MODULES[*]})"
+        fi
     fi
     ok "SO 镜像构建完成"
 }
 
 build_one_so_module() {
-    local mod="$1"                        # e.g. Hello_ModuleHello
+    local mod="$1"
     local dir="${SO_IMAGE_DIR}/${mod}"
-    local tag="so-${mod,,}:latest"       # so-hello_modulehello:latest (Docker 需小写)
+    local tag="so-${mod,,}:latest"
     local hash_file="${dir}/.so_hash"
 
-    local so_count=$(find "$dir" -maxdepth 1 -name "*.so" | wc -l)
-    if [[ "$so_count" -eq 0 ]]; then
-        warn "${mod}: 无 .so 文件, 跳过"
+    # 从 deploy/ 找源 .so，自动复制到 so-images/ 目录
+    local src
+    src=$(find_so_source "$mod")
+    if [[ -z "$src" ]]; then
+        warn "${mod}: 在 deploy/ 中未找到对应 .so，跳过（先跑 deploy.sh build）"
         return
     fi
 
+    mkdir -p "$dir"
+    cp -f "$src" "${dir}/${mod}.so"
+
     # 增量: SO 无变化则跳过
-    local new_hash=$(sha256sum "$dir"/*.so 2>/dev/null | sha256sum | awk '{print $1}')
+    local new_hash
+    new_hash=$(sha256sum "${dir}/${mod}.so" | awk '{print $1}')
     local old_hash=""
     [[ -f "$hash_file" ]] && old_hash=$(cat "$hash_file")
     if [[ "$new_hash" == "$old_hash" ]] && docker image inspect "$tag" &>/dev/null; then
@@ -214,7 +254,7 @@ build_one_so_module() {
         return
     fi
 
-    log "构建 SO 镜像: ${tag}"
+    log "构建 SO 镜像: ${tag}  (来源: ${src})"
 
     cat > "${dir}/Dockerfile" << 'DOCKERFILE'
 FROM alpine:3.20
@@ -228,7 +268,8 @@ DOCKERFILE
     }
 
     echo "$new_hash" > "$hash_file"
-    local size=$(docker image inspect "$tag" --format '{{.Size}}' 2>/dev/null)
+    local size
+    size=$(docker image inspect "$tag" --format '{{.Size}}' 2>/dev/null)
     size=$(( size / 1024 / 1024 ))
     ok "  ${tag}  ${size}MB"
 }

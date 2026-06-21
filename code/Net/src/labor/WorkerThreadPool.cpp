@@ -6,7 +6,7 @@ namespace net
 
 namespace
 {
-std::unique_ptr<util::threadpool> g_thunderWorkerPool;
+std::unique_ptr<util::WorkStealingPool> g_thunderWorkerPool;
 } // namespace
 
 /**
@@ -29,10 +29,10 @@ void InitThunderWorkerThreadPool(unsigned short threadCount)
 	{
 		n = THREADPOOL_MAX_NUM;
 	}
-	g_thunderWorkerPool = std::make_unique<util::threadpool>(n);
+	g_thunderWorkerPool = std::make_unique<util::WorkStealingPool>(n);
 }
 
-util::threadpool& ThunderWorkerThreadPool()
+util::WorkStealingPool& ThunderWorkerThreadPool()
 {
 	if (g_thunderWorkerPool == nullptr)
 	{

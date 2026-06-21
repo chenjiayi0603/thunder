@@ -6,6 +6,8 @@
 
 ---
 
+---
+
 ## 测试执行结果 (2026-06-03)
 
 | 阶段 | 结果 | 备注 |
@@ -4297,19 +4299,33 @@ kill -9 Manager
 
 ### 验证步骤
 
+> 参考：[docs/architecture/24-so-images-current-usage.md](docs/architecture/24-so-images-current-usage.md)  
+> so-images/ 现有模块：HelloHttp_ModuleHello、HelloHttp_ModuleRaw、HelloHttps_ModuleHello、HelloWs_CmdHello、HelloWs_ModuleShake、Interface_ModuleInterface、Logic_CmdGetToken
+
 #### SO 热更新
 
 ```bash
-# 1. 构建目标 SO
-./deploy.sh build-so HelloHttp_ModuleOrder
+# 前提：服务已通过 docker-compose up 运行
 
-# 2. 通过 Admin 接口提取并下发
+# 1. 构建 SO 镜像（以 HelloHttp_ModuleHello 为例）
+./deploy.sh build-so HelloHttp_ModuleHello
+# 预期：输出 so-hello_modulehello:latest  XMB
+
+# 2. 确认镜像存在
+docker images so-hello_modulehello
+
+# 3. 通过 Admin API 提取并下发
 curl -X POST http://localhost:8090/api/so-extract \
-  -F "file=ModuleOrder.so"
+  -H 'Content-Type: application/json' \
+  -d '{"image":"so-hello_modulehello:latest","file":"HelloHttp_ModuleHello.so","type":"HELLO"}'
+# 预期：返回成功响应
 
-# 3. 验证服务加载新 SO 并正常响应
-curl -s http://localhost:27006/hello/order -d '{"option":"Test"}'
-# 预期：新版本逻辑生效，响应符合新 SO 行为
+# 4. 验证 .so 写入服务目录
+ls -la deploy/HelloHttp/plugins/
+
+# 5. 验证 etcd 下发 → 服务加载新 SO → 请求正常
+curl -s http://localhost:27006/hello/hello -d '{"option":"Hello"}'
+# 预期：code=0，新 SO 逻辑生效，无 500 错误
 ```
 
 #### Lua 热更新
@@ -4507,9 +4523,9 @@ kubectl scale deployment thunder-hello --replicas=1 -n thunder
 
 ---
 
-## 🟡 #109 [需求] 线程池支持 Work Stealing
+## 🟡 #109 [进行中] 线程池支持 Work Stealing — 接入框架 + E2E 验证
 
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
+> 2026-06-19 | 需求 | 状态: 🟡 Phase A/B 完成，Phase C 接入中
 
 ### 需求
 
@@ -4518,6 +4534,27 @@ ThreadPool 支持 Work Stealing 调度：空闲线程主动从其他线程的任
 ### 背景
 
 当前 ThreadPool（#92~#96 已完成基础修复）使用共享队列 + mutex，高并发时仍存在负载不均问题。Work Stealing 是解决该问题的标准方案（参考 Intel TBB、Go runtime、Tokio）。
+
+### 完成情况
+
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| A | WorkerDeque（SPMC ring buffer，13 测试）| ✅ 完成 |
+| B | WorkStealingPool（两组 deque，TSan 零竞争，18 测试）| ✅ 完成 |
+| C | 框架接入（替换 util::threadpool）+ E2E 验证 | 🟡 进行中 |
+
+### 性能结论
+
+单生产者场景 WS 比 LF 快 **2.17x～3.59x**（详见 `docs/performance/04-work-stealing-bench.md`）
+
+### 接入任务（Phase C）
+
+- [ ] 找到框架内所有使用 `util::threadpool` 的调用点
+- [ ] 替换为 `util::WorkStealingPool`
+- [ ] 全量构建 0 error
+- [ ] deploytest unit 通过
+- [ ] deploytest E2E 通过
+- [ ] smoke 通过
 
 ### 关联
 
