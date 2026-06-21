@@ -84,13 +84,45 @@ WS 方案（#109）每个 worker 有独立 `_submit_deque`，commit() 分发后�
 
 ## 7. 结论
 
-### 7.1 空任务场景（队列调度开销为主）
+### 7.1 1P-1C 基线：无争用下 WS 仍快 3.59x
+
+1P-1C 只有 1 个 worker，不存在多核 cache line bouncing，但 WS 仍快 3.59x。
+原因在数据结构本身，与争用无关：
+
+```
+LF (moodycamel::ConcurrentQueue)           WS (WorkerDeque ring buffer)
+─────────────────────────────────          ──────────────────────────────
+enqueue:                                   push:
+  申请 / 复用 block                           load head  (1 原子读)
+  写入 block 内 slot                          load tail  (1 原子读)
+  更新 block 内 index                         _ring[t & mask] = move(task)  (1 写)
+  更新全局 index                              tail++  (1 原子写)
+  → 多级 index，有指针追踪                   → 直接数组写，无指针追踪
+
+dequeue:
+  找到活跃 block（可能跨 cache line）       dequeue:
+  检查 block 内 index                         load head  (1 原子读)
+  读取 slot                                   load tail  (1 原子读)
+  推进 block index                            task = _ring[h & mask]  (1 读)
+  可能回收 block                              CAS head++  (1 原子 CAS)
+  → 链表结构，cache miss 概率高              → 连续数组，顺序访问，prefetch 友好
+```
+
+moodycamel 为通用 MPMC 设计，即使 1P-1C 也要走完整的 block 管理路径。
+WorkerDeque 是为 SPSC/SPMC 特化的 ring buffer，1P-1C 时跑在最优路径上：
+producer 顺序写 tail，consumer 顺序读 head，内存访问完全线性。
+
+**这也解释了为什么 WS 加速比随 worker 增加而下降**（3.59x→2.17x）：
+worker 越多，WS 自身的开销也上升（P2C 扫描更多 deque、global_q 溢出路径），
+优势被部分抵消，但绝对值仍比 LF 低 2x+。
+
+### 7.2 空任务场景（队列调度开销为主）
 
 WS 比 LF 快 **2.17x ～ 3.59x**。
 
-根因：LF 的所有 worker 共用一个 moodycamel 队列，每次取任务都要 CAS 同一个 head 指针，
-N 个 worker 的 cache line 在多核间来回传递（bouncing）。WS 每个 worker 有独立的
-`_submit_deque`，commit() 将任务分发到对应 deque，worker 取自己的 deque 时完全无竞争。
+多 worker 时再叠加一层争用差距：LF 的所有 worker 共用一个 moodycamel 队列，每次取任务都要
+CAS 同一个 head 指针，N 个 worker 的 cache line 在多核间来回传递（bouncing）。
+WS 每个 worker 有独立的 `_submit_deque`，worker 取自己的 deque 时完全无竞争。
 
 ### 7.2 LF 随 worker 数劣化，WS 更平稳
 
