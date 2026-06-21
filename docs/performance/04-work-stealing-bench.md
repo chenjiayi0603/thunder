@@ -109,7 +109,8 @@ dequeue:
 ```
 
 moodycamel 为通用 MPMC 设计，即使 1P-1C 也要走完整的 block 管理路径。
-WorkerDeque 是为 SPSC/SPMC 特化的 ring buffer，1P-1C 时跑在最优路径上：
+WorkerDeque 是 SPMC ring buffer（SP = push 单 tail 写者；MC = dequeue/steal_into 均 CAS head）。
+1P-1C 时跑在 SPMC 的退化最优路径上：只有 1 个 consumer，CAS 永远第一次成功，无重试；
 producer 顺序写 tail，consumer 顺序读 head，内存访问完全线性。
 
 **这也解释了为什么 WS 加速比随 worker 增加而下降**（3.59x→2.17x）：
