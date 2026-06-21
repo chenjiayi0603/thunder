@@ -81,8 +81,8 @@ deploy/HelloHttp/conf/Hello.json.bak
 deploy/HelloHttp/conf/Hello.json.bak_ev
 deploy/Logic/log/start_interfaceserver_logic.pid
 .claude/
-build-tsan/
-build_tsan/
+build-tsan*/
+build_tsan*/
 deploy/HelloHttp/libluajit-5.1.so.2
 perf.data
 todo
@@ -93,3 +93,4 @@ deploy/HelloWs/bin/HelloHttp
 deploy/HelloWs/bin/Interface
 deploy/HelloWs/bin/Logic
 deploy/HelloWss/bin/HelloWss
+.build-3party/
