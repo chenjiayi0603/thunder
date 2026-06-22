@@ -10,6 +10,10 @@ import pytest
 
 from helpers.runtime import repo_root, require_ok, run_cmd
 
+# 从 conftest 已加载的端口环境变量里读；WRK_TARGET 可覆盖整个 URL（k8s 场景）
+_HELLO_HTTP_PORT = os.environ.get("THUNDER_HELLO_HTTP_PORT", "27006")
+_DEFAULT_TARGET = f"http://127.0.0.1:{_HELLO_HTTP_PORT}/hello/hello"
+
 
 def _extract_metric(text: str, pattern: str) -> str:
     m = re.search(pattern, text, re.MULTILINE)
@@ -18,20 +22,20 @@ def _extract_metric(text: str, pattern: str) -> str:
 
 @pytest.mark.perf
 def test_wrk_smoke(proxyless_env: dict[str, str]) -> None:
-    # 测试目的：给出可读的性能冒烟结果（而不仅仅是“命令成功”）。
+    # 测试目的：给出可读的性能冒烟结果（而不仅仅是"命令成功"）。
     results_dir = repo_root() / "tests" / "benchmark" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     report = results_dir / "wrk_test_result.md"
     wrk_threads = os.getenv("WRK_THREADS", "4")
     wrk_connections = os.getenv("WRK_CONNECTIONS", "100")
     wrk_duration = os.getenv("WRK_DURATION", "60s")
-    target = os.getenv("WRK_TARGET", "http://192.168.3.61:30006/hello/hello")
+    target = os.getenv("WRK_TARGET", _DEFAULT_TARGET)
     if shutil.which("wrk") is None:
         # 无 wrk 时退化为轻量请求回归，确保该用例在默认命令中可执行。
         s = requests.Session()
         s.trust_env = False
         for _ in range(3):
-            r = s.post("http://192.168.3.61:30006/hello/hello", json={"option": "Echo"}, timeout=10)
+            r = s.post(target, json={"option": "Echo"}, timeout=10)
             assert r.status_code == 200, r.text
             assert '"code"' in r.text
         report.write_text(

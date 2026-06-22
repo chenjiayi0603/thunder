@@ -11,6 +11,8 @@
 #ifndef NATIVEURINGIOBACKEND_HPP_
 #define NATIVEURINGIOBACKEND_HPP_
 
+#ifdef __linux__
+
 #include "labor/IoBackend.hpp"
 #include "libev/ev.h"
 #include <liburing.h>
@@ -107,4 +109,5 @@ private:
 
 } /* namespace net */
 
+#endif /* __linux__ */
 #endif /* NATIVEURINGIOBACKEND_HPP_ */

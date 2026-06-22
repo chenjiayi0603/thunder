@@ -17,6 +17,7 @@
 # protobuf           eaec88f v33-dev-1017-geaec88fea                   eaec88fea0b95468f293f89bd08e5a0e5ab8490b
 # etcd-cpp-apiv3     7c6e714 post-v0.15.4 (GPR_ASSERT + uint64_t fix)    7c6e714f188f9576e25e0350cac4181139eec23e
 # grpc               e84a8a2 v1.81.1                                    e84a8a2f04095f2772ba42a4abccde4f9243e75b
+# liburing           e3d35ea liburing-2.14                               e3d35ea59d3ba09075ed4d7751e4bb9049cce64a
 #
 [submodule "code/3party/libev"]
 	path = code/3party/libev
@@ -66,3 +67,7 @@
 	path = code/3party/grpc
 	url = https://github.com/grpc/grpc.git
 	branch = e84a8a2f04095f2772ba42a4abccde4f9243e75b
+[submodule "code/3party/liburing"]
+	path = code/3party/liburing
+	url = https://github.com/axboe/liburing.git
+	branch = e3d35ea59d3ba09075ed4d7751e4bb9049cce64a

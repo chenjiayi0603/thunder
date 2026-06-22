@@ -162,11 +162,11 @@ function(thunder_link_thirdparty_shared _target)
     rt
   )
 
-  if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
+  if((THUNDER_IO_URING OR THUNDER_IO_ASIO_URING) AND LIBURING_LIBRARY)
     if(LIBURING_LIBRARY_DIRS)
       target_link_directories(${_target} PRIVATE "${LIBURING_LIBRARY_DIRS}")
     endif()
-    target_link_libraries(${_target} PRIVATE uring)
+    target_link_libraries(${_target} PRIVATE ${LIBURING_LIBRARY})
   endif()
 
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")

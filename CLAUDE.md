@@ -26,6 +26,22 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 
 E2E 通过 ≠ 冒烟通过，覆盖范围不同，必须分开跑、分开确认。
 
+### 测试环境唯一标准：Docker Compose
+
+**E2E 测试固定使用 Docker Compose，禁止在测试代码里写死 k8s 地址（如 192.168.x.x:3xxxx）。**
+
+理由：
+- 端口统一来源于 `tests/ports.env`，Docker Compose 和测试代码都从这里读
+- k8s NodePort 地址机器相关，写死后别的环境跑不起来
+- k8s 回归（`k8sregression`）是部署验证，不是日常功能测试，两者独立
+
+测试入口：
+```bash
+./deploy.sh test unit   # 单元测试（C++ gtest + Python pytest unit/）
+./deploy.sh test e2e    # E2E（Docker Compose 自动起停）
+tests/test_smoke.sh     # 冒烟（需 Docker 集群已在线）
+```
+
 ---
 
 ## deploytest — Thunder 本地部署测试

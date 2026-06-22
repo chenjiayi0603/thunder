@@ -34,37 +34,46 @@ if(THUNDER_IO_ASIO_URING)
   add_compile_definitions(THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
 endif()
 
-# liburing: NativeUringIoBackend 编译/链接必备
-if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
-  # 尝试 pkg-config
-  find_package(PkgConfig QUIET)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(LIBURING QUIET liburing)
-  endif()
-  if(LIBURING_FOUND)
-    message(STATUS "liburing: pkg-config ${LIBURING_VERSION}")
-    set(LIBURING_INCLUDE_DIRS "${LIBURING_INCLUDE_DIRS}" CACHE PATH "liburing include path")
-    set(LIBURING_LIBRARY_DIRS "${LIBURING_LIBRARY_DIRS}" CACHE PATH "liburing library path")
+# liburing: NativeUringIoBackend 编译/链接必备（仅 Linux kernel >= 5.1）
+# 从子模块 code/3party/liburing 编译：CMake 配置阶段先跑 configure 生成头文件，再编译源码
+if((THUNDER_IO_URING OR THUNDER_IO_ASIO_URING) AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(_LIBURING_DIR ${CMAKE_SOURCE_DIR}/code/3party/liburing)
+  if(EXISTS ${_LIBURING_DIR}/src/queue.c)
+    # configure 生成 compat.h 和 io_uring_version.h（写入子模块 src/include/liburing/）
+    if(NOT EXISTS ${_LIBURING_DIR}/src/include/liburing/compat.h)
+      message(STATUS "liburing: 运行 configure 生成兼容头文件…")
+      execute_process(
+        COMMAND ${_LIBURING_DIR}/configure
+        WORKING_DIRECTORY ${_LIBURING_DIR}
+        RESULT_VARIABLE _liburing_cfg_ret
+        OUTPUT_QUIET ERROR_QUIET
+      )
+      if(NOT _liburing_cfg_ret EQUAL 0)
+        message(FATAL_ERROR "liburing configure 失败（返回 ${_liburing_cfg_ret}）")
+      endif()
+    endif()
+
+    add_library(thunder_liburing STATIC
+      ${_LIBURING_DIR}/src/queue.c
+      ${_LIBURING_DIR}/src/register.c
+      ${_LIBURING_DIR}/src/setup.c
+      ${_LIBURING_DIR}/src/syscall.c
+      ${_LIBURING_DIR}/src/version.c
+    )
+    target_include_directories(thunder_liburing PUBLIC ${_LIBURING_DIR}/src/include)
+    target_compile_options(thunder_liburing PRIVATE -D_GNU_SOURCE)
+    set(LIBURING_INCLUDE_DIRS ${_LIBURING_DIR}/src/include CACHE PATH "liburing include path" FORCE)
+    set(LIBURING_LIBRARY thunder_liburing CACHE STRING "liburing target" FORCE)
+    message(STATUS "liburing 2.14: building from submodule (code/3party/liburing)")
   else()
-    # 回退：找头文件和库
-    find_path(LIBURING_INCLUDE_DIRS liburing.h
-      HINTS "$ENV{HOME}/.local/include" "/usr/local/include"
-      DOC "liburing include path")
-    find_library(LIBURING_LIBRARY uring
-      HINTS "$ENV{HOME}/.local/lib" "/usr/local/lib"
-      DOC "liburing library")
-    if(LIBURING_INCLUDE_DIRS)
-      message(STATUS "liburing include: ${LIBURING_INCLUDE_DIRS}")
-    else()
-      message(WARNING "liburing.h 未找到 — NativeUringIoBackend 将编译失败。请安装 liburing-dev 或设置 LIBURING_INCLUDE_DIRS。")
-    endif()
-    if(LIBURING_LIBRARY)
-      get_filename_component(LIBURING_LIBRARY_DIRS "${LIBURING_LIBRARY}" DIRECTORY)
-      message(STATUS "liburing library: ${LIBURING_LIBRARY} (dir: ${LIBURING_LIBRARY_DIRS})")
-    else()
-      message(WARNING "liburing.so 未找到 — 链接将失败。请安装 liburing-dev 或设置 LIBURING_LIBRARY。")
-    endif()
+    message(WARNING "liburing submodule 未初始化 — 请执行: git submodule update --init code/3party/liburing")
+    set(THUNDER_IO_URING OFF CACHE BOOL "" FORCE)
+    set(THUNDER_IO_ASIO_URING OFF CACHE BOOL "" FORCE)
   endif()
+elseif(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
+  message(STATUS "liburing: 非 Linux 平台，禁用 io_uring 后端")
+  set(THUNDER_IO_URING OFF CACHE BOOL "" FORCE)
+  set(THUNDER_IO_ASIO_URING OFF CACHE BOOL "" FORCE)
 endif()
 
 find_package(Threads REQUIRED)

@@ -347,27 +347,35 @@ def test_watch_reconnect_after_etcd1_restart(service_readiness: object) -> None:
             time.sleep(0.5)
         assert iface_ok, "Interface→Logic not healthy within 15s after etcd1 restart"
 
-        # ── 验证 etcd 中节点注册完整 ──
-        nodes_resp = requests.post(
-            f"{ETCD_URL}/v3/kv/range",
-            json={
-                "key":       _b64("/thunder/registry/"),
-                "range_end": _b64("/thunder/registry0"),
-            },
-            timeout=5,
-        )
-        assert nodes_resp.status_code == 200
-        kvs = nodes_resp.json().get("kvs", [])
-        node_types = set()
-        for kv in kvs:
+        # ── 验证 etcd 中节点注册完整（最多等 30s，各容器重建租约速度不同） ──
+        expected = {"HELLO_HTTP", "HELLO_WS", "HELLO_HTTPS", "INTERFACE", "LOGIC"}
+        missing = expected.copy()
+        for _ in range(60):  # 30s
             try:
-                v = json.loads(base64.b64decode(kv["value"]).decode())
-                if "node_type" in v:
-                    node_types.add(v["node_type"])
+                nodes_resp = requests.post(
+                    f"{ETCD_URL}/v3/kv/range",
+                    json={
+                        "key":       _b64("/thunder/registry/"),
+                        "range_end": _b64("/thunder/registry0"),
+                    },
+                    timeout=5,
+                )
+                if nodes_resp.status_code == 200:
+                    kvs = nodes_resp.json().get("kvs", [])
+                    node_types: set[str] = set()
+                    for kv in kvs:
+                        try:
+                            v = json.loads(base64.b64decode(kv["value"]).decode())
+                            if "node_type" in v:
+                                node_types.add(v["node_type"])
+                        except Exception:
+                            pass
+                    missing = expected - node_types
+                    if not missing:
+                        break
             except Exception:
                 pass
-        expected = {"HELLO_HTTP", "HELLO_WS", "HELLO_HTTPS", "INTERFACE", "LOGIC"}
-        missing = expected - node_types
+            time.sleep(0.5)
         assert not missing, \
             f"Missing node types after etcd1 restart: {missing} (found: {node_types})"
 

@@ -3,6 +3,7 @@
  * @file     NativeUringIoBackend.cpp
  * @brief    原生 liburing 后端骨架（普通 recv/send；send_zc 见 Path B-3）
  ******************************************************************************/
+#ifdef __linux__
 #include "labor/io/NativeUringIoBackend.hpp"
 #include "util/CBuffer.hpp"
 #include <arpa/inet.h>
@@ -422,3 +423,4 @@ bool NativeUringIoBackend::GetPeerName(int fd, PeerAddr& outAddr)
 }
 
 } /* namespace net */
+#endif /* __linux__ */
