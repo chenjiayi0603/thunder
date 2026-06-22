@@ -18,7 +18,9 @@
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
 #include "labor/io/EvIoBackend.hpp"
+#ifdef __linux__
 #include "labor/io/NativeUringIoBackend.hpp"
+#endif
 #ifdef THUNDER_IO_ASIO_URING
 #include "labor/io/AsioUringIoBackend.hpp"
 #endif
@@ -479,6 +481,7 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
 
     if (strBackend == "native_uring")
     {
+#ifdef __linux__
         NativeUringIoBackend* pBackend = new NativeUringIoBackend();
         if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
         {
@@ -488,6 +491,9 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
         }
         delete pBackend;
         LOG4_WARN("IoBackend: native_uring init failed, falling back to ev");
+#else
+        LOG4_WARN("IoBackend: native_uring not supported on this platform, falling back to ev");
+#endif /* __linux__ */
     }
 
     if (strBackend == "uring")
