@@ -228,7 +228,7 @@ SSL_CTX* pCtx = SSL_CTX_new(
 { "access_codec": 11, "access_port": 27443, "inner_port": 27444 }
 ```
 
-详见 `docs/codec/https_codec.md`（完整运维指南）。
+详见 `docs/architecture/32-https-codec.md`（完整运维指南）。
 
 ---
 
@@ -611,4 +611,4 @@ SSL_ERROR_ZERO_RETURN:
 | `ClientMsgHead.hpp` | `code/Net/src/codec/` | tagClientMsgHead 结构 |
 
 **相关文档**：
-- `docs/codec/https_codec.md` — HTTPS 完整运维指南（含证书、部署、排障）
+- `docs/architecture/32-https-codec.md` — HTTPS 完整运维指南（含证书、部署、排障）
