@@ -98,3 +98,4 @@ deploy/HelloWss/bin/HelloWss
 build_release/
 liburing-dev_*.deb
 so-images/
+TEST_STATUS.md

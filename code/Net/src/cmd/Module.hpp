@@ -51,6 +51,12 @@ public:
         return(false);
     }
 public:
+    /**
+     * @brief 热重载模块脚本（Lua 等脚本语言专用，非 SO 重载）
+     * @return 是否重载成功。默认返回 false（非脚本模块不支持）
+     */
+    virtual bool ReloadScript() { return false; }
+
     const std::string& GetModulePath() const
     {
         return(m_strModulePath);

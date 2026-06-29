@@ -68,6 +68,8 @@ enum E_CMD
     CMD_REQ_NODE_RESTART_WORKERS        = 37,   ///< 重启工作者请求
     CMD_RSP_NODE_RESTART_WORKERS        = 38,   ///< 重启工作者应答
 
+    CMD_REQ_RELOAD_LUA                  = 41,   ///< 重新加载Lua脚本请求（manager to worker，只重建VM不动so）
+    CMD_RSP_RELOAD_LUA                  = 42,   ///< 重新加载Lua脚本响应（无须响应）
     CMD_REQ_RELOAD_LOGIC_CONFIG         = 39,   ///< Center通知配置到节点服务器,重新加载逻辑配置
     CMD_RSP_RELOAD_LOGIC_CONFIG         = 40,   ///< 节点服务器得到通知应答Center
 

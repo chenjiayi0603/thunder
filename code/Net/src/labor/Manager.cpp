@@ -24,6 +24,7 @@
 #include "labor/types/ShmRingQueue.hpp"
 #include "Interface.hpp"
 
+#include "cmd/CW.hpp"
 #include "cmd/sys_cmd/CmdMgrBeat.hpp"
 #include "cmd/sys_cmd/CmdMgrLogicConfig.hpp"
 #include "cmd/sys_cmd/CmdMgrServerConfig.hpp"
@@ -2776,6 +2777,7 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
 
             // 2. 检查 so/module 版本变化 (需在更新 m_oCurrentConf 之前比较旧值)
             bool soOrModuleChanged = false;
+                std::vector<int> luaChangedIdx;  // #127: 收集 Lua 脚本变更的模块索引
             {
                 auto newSo = newConf["so"];
                 auto oldSo = m_oCurrentConf["so"];
@@ -2799,7 +2801,13 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                             std::string op, np; int ov = 0, nv = 0;
                             oldMod[i].Get("so_path", op); newMod[i].Get("so_path", np);
                             oldMod[i].Get("version", ov); newMod[i].Get("version", nv);
-                            if (op != np || ov != nv) { soOrModuleChanged = true; break; }
+                            if (op != np) { soOrModuleChanged = true; break; }
+                            if (ov != nv) {
+                                // #126: Lua 模块 (有 script_path) 版本变更不需要重启 Worker
+                                std::string sp; newMod[i].Get("script_path", sp);
+                                if (sp.empty()) { soOrModuleChanged = true; break; }
+                                luaChangedIdx.push_back(i);  // #127: 收集索引
+                            }
                         }
                     }
                 }
@@ -2862,6 +2870,21 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                         m_bPendingRestart = true;
                         LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
                     }
+                }
+            }
+            // 7. Lua 脚本版本变化 → 发送 CMD_REQ_RELOAD_LUA（#129: 只重建 VM，不动 SO）
+            if (!luaChangedIdx.empty()) {
+                util::CJsonObject luaMods;
+                auto& curMod = m_oCurrentConf["module"];
+                for (int idx : luaChangedIdx) {
+                    if (idx < curMod.GetArraySize()) {
+                        luaMods.Add(curMod[idx]);
+                    }
+                }
+                LOG4_INFO("ConfigUpdated: reload %d lua scripts in-place (VM only, no SO restart)",
+                          luaMods.GetArraySize());
+                for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
+                    SendToWorker(CMD_REQ_RELOAD_LUA, GetSequence(), luaMods.ToString());
                 }
             }
         }

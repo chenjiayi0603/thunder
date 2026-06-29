@@ -1,7 +1,7 @@
 # Thunder io_uring 后端
 
 > 代码: `code/Net/src/labor/NativeUringIoBackend.{cpp,hpp}`, `code/Net/src/labor/AsioUringIoBackend.{cpp,hpp}`
-> 详细设计: `docs/io/06-asio-uring-detailed-design.md`
+> 详细设计: `docs/architecture/30-asio-uring-design.md`
 
 ---
 
@@ -51,7 +51,7 @@ Worker → SubmitRead(fd, buf)
   → ev_check: poll() 补收 race window CQE + UpdateRingWatcher
 ```
 
-详见 `docs/io/06-asio-uring-detailed-design.md`。
+详见 `docs/architecture/30-asio-uring-design.md`。
 
 ---
 
@@ -84,4 +84,4 @@ Worker → SubmitRead(fd, buf)
 
 ## 5. DPDK
 
-DPDK 需要独占网卡, Thunder 当前无 DPDK 测试环境。对比见 `docs/io/02-dpdk-vs-io_uring.md`。
+DPDK 需要独占网卡, Thunder 当前无 DPDK 测试环境。对比见 `docs/architecture/26-dpdk-design.md`。

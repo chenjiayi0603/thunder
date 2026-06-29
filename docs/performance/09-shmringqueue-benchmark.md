@@ -1,7 +1,7 @@
 # ShmRingQueue 对比测试
 
 > 测试代码: `code/test/labor/test_shm_queue.cpp`
-> 设计文档: `docs/io/07-shmringqueue-design.md`
+> 设计文档: `docs/architecture/31-shmringqueue-design.md`
 
 ---
 

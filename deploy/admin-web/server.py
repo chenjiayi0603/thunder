@@ -121,27 +121,30 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_PUT(self):
-        """PUT /plugins/{TypeDir}/{filename} → 保存到本地 + NFS"""
-        path = self.translate_path(self.path)
+        """PUT /plugins/{TypeDir}/{filename} → deploy/{TypeDir}/plugins/{filename} + NFS"""
+        parts = self.path.strip("/").split("/")
+        if len(parts) < 3 or parts[0] != "plugins":
+            self.send_error(400, "path must be /plugins/{TypeDir}/{filename}")
+            return
+        type_dir = parts[1]
+        filename = "/".join(parts[2:])
+        base = UploadServer.upload_base or os.getcwd()
+        # 写本地：deploy/{TypeDir}/plugins/{filename}
+        path = os.path.join(base, type_dir, "plugins", filename)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cl = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(cl)
-        # 写本地
         with open(path, "wb") as f:
             f.write(data)
-        # 同步写 NFS (k8s 多节点共享), 路径: /plugins/{TypeDir}/{file} → NFS/{TypeDir}/{file}
+        # 同步写 NFS (k8s 多节点共享): NFS/{TypeDir}/{filename}
         if NFS_DIR.exists():
-            parts = self.path.strip("/").split("/")
-            if len(parts) >= 3 and parts[0] == "plugins":
-                nfs_path = os.path.join(str(NFS_DIR), *parts[1:])  # 跳过 "plugins/" 前缀
-                try:
-                    os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
-                    with open(nfs_path, "wb") as f:
-                        f.write(data)
-                except PermissionError:
-                    pass  # NFS 只读, 仅写本地
-                except Exception:
-                    pass
+            nfs_path = os.path.join(str(NFS_DIR), type_dir, filename)
+            try:
+                os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
+                with open(nfs_path, "wb") as f:
+                    f.write(data)
+            except (PermissionError, Exception):
+                pass
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -243,7 +246,7 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
             return
         type_dir = {"HELLO_HTTP":"HelloHttp","HELLO_HTTPS":"HelloHttps","HELLO_WS":"HelloWs",
                     "LOGIC":"Logic","INTERFACE":"Interface"}.get(node_type, node_type)
-        rel = f"plugins/{type_dir}/{so_file}"
+        rel = f"{type_dir}/plugins/{so_file}"
         try:
             import docker, tarfile, io
             client = docker.from_env()
@@ -274,15 +277,17 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"ok": True, "path": "/" + rel, "size": len(data)}).encode())
 
     def _save_so(self, data, rel):
-        """写本地 + NFS"""
-        dst = self.translate_path("/" + rel.lstrip("/"))
+        """写本地 + NFS。rel = {TypeDir}/plugins/{so_file}"""
+        base = UploadServer.upload_base or os.getcwd()
+        dst = os.path.join(base, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, "wb") as f:
             f.write(data)
+        # NFS: NFS/{TypeDir}/plugins/{filename}（跳过 deploy 前缀）
         if NFS_DIR.exists():
             parts = rel.strip("/").split("/")
-            if len(parts) >= 3 and parts[0] == "plugins":
-                nfs_path = os.path.join(str(NFS_DIR), *parts[1:])
+            if len(parts) >= 3:
+                nfs_path = os.path.join(str(NFS_DIR), *parts)
                 os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
                 with open(nfs_path, "wb") as f:
                     f.write(data)
@@ -393,20 +398,20 @@ def main():
     p.add_argument("--port", type=int, default=8090)
     args = p.parse_args()
 
-    serve_dir = str(Path(__file__).resolve().parent)
+    serve_dir = str(Path(__file__).resolve().parent.parent)  # deploy/
     os.chdir(serve_dir)
-    UploadServer.upload_base = serve_dir
+    UploadServer.upload_base = serve_dir  # 下发目标：deploy/{TypeDir}/plugins/ 和 deploy/{TypeDir}/scripts/
 
     import socket
     ip = socket.gethostbyname(socket.gethostname())
 
     print(f"╔══════════════════════════════════════════╗")
-    print(f"║   Thunder SO Upload Server              ║")
+    print(f"║   Thunder Admin Web Server              ║")
     print(f"╠══════════════════════════════════════════╣")
     print(f"║  本地访问: http://127.0.0.1:{args.port}/")
     print(f"║  远程访问: http://{ip}:{args.port}/")
-    print(f"║  上传接口: PUT /plugins/{{Type}}/{{file}}.so")
-    print(f"║  本地目录: {serve_dir}/plugins/")
+    print(f"║  Lua 下发: POST /api/lua-scripts → {serve_dir}/{{Type}}/scripts/")
+    print(f"║  SO 下发:  POST /api/so-extract  → {serve_dir}/{{Type}}/plugins/")
     if NFS_DIR.exists():
         print(f"║  NFS 目录: {NFS_DIR}/ (k8s 多节点共享)")
     print(f"╚══════════════════════════════════════════╝")

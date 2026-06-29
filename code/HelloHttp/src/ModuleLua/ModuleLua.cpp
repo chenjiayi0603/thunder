@@ -286,4 +286,56 @@ bool ModuleLua::AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oI
     return true;
 }
 
+bool ModuleLua::ReloadScript() {
+    if (!m_pLua) {
+        LOG4_ERROR("ModuleLua::ReloadScript() no lua_State");
+        return false;
+    }
+    // 释放旧 handle_request 引用（不关 VM，保留 C 函数注册、metatable、JIT trace）
+    if (m_iFuncRef != LUA_NOREF) {
+        luaL_unref(m_pLua, LUA_REGISTRYINDEX, m_iFuncRef);
+        m_iFuncRef = LUA_NOREF;
+    }
+    // 清理全局表（清除旧脚本定义的变量和函数）
+    lua_pushnil(m_pLua); lua_setglobal(m_pLua, "handle_request");
+
+    // 重新从模块配置读取脚本路径
+    GetModuleConf().Get("script_path", m_strScriptPath);
+
+    // 加载新脚本
+    std::string scriptContent;
+    GetModuleConf().Get("script_content", scriptContent);
+    if (!scriptContent.empty()) {
+        if (luaL_loadbuffer(m_pLua, scriptContent.data(), scriptContent.size(),
+                            m_strScriptPath.empty() ? "etcd" : m_strScriptPath.c_str()) != LUA_OK) {
+            LOG4_ERROR("ModuleLua::ReloadScript: loadbuffer error: %s", lua_tostring(m_pLua, -1));
+            lua_pop(m_pLua, 1);
+            return false;
+        }
+    } else if (!m_strScriptPath.empty()) {
+        if (luaL_dofile(m_pLua, m_strScriptPath.c_str()) != LUA_OK) {
+            LOG4_ERROR("ModuleLua::ReloadScript: dofile %s error: %s",
+                       m_strScriptPath.c_str(), lua_tostring(m_pLua, -1));
+            lua_pop(m_pLua, 1);
+            return false;
+        }
+    }
+    // pcall 执行脚本（定义新的 handle_request）
+    if (lua_pcall(m_pLua, 0, 0, 0) != LUA_OK) {
+        LOG4_ERROR("ModuleLua::ReloadScript: exec error: %s", lua_tostring(m_pLua, -1));
+        lua_pop(m_pLua, 1);
+        return false;
+    }
+    // 注册新的 handle_request
+    lua_getglobal(m_pLua, "handle_request");
+    if (!lua_isfunction(m_pLua, -1)) {
+        LOG4_ERROR("ModuleLua::ReloadScript: no handle_request in new script");
+        lua_pop(m_pLua, 1);
+        return false;
+    }
+    m_iFuncRef = luaL_ref(m_pLua, LUA_REGISTRYINDEX);
+    LOG4_INFO("ModuleLua::ReloadScript() ok: %s", m_strScriptPath.c_str());
+    return true;
+}
+
 extern "C" net::Module* create() { return new ModuleLua(); }
