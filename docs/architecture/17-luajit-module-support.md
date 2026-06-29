@@ -1,6 +1,6 @@
 # LuaJIT 模块支持 — 设计文档
 
-> 日期: 2026-06-10 | 更新: 2026-06-15 | 状态: ✅ 已实现
+> 日期: 2026-06-10 | 更新: 2026-06-29 (#129 VM-only 热重载) | 状态: ✅ 已实现
 
 ## 背景
 
@@ -242,6 +242,70 @@ end
 | 开发效率 | 编译时间⏳ | ✅ **即时修改** | 需编译 wasm |
 | 隔离 | ❌ 弱 | ✅ 沙箱 (限制 os/io) | ✅ 强沙箱 |
 | 语言 | C/C++ | Lua | Rust/C++/Go |
+
+## Lua 脚本热更新流程
+
+> 设计原则：admin **不直接**发指令给 Worker。admin 只写 etcd，Manager Watch 到变更后自动驱动。
+> Worker 收到命令后只重建 Lua VM 中的函数引用（`luaL_unref` + `luaL_loadbuffer`），**不动 .so、不动 VM、不动进程**。
+
+```
+POST /api/lua-scripts                         # admin-web
+  │
+  ├─ 写 .lua 文件 → deploy/{TypeDir}/scripts/echo.lua
+  └─ etcd PUT → /thunder/config/module/{NODE_TYPE}
+       version++ + script_content
+  │
+  ▼
+Manager Watch 回调 → ConfigUpdated (#126)
+  ├─ 比较 old vs new module
+  ├─ version 变了 + 有 script_path → 只收集索引，不设 soOrModuleChanged
+  └─ SendToWorker(CMD_REQ_RELOAD_LUA, luaMods)      #129
+  │
+  ▼
+Worker CmdReloadLua → LuaReloadScript                #129
+  ├─ SetModuleConf(oConf)          ← 同步新 conf 到 Module 实例
+  └─ pModule->ReloadScript()
+       ├─ luaL_unref(旧 handle_request)              ← 只清函数引用
+       ├─ lua_pushnil + lua_setglobal("handle_request") ← 清全局
+       ├─ luaL_loadbuffer(新 script_content)         ← 加载新脚本
+       ├─ lua_pcall → 定义新 handle_request          ← 执行，VM 不重建
+       └─ luaL_ref(新 handle_request)                ← 注册新函数
+```
+
+### 与 SO 热更新的区别
+
+> SO 热更新走 `LoadModule(force=true)` → `dlclose` + `dlopen` + `create()` + `Init()`。
+> Lua 热更新走 `ReloadScript()` → 只重建 VM 中的函数引用。
+> 两者共享同一个 etcd Watch 检测路径，但经过 #126 分流。
+
+| 步骤 | SO 热更新 (`LoadModule`) | Lua 热更新 (`ReloadScript`) |
+|------|-------------------------|---------------------------|
+| Worker 进程 | 优雅重启 (fork/drain/exit) | ✅ 不动 |
+| .so 文件 | `dlclose` + `dlopen` | ✅ 不动 |
+| Lua VM | `lua_close` + `luaL_newstate` | ✅ 不动 (`luaL_unref` + `loadbuffer`) |
+| JIT trace | 全部清空 | ✅ 保留（trace 按函数缓存） |
+| 同 .so 其他 URL | 被 `dlclose` 连带卸载 | ✅ 不受影响 |
+| 影响范围 | 所有模块 + 所有连接 | 仅目标 `url_path` |
+| 恢复耗时 | ~10s（排空 + fork + init） | <1ms（一个 pcall） |
+
+### 代码位置
+
+| 组件 | 文件 | 关键函数 |
+|------|------|---------|
+| admin 下发 | `deploy/admin-web/server.py` | `_lua_push()` |
+| 变更分流 | `code/Net/src/labor/Manager.cpp` | `ConfigUpdated` 中 `luaChangedIdx` |
+| 命令定义 | `code/Net/src/cmd/sys_cmd/CmdReloadLua.cpp` | `AnyMessage()` |
+| 命令号 | `code/Net/include/cmd/CW.hpp` | `CMD_REQ_RELOAD_LUA = 41` |
+| Worker 入口 | `code/Net/src/labor/Worker.cpp` | `LuaReloadScript()` |
+| VM 重载 | `code/HelloHttp/src/ModuleLua/ModuleLua.cpp` | `ReloadScript()` |
+| 基类接口 | `code/Net/include/cmd/Module.hpp` | `virtual bool ReloadScript()` |
+
+### 相关 issue
+
+- #125: admin-web 下发路径对齐（`deploy/` 而非 `deploy/admin-web/`）
+- #126: Lua 版本变更不触发 Worker 优雅重启（`soOrModuleChanged` 分流）
+- #127: 发送 `CMD_REQ_RELOAD_MODULE`（后升级为 #129）
+- #129: `CMD_REQ_RELOAD_LUA` → `ReloadScript()`（VM-only，不动 SO）
 
 ## 实现步骤
 

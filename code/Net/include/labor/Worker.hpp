@@ -347,6 +347,7 @@ public:
     void UnloadSoAndDeleteCmd(int iCmd);
     void LoadModule(util::CJsonObject& oModuleConf,bool boForce=false);
     void ReloadModule(util::CJsonObject& oUrlPaths);
+    void LuaReloadScript(util::CJsonObject& oModuleConf);  // #129: 只重载 Lua 脚本，不动 SO
     tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject& oConf = util::CJsonObject());
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:

@@ -13,6 +13,21 @@ tests/save_status.sh          # 跑完整测试 + 更新状态
 tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 ```
 
+## 🚨 铁律：失败测试必须修到全绿
+
+**任何测试（Smoke/E2E/Unit）如果有一项红色 ❌，必须停下来修好，不得带着失败往前进。**
+
+原因：
+- 红色项可能是本次改动引入的回归，不能留到后面
+- 本次没碰的模块如果红了（如 HTTPS/WS 服务没起），也属于环境问题，修好再继续
+- 只有全绿状态下跑新功能测试，结果才有意义
+
+修复流程：
+1. 定位失败原因（服务没起？配置错误？代码 bug？）
+2. 修复
+3. 重跑测试直到全绿
+4. 再继续后续工作
+
 ---
 
 ## 测试术语约定
@@ -80,10 +95,11 @@ tests/test_smoke.sh     # 冒烟（需 Docker 集群已在线）
 
 | 项目 | 当前状态 | 说明 |
 |------|---------|------|
-| **Lua SendToNodeType** | ❌ smoke 失败 | HELLO_HTTP 注册 etcd 问题待修（#113） |
-| **SO 热更新** | ⚠️ 未验证 | build-so → extract → 服务加载新 SO 全链路 |
-| **Lua 热更新** | ⚠️ 未验证 | Admin 下发新脚本 → Worker 重载 → 新逻辑生效（#110） |
-| **etcd 节点注册完整性** | ⚠️ 未验证 | 确认所有预期 node_type 均出现在 etcd 注册表 |
+| **Lua SendToNodeType** | ✅ 已覆盖 | 9/9 E2E 通过（2026-06-25）含 fire-forget/async/async_target 全模式；#113 端口冲突已修 |
+| **SO 热更新** | ✅ 已覆盖 | build-so → admin API list/extract/deploy → 文件系统部署 全链路；ReloadModule/版本变更触发 Worker 重载（2026-06-25） |
+| **Lua 热更新** | ✅ 已覆盖 | etcd 版本触发 → Manager Watch → `CMD_REQ_RELOAD_LUA` → Worker `ReloadScript()`（不动 VM/SO/进程）；`lua_echo` 从 `"ok"` → `"V14_VM_ONLY"` 无停机（2026-06-29） |
+| **etcd 节点注册完整性** | ✅ 已覆盖 | S1 稳定性测试验证，5 node_type 全部注册 + lease 有效（2026-06-25） |
+| **多端点 failover** | ✅ 已覆盖 | chaos_etcd 17/17 通过：etcd1 停止→etcd2/3 续命→恢复；全集群重启；数据清空从零重建（2026-06-25） |
 
 ### 第三步：Smoke 测试
 

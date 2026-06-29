@@ -56,6 +56,7 @@
 #include "cmd/sys_cmd/CmdReloadSo.hpp"
 #include "cmd/sys_cmd/CmdReloadModule.hpp"
 #include "cmd/sys_cmd/CmdReloadCustom.hpp"
+#include "cmd/sys_cmd/CmdReloadLua.hpp"
 #include "storage/RedisOperator.hpp"
 
 namespace net
@@ -2717,6 +2718,7 @@ void Worker::PreloadCmd()
 
     AddCmd(new CmdReloadSo(),CMD_REQ_RELOAD_SO);
     AddCmd(new CmdReloadModule(),CMD_REQ_RELOAD_MODULE);
+    AddCmd(new CmdReloadLua(), CMD_REQ_RELOAD_LUA);
     AddCmd(new CmdReloadCustom(),CMD_REQ_SET_NODE_CUSTOM_CONFIG);
 }
 
@@ -5331,6 +5333,32 @@ void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
         else
         {
             LOG4_WARN("no such url_path %s", url_path.c_str());
+        }
+    }
+}
+
+void Worker::LuaReloadScript(util::CJsonObject& oModuleConf)
+{
+    // #129: 只重载 Lua 脚本（替换 VM 中的 handle_request），不碰 .so 和 dlclose
+    for (int i = 0; i < oModuleConf.GetArraySize(); ++i) {
+        std::string urlPath;
+        oModuleConf[i].Get("url_path", urlPath);
+        if (urlPath.empty()) continue;
+        auto it = mapModule.find(urlPath);
+        if (it == mapModule.end()) {
+            LOG4_WARN("LuaReloadScript: module %s not found", urlPath.c_str());
+            continue;
+        }
+        // 更新模块配置（tagModule.oConf + Module 实例内部 m_oModuleConf）
+        it->second->oConf = oModuleConf[i];
+        if (it->second->pModule) {
+            it->second->pModule->SetModuleConf(oModuleConf[i]);
+        }
+        // 虚方法调用 — 非 Lua 模块默认返回 false，无副作用
+        if (it->second->pModule && it->second->pModule->ReloadScript()) {
+            LOG4_INFO("LuaReloadScript: %s reloaded in-place (no SO restart)", urlPath.c_str());
+        } else {
+            LOG4_ERROR("LuaReloadScript: %s reload failed", urlPath.c_str());
         }
     }
 }

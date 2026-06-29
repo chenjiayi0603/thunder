@@ -3227,6 +3227,7 @@ if (ctxIter != mapRedisContext.end()) {
 ## ✅ #98 [需求] Lua 模块支持跨节点类型发送
 
 > 2026-06-15 | 需求 | 状态: ✅ 已完成
+> 2026-06-25 | 复测 | E2E 9/9 通过（test_lua_module.py）：echo/limit/route/node_type_fire_forget/async/async_target/default 全模式；#113 端口冲突修复后 HELLO_HTTP 正常注册，SendToNodeType 全链路打通
 
 ### 背景
 
@@ -4117,6 +4118,7 @@ Watch 断流
 ## ✅ #115 [需求] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
 
 > 2026-06-20 | 需求 | 状态: ✅ 已完成（S1–S6 全部通过，S6 5分钟长跑无租约丢失）
+> 2026-06-25 | 复测 | S1/S2/S3/S5 单独跑通（4/4 passed，3m14s）；Watch 专项 3/3 通过（PUT/DELETE/断流重建，1m30s）；S4 kill-9 / S6 长跑（slow 标记）未纳入本次
 
 ### 背景
 
@@ -4690,3 +4692,167 @@ listen tcp 127.0.0.1:2380: bind: address already in use
 ### 验证
 
 `docker compose config --services` 输出无 `x-etcd-common`（仅 10 个真实服务）。`./deploy.sh test e2e` 连续两次全通。
+
+---
+
+## 🟡 #125 [bug] admin-web Lua/SO 下发路径写错目录
+
+> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-25）
+
+### 现象
+
+admin-web 的 `POST /api/lua-scripts` 和 `POST /api/so-extract` 将文件写入 `deploy/admin-web/` 子目录，但 Thunder 服务进程从 `deploy/{TypeDir}/` 读取：
+
+| 接口 | 当前写入路径 | 服务读取路径 |
+|------|------------|------------|
+| `POST /api/lua-scripts` | `deploy/admin-web/HelloHttp/scripts/echo.lua` | `deploy/HelloHttp/scripts/echo.lua` |
+| `POST /api/so-extract` | `deploy/admin-web/plugins/HelloHttp/xxx.so` | `deploy/HelloHttp/plugins/xxx.so` |
+| `PUT /plugins/{TypeDir}/{file}` | `deploy/admin-web/plugins/HelloHttp/xxx.so` | `deploy/HelloHttp/plugins/xxx.so` |
+
+Docker 容器将 `/home/tommychen/thunder` 全部挂载为 `/thunder`，两个路径都在容器内但 **服务进程 cwd 是 `deploy/{TypeDir}/`**，只读自己目录下的相对路径。
+
+### 根因
+
+`main()` 中 `upload_base` 设为 `deploy/admin-web/`（server.py 自身所在目录），所有下发路径都基于此：
+
+```python
+serve_dir = str(Path(__file__).resolve().parent)  # deploy/admin-web/
+UploadServer.upload_base = serve_dir
+```
+
+### 修复方案
+
+1. `upload_base` 改为 `deploy/`（admin-web 的父目录）
+2. `_handle_so_extract`：`rel` 从 `plugins/{TypeDir}/{file}` 改为 `{TypeDir}/plugins/{file}`
+3. `do_PUT`：不依赖 `translate_path`，手动构造 `{TypeDir}/plugins/{filename}`
+4. `_save_so` 中 `rel` 已在步骤 2 修好，无需改
+
+### 验证
+
+- 推送 Lua 脚本后，`deploy/HelloHttp/scripts/echo.lua` 文件内容更新
+- 提取 SO 后，`deploy/HelloHttp/plugins/xxx.so` 文件落位**
+
+---
+
+## 🟡 #126 [bug] Lua 脚本版本变更误触发 Worker 优雅重启
+
+> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-29）
+
+### 现象
+
+Lua 热更新（版本 3→4）后，Manager 日志：
+```
+ConfigUpdated: so/module version changed, trigger graceful restart
+```
+启动了 Worker 优雅重启。但 Lua 脚本变更不需要重启进程 — `ModuleLua::Init()` 调用 `luaL_dofile` 即可原地热切。
+
+### 根因
+
+`Manager.cpp:2802` 判断 `so_path` **或** `version` 任一变化都触发重启：
+
+```cpp
+oldMod[i].Get("version", ov); newMod[i].Get("version", nv);
+if (op != np || ov != nv) { soOrModuleChanged = true; break; }
+```
+
+Lua 推送 bump 了 `version` → `ov != nv` → 误触发 `GracefulRestartWorker`。
+
+同时代码注释写了 `Lua/custom 热更新不重启` 但实现没对齐。
+
+### 修复
+
+`Manager.cpp:2802`：去掉 version 比较，只判断 `so_path`（.so 文件路径）变化才重启：
+
+```cpp
+// 修复前
+if (op != np || ov != nv) { soOrModuleChanged = true; break; }
+// 修复后 — 仅 SO 文件变更才需要重启 Worker
+if (op != np) { soOrModuleChanged = true; break; }
+```
+
+Lua 脚本通过步骤 5 的共享内存（`SetCustomConfig`）或步骤 7 的 `ReloadModule` 命令热更新，无需重启。
+
+### 验证
+
+- 修改 Lua 文件 + bump etcd version → 不应出现 `trigger graceful restart` 日志
+- Worker CPU/内存无波动
+- 新 Lua 逻辑即时生效**
+
+### 已知限制（#127 跟进 → ✅ 已实现）
+
+当前实现通过 `LoadModule(force=true)` 卸载 → 重载整个 `.so`（含 `dlclose/dlopen`），比 Worker 重启好（无连接中断），但 .so 文件未变时 dlclose/dlopen 是冗余操作。
+
+后续可优化为：Manager 直接调用 `ModuleLua::Init()` 重建 Lua VM，不动 SO，实现真正的 Lua-only 重载。**
+
+---
+
+## 🟡 #128 [bug] Lua 热重载误伤同 SO 的其他 URL
+
+> 2026-06-29 | bug | 状态: 🟡 待修复
+
+### 现象
+
+`/hello/lua_echo`、`/hello/lua_limit`、`/hello/lua_route`、`/hello/lua_node_type` 四个 URL 共用同一个 `.so`（`HelloHttp_ModuleLua.so`）。#127 对 lua_echo 下发 `CMD_REQ_RELOAD_MODULE` 时：
+
+```
+succeed in unloading HelloHttp_ModuleLua.so
+```
+
+**把整个 .so 卸了**，四个 URL 的 ModuleLua 实例全被销毁。然后 re-dlopen 同一个 .so 只重建目标 URL 的实例，其余三个 URL 短暂不可用。
+
+### 根因
+
+`LoadModule(force=true)` 操作粒度是 **按 .so 文件** 而非 **按 URL**。`ReloadModule` 命令里虽然传了 url_path，但实际执行是 `UnloadSoAndDeleteModule` → `LoadSoAndGetModule`，卸载时按 url_path 找到 tagModule，再通过它定位到 SO handle → dlclose。
+
+如果多个 url_path 共享同一个 SO handle（当前实现），卸载操作会影响全部。
+
+### 修复方向
+
+1. **短期**：`LoadModule` 对 Lua 模块跳过 dlclose，直接调 `ModuleLua::Init()` 重建 Lua VM
+2. **长期**：每个 url 持有独立 Lua VM 实例，互不影响；或改用引用计数管理 SO 卸载
+
+---
+
+## 🟡 #129 [需求] Lua 脚本热重载走独立路径，不动 SO 模块
+
+> 2026-06-29 | 需求 | 状态: ✅ 已实现（2026-06-29）
+
+### 背景
+
+#126 #127 让 Lua 热更新不再重启 Worker，但走的是 `LoadModule(force=true)` → `dlclose + dlopen` 同一块 .so。问题：
+
+- **性能**：dlclose 清空 LuaJIT trace 缓存，每次热更都从解释执行重新开始
+- **牵连**：同 SO 多 URL（lua_echo/limit/route/node_type）共用一个 SO handle，重载一个全被清
+- **语义错**：Lua 脚本更新不应该碰 C++ 模块二进制
+
+### 需求
+
+新增 `CMD_REQ_RELOAD_LUA` 命令，从 SO 重载管道中拆出 Lua 专用路径：
+
+```
+Manager: 检测 script_path 变更 → CMD_REQ_RELOAD_LUA → Worker
+Worker:  找到 ModuleLua* → ReloadScript()
+         → lua_close(VM) + 保留 C++ 对象 + luaL_newstate + dofile/loadbuffer
+```
+
+优势：
+- SO 不动：不 dlclose/dlopen，JIT trace 保留（后续可进一步保留 VM 只替换函数）
+- 隔离安全：只影响目标 url_path，同 SO 的其他 URL 毫发无伤
+- 语义正确：脚本更新就是脚本更新，跟二进制热更分开
+
+### 改动清单
+
+| 文件 | 改动 |
+|------|------|
+| `ModuleLua.hpp/cpp` | 新增 `ReloadScript()` — 重建 Lua VM，加载最新脚本 |
+| `CmdReloadLua.hpp/cpp` | 新增命令 — 解析 url_path，调 `ModuleLua::ReloadScript()` |
+| `CW.hpp` | 注册 `CMD_REQ_RELOAD_LUA = 34` |
+| `Worker.cpp` | 注册命令，`LuaReloadModule` 辅助函数 |
+| `Manager.cpp` | 替换 step 7 中的 `CMD_REQ_RELOAD_MODULE` → `CMD_REQ_RELOAD_LUA`
+
+### 验证
+
+- 推送 Lua 脚本 → Manager 日志 `reload lua script in-place`（非 `reload ... module`）
+- Worker 日志：无 `unloading .so`，无 `dlclose`
+- 线上 lua_echo 响应更新，lua_limit/route/node_type 正常可用
+- 多次热更新后 LuaJIT trace 数量不减
