@@ -4810,6 +4810,7 @@ succeed in unloading HelloHttp_ModuleLua.so
 
 1. **短期**：`LoadModule` 对 Lua 模块跳过 dlclose，直接调 `ModuleLua::Init()` 重建 Lua VM
 2. **长期**：每个 url 持有独立 Lua VM 实例，互不影响；或改用引用计数管理 SO 卸载
+3. **约束**：若 `HelloHttp_ModuleLua.so` 因任何原因被 dlclose+dlopen（如其他 SO 变更触发重启、显式 LoadModule force=true），**必须把同 .so 下所有已注册 url_path 的 Lua 模块全部重建回来**，不能只重建触发变更的那一个
 
 ---
 
