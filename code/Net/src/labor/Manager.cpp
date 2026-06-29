@@ -2825,7 +2825,7 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
             {
                 std::ofstream fout(m_strConfFile, std::ios::out | std::ios::trunc);
                 if (fout) {
-                    fout << m_oCurrentConf.ToString();
+                    fout << m_oCurrentConf.ToFormattedString();
                     LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
                 } else {
                     LOG4_ERROR("ConfigUpdated: cannot write config file %s", m_strConfFile.c_str());

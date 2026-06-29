@@ -5368,20 +5368,35 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
     LOG4_TRACE("%s() strModulePath:%s", __FUNCTION__,strModulePath.c_str());
     UnloadSoAndDeleteModule(strModulePath);
     tagModule* pSo = nullptr;
-    void* pHandle = nullptr;
-    pHandle = dlopen(strSoPath.c_str(), RTLD_NOW|RTLD_NODELETE);
-    char* dlsym_error = dlerror();
-    if (dlsym_error)
-    {
-        LOG4_FATAL("cannot load dynamic lib %s!" , dlsym_error);
-        return(pSo);
+
+    // #128: 同 so_path 复用 shared_ptr，引用计数管理 dlclose
+    std::shared_ptr<void> soHandle;
+    for (auto& [url, m] : mapModule) {
+        if (m->strSoPath == strSoPath && m->pSoHandle) {
+            soHandle = m->pSoHandle;  // copy → refcount++
+            break;
+        }
     }
+    void* pHandle = nullptr;
+    if (!soHandle) {
+        pHandle = dlopen(strSoPath.c_str(), RTLD_NOW|RTLD_NODELETE);
+        if (!pHandle) {
+            LOG4_FATAL("cannot load dynamic lib %s: %s", strSoPath.c_str(), dlerror());
+            return nullptr;
+        }
+        soHandle = std::shared_ptr<void>(pHandle, [](void* h) {
+            if (h) dlclose(h);
+        });
+    } else {
+        pHandle = soHandle.get();
+    }
+
+    char* dlsym_error = dlerror();  // clear previous
     CreateCmd* pCreateModule = (CreateCmd*)dlsym(pHandle, strSymbol.c_str());
     dlsym_error = dlerror();
     if (dlsym_error)
     {
         LOG4_FATAL("dlsym error %s!" , dlsym_error);
-        dlclose(pHandle);
         return(pSo);
     }
     Module* pModule = (Module*)pCreateModule();
@@ -5392,7 +5407,7 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         pSo = new tagModule();
         if (pSo != nullptr)
         {
-            pSo->pSoHandle = pHandle;
+            pSo->pSoHandle = soHandle;  // shared_ptr copy → refcount++
             pSo->pModule.reset(pModule);
             pSo->strSoPath = strSoPath;
             pSo->strSymbol = strSymbol;
@@ -5412,7 +5427,6 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         {
             LOG4_FATAL("new tagSo() error for %s!",strSoPath.c_str());
             delete pModule;
-            dlclose(pHandle);
         }
     }
     return(pSo);
@@ -5426,12 +5440,15 @@ void Worker::UnloadSoAndDeleteModule(const std::string& strModulePath)
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
                 mapMoIt->second->strSoPath.c_str(),mapMoIt->second->strLoadTime.c_str(),util::GetCurrentTime(20).c_str());
-        void* pSoHandle = mapMoIt->second->pSoHandle;
-        if(pSoHandle)
-        {
-            LOG4_TRACE("%s() dlclose strModulePath:%s", __FUNCTION__, strModulePath.c_str());
-            dlclose(pSoHandle);
-            pSoHandle = nullptr;
+        // #128: 不手动 dlclose — shared_ptr 引用计数归零时自动调 dlclose
+        bool lastHandle = (mapMoIt->second->pSoHandle.use_count() <= 1);
+        if (lastHandle) {
+            LOG4_TRACE("%s() last handle for %s, dlclose will happen automatically",
+                       __FUNCTION__, mapMoIt->second->strSoPath.c_str());
+        } else {
+            LOG4_TRACE("%s() %d other module(s) still use %s, skipping dlclose",
+                       __FUNCTION__, mapMoIt->second->pSoHandle.use_count() - 1,
+                       mapMoIt->second->strSoPath.c_str());
         }
         mapModule.erase(mapMoIt);
     }

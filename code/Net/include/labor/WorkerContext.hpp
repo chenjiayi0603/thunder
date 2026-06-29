@@ -34,7 +34,7 @@ struct tagSo
 
 struct tagModule
 {
-    void* pSoHandle = nullptr;  // 不在本对象内管理
+    std::shared_ptr<void> pSoHandle;  // #128: 引用计数，同 so_path 共享
     std::unique_ptr<Module> pModule;
     int iVersion = 0;
     std::string strSoPath;
