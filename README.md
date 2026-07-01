@@ -305,11 +305,11 @@ code/
 └── Util/         # JSON (yyjson), logging, DB helpers
 
 deploy/           # Built binaries, node configs, start scripts
-docs/
+docs/             # See docs/README.md for the full index
 ├── architecture/ # Design docs and deep-dives
 ├── performance/  # Benchmark reports
-├── quality/      # ASan/TSan, sanitizer playbooks
-└── reports/      # Benchmark reports, incident postmortems
+├── quality/      # Memory-safety and unit-test verification
+└── reference/    # Tooling, dependency analysis, project FAQ
 k8s/              # Kubernetes manifests
 tests/            # pytest E2E, smoke scripts, benchmark scripts
 ```

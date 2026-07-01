@@ -724,30 +724,13 @@ pool.resize(n);
 
 ---
 
-## 9. 实现计划
+## 9. 实现状态
 
-### Phase A：WorkerDeque 数据结构 ✅
+已全部落地，全量 ctest 零回归、TSan（`-fsanitize=thread`）零数据竞争：
 
-- [x] 新文件 `code/Util/src/thread/worker_deque.h`
-- [x] 实现 `WorkerDeque<T, N>` 模板（`push(Task&&)` / `dequeue` / `steal_into`）
-- [x] 单元测试 13 个全绿（`test_util_worker_deque.cpp`）
-
-### Phase B：WorkStealingPool 集成 ✅
-
-- [x] 新文件 `code/Util/src/thread/work_stealing_pool.h`（不修改现有 `threadpool.h`）
-- [x] 两组 deque：`_submit_deques`（commit 写）+ `_local_deques`（worker steal 写）
-- [x] `commit()` 三级分发：P2C → 全扫 → global_q，仅写 `_submit_deques`
-- [x] worker 循环：local → submit → steal → global_q → yield，61-tick 防饥饿
-- [x] 缩容 drain：两个 deque 均 drain 到 global_q
-- [x] 集成测试 18 个全绿（`test_util_work_stealing_pool.cpp`）
-- [x] TSan 验证零数据竞争（`-fsanitize=thread`）
-- [x] 全量 ctest 387 个零回归
-
-### Phase C：测试验证
-
-- [ ] `bench_work_stealing.cpp` 对比基准（WS vs 单全局队列）
-- [ ] 填写 `docs/performance/04-work-stealing-bench.md` 实测数据
-- [ ] E2E smoke 验证
+- **数据结构** `code/Util/src/thread/worker_deque.h` —— `WorkerDeque<T,N>` 模板（`push(Task&&)` / `dequeue` / `steal_into`），单测 `test_util_worker_deque.cpp` 13 例
+- **线程池** `code/Util/src/thread/work_stealing_pool.h` —— 双 deque（`_submit_deques` commit 写 + `_local_deques` worker steal 写）；`commit()` 三级分发 P2C → 全扫 → global_q；worker 循环 local → submit → steal → global_q → yield + 61-tick 防饥饿；缩容时两 deque 均 drain 到 global_q；集成测 `test_util_work_stealing_pool.cpp` 18 例
+- **基准** 见 `docs/performance/04-work-stealing-bench.md`
 
 ---
 

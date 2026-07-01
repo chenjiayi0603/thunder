@@ -271,3 +271,47 @@ ASIO 的优势:
 手写 io_uring 的优势:
 - 零依赖,编译更快
 - 完全可控,无 ASIO 内部调度开销
+
+---
+
+## 8. 两套实现速查与后端选型
+
+> 本节合并自原 `25-io-uring.md`。Thunder 有两套 io_uring 后端实现 + epoll，按场景选用；选型的设计理由见 §7。
+
+### 8.1 NativeUring vs AsioUring
+
+| | NativeUringIoBackend | AsioUringIoBackend |
+|---|---------------------|-------------------|
+| 依赖 | liburing | standalone ASIO |
+| 代码量 | 534 行 | 745 行 |
+| SQ/CQ 管理 | 手写 ring buffer | ASIO 管理 |
+| watcher | 2 路 | 3 路（多 ev_check 补刀，见 §2） |
+| 零拷贝 | 需自行实现 | send_zc + fixed buffers（见 §4.4） |
+| 空唤醒 | 存在 | UpdateRingWatcher 按需启停（见 §4.3） |
+
+**NativeUring 调用过程**（手写路径，对照 §2/§3 的 AsioUring 三路驱动）：
+
+```
+Worker → SubmitRead(fd, buf)
+  → 直接构造 io_uring_sqe → 写入 SQ ring
+  → ev_prepare: io_uring_submit() 批量提交
+  → epoll_wait → ring_fd 可读
+  → ev_io: io_uring_peek_cqe() 取结果 → callback
+```
+
+NativeUring 无零拷贝，大包性能弱于 AsioUring。
+
+### 8.2 后端选型
+
+实测结论（完整数据见 `docs/performance/11-io-backend-comparison.md` 与 `06-asio-uring-vs-native-uring.md`）：
+
+- **空 body：ev(epoll) 最快** —— syscall 开销小，epoll 简单高效
+- **1KB+：AsioUring 反超** —— 批量提交 + 零拷贝体现优势
+- **4KB：AsioUring 比 ev 快约 70%** —— 大包时 syscall 和拷贝开销主导
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 中小规模（<1K conn） | **ev** | 简单，实测最快 |
+| 大并发（1K–10K） | **AsioUring** | 批量提交 + 零拷贝 |
+| 无 ASIO 依赖 | **NativeUring** | 编译快，零外部依赖 |
+| 极致（>10M pps） | **DPDK** | 用户态网卡（见 §7「为什么不用 DPDK」） |

@@ -363,23 +363,7 @@ bool Manager::HasSoVersionChanged(const util::CJsonObject& oldConf,
 
 ---
 
-## 五、改动量估算
-
-| 改动 | 文件 | 行数 |
-|------|------|------|
-| Manager: GracefulRestartWorker | Manager.cpp | +60 |
-| Manager: WorkerLifecycle 状态机 | Manager.hpp | +30 |
-| Worker: EnterDrainMode | Worker.cpp | +30 |
-| Worker: IsDrainComplete | Worker.cpp | +20 |
-| Worker: AcceptClientConn 加 `m_bAccepting` 检查 | Worker.cpp | +5 |
-| Worker: Run 加排空循环 | Worker.cpp | +15 |
-| Manager: OnCenterEvent 触发优雅重启 | Manager.cpp | +20 |
-| 全新消息: CMD_WORKER_READY / CMD_WORKER_DRAINING | Proto | +10 |
-| **合计** | | **~190 行** |
-
----
-
-## 六、验证
+## 五、验证
 
 ```bash
 # 1. 正常重启
@@ -398,7 +382,7 @@ wrk -t4 -c100 -d60s http://127.0.0.1:27006/hello/hello &
 
 ---
 
-## 七、连接处理: 三条路径, 互不干扰
+## 六、连接处理: 三条路径, 互不干扰
 
 ```
                         新连接 (accept)
@@ -473,7 +457,7 @@ bool Worker::IsDrainComplete() {
 
 ---
 
-## 八、状态机 & 触发
+## 七、状态机 & 触发
 
 ```
 WorkerLifecycle 状态:
@@ -523,27 +507,7 @@ WorkerLifecycle 状态:
 
 ---
 
-## 九、SIGUSR2 修复计划
-
-当前 SIGUSR2 → RestartWorkers() → SIGKILL (硬杀)。应改为调用 GracefulRestartWorker:
-
-```cpp
-// Manager.cpp — 当前
-else if (SIGUSR2 == watcher->signum) {
-    pManager->RestartWorkers();  // → kill(SIGKILL) ❌
-}
-
-// 应改为
-bool Manager::RestartWorkers() {
-    for (auto& [pid, attr] : m_mapWorker) {
-        GracefulRestartWorker(attr.iWorkerIndex);  // ✅ 优雅重启
-    }
-}
-```
-
----
-
-## 十、实际改动量 (2026-06-07 final)
+## 八、实际改动量 (2026-06-07 final)
 
 | 改动 | 文件 | 行 |
 |------|------|----|
@@ -559,7 +523,7 @@ bool Manager::RestartWorkers() {
 
 ---
 
-## 十一、触发方式 (nginx 风格 CLI)
+## 九、触发方式 (nginx 风格 CLI)
 
 ```
   Hello -s reload   → SIGUSR1 → RefreshServer (重载配置)
@@ -582,7 +546,7 @@ bool Manager::RestartWorkers() {
 
 ---
 
-## 十二、插件热发布流程
+## 十、插件热发布流程
 
 ```
 正常路径:
@@ -600,7 +564,7 @@ bool Manager::RestartWorkers() {
 
 ---
 
-## 十三、测试结果 (2026-06-07 final)
+## 十一、测试结果 (2026-06-07 final)
 
 ```
 冒烟测试 --k8s           ✅ 12/12
@@ -622,7 +586,7 @@ tests/chaos_etcd.sh              # etcd 混沌测试
 
 ---
 
-## 十四、发现 & 修复的预存 Bug
+## 十二、发现 & 修复的预存 Bug
 
 | Bug | 影响 | 修复 |
 |-----|------|------|
@@ -632,7 +596,7 @@ tests/chaos_etcd.sh              # etcd 混沌测试
 
 ---
 
-## 十五、ReportToCenter
+## 十三、ReportToCenter
 
 `Manager::ReportToCenter(boRegister)` — etcd 注册 + 节点状态上报。
 
@@ -650,7 +614,7 @@ tests/chaos_etcd.sh              # etcd 混沌测试
 
 ---
 
-## 十六、原理: SCM_RIGHTS
+## 十四、原理: SCM_RIGHTS
 
 ```
 send_fd_with_attr(sock, fd, ip, codec):
