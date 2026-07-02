@@ -4372,6 +4372,10 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
+	// #130: HTTPS outbound needs connect before encode (SSL client handshake requires connected fd)
+	if (eHttpCodecType == util::CODEC_HTTPS) {
+		connect(stMsgShell.iFd, &addr, sizeof(addr));
+	}
 	E_CODEC_STATUS eCodecStatus = EncodeByConnectionCodec(pConnAttr, codec_iter->second.get(), oHttpMsg, pConnAttr->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
@@ -4383,7 +4387,9 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
-	connect(stMsgShell.iFd, &addr, sizeof(addr));
+	if (eHttpCodecType != util::CODEC_HTTPS) {
+		connect(stMsgShell.iFd, &addr, sizeof(addr));
+	}
 	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
 	if (!AddIoReadEvent(pConnAttr))
 	{
