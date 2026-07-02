@@ -4857,3 +4857,41 @@ Worker:  找到 ModuleLua* → ReloadScript()
 - Worker 日志：无 `unloading .so`，无 `dlclose`
 - 线上 lua_echo 响应更新，lua_limit/route/node_type 正常可用
 - 多次热更新后 LuaJIT trace 数量不减
+
+---
+
+## 🟡 #130 [需求] 支持 HTTPS 出站请求
+
+> 2026-06-30 | 需求 | 状态: 🟡 待实现
+
+### 背景
+
+当前 `Worker::SentTo()` → `AutoSend()` 走裸 TCP，不支持 TLS。出站 HTTP 只能打 `http://`，无法调 `https://` 的外部服务。
+
+阻塞场景：
+- **IM 离线推送**：FCM (`fcm.googleapis.com`) 和 APNs (`api.push.apple.com`) 都是 HTTPS 接口
+- **第三方 Webhook**：业务回调外部 HTTPS 接口
+- **微服务调用**：内部服务 https:// 互调
+
+### 方案
+
+`SentTo()` 增加 TLS 支持：
+
+```
+URL 解析 → 判断 https://  → 端口默认 443 → TCP 连接 → OpenSSL 握手 → 后续 IO 走 SSL_write/SSL_read
+```
+
+可选择新建 `SentToTls()` 方法，或给 `SentTo()` 加 `bool useTls` 参数，保持向后兼容。
+
+### 改动点
+
+| 文件 | 改动 |
+|------|------|
+| `Worker.cpp` | `SentTo()` 增加 TLS 分支，复用 `HttpsCodec` 逻辑 |
+| `HttpStep.cpp` | `HttpRequest()` URL 解析区分 http/https |
+| `StepCo20` | `HttpGetAsync`/`HttpPostAsync` 支持 `https://` URL |
+
+### 验证
+
+- `HttpGetAsync("https://fcm.googleapis.com/...")` → 收到 200
+- `SentTo("api.push.apple.com", 443, ...)` → TLS 握手成功
