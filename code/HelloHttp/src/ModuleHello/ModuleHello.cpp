@@ -12,6 +12,7 @@
 #include "codec/StringCoder.hpp"
 #include "ModuleHello.hpp"
 #include "HttpRequestCo.hpp"
+#include "HttpsTestCo.hpp"
 #include "Interface.hpp"
 #include "coro/StepCo20Func.hpp"
 #include "dbi/Dbi.hpp"
@@ -127,23 +128,15 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell, const HttpMsg& oIn
 	}
 	else if ("TestHttps" == strOption)
 	{
-		// #130: HTTPS 出站测试 — 可选 url 参数，默认连本地测试服务器
+		// #130: HTTPS 出站测试 → 协程异步请求，等回包再返回
 		std::string url;
 		obj.Get("url", url);
 		if (url.empty()) url = "https://127.0.0.1:19995/";
-		std::string host = url;
-		auto pos = host.find("://"); if (pos != std::string::npos) host = host.substr(pos + 3);
-		pos = host.find('/'); if (pos != std::string::npos) host = host.substr(0, pos);
-		pos = host.find(':'); int port = (pos != std::string::npos) ? std::stoi(host.substr(pos + 1)) : 443;
-		if (pos != std::string::npos) host = host.substr(0, pos);
-		HttpMsg oReq;
-		oReq.set_url(url);
-		oReq.set_type(HTTP_REQUEST);
-		oReq.set_method(HTTP_GET);
-		oReq.set_http_major(1);
-		oReq.set_http_minor(1);
-		GetLabor()->SentTo(host, port, url, oReq, nullptr);
-		Response(stMsgShell, oInHttpMsg, 0);
+		core::HttpsTestCo* pCo = new core::HttpsTestCo(stMsgShell, oInHttpMsg, url);
+		if (!net::LaunchCo(std::unique_ptr<core::HttpsTestCo>(pCo)))
+		{
+			Response(stMsgShell, oInHttpMsg, 10001);
+		}
 		return true;
 	}
 	else if ("TestHelloCoRedis" == strOption)
