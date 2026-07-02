@@ -25,42 +25,42 @@ net::AsyncTask HttpRequestCo::AsyncBody(net::StepCo20& st)
 
         // ===== 改造后：1 个线性协程函数（协程形参 StepCo20& → promise_type(StepCo20&)）=====
 
-        // 状态0: 请求百度
-        LOG4_TRACE("HttpRequestCo::StepAsync state 0: request baidu, testVal:%u", ++self.m_uiTestVal);
+        // 状态 0: HTTP 请求百度
+        LOG4_TRACE("HttpRequestCo::StepAsync state 0: HTTP baidu, testVal:%u", ++self.m_uiTestVal);
         bool bSuccess = co_await self.HttpGetAsync("http://www.baidu.com/");
         if (!bSuccess)
         {
-            LOG4_ERROR("HttpGet http://www.baidu.com/ error");
+            LOG4_ERROR("HTTP GET http://www.baidu.com/ error");
             self.Response(1);
             co_return;
         }
 
-        // 状态1: 请求搜狗
-        LOG4_TRACE("HttpRequestCo::StepAsync state 1: request sogou, testVal:%u", ++self.m_uiTestVal);
+        // 状态 1: HTTP 请求搜狗
+        LOG4_TRACE("HttpRequestCo::StepAsync state 1: HTTP sogou, testVal:%u", ++self.m_uiTestVal);
         bSuccess = co_await self.HttpGetAsync("http://www.sogou.com/");
         if (!bSuccess)
         {
-            LOG4_ERROR("HttpGet http://www.sogou.com/ error");
+            LOG4_ERROR("HTTP GET http://www.sogou.com/ error");
             self.Response(1);
             co_return;
         }
 
-        // 状态2: 请求支付宝
-        LOG4_TRACE("HttpRequestCo::StepAsync state 2: request alipay, testVal:%u", ++self.m_uiTestVal);
-        bSuccess = co_await self.HttpGetAsync("http://www.alipay.com/");
+        // 状态 2: HTTPS 请求百度 (#130)
+        LOG4_TRACE("HttpRequestCo::StepAsync state 2: HTTPS baidu, testVal:%u", ++self.m_uiTestVal);
+        bSuccess = co_await self.HttpGetAsync("https://www.baidu.com/");
         if (!bSuccess)
         {
-            LOG4_ERROR("HttpGet http://www.alipay.com/ error");
+            LOG4_ERROR("HTTPS GET https://www.baidu.com/ error");
             self.Response(1);
             co_return;
         }
 
-        // 状态3: 请求腾讯
-        LOG4_TRACE("HttpRequestCo::StepAsync state 3: request tencent, testVal:%u", ++self.m_uiTestVal);
-        bSuccess = co_await self.HttpGetAsync("http://www.qq.com/");
+        // 状态 3: HTTPS 请求腾讯 (#130)
+        LOG4_TRACE("HttpRequestCo::StepAsync state 3: HTTPS tencent, testVal:%u", ++self.m_uiTestVal);
+        bSuccess = co_await self.HttpGetAsync("https://www.qq.com/");
         if (!bSuccess)
         {
-            LOG4_ERROR("HttpGet http://www.qq.com/ error");
+            LOG4_ERROR("HTTPS GET https://www.qq.com/ error");
             self.Response(1);
             co_return;
         }
