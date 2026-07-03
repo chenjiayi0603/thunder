@@ -4814,12 +4814,22 @@ Manager 的 `OnCenterEvent::RegistrationOk` 无条件 `PutConfig` 本地 `oCurre
 
 ### 修复方向
 
-`OnCenterEvent::ConfigUpdated` 处理 admin 下发的配置时，应：
-1. 先不写 Hello.json
-2. 先不从 etcd 回写
-3. 仅通过 shm + CMD_REQ_RELOAD_LUA 推给 Worker
+**规则：etcd 为空时从节点拉取作为初始版本；之后新版本以 etcd 为准，节点不再回写覆盖。**
 
-或在 `sync module config to etcd` 前先做双向 merge：读 etcd 的当前值 → 与本地配置合并（保留 etcd 中由 admin 注入的 script_content 和更高版本号）→ 再写回。
+```
+Manager 启动
+  │
+  ├─ etcd GET /thunder/config/module/{NODE_TYPE}
+  │   ├─ 空（首次启动）→ PUT 本地 config（种子写入）      ← 唯一一次节点→etcd
+  │   └─ 非空 → 以 etcd 为准，本地配置对齐 etcd           ← 之后 etcd 是主
+  │
+  ▼
+后续 admin push → etcd PUT（唯一入口）
+Manager Watch 检测变更 → shm + CMD_REQ_RELOAD_LUA → Worker
+Manager 不再回写 etcd（不调 sync module config）
+```
+
+实现：去掉 `OnCenterEvent::RegistrationOk` 和 `ConfigUpdated` 中的无条件 `PutConfig`，改为仅在首次（etcd key 不存在时）写入。
 
 ### 验证
 
