@@ -2718,8 +2718,8 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                       ev.errcode, ev.errmsg.c_str());
         }
 
-        // #46: 注册成功后, 将当前 conf["module"] 同步到 etcd (Admin 页面可查看)
-        if (ev.errcode == 0 && m_pCenterConnector)
+        // #131: etcd 空时首次播种模块配置；之后 etcd 是主，不再回写
+        if (!m_bModuleConfigSeeded && ev.errcode == 0 && m_pCenterConnector)
         {
             auto& modArr = m_oCurrentConf["module"];
             if (modArr.IsArray() && modArr.GetArraySize() > 0)
@@ -2727,7 +2727,8 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                 std::string cfgKey = "/thunder/config/module/" + m_strNodeType;
                 std::string cfgVal = "{\"module\":" + modArr.ToString() + "}";
                 m_pCenterConnector->PutConfig(cfgKey, cfgVal);
-                LOG4_INFO("OnCenterEvent: sync module config to etcd key=%s", cfgKey.c_str());
+                m_bModuleConfigSeeded = true;
+                LOG4_INFO("OnCenterEvent: seed module config to etcd key=%s (first time only)", cfgKey.c_str());
             }
         }
         break;
