@@ -109,12 +109,11 @@ tests/test_smoke.sh     # 冒烟（需 Docker 集群已在线）
 ### 第三步：Smoke 测试
 
 ```bash
-# 先确认 etcd 注册节点完整
-python3 tests/admin.py nodes
-# 预期：HELLO_HTTP / HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC 均出现
-# 若有缺失 → 停止，先排查注册问题，不得继续 smoke
+# 先跑环境预检（替代原来手动的 admin.py nodes）
+bash tests/check_env.sh
+# 任何一项红 → 停止，定位根因并修复，不得靠重启蒙混
 
-# 再跑 smoke
+# 预检全绿后再跑 smoke
 tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 # 预期：0 失败；有任何失败 = 未通过
 ```
@@ -135,6 +134,51 @@ tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 - git add + commit + push 所有改动
 ---
 
+
+---
+
+---
+
+## dockercomposeregression — Docker Compose 全量回归测试
+
+触发词：`dockercomposeregression` / `docker compose 回归` / `全量回归`
+
+### 执行流程
+
+```bash
+# 1. 环境预检（任何一项红都必须修，不准靠重启蒙混）
+bash tests/check_env.sh
+
+# 2. 如果预检不通过 → 定位根因 → 修复 → 重新预检 → 通过后继续
+
+# 3. 全量回归
+./deploy.sh test regression --skip-build
+```
+
+### 预检标准（check_env.sh）
+
+| 检查项 | 通过条件 | 不通过时怎么做 |
+|--------|---------|---------------|
+| 端口 | 7 个端口全部 LISTEN | 查 docker compose ps，查服务日志 |
+| etcd 注册 | 5 种 node_type 全部在线 | 查 etcd health，查 Manager 日志 |
+| etcd 集群 | 3 节点全部 healthy | 查 etcd 容器日志 |
+| Worker CPU | < 90% | >90% = busy loop，查 Worker 日志找 root cause |
+
+### 🚫 禁止的行为
+
+- 预检红了 → 重启 → 绿了 → 继续（没找根因）
+- 某服务挂了 → `docker restart X` → 不管为什么挂
+- "暂时性"失败 → 重跑通过 → 当修好了
+- 把失败归咎于"暂时性问题"而不验证修复后的稳定性
+
+### 根因分析流程
+
+1. 查挂掉服务的日志：`docker compose logs <service> --tail 50`
+2. 查 Worker/Manager 日志：`tail -50 deploy/<Svc>/log/Hello_robot_W0.log`
+3. 检查 OOM、端口冲突、依赖未就绪
+4. 定位到具体代码行或配置错误
+5. 修复 → 重新预检 → 全量回归
+6. 记录根因到 issus-list.md
 
 ---
 
