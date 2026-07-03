@@ -53,6 +53,16 @@ E2E 通过 ≠ 冒烟通过，覆盖范围不同，必须分开跑、分开确�
 理由：
 - 端口统一来源于 `tests/ports.env`，Docker Compose 和测试代码都从这里读
 - k8s NodePort 地址机器相关，写死后别的环境跑不起来
+
+**🚨 环境生命周期铁律：**
+
+| 操作 | 命令 | 说明 |
+|------|------|------|
+| 测试前 | `down` → `up -d` | 清残留（死 fd、残留 Step、Manager kill 记录），从零启动 |
+| 测试后 | `down` | 不留残留给下次 |
+| ❌ 禁用 | `restart` | 不清容器状态，残留堆积导致 CPU 高、no fd 洪水 |
+
+原因：容器长生命周期会堆积残留状态——Step 注册不过期、死 fd 不释放、Manager 反复 kill 记录——导致每次测试都出现"no fd 8"日志洪水、CPU 虚假 100% 等问题。
 - k8s 回归（`k8sregression`）是部署验证，不是日常功能测试，两者独立
 
 测试入口：
@@ -143,16 +153,40 @@ tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 
 触发词：`dockercomposeregression` / `docker compose 回归` / `全量回归`
 
+### 测试前：清理环境
+
+长生命周期的容器会积累残留状态（死 fd、残留 Step、Manager 反复 kill 记录），测试前必须 `down` 后 `up`，不能用 `restart`。
+
+```bash
+# ⚠️ 必须 down+up，不能用 restart — 后者不清容器，残留状态堆积
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+docker compose -p thunder-deploy -f docker/docker-compose.yml up -d
+sleep 15  # 等所有服务就绪 + etcd 注册完成
+```
+
 ### 执行流程
 
 ```bash
-# 1. 环境预检（任何一项红都必须修，不准靠重启蒙混）
+# 1. 清理 + 重建环境（down → up，非 restart）
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+docker compose -p thunder-deploy -f docker/docker-compose.yml up -d
+sleep 15
+
+# 2. 环境预检（任何一项红都必须修，不准靠重启蒙混）
 bash tests/check_env.sh
 
-# 2. 如果预检不通过 → 定位根因 → 修复 → 重新预检 → 通过后继续
+# 3. 如果预检不通过 → 定位根因 → 修复 → 重新 down+up → 重新预检 → 通过后继续
 
-# 3. 全量回归
+# 4. 全量回归
 ./deploy.sh test regression --skip-build
+```
+
+### 测试后：恢复环境
+
+```bash
+# 清理容器（不留残留状态给下次测试）
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+# 如需保留数据（mysql/redis 的 volume），加 --volumes=false
 ```
 
 ### 预检标准（check_env.sh）
