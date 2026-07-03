@@ -72,16 +72,24 @@ for ep in 2379 2381 2383; do
     fi
 done
 
-# ── 4. Worker 健康 — CPU 不能 99% ──
+# ── 4. Worker 健康 — 实际进程 CPU（docker stats 不可靠） ──
 echo ""
 echo "--- Worker CPU ---"
-worker_cpu=$(docker stats --no-stream --format '{{.CPUPerc}}' thunder-deploy-hello-1 2>/dev/null | head -1 | sed 's/%//')
-wo_cpu=$(echo "$worker_cpu" | awk '{print int($1)}')
-if [ "$wo_cpu" -gt 90 ]; then
-    echo "  ❌ Worker CPU: ${worker_cpu}% — busy loop suspected"
-    FAIL=$((FAIL+1))
+_worker_pid=$(docker exec thunder-deploy-hello-1 pgrep -f Hello_robot_W0 2>/dev/null | head -1)
+if [ -n "$_worker_pid" ]; then
+    _state=$(docker exec thunder-deploy-hello-1 cat /proc/$_worker_pid/stat 2>/dev/null | awk '{print $3}')
+    _cpu=$(docker exec thunder-deploy-hello-1 top -bn1 -p $_worker_pid 2>/dev/null | tail -1 | awk '{print $9}')
+    _cpu_int=$(echo "$_cpu" | awk '{print int($1)}')
+    if [ "$_state" = "S" ] || [ "$_state" = "s" ]; then
+        echo "  ✅ Worker: state=$_state CPU=${_cpu}% (idle)"
+    elif [ "$_cpu_int" -gt 90 ] 2>/dev/null; then
+        echo "  ❌ Worker CPU: ${_cpu}% — busy loop"
+        FAIL=$((FAIL+1))
+    else
+        echo "  ✅ Worker CPU: ${_cpu}%"
+    fi
 else
-    echo "  ✅ Worker CPU: ${worker_cpu}%"
+    echo "  ⚠️  Worker process not found"
 fi
 
 # ── 结果 ──

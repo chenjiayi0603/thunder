@@ -177,8 +177,10 @@ bash tests/check_env.sh
 
 # 3. 如果预检不通过 → 定位根因 → 修复 → 重新 down+up → 重新预检 → 通过后继续
 
-# 4. 全量回归
-./deploy.sh test regression --skip-build
+# 4. 全量回归（单元 + Smoke + Lua 热重载 E2E）
+python3 -m pytest tests/unit/ -q            # Python 单元测试
+bash tests/test_smoke.sh                     # 冒烟测试
+python3 tests/e2e/test_lua_hotreload_e2e_standalone.py  # Lua 热重载 E2E（admin API 推送 → 响应验证）
 ```
 
 ### 测试后：恢复环境
