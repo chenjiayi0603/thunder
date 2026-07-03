@@ -4786,6 +4786,48 @@ Lua 脚本通过步骤 5 的共享内存（`SetCustomConfig`）或步骤 7 的 `
 
 ---
 
+## 🟡 #131 [bug] Manager sync 覆盖 admin API 的 etcd 配置，阻断热更新 + E2E
+
+> 2026-07-03 | bug | 状态: 🟡 待修复  阻塞: Lua E2E 热更新测试 4/4
+
+### 现象
+
+admin API `POST /api/lua-scripts` 写到 etcd 的版本变更被 Manager 的 `sync module config to etcd` 覆盖：
+
+```
+admin → etcd PUT (version=30, script_content=...)
+  ↓
+Manager Watch → ConfigUpdated
+  ├─ luaChangedIdx → 收集到变更
+  ├─ SendToWorker(CMD_REQ_RELOAD_LUA)  ← 理论上应该触发
+  └─ sync module config to etcd        ← 把本地旧 config (version=29) 又写回 etcd
+                                       ← 盖掉了 admin 刚写的 version=30
+```
+
+结果：etcd 里版本永远是旧的，ConfigUpdated 下次比较时没有变化，ReloadScript 永远不触发。
+
+### 根因
+
+Manager 的 `OnCenterEvent::RegistrationOk` 无条件 `PutConfig` 本地 `oCurrentConf["module"]` 到 etcd。`oCurrentConf` 来自本地 `Hello.json`，没有 admin 侧注入的 `script_content` 和新版本。
+
+这是一个单向推送（Manager→etcd），没有做 etcd→Manager 的合并。
+
+### 修复方向
+
+`OnCenterEvent::ConfigUpdated` 处理 admin 下发的配置时，应：
+1. 先不写 Hello.json
+2. 先不从 etcd 回写
+3. 仅通过 shm + CMD_REQ_RELOAD_LUA 推给 Worker
+
+或在 `sync module config to etcd` 前先做双向 merge：读 etcd 的当前值 → 与本地配置合并（保留 etcd 中由 admin 注入的 script_content 和更高版本号）→ 再写回。
+
+### 验证
+
+- admin push Lua → etcd version 变化持续存在（不被覆盖）
+- Manager 日志出现 `reload lua scripts in-place`
+- Worker 响应即时更新
+- Lua E2E 4/4 全部通过
+
 ## 🟡 #128 [bug] Lua 热重载误伤同 SO 的其他 URL
 
 > 2026-06-29 | bug | 状态: 🟡 待修复
