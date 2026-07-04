@@ -283,11 +283,11 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, "wb") as f:
             f.write(data)
-        # NFS: NFS/{TypeDir}/plugins/{filename}（跳过 deploy 前缀）
+        # NFS: NFS_DIR/{TypeDir}/{filename}（跳过 "plugins" 路径段，与 do_PUT 一致）
         if NFS_DIR.exists():
-            parts = rel.strip("/").split("/")
+            parts = rel.strip("/").split("/")  # ["HelloHttp", "plugins", "xxx.so"]
             if len(parts) >= 3:
-                nfs_path = os.path.join(str(NFS_DIR), *parts)
+                nfs_path = os.path.join(str(NFS_DIR), parts[0], *parts[2:])
                 os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
                 with open(nfs_path, "wb") as f:
                     f.write(data)
