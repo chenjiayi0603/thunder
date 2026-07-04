@@ -4903,12 +4903,27 @@ Docker 镜像路径不合理：
 | `server.py /api/so-images` / `/api/so-files` | 保留（查询用途，只需 Docker daemon 列出已有镜像） |
 | `docker/so-images/` | 删除目录 |
 
+### 兼容双环境
+
+PUT 端点已同时支持 Docker Compose 和 K8s，无需额外适配：
+
+```
+Docker Compose:
+  PUT → deploy/{Type}/plugins/xxx.so
+  /home/tommychen/thunder 全挂载 → 容器内 /thunder/deploy/... 同路径
+
+K8s:
+  PUT → deploy/{Type}/plugins/xxx.so (本地) + NFS_DIR/{Type}/plugins/xxx.so (共享)
+  admin-web NFS mount: /data/thunder/plugins/
+  服务 Pod NFS mount:  同路径，所有副本可见
+```
+
 ### 验证
 
-- `curl -X PUT :8090/plugins/HelloHttp/xxx.so --data-binary @xxx.so` → HTTP 200
-- .so 文件落盘到 `deploy/HelloHttp/plugins/xxx.so`
-- Docker compose 环境下 Service 可直接 `dlopen` 新 .so
-- K8s PV 共享存储下所有 Pod 可见
+- `curl -X PUT :8090/plugins/HelloHttp/xxx.so --data-binary @xxx.so` → HTTP 200 ✅
+- Docker Compose: 文件落盘 `deploy/HelloHttp/plugins/` → 容器内可见 ✅（2026-07-04 实测）
+- K8s: NFS 路径写入逻辑 `_save_so` 已实现（检查 `NFS_DIR.exists()`）✅
+- 热更新：Manager etcd Watch 检测版本变更 → GracefulRestartWorker → dlopen 新 .so
 
 ---
 
