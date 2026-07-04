@@ -4866,6 +4866,52 @@ succeed in unloading HelloHttp_ModuleLua.so
 
 ---
 
+## 🟡 #132 [设计] SO 模块部署：废弃 Docker 镜像提取，用直接上传
+
+> 2026-07-04 | 设计 | 状态: 🟡 待实施
+
+### 背景
+
+admin-web 有两条 SO 部署路径：
+
+| 路径 | API | 流程 |
+|------|-----|------|
+| Docker 镜像提取 | `POST /api/so-extract` | cmake → docker build → pull image → create container → extract .so → delete container → write disk |
+| 直接上传 | `PUT /plugins/{Type}/{file}` | cmake → curl PUT .so → write disk |
+
+### 问题
+
+Docker 镜像路径不合理：
+
+1. **过度包装**：3MB alpine + 1MB .so 镜像，拉取后只提取 .so 丢掉镜像
+2. **安全风险**：admin-web 需挂载 `/var/run/docker.sock`（root 权限）
+3. **无意义绕圈**：cmake 已产出 .so，Docker 包一层再解包，纯浪费
+4. **docker compose 不兼容**：开发环境没有 registry，每次 build-so + extract 比直接 upload 慢 10 倍
+
+### 决策
+
+**保留直接上传**（`PUT /plugins/{Type}/{file}`），**废弃 Docker 镜像提取**（`POST /api/so-extract`）。
+
+理由：.so 文件就是最终产物，不需要镜像包装。K8s 环境通过 PV 共享存储，直接上传的 .so 对所有 Pod 可见，跟镜像提取效果相同。
+
+### 改动
+
+| 文件 | 操作 |
+|------|------|
+| `deploy.sh build-so` | 删除或改为直接复制 .so 到目标目录 |
+| `server.py _handle_so_extract` | 标记 deprecated |
+| `server.py /api/so-images` / `/api/so-files` | 保留（查询用途，只需 Docker daemon 列出已有镜像） |
+| `docker/so-images/` | 删除目录 |
+
+### 验证
+
+- `curl -X PUT :8090/plugins/HelloHttp/xxx.so --data-binary @xxx.so` → HTTP 200
+- .so 文件落盘到 `deploy/HelloHttp/plugins/xxx.so`
+- Docker compose 环境下 Service 可直接 `dlopen` 新 .so
+- K8s PV 共享存储下所有 Pod 可见
+
+---
+
 ## 🟡 #129 [需求] Lua 脚本热重载走独立路径，不动 SO 模块
 
 > 2026-06-29 | 需求 | 状态: ✅ 已实现（2026-06-29）
