@@ -88,5 +88,11 @@ else:
     print(f"  ❌ log issue: {logs[:80]}")
     FAIL += 1
 
+# ── 清理：恢复默认 echo.lua ──
+requests.post(f"{ADMIN}/api/lua-scripts", json={
+    "node_type":"HELLO_HTTP","name":"echo.lua","url_path":"/hello/lua_echo",
+    "content": "function handle_request(msg)\n    SendToClientFast('{\"code\":0,\"msg\":\"ok\"}')\n    return true\nend"
+}, timeout=5)
+
 print(f"\n═══ {PASS}/4 passed, {FAIL} failed ═══")
 sys.exit(FAIL)
