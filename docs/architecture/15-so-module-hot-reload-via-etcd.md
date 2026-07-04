@@ -1,6 +1,6 @@
 # 15 — SO 模块热更新 via etcd
 
-> 2026-06-09 | issus #45 | 状态: ✅ 已实现
+> 2026-06-09 | 更新: 2026-07-04 (#132 废弃镜像提取，统一直接上传) | 状态: ✅ 已实现
 
 ## 1. 问题
 
@@ -51,53 +51,55 @@ SO 模块更新需手动替换文件 + 发信号，无版本管理，无回滚�
 ## 4. SO 文件存储
 
 ```
-/data/thunder/plugins/    ← NFS 共享 (k8s Pod 只读挂载)
-├── HelloHttp/ModuleHello.so, ModuleHello_v2.so
-├── HelloWs/CmdHello.so, ModuleShake.so
-├── HelloHttps/ModuleHello.so
+deploy/{Type}/plugins/    ← 标准路径，所有环境统一
+├── HelloHttp/ModuleHello.so
+├── HelloWs/CmdHello.so
 ├── Logic/CmdGetToken.so
 └── Interface/ModuleInterface.so
-
-deploy/admin-web/plugins/ ← 上传服务目录 (与 NFS 同步双写)
 ```
 
-| 环境 | SO 来源 | 说明 |
-|------|---------|------|
-| 裸机 | 本地 `deploy/{Type}/plugins/` | dlopen 直接加载 |
-| k8s | NFS `/data/thunder/plugins/` | PV ReadOnlyMany → Pod mountPath |
-| URL 分发 | HTTP `so_url` → DownloadSoFile | Manager 从上传服务器下载 |
-| SO 镜像 | Docker 镜像含 SO → Admin 提取 | 节点镜像不替换, 热加载 |
+### 部署方式（#132 统一为直接上传）
 
-### 方案对比
+**唯一入口**：`PUT /plugins/{Type}/{filename}` — 直接上传 .so 文件。
 
-| | NFS 共享 | Admin SCP 拉取 | SO 镜像提取 (已实现) |
-|------|:---:|:---:|:---:|
-| 编译机操作 | `mount` NFS + `cp` | 配 SSH key + scp | `docker build && push` |
-| 换新编译机 | 挂载一次 | 配一次 authorized_keys | 无需配置 |
-| 多节点同步 | NFS 天然共享 | Admin 拉一份 → NFS 分发 | 同左 |
-| 版本管理 | 文件名区分 | 无 | 镜像 tag 天然版本 |
-| 回滚 | 手动 cp 旧文件 | 无 | 换镜像 tag |
-| CI/CD 集成 | `cp` | `scp` | `docker push` (标准) |
-| 安全性 | 共享目录权限 | 私钥泄露风险 | registry 认证 |
-| 复杂度 | 低 | 中 (加 SSH, 改容器) | 低 (一个 API) |
-| 云端适用 | 需云 NFS (付费) | 需 SSH 可达 | 任何 registry |
-
-> **结论**: 两个都保留。本地开发用 NFS (`cp` 即刷新), 生产/云端用 SO 镜像 (CI/CD + 版本管理)。SCP 不推荐。
-
-## 5. SO 镜像管理 (#48)
-
-SO 打 Docker 镜像做版本管理，节点镜像不替换。Admin 从镜像提取 .so → 热更新。
+| 环境 | 存储 | 工作机制 |
+|------|------|---------|
+| Docker Compose | 本地 `deploy/` | 全项目挂载 → 所有容器共享同一文件系统 |
+| K8s | NFS `/data/thunder/plugins/` | admin-web 写 NFS → 所有 Pod mount 同一卷 |
 
 ```
-编译机                                     Admin Pod
-Dockerfile:
-  FROM alpine:3.20          ← 需要基础镜像(create容器用)
-  COPY *.so /app/so/
-  CMD ["/bin/true"]
+Docker Compose:                           K8s:
+  PUT .so                                    PUT .so
+    │                                          │
+    ▼                                          ▼
+  deploy/HelloHttp/plugins/xxx.so          NFS /data/thunder/plugins/HelloHttp/xxx.so
+    │                                          │
+    ├─ admin-web 容器可见                      ├─ admin-web Pod 可见
+    └─ hello 容器可见 (同一挂载)                └─ 所有服务 Pod 可见 (同一 PV)
+```
 
-docker build -t registry/so-hello:v3
-  → docker push  ────────────────────►  POST /api/so-extract
-                                        {image, file, type}
+### 为什么废弃 Docker 镜像提取 (#132)
+
+| 问题 | 说明 |
+|------|------|
+| 过度包装 | 3MB alpine 镜像只含 1MB .so，拉取→创建容器→提取→删除，纯浪费 |
+| 安全风险 | admin-web 需挂载 `/var/run/docker.sock`（root 权限） |
+| 无意义绕圈 | cmake 已产出 .so，Docker 包一层再解包 |
+| 复杂度 | 需要 registry + build-so + pull + extract，vs 一行 curl PUT |
+
+## 5. 热更新流程
+
+```
+cmake → .so → curl PUT :8090/plugins/{Type}/{file}
+  │
+  ├─ 写本地: deploy/{Type}/plugins/xxx.so      (Docker Compose 直接可见)
+  └─ 写 NFS:  /data/thunder/plugins/{Type}/xxx.so  (K8s 所有 Pod 可见)
+  │
+  ▼
+更新 etcd /thunder/config/module/{TYPE} 版本号
+  │
+  ▼
+Manager Watch 检测变更 → GracefulRestartWorker → dlopen 新 .so
                                             │
                                         docker create image
                                         → get_archive /app/so/file.so
