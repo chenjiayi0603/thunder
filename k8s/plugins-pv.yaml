@@ -18,7 +18,7 @@ spec:
     - ReadOnlyMany
   persistentVolumeReclaimPolicy: Retain
   nfs:
-    server: 192.168.3.100    # ← 改: NFS 服务器 IP
+    server: 127.0.0.1          # ← 改: NFS 服务器 IP (生产: 192.168.3.100)
     path: /data/thunder/plugins
 
 ---
