@@ -218,9 +218,21 @@ docker compose -p thunder-deploy -f docker/docker-compose.yml down
 
 ---
 
-## k8sregression — k8s 部署 + 全量回归测试
+## k8sregression — K8s 部署 + 全量回归测试
+
+> ⚠️ 这里的 k8s 指标准 Kubernetes（kubeadm/GKE/AKS），不是 K3s。
+> 本地开发机装的是 K3s（`systemctl status k3s`），仅用于快速验证 YAML 语法和单 Pod 测试。
+> 全量 K8s 回归测试需要在真实 kubeadm 集群上跑。
 
 当用户说"k8sregression"或"k8s 回归测试"时：
+
+### 第零步：确认环境
+
+```bash
+# 先确认是不是标准 K8s（不是 K3s）
+kubectl get node -o wide
+# 看 VERSION 列: v1.x.x+k3s1 = K3s（仅开发验证），v1.x.x = 标准 K8s（可跑回归）
+```
 
 ### 第一步：构建 + 代码级测试
 
