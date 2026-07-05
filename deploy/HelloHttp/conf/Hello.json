@@ -67,9 +67,9 @@
             "so_path": "plugins/HelloHttp_ModuleLua.so",
             "entrance_symbol": "create",
             "load": true,
-            "version": 28,
+            "version": 43,
             "script_path": "scripts/echo.lua",
-            "script_content": "function handle_request(msg)\n  SendToClientFast('{\"code\":0,\"msg\":\"HOTRELOAD_LOG_1782750474\"}')\n  return true\nend"
+            "script_content": "function handle_request(msg)\n  SendToClientFast('{\"code\":0,\"msg\":\"E2E_LOG_1783148505\"}')\n  return true\nend"
         },
         {
             "url_path": "/hello/lua_limit",
