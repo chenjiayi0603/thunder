@@ -378,7 +378,6 @@ services:
         pip install -q requests
         exec python3 server.py --port 8090
     deploy:
-    deploy:
       resources:
         limits:
           cpus: "0.25"
