@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: thunder-hello
   namespace: thunder
+  labels:
+    app: thunder-hello
 spec:
   replicas: 1
   selector:
@@ -14,41 +16,23 @@ spec:
         app: thunder-hello
     spec:
       containers:
-      - name: app
+      - name: hello
         image: ubuntu:26.04
-        imagePullPolicy: IfNotPresent
         workingDir: /thunder/deploy/HelloHttp
-        env:
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        - name: LD_LIBRARY_PATH
-          value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
-        - name: DEBIAN_FRONTEND
-          value: noninteractive
-        command:
-        - bash
-        - -c
-        - |
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
-          chmod +x ./node.sh 2>/dev/null || true
-          mkdir -p /tmp/conf && cp /thunder/k8s/conf/Hello.json /tmp/conf/Hello.json && sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/Hello.json
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH bin/HelloHttp /tmp/conf/Hello.json
-          exec tail -f /dev/null
+        command: ["bash", "-c", "./node.sh start && tail -f /dev/null"]
         ports:
         - containerPort: 27006
         volumeMounts:
         - name: thunder-repo
           mountPath: /thunder
-        - name: thunder-plugins
-          mountPath: /data/thunder/plugins
-          readOnly: true
+        - name: nfs-plugins
+          mountPath: /thunder/deploy/HelloHttp/plugins
+          subPath: HelloHttp
       volumes:
       - name: thunder-repo
         hostPath:
           path: /home/tommychen/thunder
-      - name: thunder-plugins
+      - name: nfs-plugins
         persistentVolumeClaim:
           claimName: thunder-plugins
 ---
@@ -59,8 +43,9 @@ metadata:
   namespace: thunder
 spec:
   type: NodePort
-  ports:
-  - port: 27006
-    nodePort: 30006
   selector:
     app: thunder-hello
+  ports:
+  - port: 27006
+    targetPort: 27006
+    nodePort: 30006
