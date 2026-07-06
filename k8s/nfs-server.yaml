@@ -9,6 +9,7 @@ spec:
   containers:
   - name: nfs
     image: itsthenetwork/nfs-server-alpine:latest
+    imagePullPolicy: IfNotPresent
     env:
     - name: SHARED_DIRECTORY
       value: /exports
