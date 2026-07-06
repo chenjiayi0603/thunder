@@ -74,8 +74,9 @@ Docker Compose:                           K8s:
     ▼                                          ▼
   deploy/HelloHttp/plugins/xxx.so          NFS /data/thunder/plugins/HelloHttp/xxx.so
     │                                          │
-    ├─ admin-web 容器可见                      ├─ admin-web Pod 可见
-    └─ hello 容器可见 (同一挂载)                └─ 所有服务 Pod 可见 (同一 PV)
+    ├─ admin-web 容器可见                      ├─ admin-web Pod mount 可见
+    └─ hello 容器可见 (同一挂载)                └─ 所有服务 Pod mount 可见
+                                                (NFS 是网络文件系统，Pod mount 后像本地盘一样直接读，不需要下载)
 ```
 
 ### 为什么废弃 Docker 镜像提取 (#132)
@@ -99,14 +100,10 @@ cmake → .so → curl PUT :8090/plugins/{Type}/{file}
 更新 etcd /thunder/config/module/{TYPE} 版本号
   │
   ▼
-Manager Watch 检测变更 → GracefulRestartWorker → dlopen 新 .so
-                                            │
-                                        docker create image
-                                        → get_archive /app/so/file.so
-                                        → tar 解包
-                                        → _save_so() 写本地+NFS
-                                        → etcd PUT
-                                        → Manager GracefulRestartWorker
+Manager Watch 检测变更 → GracefulRestartWorker → dlopen(插件路径/xxx.so)
+                                                   ↑
+                                              NFS 直接挂载，Worker 本地读
+                                              不需要下载，不需要解包
 ```
 
 | 优势 | 说明 |
