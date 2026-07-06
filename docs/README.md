@@ -1,13 +1,10 @@
-# Thunder 项目介绍与 FAQ
+# Thunder Documentation
 
-> 本文档用于对外介绍 Thunder 项目核心设计，以及常见问答。
+Thunder 是一个**高性能 C++20 集群异步服务框架**，采用**单线程事件循环 + 协程 + 线程池**架构，适用于高并发、低延迟的服务端场景（网关、微服务、游戏后端）。
 
----
+本页是文档总览 + 项目介绍 + 常见问答。
 
-## 一、项目概述
-
-Thunder 是一个**高性能 C++20 网络框架**，采用**单线程事件循环 + 协程 + 线程池**架构，
-适用于高并发、低延迟的服务端场景（网关、微服务、游戏后端）。
+## 项目概述
 
 ### 核心特性
 
@@ -45,16 +42,79 @@ Thunder 是一个**高性能 C++20 网络框架**，采用**单线程事件循�
      └───────────────────────────────────────────────────────────┘
 ```
 
+## 文档地图
+
+```
+docs/
+├── architecture/   设计文档 —— 框架内部原理与各子系统设计
+├── performance/    基准数据 —— 可复现的性能对比与测试报告
+├── quality/        质量验证 —— 内存安全与单元测试覆盖
+└── reference/      参考资料 —— 通用工具笔记（非 Thunder 自身设计）
+```
+
+## 阅读路径
+
+1. **看整体架构** → [架构设计](architecture/01-architecture-design.md) → [Manager-Worker IPC](architecture/11-manager-worker-ipc.md) → [etcd 设计](architecture/02-etcd-designed.md)
+2. **看性能** → [Thunder vs Nginx 基准](performance/10-vs-nginx-benchmark-20260610.md) → [IoBackend 四后端对比](performance/11-io-backend-comparison.md)
+3. **看具体子系统** → 按下方索引表
+4. **常见疑问** → 见本页 [核心设计问答](#核心设计问答)
+
+## Architecture — 设计文档
+
+| 文档 | 主题 |
+|------|------|
+| [01 架构设计](architecture/01-architecture-design.md) | 集群异步服务框架总体架构 |
+| [02 etcd 设计](architecture/02-etcd-designed.md) | 服务注册 / 发现 / 配置中心 |
+| [03 node_id 分配](architecture/03-node-id-allocation.md) | 节点 ID 分配机制 |
+| [04 k8s 部署](architecture/04-thunder-on-k8s.md) | Kubernetes 部署方案 |
+| [08 优雅重启](architecture/08-graceful-restart.md) | Worker SIGTERM 排空与自动重启 |
+| [11 Manager-Worker IPC](architecture/11-manager-worker-ipc.md) | 多进程交互机制 |
+| [13 路由下发](architecture/13-upstream-route-filter.md) | 路由按需下发设计 |
+| [15 SO 热更新](architecture/15-so-module-hot-reload-via-etcd.md) | SO 模块经 etcd 热更新 |
+| [17 LuaJIT 支持](architecture/17-luajit-module-support.md) | LuaJIT 模块支持 |
+| [19 协程访问模式](architecture/19-coroutine-access-patterns.md) | C++20 协程访问模式 |
+| [21 Lua 跨节点发送](architecture/21-lua-send-to-node-type.md) | Lua 跨节点类型发送 |
+| [23 Work-Stealing 线程池](architecture/23-work-stealing-threadpool.md) | 工作窃取线程池设计 |
+| [30 io_uring 后端设计](architecture/30-asio-uring-design.md) | AsioUring 详细设计 + 两套实现对比与后端选型 |
+| [31 ShmRingQueue 设计](architecture/31-shmringqueue-design.md) | 共享内存无锁环形队列 |
+| [32 HTTPS Codec](architecture/32-https-codec.md) | HTTPS 编解码器实现与运维 |
+| [33 协议全景](architecture/33-protocols-overview.md) | 协议编解码器全景分析 |
+
+## Performance — 基准数据
+
+| 文档 | 主题 |
+|------|------|
+| [02 picohttpparser 分析](performance/02-picohttpparser-analysis.md) | 替换 http_parser 的 +49% RPS 优化分析 |
+| [03 线程池队列对比](performance/03-threadpool-queue-bench.md) | ThreadPool 队列方案对比 |
+| [04 Work-Stealing 基准](performance/04-work-stealing-bench.md) | 工作窃取线程池基准 |
+| [06 AsioUring vs NativeUring](performance/06-asio-uring-vs-native-uring.md) | 两种 uring 后端对比 |
+| [09 ShmRingQueue 基准](performance/09-shmringqueue-benchmark.md) | 共享内存队列对比测试 |
+| [10 Thunder vs Nginx](performance/10-vs-nginx-benchmark-20260610.md) | 本机 wrk 基准测试 |
+| [11 IoBackend 四后端对比](performance/11-io-backend-comparison.md) | 四种 IO 后端横向对比 |
+
+## Quality — 质量验证
+
+| 文档 | 主题 |
+|------|------|
+| [04 共享内存 IPC 验证](quality/04-shm-ring-queue.md) | ShmRingQueue + LoaderConfigVersionData 内存安全与单测覆盖 |
+
+## Reference — 参考资料
+
+> 与 Thunder 自身设计无关的通用工具笔记。
+
+| 文档 | 主题 |
+|------|------|
+| [01 Sanitizer 验证](reference/01-asan-lsan.md) | ASan / LSan 编译选项功能验证 |
+
 ---
 
-## 二、核心设计问答
+## 核心设计问答
 
 ### Q1: 为什么用单线程事件循环，而不是多线程？
 
 **因为事件循环避免了并发竞争。**
 
-Thunder 的每个 Worker 进程是**单线程**事件循环。所有网络 IO、协程调度、
-消息派发都在一个线程里完成，不需要锁、不需要考虑数据竞争。
+Thunder 的每个 Worker 进程是**单线程**事件循环。所有网络 IO、协程调度、消息派发都在一个线程里完成，不需要锁、不需要考虑数据竞争。
 
 | 方案 | 优点 | 缺点 |
 |------|------|------|
@@ -63,8 +123,6 @@ Thunder 的每个 Worker 进程是**单线程**事件循环。所有网络 IO、
 | 多进程事件循环 | 无锁 + 多核 | 进程间通信成本 |
 
 Thunder 的选择：**单进程单线程 + 多进程水平扩展**。
-
----
 
 ### Q2: 协程解决了什么问题？
 
@@ -95,8 +153,6 @@ net::AsyncTask AsyncBody(net::StepCo20& st) {
 | 并发 | 单线程内数百万 | 受限于线程数 |
 | 数据竞争 | 无（单线程）| 需要锁 |
 
----
-
 ### Q3: `net::AsyncTask` 是什么？为什么协程函数必须返回它？
 
 `AsyncTask` 是 Thunder 的 C++20 协程返回类型，**桥接了 C++20 协程和 StepCo20 状态机**：
@@ -122,8 +178,6 @@ struct AsyncTask {
 ```
 
 协程函数的签名必须统一为 `AsyncTask XxxCo(StepCo20& step, ...)`，因为 `promise_type` 从第一个参数拿 `StepCo20&`。
-
----
 
 ### Q4: ThreadPool 的设计？为什么不直接用 parallel_for？
 
@@ -155,8 +209,6 @@ ThreadPool offload（任务并行）:
 3. `resize(n)` 动态扩缩容 — 增大直接建线程，缩小空闲 worker 退出
 4. 1 线程起步 — 多进程不超订 CPU
 
----
-
 ### Q5: 为什么 AsyncTask 要 suspend_always final_suspend？
 
 因为 AsyncTask 是**栈对象**，协程帧（coroutine frame）的释放由 AsyncTask 的析构函数控制：
@@ -165,10 +217,7 @@ ThreadPool offload（任务并行）:
 ~AsyncTask() { if (coro_) coro_.destroy(); }
 ```
 
-如果 `final_suspend` 返回 `suspend_never`，协程结束时会自动释放协程帧，
-但 AsyncTask 可能还在栈上，再调用 destroy 就是 double free。
-
----
+如果 `final_suspend` 返回 `suspend_never`，协程结束时会自动释放协程帧，但 AsyncTask 可能还在栈上，再调用 destroy 就是 double free。
 
 ### Q6: 异步 Redis / MySQL 的协程实现
 
@@ -181,26 +230,21 @@ const net::RedisReply rsp = co_await r.Set("key", "val");
 // 回复到达 → OnRedisCmdResult → h.resume() → 协程继续
 ```
 
-当前 RedisCoHelper 每次 `co_await` 都新建连接（无连接池）。
-这是已知优化点，加连接池后可大幅提升 QPS。
+当前 RedisCoHelper 每次 `co_await` 都新建连接（无连接池）。这是已知优化点，加连接池后可大幅提升 QPS。
 
 MySQL 目前使用同步 DBI，无协程版。`MySqlAwaitable` 存在但未在业务层使用。
-
----
 
 ### Q7: 性能数据
 
 | 场景 | 数据 | 对比 |
 |------|:----:|:----:|
-| Echo 空响应（/hello/raw）| 133~141k QPS | HTTPS，1 Worker 绑核，wrk c100，见报告 §10 |
+| Echo 空响应（/hello/raw）| 133~141k QPS | HTTPS，1 Worker 绑核，wrk c100，见 [Thunder vs Nginx 基准](performance/10-vs-nginx-benchmark-20260610.md) |
 | Redis 协程 | 12k QPS | 单连接，无连接池 |
 | ThreadPool 队列 vs mutex | 2.5x~3.7x | ConcurrentQueue 优势 |
 | ThreadPool vs TBB CPU密集 | 等同 | 两者均满 20 核 |
 | 异步 Redis(hiredis async) | 29M QPS | 流水线化，282x vs 同步 |
 
----
-
-## 三、项目亮点
+## 项目亮点
 
 1. **C++20 协程落地实践**：`AsyncTask` + `PoolOffloadAwaiter` 等模板，展示了 C++20 协程在工业级网络框架中的应用
 2. **无锁线程池**：`moodycamel::ConcurrentQueue` 替代 `queue + mutex`，多生产者性能提升 2.5~3.7x
@@ -208,9 +252,7 @@ MySQL 目前使用同步 DBI，无协程版。`MySqlAwaitable` 存在但未在�
 4. **模块化 codec**：12 种编解码器可插拔，支持 HTTP/HTTPS/WSS/Protobuf 等协议
 5. **etcd 注册中心**：CAS slot 分配 + lease 保活，支持服务发现与健康检查
 
----
-
-## 四、FAQ 问答
+## 更多 FAQ
 
 ### Q: suspend_never / suspend_always 的区别？
 
@@ -219,8 +261,7 @@ MySQL 目前使用同步 DBI，无协程版。`MySqlAwaitable` 存在但未在�
 | initial_suspend | 协程启动后立即执行 | 协程启动后挂起，需要手动 resume |
 | final_suspend | 协程结束自动销毁帧 | 协程结束挂起，由持有者销毁帧 |
 
-`AsyncTask` 的 `initial_suspend = suspend_never`（立即执行），
-`final_suspend = suspend_always`（避免 double free）。
+`AsyncTask` 的 `initial_suspend = suspend_never`（立即执行），`final_suspend = suspend_always`（避免 double free）。
 
 ### Q: 协程帧什么时候分配？什么时候释放？
 
@@ -239,5 +280,4 @@ co_await awaiter:
 
 ### Q: 多进程间怎么通信？
 
-Thunder 进程间不直接通信。通过 etcd 做服务发现，Center 节点负责路由。
-Worker 之间通过 protobuf 消息 + 内部 TCP 连接转发。
+Thunder 进程间不直接通信。通过 etcd 做服务发现，Center 节点负责路由。Worker 之间通过 protobuf 消息 + 内部 TCP 连接转发。

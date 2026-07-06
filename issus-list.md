@@ -4786,6 +4786,58 @@ Lua 脚本通过步骤 5 的共享内存（`SetCustomConfig`）或步骤 7 的 `
 
 ---
 
+## 🟡 #131 [bug] Manager sync 覆盖 admin API 的 etcd 配置，阻断热更新 + E2E
+
+> 2026-07-03 | bug | 状态: 🟡 待修复  阻塞: Lua E2E 热更新测试 4/4
+
+### 现象
+
+admin API `POST /api/lua-scripts` 写到 etcd 的版本变更被 Manager 的 `sync module config to etcd` 覆盖：
+
+```
+admin → etcd PUT (version=30, script_content=...)
+  ↓
+Manager Watch → ConfigUpdated
+  ├─ luaChangedIdx → 收集到变更
+  ├─ SendToWorker(CMD_REQ_RELOAD_LUA)  ← 理论上应该触发
+  └─ sync module config to etcd        ← 把本地旧 config (version=29) 又写回 etcd
+                                       ← 盖掉了 admin 刚写的 version=30
+```
+
+结果：etcd 里版本永远是旧的，ConfigUpdated 下次比较时没有变化，ReloadScript 永远不触发。
+
+### 根因
+
+Manager 的 `OnCenterEvent::RegistrationOk` 无条件 `PutConfig` 本地 `oCurrentConf["module"]` 到 etcd。`oCurrentConf` 来自本地 `Hello.json`，没有 admin 侧注入的 `script_content` 和新版本。
+
+这是一个单向推送（Manager→etcd），没有做 etcd→Manager 的合并。
+
+### 修复方向
+
+**规则：etcd 为空时从节点拉取作为初始版本；之后新版本以 etcd 为准，节点不再回写覆盖。**
+
+```
+Manager 启动
+  │
+  ├─ etcd GET /thunder/config/module/{NODE_TYPE}
+  │   ├─ 空（首次启动）→ PUT 本地 config（种子写入）      ← 唯一一次节点→etcd
+  │   └─ 非空 → 以 etcd 为准，本地配置对齐 etcd           ← 之后 etcd 是主
+  │
+  ▼
+后续 admin push → etcd PUT（唯一入口）
+Manager Watch 检测变更 → shm + CMD_REQ_RELOAD_LUA → Worker
+Manager 不再回写 etcd（不调 sync module config）
+```
+
+实现：去掉 `OnCenterEvent::RegistrationOk` 和 `ConfigUpdated` 中的无条件 `PutConfig`，改为仅在首次（etcd key 不存在时）写入。
+
+### 验证
+
+- admin push Lua → etcd version 变化持续存在（不被覆盖）
+- Manager 日志出现 `reload lua scripts in-place`
+- Worker 响应即时更新
+- Lua E2E 4/4 全部通过
+
 ## 🟡 #128 [bug] Lua 热重载误伤同 SO 的其他 URL
 
 > 2026-06-29 | bug | 状态: 🟡 待修复
@@ -4811,6 +4863,78 @@ succeed in unloading HelloHttp_ModuleLua.so
 1. **短期**：`LoadModule` 对 Lua 模块跳过 dlclose，直接调 `ModuleLua::Init()` 重建 Lua VM
 2. **长期**：每个 url 持有独立 Lua VM 实例，互不影响；或改用引用计数管理 SO 卸载
 3. **约束**：若 `HelloHttp_ModuleLua.so` 因任何原因被 dlclose+dlopen（如其他 SO 变更触发重启、显式 LoadModule force=true），**必须把同 .so 下所有已注册 url_path 的 Lua 模块全部重建回来**，不能只重建触发变更的那一个
+
+---
+
+## 🟡 #132 [设计] SO 模块部署：废弃 Docker 镜像提取，用直接上传
+
+> 2026-07-04 | 设计 | 状态: 🟡 待实施
+
+### 背景
+
+admin-web 有两条 SO 部署路径：
+
+| 路径 | API | 流程 |
+|------|-----|------|
+| Docker 镜像提取 | `POST /api/so-extract` | cmake → docker build → pull image → create container → extract .so → delete container → write disk |
+| 直接上传 | `PUT /plugins/{Type}/{file}` | cmake → curl PUT .so → write disk |
+
+### 问题
+
+Docker 镜像路径不合理：
+
+1. **过度包装**：3MB alpine + 1MB .so 镜像，拉取后只提取 .so 丢掉镜像
+2. **安全风险**：admin-web 需挂载 `/var/run/docker.sock`（root 权限）
+3. **无意义绕圈**：cmake 已产出 .so，Docker 包一层再解包，纯浪费
+4. **docker compose 不兼容**：开发环境没有 registry，每次 build-so + extract 比直接 upload 慢 10 倍
+
+### 决策
+
+**保留直接上传**（`PUT /plugins/{Type}/{file}`），**废弃 Docker 镜像提取**（`POST /api/so-extract`）。
+
+理由：.so 文件就是最终产物，不需要镜像包装。K8s 环境通过 PV 共享存储，直接上传的 .so 对所有 Pod 可见，跟镜像提取效果相同。
+
+### 改动
+
+| 文件 | 操作 |
+|------|------|
+| `deploy.sh build-so` | 删除或改为直接复制 .so 到目标目录 |
+| `server.py _handle_so_extract` | 标记 deprecated |
+| `server.py /api/so-images` / `/api/so-files` | 保留（查询用途，只需 Docker daemon 列出已有镜像） |
+| `docker/so-images/` | 删除目录 |
+
+### 兼容双环境
+
+PUT 端点已同时支持 Docker Compose 和 K8s，无需额外适配：
+
+```
+Docker Compose:
+  PUT → deploy/{Type}/plugins/xxx.so
+  /home/tommychen/thunder 全挂载 → 容器内 /thunder/deploy/... 同路径
+
+K8s:
+  PUT → deploy/{Type}/plugins/xxx.so (本地) + NFS_DIR/{Type}/plugins/xxx.so (共享)
+  admin-web NFS mount: /data/thunder/plugins/
+  服务 Pod NFS mount:  同路径，所有副本可见
+```
+
+### 验证
+
+- `curl -X PUT :8090/plugins/HelloHttp/xxx.so --data-binary @xxx.so` → HTTP 200 ✅
+- Docker Compose: 文件落盘 `deploy/HelloHttp/plugins/` → 容器内可见 ✅（2026-07-04 实测）
+- K8s: NFS 路径写入逻辑 `_save_so` 已实现（检查 `NFS_DIR.exists()`）✅
+- 热更新：Manager etcd Watch 检测版本变更 → GracefulRestartWorker → dlopen 新 .so
+
+### ⚠️ K8s NFS 路径缺口
+
+admin-web 写 NFS: `/data/thunder/plugins/HelloHttp/xxx.so`
+Worker 读本地: `/thunder/deploy/HelloHttp/plugins/xxx.so`
+**两个路径不一致！** 当前 Worker 用 `m_strWorkPath + "/" + so_path` 拼接，so_path 是相对路径 `plugins/xxx.so`，最终读 `/thunder/deploy/HelloHttp/plugins/xxx.so`（hostPath 挂载），不是 NFS。
+
+修复方向：
+1. K8s 部署中挂载 NFS 到 `/thunder/deploy/HelloHttp/plugins/`（而非 `/data/thunder/plugins/`）
+2. 或 Worker 支持绝对路径 so_path
+3. 或 `_save_so` 写的 NFS 路径与 Worker 读路径对齐
 
 ---
 
@@ -4857,3 +4981,75 @@ Worker:  找到 ModuleLua* → ReloadScript()
 - Worker 日志：无 `unloading .so`，无 `dlclose`
 - 线上 lua_echo 响应更新，lua_limit/route/node_type 正常可用
 - 多次热更新后 LuaJIT trace 数量不减
+
+---
+
+## 🟡 #130 [需求] 支持 HTTPS 出站请求
+
+> 2026-06-30 | 需求 | 状态: ✅ 已实现（SSL 握手通，HTTP over TLS 请求/响应已验证）
+
+### 背景
+
+当前 `Worker::SentTo()` → `AutoSend()` 走裸 TCP，不支持 TLS。出站 HTTP 只能打 `http://`，无法调 `https://` 的外部服务。
+
+阻塞场景：
+- **IM 离线推送**：FCM (`fcm.googleapis.com`) 和 APNs (`api.push.apple.com`) 都是 HTTPS 接口
+- **第三方 Webhook**：业务回调外部 HTTPS 接口
+- **微服务调用**：内部服务 https:// 互调
+
+### 方案
+
+`SentTo()` 增加 TLS 支持：
+
+```
+URL 解析 → 判断 https://  → 端口默认 443 → TCP 连接 → OpenSSL 握手 → 后续 IO 走 SSL_write/SSL_read
+```
+
+可选择新建 `SentToTls()` 方法，或给 `SentTo()` 加 `bool useTls` 参数，保持向后兼容。
+
+### 改动点
+
+| 文件 | 改动 |
+|------|------|
+| `Worker.cpp` | `SentTo()` 增加 TLS 分支，复用 `HttpsCodec` 逻辑 |
+| `HttpStep.cpp` | `HttpRequest()` URL 解析区分 http/https |
+| `StepCo20` | `HttpGetAsync`/`HttpPostAsync` 支持 `https://` URL |
+
+### 验证
+
+- `HttpGetAsync("https://fcm.googleapis.com/...")` → 收到 200
+- `SentTo("api.push.apple.com", 443, ...)` → TLS 握手成功
+
+---
+
+## 🟡 #133 [运维] K8s 集群上完整验证 SO 热更新（NFS 共享 + etcd 通知 + Worker 重载）
+
+> 2026-07-06 | 运维 | 状态: 🟡 待完成
+
+### 背景
+
+Docker Compose 上 SO 热更新全链路已通过（Unit 153 + Smoke 18/18 + Lua E2E 4/4 + md5 4/4）。
+当前缺少标准 K8s 集群（kubeadm/GKE/AKS）上的端到端验证。kind（Docker-in-Docker K8s）上 hostPath 替代验证通过，但 NFS 挂载受限。
+
+### 需验证
+
+| 步骤 | 内容 |
+|------|------|
+| 部署 | `kubectl apply -f k8s/`（含 nfs-server.yaml） |
+| NFS | hello Pod 挂载 NFS volume，Worker dlopen 读到 NFS 上的新 .so |
+| etcd | admin PUT → etcd 版本变更 → Manager Watch |
+| 重载 | GracefulRestartWorker → dlopen 新 .so → 服务正常 |
+| md5 | PUT 前后 md5 对比：source = NFS = Worker path |
+
+### 前置条件
+
+- 标准 K8s 集群（kubeadm/GKE/AKS，非 kind/K3s）
+- Docker Hub 可达（或 NFS 镜像已预拉取）
+- 节点支持 NFS 客户端（`nfs-common`）
+
+### 验证标准
+
+```
+PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlopen
+  → md5(source) == md5(NFS) == md5(Worker) → hello + lua_echo 响应正常
+```

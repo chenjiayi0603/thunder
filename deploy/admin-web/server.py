@@ -121,7 +121,7 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_PUT(self):
-        """PUT /plugins/{TypeDir}/{filename} → deploy/{TypeDir}/plugins/{filename} + NFS"""
+        """PUT /plugins/{TypeDir}/{filename} → deploy/{TypeDir}/plugins/{filename} + NFS + etcd notify"""
         parts = self.path.strip("/").split("/")
         if len(parts) < 3 or parts[0] != "plugins":
             self.send_error(400, "path must be /plugins/{TypeDir}/{filename}")
@@ -145,6 +145,15 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
                     f.write(data)
             except (PermissionError, Exception):
                 pass
+        # 通知 etcd：更新模块版本，触发 Worker 优雅热重启
+        so_path = f"plugins/{filename}"
+        try:
+            ectd_ok = self._notify_etcd_so_update(type_dir, so_path)
+        except Exception as e:
+            import traceback, sys
+            print(f"etcd_notify error: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            ectd_ok = False
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -153,6 +162,7 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
             "ok": True,
             "path": self.path,
             "size": len(data),
+            "etcd_notify": ectd_ok,
         }).encode())
 
     def do_POST(self):
@@ -283,14 +293,52 @@ class UploadServer(http.server.SimpleHTTPRequestHandler):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, "wb") as f:
             f.write(data)
-        # NFS: NFS/{TypeDir}/plugins/{filename}（跳过 deploy 前缀）
+        # NFS: NFS_DIR/{TypeDir}/{filename}（跳过 "plugins" 路径段，与 do_PUT 一致）
         if NFS_DIR.exists():
-            parts = rel.strip("/").split("/")
+            parts = rel.strip("/").split("/")  # ["HelloHttp", "plugins", "xxx.so"]
             if len(parts) >= 3:
-                nfs_path = os.path.join(str(NFS_DIR), *parts)
+                nfs_path = os.path.join(str(NFS_DIR), parts[0], *parts[2:])
                 os.makedirs(os.path.dirname(nfs_path), exist_ok=True)
                 with open(nfs_path, "wb") as f:
                     f.write(data)
+        # 通知 etcd：更新模块版本，触发 Worker 优雅热重启
+        if len(rel.strip("/").split("/")) >= 3:
+            type_dir, _, so_file = rel.strip("/").split("/")[:3]
+            self._notify_etcd_so_update(type_dir, f"plugins/{so_file}")
+
+    def _notify_etcd_so_update(self, type_dir: str, so_path: str) -> bool:
+        """更新 etcd 模块配置中匹配 so_path 的版本号，触发 Worker 优雅热重启"""
+        # type_dir → node_type 反向映射
+        node_type = None
+        for nt, td in TYPE_DIR.items():
+            if td == type_dir:
+                node_type = nt
+                break
+        if not node_type:
+            return False
+
+        cfg_key = f"/thunder/config/module/{node_type}"
+        raw = _etcd_get(cfg_key)
+        if not raw:
+            return False  # etcd 中无此配置，跳过（Worker 使用本地配置文件+轮询）
+
+        try:
+            mods = json.loads(raw).get("module", [])
+        except Exception:
+            return False
+
+        updated = False
+        for m in mods:
+            if m.get("so_path") == so_path:
+                m["version"] = m.get("version", 0) + 1
+                updated = True
+                break
+
+        if not updated:
+            return False  # so_path 不在模块配置中
+
+        new_val = json.dumps({"module": mods})
+        return _etcd_put(cfg_key, new_val)
 
 
     def _sync_config(self) -> dict:

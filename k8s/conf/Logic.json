@@ -25,7 +25,7 @@
     },
     "io_timeout": 300.0,
     "step_timeout": 1.0,
-    "log_level": "TRACE",
+    "log_level": "INFO",
     "load_so_interval": 60.0,
     "so": [
         {

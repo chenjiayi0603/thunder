@@ -1,3 +1,25 @@
+## 🚨 铁律：用户说 K8s = 标准 Kubernetes，不许私自替换
+
+**用户说"K8s"，就是标准 Kubernetes（kubeadm/GKE/AKS/ACK）。禁止用以下方式替代：**
+
+| 禁止 | 原因 |
+|------|------|
+| ❌ K3s 替代 K8s | 不同发行版，NFS/PVC 行为差异 |
+| ❌ kind 替代 K8s | Docker-in-Docker，不能跑 NFS，是测试工具不是 K8s |
+| ❌ 私自卸载集群 | 用户的 K3s 运行正常，未授权不得卸载 |
+| ❌ 说"换机器就好" | 必须在这台机器上证明可行性 |
+| ❌ 用 Docker Compose 结果替代 K8s | Docker Compose 和 K8s 是不同环境，Docker Compose 通过 ≠ K8s 通过 |
+| ❌ 用"代码路径一样"当借口 | 运维能力和代码能力是两个维度，都要验证 |
+| ❌ K8s 上出问题就退到 Docker Compose | **K8s 上出的问题必须在 K8s 上修**，不许换环境绕路 |
+
+**如果当前环境没有标准 K8s：**
+1. 明确告诉用户："当前没有标准 K8s 集群，需要安装 kubeadm 或接入云集群"
+2. 询问用户是否安装
+3. 得到确认后再操作
+4. 绝不私自用 K3s/kind 顶替
+
+---
+
 ## 会话开头必读
 
 每次新会话开始，**必须先读 `TEST_STATUS.md`**，了解当前测试状态和待做事项，避免重复测试：
@@ -24,9 +46,14 @@ tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 
 修复流程：
 1. 定位失败原因（服务没起？配置错误？代码 bug？）
-2. 修复
+2. 修复根因，不是靠重启/重试蒙混
 3. 重跑测试直到全绿
 4. 再继续后续工作
+
+**🚫 禁止的行为：**
+- 测试红了 → 重跑一遍 → 绿了 → "修好了"（其实是 flaky，没找根因）
+- 服务挂了 → 重启 → 不查为什么挂
+- 把失败归咎于"暂时性问题"而不验证修复后的稳定性
 
 ---
 
@@ -48,6 +75,16 @@ E2E 通过 ≠ 冒烟通过，覆盖范围不同，必须分开跑、分开确�
 理由：
 - 端口统一来源于 `tests/ports.env`，Docker Compose 和测试代码都从这里读
 - k8s NodePort 地址机器相关，写死后别的环境跑不起来
+
+**🚨 环境生命周期铁律：**
+
+| 操作 | 命令 | 说明 |
+|------|------|------|
+| 测试前 | `down` → `up -d` | 清残留（死 fd、残留 Step、Manager kill 记录），从零启动 |
+| 测试后 | `down` | 不留残留给下次 |
+| ❌ 禁用 | `restart` | 不清容器状态，残留堆积导致 CPU 高、no fd 洪水 |
+
+原因：容器长生命周期会堆积残留状态——Step 注册不过期、死 fd 不释放、Manager 反复 kill 记录——导致每次测试都出现"no fd 8"日志洪水、CPU 虚假 100% 等问题。
 - k8s 回归（`k8sregression`）是部署验证，不是日常功能测试，两者独立
 
 测试入口：
@@ -104,12 +141,11 @@ tests/test_smoke.sh     # 冒烟（需 Docker 集群已在线）
 ### 第三步：Smoke 测试
 
 ```bash
-# 先确认 etcd 注册节点完整
-python3 tests/admin.py nodes
-# 预期：HELLO_HTTP / HELLO_WS / HELLO_HTTPS / INTERFACE / LOGIC 均出现
-# 若有缺失 → 停止，先排查注册问题，不得继续 smoke
+# 先跑环境预检（替代原来手动的 admin.py nodes）
+bash tests/check_env.sh
+# 任何一项红 → 停止，定位根因并修复，不得靠重启蒙混
 
-# 再跑 smoke
+# 预检全绿后再跑 smoke
 tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 # 预期：0 失败；有任何失败 = 未通过
 ```
@@ -133,9 +169,92 @@ tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 
 ---
 
-## k8sregression — k8s 部署 + 全量回归测试
+---
+
+## dockercomposeregression — Docker Compose 全量回归测试
+
+触发词：`dockercomposeregression` / `docker compose 回归` / `全量回归`
+
+### 测试前：清理环境
+
+长生命周期的容器会积累残留状态（死 fd、残留 Step、Manager 反复 kill 记录），测试前必须 `down` 后 `up`，不能用 `restart`。
+
+```bash
+# ⚠️ 必须 down+up，不能用 restart — 后者不清容器，残留状态堆积
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+docker compose -p thunder-deploy -f docker/docker-compose.yml up -d
+sleep 15  # 等所有服务就绪 + etcd 注册完成
+```
+
+### 执行流程
+
+```bash
+# 1. 清理 + 重建环境（down → up，非 restart）
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+docker compose -p thunder-deploy -f docker/docker-compose.yml up -d
+sleep 15
+
+# 2. 环境预检（任何一项红都必须修，不准靠重启蒙混）
+bash tests/check_env.sh
+
+# 3. 如果预检不通过 → 定位根因 → 修复 → 重新 down+up → 重新预检 → 通过后继续
+
+# 4. 全量回归（单元 + Smoke + Lua 热重载 E2E）
+python3 -m pytest tests/unit/ -q            # Python 单元测试
+bash tests/test_smoke.sh                     # 冒烟测试
+python3 tests/e2e/test_lua_hotreload_e2e_standalone.py  # Lua 热重载 E2E（admin API 推送 → 响应验证）
+```
+
+### 测试后：恢复环境
+
+```bash
+# 清理容器（不留残留状态给下次测试）
+docker compose -p thunder-deploy -f docker/docker-compose.yml down
+# 如需保留数据（mysql/redis 的 volume），加 --volumes=false
+```
+
+### 预检标准（check_env.sh）
+
+| 检查项 | 通过条件 | 不通过时怎么做 |
+|--------|---------|---------------|
+| 端口 | 7 个端口全部 LISTEN | 查 docker compose ps，查服务日志 |
+| etcd 注册 | 5 种 node_type 全部在线 | 查 etcd health，查 Manager 日志 |
+| etcd 集群 | 3 节点全部 healthy | 查 etcd 容器日志 |
+| Worker CPU | < 90% | >90% = busy loop，查 Worker 日志找 root cause |
+
+### 🚫 禁止的行为
+
+- 预检红了 → 重启 → 绿了 → 继续（没找根因）
+- 某服务挂了 → `docker restart X` → 不管为什么挂
+- "暂时性"失败 → 重跑通过 → 当修好了
+- 把失败归咎于"暂时性问题"而不验证修复后的稳定性
+
+### 根因分析流程
+
+1. 查挂掉服务的日志：`docker compose logs <service> --tail 50`
+2. 查 Worker/Manager 日志：`tail -50 deploy/<Svc>/log/Hello_robot_W0.log`
+3. 检查 OOM、端口冲突、依赖未就绪
+4. 定位到具体代码行或配置错误
+5. 修复 → 重新预检 → 全量回归
+6. 记录根因到 issus-list.md
+
+---
+
+## k8sregression — K8s 部署 + 全量回归测试
+
+> ⚠️ 这里的 k8s 指标准 Kubernetes（kubeadm/GKE/AKS），不是 K3s。
+> 本地开发机装的是 K3s（`systemctl status k3s`），仅用于快速验证 YAML 语法和单 Pod 测试。
+> 全量 K8s 回归测试需要在真实 kubeadm 集群上跑。
 
 当用户说"k8sregression"或"k8s 回归测试"时：
+
+### 第零步：确认环境
+
+```bash
+# 先确认是不是标准 K8s（不是 K3s）
+kubectl get node -o wide
+# 看 VERSION 列: v1.x.x+k3s1 = K3s（仅开发验证），v1.x.x = 标准 K8s（可跑回归）
+```
 
 ### 第一步：构建 + 代码级测试
 

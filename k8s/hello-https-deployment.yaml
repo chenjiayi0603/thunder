@@ -43,7 +43,7 @@ spec:
         - name: thunder-repo
           mountPath: /thunder
         - name: thunder-plugins
-          mountPath: /data/thunder/plugins
+          mountPath: /thunder/deploy/*/plugins
           readOnly: true
       volumes:
       - name: thunder-repo

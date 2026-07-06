@@ -1,5 +1,12 @@
-# SO 模块共享存储 — NFS PersistentVolume
-# 前置: NFS 服务器已运行, 路径 /data/thunder/plugins/ 已创建
+# SO 模块共享存储 — PersistentVolume
+#
+# 生产环境: 使用 NFS (注释掉 hostPath, 启用 nfs 段)
+#   前置: kubectl apply -f k8s/nfs-server.yaml
+#   nfs: server: nfs-server.thunder, path: /exports
+#
+# 开发/离线环境: 使用 hostPath (注释掉 nfs 段, 启用 hostPath 段)
+#   前置: mkdir -p /data/thunder/plugins
+#
 # 目录结构:
 #   /data/thunder/plugins/
 #   ├── HelloHttp/ModuleHello_v1.so, ModuleHello_v2.so
@@ -15,11 +22,13 @@ spec:
   capacity:
     storage: 10Gi
   accessModes:
-    - ReadOnlyMany
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
-  nfs:
-    server: 192.168.3.100    # ← 改: NFS 服务器 IP
+  hostPath:                          # 开发/离线环境
     path: /data/thunder/plugins
+  # nfs:                             # 生产环境
+  #   server: nfs-server.thunder
+  #   path: /exports
 
 ---
 apiVersion: v1

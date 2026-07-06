@@ -360,3 +360,25 @@ services:
           memory: 1G
         reservations:
           memory: 128M
+
+  # Admin Web — 管理后台 + Lua/SO 热更新 API
+  admin-web:
+    <<: *thunder-node
+    image: python:3.12-alpine
+    working_dir: /thunder/deploy/admin-web
+    network_mode: host
+    depends_on:
+      etcd1:
+        condition: service_healthy
+    stop_grace_period: 5s
+    command:
+      - sh
+      - -c
+      - |
+        pip install -q requests
+        exec python3 server.py --port 8090
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M

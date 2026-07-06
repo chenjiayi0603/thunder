@@ -1,9 +1,10 @@
-# Thunder Admin Web — 管理后台 + SO 上传服务
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: thunder-admin-web
   namespace: thunder
+  labels:
+    app: thunder-admin-web
 spec:
   replicas: 1
   selector:
@@ -16,29 +17,19 @@ spec:
     spec:
       containers:
       - name: app
-        image: python:3.12-alpine
+        image: thunder-admin-web:latest
         imagePullPolicy: IfNotPresent
         workingDir: /app
-        command: ["sh", "-c", "pip install -q docker; python3 server.py --port 8090"]
         ports:
         - containerPort: 8090
         volumeMounts:
-        - name: admin-web
-          mountPath: /app
         - name: nfs-plugins
           mountPath: /data/thunder/plugins
-        - name: docker-sock
-          mountPath: /var/run/docker.sock
       volumes:
-      - name: admin-web
-        hostPath:
-          path: /home/tommychen/thunder/deploy/admin-web
       - name: nfs-plugins
-        hostPath:
+        nfs:
+          server: 127.0.0.1
           path: /data/thunder/plugins
-      - name: docker-sock
-        hostPath:
-          path: /var/run/docker.sock
 ---
 apiVersion: v1
 kind: Service

@@ -1,1 +1,74 @@
-{"node_type":"HELLO_HTTP","access_host":"0.0.0.0","access_port":27006,"access_codec":3,"inner_host":"0.0.0.0","inner_port":27007,"center":{"connector":"etcd-grpc","etcd_endpoints":"http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"},"server_name":"Hello_robot","process_num":"1","worker_capacity":1000000,"config_path":"conf/","log_path":"log/","max_log_file_num":10,"max_log_file_size":20480000,"permission":{"addr_permit":{"stat_interval":1.0,"permit_num":500},"uin_permit":{"stat_interval":1.0,"permit_num":500}},"io_timeout":300.0,"step_timeout":5.0,"log_level":"INFO","load_so_interval":60.0,"so":[],"io_backend":"ev","https":{"server_cert":"/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.crt","server_key":"/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key","verify_client":false},"dpdk":{"_comment":"DPDK + F-Stack 用户态 TCP 配置 (需要编译 THUNDER_IO_DPDK=ON)","eal_args":"--no-pci -l 0 -n 1","vdevs":["net_af_packet0,iface=lo"],"pmd_plugins":["dpdk/pmds-26.0/librte_mempool_ring.so","dpdk/pmds-26.0/librte_net_af_packet.so"],"port_id":0,"lcore_id":0,"max_concurrency":100000,"rcv_buf_size":8192,"snd_buf_size":8192,"tcp_timeout":30},"module":[{"url_path":"/hello/hello","so_path":"plugins/HelloHttp_ModuleHello.so","entrance_symbol":"create","load":true,"version":1},{"url_path":"/hello/lua_echo","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":1,"script_path":"scripts/echo.lua"},{"url_path":"/hello/lua_limit","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":1,"script_path":"scripts/limit.lua"},{"url_path":"/hello/lua_route","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":1,"script_path":"scripts/route.lua"},{"url_path":"/hello/lua_node_type","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":1,"script_path":"scripts/node_type_demo.lua"}]}
+{
+    "node_type": "HELLO_HTTP",
+    "access_host": "0.0.0.0",
+    "access_port": 27006,
+    "access_codec": 3,
+    "inner_host": "0.0.0.0",
+    "inner_port": 27007,
+    "center": {
+        "connector": "etcd-grpc",
+        "etcd_endpoints": "http://thunder-etcd-0.thunder-etcd.thunder.svc.cluster.local:2379"
+    },
+    "server_name": "Hello_robot",
+    "process_num": "1",
+    "worker_capacity": 1000000,
+    "config_path": "conf/",
+    "log_path": "log/",
+    "max_log_file_num": 10,
+    "max_log_file_size": 20480000,
+    "permission": {
+        "addr_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500
+        },
+        "uin_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500
+        }
+    },
+    "io_timeout": 300.0,
+    "step_timeout": 5.0,
+    "log_level": "INFO",
+    "load_so_interval": 60.0,
+    "so": [],
+    "io_backend": "ev",
+    "https": {
+        "server_cert": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.crt",
+        "server_key": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key",
+        "verify_client": false
+    },
+    "dpdk": {
+        "_comment": "DPDK + F-Stack 用户态 TCP 配置 (需要编译 THUNDER_IO_DPDK=ON)",
+        "eal_args": "--no-pci -l 0 -n 1",
+        "vdevs": [
+            "net_af_packet0,iface=lo"
+        ],
+        "pmd_plugins": [
+            "dpdk/pmds-26.0/librte_mempool_ring.so",
+            "dpdk/pmds-26.0/librte_net_af_packet.so"
+        ],
+        "port_id": 0,
+        "lcore_id": 0,
+        "max_concurrency": 100000,
+        "rcv_buf_size": 8192,
+        "snd_buf_size": 8192,
+        "tcp_timeout": 30
+    },
+    "module": [
+        {
+            "url_path": "/hello/hello",
+            "so_path": "plugins/HelloHttp_ModuleHello.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 6
+        },
+        {
+            "url_path": "/hello/lua_echo",
+            "so_path": "plugins/HelloHttp_ModuleLua.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 10,
+            "script_content": "function handle_request(msg)\n  SendToClientFast(\"{\\\"code\\\":0,\\\"msg\\\":\\\"K8S_E2E_OK\\\"}\")\n  return true\nend"
+        }
+    ]
+}

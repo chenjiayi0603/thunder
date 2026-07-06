@@ -22,8 +22,7 @@ HELLO_URL = "http://127.0.0.1:27006"
 ADMIN_URL = "http://127.0.0.1:8090"
 LOG_FILE = "/home/tommychen/thunder/deploy/HelloHttp/log/Hello_robot_W0.log"
 
-# Unique markers so we can grep logs
-UNIQUE_MARKER = f"HOTRELOAD_E2E_{int(time.time())}"
+# Each test generates its own unique marker to avoid cross-test version conflicts.
 
 
 def push_lua_script(content: str) -> dict:
@@ -81,16 +80,17 @@ class TestLuaHotReloadE2E:
     @pytest.mark.integration
     def test_hotreload_changes_response(self):
         """Push new Lua script → response changes to new content."""
+        marker = f"E2E_RESP_{int(time.time())}"
         content = f'''function handle_request(msg)
-  SendToClientFast('{{"code":0,"msg":"{UNIQUE_MARKER}"}}')
+  SendToClientFast('{{"code":0,"msg":"{marker}"}}')
   return true
 end'''
         result = push_lua_script(content)
         assert result["ok"], f"Push failed: {result}"
 
         # Wait for hot-reload to take effect
-        assert check_response(UNIQUE_MARKER, timeout=30), \
-            f"Response did not change to {UNIQUE_MARKER} within 30s"
+        assert check_response(marker, timeout=30), \
+            f"Response did not change to {marker} within 30s"
 
     @pytest.mark.integration
     def test_hotreload_no_so_unload(self):

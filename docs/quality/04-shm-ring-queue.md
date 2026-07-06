@@ -181,4 +181,4 @@ ShmRingQueue 有三处容易出错的并发点：
 | 消费者读 write_index 用 acquire | `load(acquire)` | 可见性破坏，漏消息 |
 | eventfd 通知时机 | enqueue 完成后再 write(1) | 通知过早，消费者读空 |
 
-按静态代码阅读 → 压测确认的顺序处理，见 `docs/quality/02-static-vs-profiler.md`。
+按静态代码阅读 → 压测确认的顺序处理。

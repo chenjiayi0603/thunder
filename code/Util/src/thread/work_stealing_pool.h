@@ -11,6 +11,9 @@
 #include <stdexcept>
 #include <cstdint>
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include "concurrentqueue.h"
 #include "thread/worker_deque.h"
 
@@ -65,6 +68,9 @@ private:
     std::atomic<int>    _totalCreated { 0 };
     std::atomic<int>    _totalExited  { 0 };
     std::atomic<int>    _activeWorkers{ 0 };
+    std::atomic<int>    _waitingWorkers{ 0 };
+    std::condition_variable _cv;
+    std::mutex              _cv_mutex;
 
 public:
     explicit WorkStealingPool(unsigned short size = 1, size_t maxQueue = 0)
@@ -130,14 +136,28 @@ public:
         uint32_t a   = xorshift32() % un;
         uint32_t b   = xorshift32() % un;
         uint32_t idx = (_submit_deques[a].size() <= _submit_deques[b].size()) ? a : b;
-        if (_submit_deques[idx].push(std::move(wrapped))) return fut;
+        if (_submit_deques[idx].push(std::move(wrapped)))
+        {
+            if (_waitingWorkers.load(std::memory_order_acquire) > 0)
+                _cv.notify_one();
+            return fut;
+        }
 
         // Level 2: 顺序全扫
         for (int i = 0; i < n; i++)
-            if (_submit_deques[i].push(std::move(wrapped))) return fut;
+            if (_submit_deques[i].push(std::move(wrapped)))
+            {
+                if (_waitingWorkers.load(std::memory_order_acquire) > 0)
+                    _cv.notify_one();
+                return fut;
+            }
 
         // Level 3: 真正 burst，所有 submit_deque 全满
         _global_q.enqueue(std::move(wrapped));
+
+        // 唤醒一个等待中的 worker（如果全部 idle）
+        if (_waitingWorkers.load(std::memory_order_acquire) > 0)
+            _cv.notify_one();
         return fut;
     }
 
@@ -291,7 +311,16 @@ private:
                         }
                     }
 
-                    std::this_thread::yield();
+                    // idle: cv 阻塞等通知，避免 yield() 空转消耗 CPU
+                    _waitingWorkers.fetch_add(1, std::memory_order_release);
+                    {
+                        std::unique_lock<std::mutex> lk(_cv_mutex);
+                        _cv.wait_for(lk, std::chrono::milliseconds(10),
+                            [this] { return !_run.load(std::memory_order_acquire)
+                                           || _queueSize.load(std::memory_order_acquire) > 0
+                                           || _excessThreads.load(std::memory_order_acquire) > 0; });
+                    }
+                    _waitingWorkers.fetch_sub(1, std::memory_order_release);
                 }
             });
         }

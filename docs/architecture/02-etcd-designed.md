@@ -286,3 +286,27 @@ python3 deploy/scripts/admin_config.py get /thunder/config/module/HELLO_HTTP
 | `deploy/scripts/admin*.{py,sh}` | 管理工具 |
 | `tests/e2e/test_etcd_watch.py` | Watch 事件一致性 E2E 测试 |
 | `tests/e2e/test_etcd_stability.py` | 全链路稳定性测试（S1–S6） |
+
+## 八、etcd vs Nacos
+
+> 为什么选 etcd 而非 Nacos
+
+| 维度 | etcd | Nacos |
+|------|------|-------|
+| 语言/运行时 | Go，单二进制 10MB | Java，需 JDK，起步 512MB-1GB |
+| 内存占用 | 空闲 ~20MB，10K key ~50MB | JVM 堆内存 512MB+，GC 暂停 |
+| 写性能 | ~10K ops/s (Raft) | ~3K ops/s (CP 模式) |
+| 读性能 | 线性读 ~50K/s，串行读 ~200K/s | ~10K/s (有缓存) |
+| 一致性 | Raft (强一致) | CP 模式用 Raft，AP 模式用 Distro |
+| 服务发现 | 通过 KV + Watch 模拟 | 原生支持 |
+| 配置中心 | 通过 KV + Watch 模拟 | 原生支持 |
+| Watch | 原生增量推送，低延迟 | 2.x 支持，成熟度不如 etcd |
+| 运维 | 单二进制，零依赖 | JDK + GC 调优 + DB (集群模式) |
+| 适用场景 | 注册中心 + 配置中心（需二次开发） | 一站式服务治理平台 |
+
+**选择 etcd 的原因**：
+
+- Thunder 已有自研服务发现框架，只需 KV + Watch 原语，不需要 Nacos 的全套
+- etcd 内存和 CPU 开销远低于 Nacos，适合容器化部署（每节点 <100MB）
+- etcd 的 Watch 增量推送是 Thunder 热更新（Lua/SO/路由）的基石，Nacos 的推送延迟更高
+- Go 免 GC 内存，无 JVM 调优负担，运维成本低

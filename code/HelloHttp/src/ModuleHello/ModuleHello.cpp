@@ -12,6 +12,7 @@
 #include "codec/StringCoder.hpp"
 #include "ModuleHello.hpp"
 #include "HttpRequestCo.hpp"
+#include "HttpsTestCo.hpp"
 #include "Interface.hpp"
 #include "coro/StepCo20Func.hpp"
 #include "dbi/Dbi.hpp"
@@ -124,6 +125,19 @@ bool ModuleHello::TestMsg(const net::tagMsgShell& stMsgShell, const HttpMsg& oIn
 	else if ("TestHelloPoolBlock" == strOption)
 	{
 		return TestHelloPoolBlock(stMsgShell, oInHttpMsg);
+	}
+	else if ("TestHttps" == strOption)
+	{
+		// #130: HTTPS 出站测试 → 协程异步请求，等回包再返回
+		std::string url;
+		obj.Get("url", url);
+		if (url.empty()) url = "https://127.0.0.1:19995/";
+		core::HttpsTestCo* pCo = new core::HttpsTestCo(stMsgShell, oInHttpMsg, url);
+		if (!net::LaunchCo(std::unique_ptr<core::HttpsTestCo>(pCo)))
+		{
+			Response(stMsgShell, oInHttpMsg, 10001);
+		}
+		return true;
 	}
 	else if ("TestHelloCoRedis" == strOption)
 	{

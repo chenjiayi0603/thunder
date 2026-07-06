@@ -230,6 +230,7 @@ private:
     std::unique_ptr<CenterConnector> m_pCenterConnector;
     std::unordered_map<int, WorkerLifecycle> m_workerLifecycle;
     bool m_bPendingRestart = false;  ///< #79: SO/module 变更到达时 Worker 忙，排队等待全部空闲后重启
+    bool m_bModuleConfigSeeded = false;  ///< #131: etcd 模块配置首次种子写入后为 true，之后不再回写
 };
 
 } /* namespace net */

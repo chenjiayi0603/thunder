@@ -99,3 +99,4 @@ build_release/
 liburing-dev_*.deb
 so-images/
 TEST_STATUS.md
+rocksdb_bench.sh
