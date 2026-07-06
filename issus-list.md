@@ -4925,6 +4925,17 @@ K8s:
 - K8s: NFS 路径写入逻辑 `_save_so` 已实现（检查 `NFS_DIR.exists()`）✅
 - 热更新：Manager etcd Watch 检测版本变更 → GracefulRestartWorker → dlopen 新 .so
 
+### ⚠️ K8s NFS 路径缺口
+
+admin-web 写 NFS: `/data/thunder/plugins/HelloHttp/xxx.so`
+Worker 读本地: `/thunder/deploy/HelloHttp/plugins/xxx.so`
+**两个路径不一致！** 当前 Worker 用 `m_strWorkPath + "/" + so_path` 拼接，so_path 是相对路径 `plugins/xxx.so`，最终读 `/thunder/deploy/HelloHttp/plugins/xxx.so`（hostPath 挂载），不是 NFS。
+
+修复方向：
+1. K8s 部署中挂载 NFS 到 `/thunder/deploy/HelloHttp/plugins/`（而非 `/data/thunder/plugins/`）
+2. 或 Worker 支持绝对路径 so_path
+3. 或 `_save_so` 写的 NFS 路径与 Worker 读路径对齐
+
 ---
 
 ## 🟡 #129 [需求] Lua 脚本热重载走独立路径，不动 SO 模块

@@ -100,10 +100,10 @@ cmake → .so → curl PUT :8090/plugins/{Type}/{file}
 更新 etcd /thunder/config/module/{TYPE} 版本号
   │
   ▼
-Manager Watch 检测变更 → GracefulRestartWorker → dlopen(插件路径/xxx.so)
+Manager Watch 检测变更 → GracefulRestartWorker → dlopen(m_strWorkPath + so_path)
                                                    ↑
-                                              NFS 直接挂载，Worker 本地读
-                                              不需要下载，不需要解包
+                                              Docker Compose: /thunder/deploy/{Type}/plugins/
+                                              K8s: 需要在 deployment 中把 NFS 挂到同路径（当前缺口）
 ```
 
 | 优势 | 说明 |
