@@ -1,6 +1,6 @@
 # 15 — SO 模块热更新 via etcd
 
-> 2026-06-09 | 更新: 2026-07-06 (K8s E2E 验证通过) | 状态: ✅ Docker Compose + K8s (kind) 双环境验证通过
+> 2026-06-09 | 更新: 2026-07-06 (kubeadm v1.32.13 E2E 验证通过) | 状态: ✅ Docker Compose + K8s (kind + kubeadm) 三环境验证通过
 
 ---
 
@@ -34,6 +34,7 @@ Docker Compose (单机):               K8s (多节点):
 |------|---------|---------|
 | Docker Compose | `deploy/{Type}/plugins/` | 宿主机目录全挂载 |
 | K8s (kind) | `/data/thunder/plugins/` | hostPath 共享卷 |
+| K8s (kubeadm) | `/data/thunder/plugins/` | NFS hostPath PV + PVC (RWX), subPath 挂载 |
 | K8s (生产) | `/data/thunder/plugins/` | NFS 服务器 PV |
 
 ### Worker 加载路径
@@ -191,41 +192,205 @@ grep "GracefulRestartWorker\|ReloadSo\|load.*so" deploy/HelloHttp/log/Hello_robo
 
 ---
 
-## 四、验证方法（K8s 实测通过）
+## 四、验证方法（kubeadm v1.32.13 真 NFS 实测通过）
 
-验证标准：**PUT 前后文件 md5 变化 → Worker 路径的 md5 与 PUT 的新文件一致**。
+### 写入流程
+
+```
+1. curl PUT :30090/plugins/HelloHttp/xxx.so --data-binary @/tmp/xxx.so
+   │
+   ▼
+2. NodePort 30090 → kube-proxy → admin-web Pod (10.244.x.x:8090)
+   │
+   ▼
+3. server.py do_PUT():
+     NFS_DIR = "/data/thunder/plugins"
+     path = NFS_DIR + "/HelloHttp/xxx.so"     ← 写到 NFS 挂载点
+   │
+   ▼
+4. /data/thunder/plugins 是 NFS mount → TCP/2049 ↗
+   192.168.3.61:/data/thunder/plugins
+   │
+   ▼
+5. 宿主机 NFS Server (nfs-kernel-server) 写本地磁盘
+   /data/thunder/plugins/HelloHttp/xxx.so
+```
+
+### 验证流程
+
+```
+md5sum /tmp/xxx.so                        ← ① PUT 源（本机磁盘）
+md5sum /data/thunder/plugins/HelloHttp/.. ← ④ 宿主机直接读（NFS Server 本地磁盘）
+                   │
+        ┌──────────┼──────────┐
+        ▼          │          ▼
+   admin-web Pod   │     hello Pod
+   NFS mount:      │     NFS mount:
+ 192.168.3.61:/    │  192.168.3.61:/
+ data/thunder/     │  data/thunder/plugins/HelloHttp
+ plugins           │    /thunder/deploy/
+  /data/thunder/   │    HelloHttp/plugins/
+  plugins/         │    xxx.so
+  HelloHttp/xxx.so │          │
+        │          │          │
+        ▼          │          ▼
+     ② md5         │       ③ md5
+                   │
+              同一物理文件
+        /data/thunder/plugins/HelloHttp/xxx.so
+
+①=②=③=④  →  写入链路完整，Pod 通过 NFS 协议读写，不依赖本地磁盘
+```
+
+### 实测结果（2026-07-06 kubeadm v1.32.13）
 
 ```bash
-# === 1. PUT 前：记录旧文件 md5 ===
-kubectl exec -n thunder deploy/thunder-hello -- \
-  md5sum /thunder/deploy/HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}'
-# → e933189db3ecfe2e78936a414f8ecb51
+# NFS mount 确认
+kubectl exec -n thunder deploy/thunder-hello -- mount | grep plugins
+# → 192.168.3.61:/data/thunder/plugins/HelloHttp on /thunder/deploy/HelloHttp/plugins
+#   type nfs4 (rw,vers=4.2,rsize=1048576,wsize=1048576,proto=tcp)
 
-# === 2. 构建新 .so（随机内容，md5 必然不同） ===
-dd if=/dev/urandom of=/tmp/new_so.so bs=1024 count=100 2>/dev/null
-NEW=$(md5sum /tmp/new_so.so | awk '{print $1}')
-# → 6390dea63ac9fb11e502f062d4998ea7
-
-# === 3. PUT 到 K8s admin-web ===
-kubectl port-forward -n thunder deploy/thunder-admin-web 18090:8090 &
-curl -sf -X PUT http://127.0.0.1:18090/plugins/HelloHttp/HelloHttp_ModuleHello.so \
-  --data-binary @/tmp/new_so.so
-
-# === 4. 三处交叉验证 md5 ===
-WORKER=$(kubectl exec -n thunder deploy/thunder-hello -- \
-  md5sum /thunder/deploy/HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}')
-NODE=$(docker exec thunder-control-plane \
-  md5sum /data/thunder/plugins/HelloHttp/HelloHttp_ModuleHello.so | awk '{print $1}')
-ADMIN=$(kubectl exec -n thunder deploy/thunder-admin-web -- \
-  md5sum /HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}')
-
-echo "PUT 源: $NEW"
-echo "Worker: $WORKER"   # 6390dea63ac9fb11e502f062d4998ea7 ✅
-echo "Node:   $NODE"     # 6390dea63ac9fb11e502f062d4998ea7 ✅
-echo "Admin:  $ADMIN"    # 6390dea63ac9fb11e502f062d4998ea7 ✅
-
-# 新文件 md5 ≠ 旧文件 md5 → 确认 PUT 写入的是新文件，Worker 读到的也是新文件
+kubectl exec -n thunder deploy/thunder-admin-web -- mount | grep plugins
+# → 192.168.3.61:/data/thunder/plugins on /data/thunder/plugins
+#   type nfs4 (rw,vers=4.2,rsize=1048576,wsize=1048576,proto=tcp)
 ```
+
+| 位置 | md5 |
+|------|-----|
+| ① PUT 源（本地） | `99f7a2a960252f2c183b9bd390c03431` |
+| ② admin-web Pod（NFS 挂载） | `99f7a2a960252f2c183b9bd390c03431` ✅ |
+| ③ hello Pod（NFS 挂载） | `99f7a2a960252f2c183b9bd390c03431` ✅ |
+| ④ 宿主机直接读（NFS Server 本地） | `99f7a2a960252f2c183b9bd390c03431` ✅ |
+
+**执行命令**（复制粘贴即可复现）：
+
+```bash
+# 1. 确认 NFS 协议（非 hostPath）
+kubectl exec -n thunder deploy/thunder-hello -- mount | grep plugins
+# → type nfs4 ✅
+
+# 2. 创建测试文件 + PUT 上传
+TOKEN="NFS_$(date +%s)" && echo "$TOKEN" > /tmp/nfs_test.so
+curl -s -X PUT "http://$(hostname -I | awk '{print $1}'):30090/plugins/HelloHttp/nfs_test.so" \
+  --data-binary @/tmp/nfs_test.so
+
+# 3. 四端 md5 验证
+LOCAL=$(md5sum /tmp/nfs_test.so | awk '{print $1}')
+ADMIN=$(kubectl exec -n thunder deploy/thunder-admin-web -- \
+  md5sum /data/thunder/plugins/HelloHttp/nfs_test.so | awk '{print $1}')
+HELLO=$(kubectl exec -n thunder deploy/thunder-hello -- \
+  md5sum /thunder/deploy/HelloHttp/plugins/nfs_test.so | awk '{print $1}')
+HOST=$(md5sum /data/thunder/plugins/HelloHttp/nfs_test.so | awk '{print $1}')
+
+echo "PUT源:  $LOCAL"
+echo "admin:  $ADMIN"
+echo "hello:  $HELLO"
+echo "host:   $HOST"
+# 四个一致 → NFS 共享正常 ✅
+```
+
+### 存储配置（真 NFS）
+
+```yaml
+# PV — 真 NFS 协议，非 hostPath
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-thunder-plugins-nfs
+spec:
+  accessModes: [ReadWriteMany]
+  capacity: {storage: 10Gi}
+  nfs:
+    server: 192.168.3.61          # NFS Server IP
+    path: /data/thunder/plugins   # 导出目录
+---
+# PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thunder-plugins
+  namespace: thunder
+spec:
+  accessModes: [ReadWriteMany]
+  resources: {requests: {storage: 10Gi}}
+  volumeName: pv-thunder-plugins-nfs
+---
+# Pod 挂载（所有 Pod 统一走 PVC）
+# hello:
+volumeMounts:
+- name: nfs-plugins
+  mountPath: /thunder/deploy/HelloHttp/plugins
+  subPath: HelloHttp              # 只暴露 HelloHttp 子目录
+# admin-web:
+volumeMounts:
+- name: nfs-plugins
+  mountPath: /data/thunder/plugins  # 暴露完整目录（可写所有 TypeDir）
+```
+
+> **多节点兼容性**：NFS 是网络协议（TCP/2049），hello Pod 调度到任意节点，mount 同一 `192.168.3.61:/data/thunder/plugins`，行为完全一致。已验证 admin-web 和 hello 均通过 NFS 协议读写，非本地文件系统。
+
+### 原地覆盖安全性
+
+SO 热更新采用**同名文件原地覆盖**策略：新 .so 直接覆盖旧 .so，路径不变。三层机制保证老进程不受影响：
+
+```
+PUT /plugins/HelloHttp/ModuleHello.so  →  覆盖同一文件
+                                            │
+  老 Worker (drain 中)                      新 Worker (刚 fork)
+  ┌─────────────────────┐                  ┌─────────────────────┐
+  │ dlopen 时 mmap 的    │                  │ dlopen 新文件内容    │
+  │ 旧 inode → 内存保持   │                  │ 获得新代码           │
+  │ 不重新 dlopen         │                  │                     │
+  │ 只排空已有请求 → 退出  │                  │ 接收新请求           │
+  └─────────────────────┘                  └─────────────────────┘
+```
+
+| 机制 | 说明 |
+|------|------|
+| `RTLD_NODELETE` | dlopen 标志，库加载后不会被 dlclose 卸载，防止悬空函数指针崩溃 |
+| Linux mmap 语义 | 内核持有旧 inode 引用，文件被覆盖后旧进程内存映射不变 |
+| Drain 不重载 | 老 Worker 进入 drain 后只处理已有连接，不调用 dlopen |
+
+**GracefulRestart 时序**：
+
+```
+Manager 检测 etcd version 变化
+  │
+  ├─► fork+exec 新 Worker
+  │     └─► dlopen("plugins/xxx.so") → 加载新 .so ✅
+  │
+  ├─► 老 Worker EnterDrainMode()
+  │     └─► 继续服务已有请求 (DRAIN_GRACE_PERIOD)
+  │     └─► 不重新 dlopen，不碰磁盘文件
+  │
+  └─► 老 Worker drain 完成 → exit(0)
+        └─► 内核释放旧 inode 引用
+```
+
+### SO 热更新 vs Lua 热更新
+
+| | SO 热更新 | Lua 热更新 |
+|------|----------|----------|
+| 上传接口 | `PUT /plugins/{TypeDir}/{filename}` | `POST /api/lua-scripts` |
+| 存储 | NFS 文件覆盖 | NFS 写脚本 + etcd 写 script_content |
+| etcd 通知 | ✅ `_notify_etcd_so_update` (version++) | ✅ `_lua_push` (version++) |
+| Worker 响应 | GracefulRestartWorker (fork+exec) | 原地 Lua VM 重载 (无进程重启) |
+| 重启方式 | 新旧 Worker 交替，drain 后退出 | 无需重启，直接更新 Lua 函数表 |
+| 安全机制 | RTLD_NODELETE + mmap + drain | Lua sandbox + 原子替换 |
+
+**etcd 通知实现** (server.py)：
+
+```python
+def _notify_etcd_so_update(self, type_dir, so_path):
+    """PUT 写文件后调用：读 etcd 模块配置 → 匹配 so_path → version++ → 写回"""
+    # 1. type_dir → node_type 反向映射 (HelloHttp → HELLO_HTTP)
+    # 2. etcd GET /thunder/config/module/{node_type}
+    # 3. 遍历 module[] 找 match so_path
+    # 4. version += 1
+    # 5. etcd PUT 写回 → Manager watch → ConfigUpdated → GracefulRestartWorker
+```
+
+---
 
 **实测结果（2026-07-06）：**
 
@@ -238,6 +403,87 @@ echo "Admin:  $ADMIN"    # 6390dea63ac9fb11e502f062d4998ea7 ✅
 | 旧文件（PUT 前） | `e933189db3...` ✅ 不同
 
 ## 五、验证结果
+
+### 2026-07-06 K8s (kubeadm v1.32.13) 全量回归
+
+**环境**：单节点 kubeadm 集群，containerd，flannel CNI (10.244.0.0/16)
+
+```
+集群:  kubeadm v1.32.13, control-plane Ready
+CNI:   flannel v0.28.5, Pod CIDR 10.244.0.0/16
+PVC:   thunder-plugins (PV hostPath /data/thunder/plugins, 10Gi RWX)
+```
+
+**测试结果**：
+
+| 测试项 | 结果 | 证据 |
+|------|:---:|------|
+| K8s 集群就绪 | ✅ | `kubectl get nodes` → Ready |
+| 全部 Pod Running | ✅ | 18/18 Running |
+| flannel CNI | ✅ | 所有 Pod 获得 10.244.0.x IP |
+| CoreDNS | ✅ | 2/2 Running |
+| etcd StatefulSet | ✅ | 3/3 Running（修复 PV 缺失） |
+| hello Worker 启动 | ✅ | `Hello_robot` + `Hello_robot_W0`，监听 27006/27007（修复 libjemalloc + libluajit 缺失） |
+| hello HTTP /hello/hello | ✅ | `{"code":0,"msg":"ok","size":50,"data":"XXX..."}` |
+| NFS SO 共享 (PUT → md5) | ✅ | 本地源 / admin-web / hello Pod 三端 md5 一致 |
+| Lua 热更新 (etcd) | ✅ | 响应 `E2E_LOG_1783148505` → `RELOAD_ROUND2_TEST`（无需重启） |
+| Worker 重启后配置保持 | ✅ | 从 etcd 恢复最新 Lua 脚本 |
+
+**NFS SO 共享验证 (kubeadm)**：
+
+```bash
+# 本地创建测试文件
+echo "NFS_E2E_$(date +%s)" > /tmp/nfs_test.so
+
+# PUT 到 admin-web NodePort
+curl -s -X PUT http://192.168.3.61:30090/plugins/HelloHttp/nfs_e2e.so \
+  --data-binary @/tmp/nfs_test.so
+
+# 三端 md5 对比
+LOCAL=$(md5sum /tmp/nfs_test.so | awk '{print $1}')
+ADMIN=$(kubectl exec -n thunder deploy/thunder-admin-web -- \
+  md5sum /data/thunder/plugins/HelloHttp/nfs_e2e.so | awk '{print $1}')
+HELLO=$(kubectl exec -n thunder deploy/thunder-hello -- \
+  md5sum /thunder/deploy/HelloHttp/plugins/nfs_e2e.so | awk '{print $1}')
+# → LOCAL == ADMIN == HELLO ✅
+```
+
+| 位置 | md5 |
+|------|-----|
+| PUT 源 (本地) | `95ec2cff11f2f275d370b11134760145` |
+| admin-web (NFS 源) | `95ec2cff11f2f275d370b11134760145` ✅ |
+| hello Pod (NFS 消费) | `95ec2cff11f2f275d370b11134760145` ✅ |
+
+**Lua 热更新验证 (kubeadm)**：
+
+```bash
+# 通过 etcd v3 API 直接写入更新后的模块配置
+curl -s http://thunder-etcd-0.thunder-etcd.thunder:2379/v3/kv/put \
+  -d '{"key":"...base64...","value":"...base64..."}'
+
+# Worker 自动检测 CheckShareMem mirror v1→v2
+# 响应即时变化（无需重启）
+
+# 修改前
+curl -s http://10.244.0.138:27006/hello/lua_echo -d '{}'
+# → {"code":0,"msg":"E2E_LOG_1783148505"}
+
+# 修改后（etcd push → Worker mirror 更新）
+curl -s http://10.244.0.138:27006/hello/lua_echo -d '{}'
+# → {"code":0,"msg":"RELOAD_ROUND2_TEST"} ✅
+
+# Worker 重启后
+# → {"code":0,"msg":"RELOAD_ROUND2_TEST"} ✅ 配置持久化
+```
+
+**kubeadm 特有发现**：
+
+| 问题 | 原因 | 修复 |
+|------|------|------|
+| flannel Init:CrashLoopBackOff | initContainer command `/opt/bin/install-conf` 不存在 | 用代理下载官方 YAML (command=`cp`) |
+| Worker 未启动 | CoreDNS 不通导致 apt install 失败 | 修好 DNS 后手动装 `libjemalloc2` `libluajit-5.1-2` |
+| etcd-1/etcd-2 Pending | StatefulSet PVC 无对应 PV | 创建 `pv-thunder-etcd-{1,2}` (hostPath 1Gi) |
+| 外部下载失败 | kubectl/curl 不走 Clash 代理 | `export https_proxy=http://127.0.0.1:7897` |
 
 ### 2026-07-06 K8s (kind v1.32.0) 全量回归
 
