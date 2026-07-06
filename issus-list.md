@@ -5019,3 +5019,37 @@ URL 解析 → 判断 https://  → 端口默认 443 → TCP 连接 → OpenSSL 
 
 - `HttpGetAsync("https://fcm.googleapis.com/...")` → 收到 200
 - `SentTo("api.push.apple.com", 443, ...)` → TLS 握手成功
+
+---
+
+## 🟡 #133 [运维] K8s 集群上完整验证 SO 热更新（NFS 共享 + etcd 通知 + Worker 重载）
+
+> 2026-07-06 | 运维 | 状态: 🟡 待完成
+
+### 背景
+
+Docker Compose 上 SO 热更新全链路已通过（Unit 153 + Smoke 18/18 + Lua E2E 4/4 + md5 4/4）。
+当前缺少标准 K8s 集群（kubeadm/GKE/AKS）上的端到端验证。kind（Docker-in-Docker K8s）上 hostPath 替代验证通过，但 NFS 挂载受限。
+
+### 需验证
+
+| 步骤 | 内容 |
+|------|------|
+| 部署 | `kubectl apply -f k8s/`（含 nfs-server.yaml） |
+| NFS | hello Pod 挂载 NFS volume，Worker dlopen 读到 NFS 上的新 .so |
+| etcd | admin PUT → etcd 版本变更 → Manager Watch |
+| 重载 | GracefulRestartWorker → dlopen 新 .so → 服务正常 |
+| md5 | PUT 前后 md5 对比：source = NFS = Worker path |
+
+### 前置条件
+
+- 标准 K8s 集群（kubeadm/GKE/AKS，非 kind/K3s）
+- Docker Hub 可达（或 NFS 镜像已预拉取）
+- 节点支持 NFS 客户端（`nfs-common`）
+
+### 验证标准
+
+```
+PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlopen
+  → md5(source) == md5(NFS) == md5(Worker) → hello + lua_echo 响应正常
+```
