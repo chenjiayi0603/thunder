@@ -191,39 +191,89 @@ grep "GracefulRestartWorker\|ReloadSo\|load.*so" deploy/HelloHttp/log/Hello_robo
 
 ---
 
-## 四、验证方法
+## 四、验证方法（K8s 实测通过）
 
 验证标准：**PUT 前后文件 md5 变化 → Worker 路径的 md5 与 PUT 的新文件一致**。
 
 ```bash
-# 1. 记录旧文件 md5
-OLD=$(md5sum old.so | awk '{print $1}')
+# === 1. PUT 前：记录旧文件 md5 ===
+kubectl exec -n thunder deploy/thunder-hello -- \
+  md5sum /thunder/deploy/HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}'
+# → e933189db3ecfe2e78936a414f8ecb51
 
-# 2. PUT 新文件（内容不同，md5 必然不同）
-curl -X PUT http://admin-web:8090/plugins/HelloHttp/xxx.so --data-binary @new.so
+# === 2. 构建新 .so（随机内容，md5 必然不同） ===
+dd if=/dev/urandom of=/tmp/new_so.so bs=1024 count=100 2>/dev/null
+NEW=$(md5sum /tmp/new_so.so | awk '{print $1}')
+# → 6390dea63ac9fb11e502f062d4998ea7
 
-# 3. 验证 Worker dlopen 路径
-WORKER=$(kubectl exec deploy/thunder-hello -- md5sum /thunder/deploy/HelloHttp/plugins/xxx.so | awk '{print $1}')
+# === 3. PUT 到 K8s admin-web ===
+kubectl port-forward -n thunder deploy/thunder-admin-web 18090:8090 &
+curl -sf -X PUT http://127.0.0.1:18090/plugins/HelloHttp/HelloHttp_ModuleHello.so \
+  --data-binary @/tmp/new_so.so
 
-# 4. 多位置交叉验证
-NODE=$(docker exec thunder-control-plane md5sum /data/thunder/plugins/HelloHttp/xxx.so | awk '{print $1}')
-ADMIN=$(kubectl exec deploy/thunder-admin-web -- md5sum /HelloHttp/plugins/xxx.so | awk '{print $1}')
+# === 4. 三处交叉验证 md5 ===
+WORKER=$(kubectl exec -n thunder deploy/thunder-hello -- \
+  md5sum /thunder/deploy/HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}')
+NODE=$(docker exec thunder-control-plane \
+  md5sum /data/thunder/plugins/HelloHttp/HelloHttp_ModuleHello.so | awk '{print $1}')
+ADMIN=$(kubectl exec -n thunder deploy/thunder-admin-web -- \
+  md5sum /HelloHttp/plugins/HelloHttp_ModuleHello.so | awk '{print $1}')
 
-# 5. 结论
-[ "$WORKER" = "$(md5sum new.so | awk '{print $1}')" ] && [ "$WORKER" != "$OLD" ] && echo "✅ PASS"
+echo "PUT 源: $NEW"
+echo "Worker: $WORKER"   # 6390dea63ac9fb11e502f062d4998ea7 ✅
+echo "Node:   $NODE"     # 6390dea63ac9fb11e502f062d4998ea7 ✅
+echo "Admin:  $ADMIN"    # 6390dea63ac9fb11e502f062d4998ea7 ✅
+
+# 新文件 md5 ≠ 旧文件 md5 → 确认 PUT 写入的是新文件，Worker 读到的也是新文件
 ```
+
+**实测结果（2026-07-06）：**
+
+| 位置 | md5 |
+|------|-----|
+| PUT 源文件 | `6390dea63a...` |
+| Worker dlopen 路径 | `6390dea63a...` ✅ |
+| kind 节点 NFS 目录 | `6390dea63a...` ✅ |
+| admin-web Pod | `6390dea63a...` ✅ |
+| 旧文件（PUT 前） | `e933189db3...` ✅ 不同
 
 ## 五、验证结果
 
-### 2026-07-06 K8s (kind v1.32.0)
+### 2026-07-06 K8s (kind v1.32.0) 全量回归
 
-| 步骤 | 结果 | 证据 |
-|------|:---:|------|
-| PUT 上传 | ✅ ok=true, size=11 | admin-web 返回 200 |
-| 文件共享 (admin-web Pod) | ✅ | `K8S-SHARED` |
-| 文件共享 (hello Pod) | ✅ | `K8S-SHARED` |
-| 文件共享 (kind 节点) | ✅ | `K8S-SHARED` |
-| 三处 MD5 一致 | ✅ | 同一文件 |
+```bash
+# hello HTTP
+curl -s http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
+# → {"code":0,"msg":"ok"} ✅
+
+# lua_echo 热更新
+curl -s http://127.0.0.1:27006/hello/lua_echo -d 't'
+# → {"code":0,"msg":"E2E_LOG_1783148505"} ✅
+
+# lua_node_type
+curl -s http://127.0.0.1:27006/hello/lua_node_type -d '{"mode":"fire_forget"}'
+# → {"code":0,"msg":"fire_forget_ok"} ✅
+
+# SO PUT → NFS → Worker dlopen (md5 交叉验证)
+# → 4/4 全部匹配 ✅
+
+# etcd 注册
+kubectl exec thunder-etcd-0 -- etcdctl get --prefix /thunder/registry/
+# → 1 node registered ✅
+
+# NFS Server
+kubectl get pod nfs-server
+# → Running ✅
+```
+
+| 测试项 | 结果 |
+|------|:---:|
+| hello HTTP | ✅ |
+| lua_echo 热更新 | ✅ |
+| lua_node_type | ✅ |
+| SO PUT → md5 4/4 | ✅ |
+| etcd 注册 | ✅ |
+| NFS Server | ✅ |
 
 ### 2026-07-06 Docker Compose
 
