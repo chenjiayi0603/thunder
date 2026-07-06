@@ -59,31 +59,85 @@ dlopen(strSoPath, RTLD_NOW);
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-### K8s (kind)
+### K8s (kind) — 开发验证
 
 ```bash
 # 1. 创建 kind 集群（含目录挂载 + 镜像加速）
 kind create cluster --name thunder --config kind_config.yaml
 
-# 2. 创建共享存储 PV + PVC
-kubectl apply -f k8s/plugins-pv.yaml
+# 2. 部署 NFS 服务（K8s 内部 Pod，换机即用）
+kubectl apply -f k8s/nfs-server.yaml
 
-# 3. 构建 admin-web 镜像（含 requests 依赖）
-docker build -t thunder-admin-web:latest -f- . << 'EOF'
-FROM python:3.12-alpine
-RUN pip install --no-cache-dir requests
-WORKDIR /app
-CMD ["python3", "server.py", "--port", "8090"]
-EOF
-kind load docker-image thunder-admin-web:latest --name thunder
-
-# 4. 部署所有服务
+# 3. 部署 Thunder 全部服务
 kubectl apply -f k8s/
 
-# 5. 给 hello Pod 安装运行时依赖（libjemalloc）
-kubectl set image deploy/thunder-hello hello=ubuntu:26.04
-kubectl patch deploy/thunder-hello --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["bash","-c","apt-get update -qq && apt-get install -y -qq libjemalloc2 && cp /thunder/code/3party/lib/*.so* /usr/lib/x86_64-linux-gnu/ 2>/dev/null; ./node.sh start && tail -f /dev/null"]}]'
+# 4. 构建 admin-web 镜像并导入 kind
+./deploy.sh build-admin-image
+kind load docker-image thunder-admin-web:latest --name thunder
+
+# 5. 给 Pod 安装运行时依赖（libjemalloc）
+./deploy.sh k8s-install-deps
 ```
+
+### K8s (生产) — 标准 kubeadm / GKE / AKS
+
+```bash
+# 1. 部署 NFS Server（一个 Pod 提供 NFS，所有 Node 可用）
+kubectl apply -f k8s/nfs-server.yaml
+
+# 2. 创建基于 NFS 的 PV + PVC
+kubectl apply -f k8s/plugins-pv.yaml   # server: nfs-server.thunder 端口 2049
+
+# 3. 部署 Thunder 全部 Deployment + Service
+kubectl apply -f k8s/
+
+# 4. 热更新 SO
+curl -X PUT http://admin-web:8090/plugins/HelloHttp/xxx.so --data-binary @xxx.so
+# Worker 自动检测 etcd 变更 → GracefulRestart → dlopen 新 .so
+```
+
+### NFS Server 设计（#132 规划中）
+
+当前 kind 测试用 hostPath 伪装 NFS。生产环境应改为 K8s 内部 NFS Pod：
+
+```yaml
+# k8s/nfs-server.yaml（规划中，待实现）
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-server
+  namespace: thunder
+  labels: {app: nfs-server}
+spec:
+  containers:
+  - name: nfs
+    image: itsthenetwork/nfs-server-alpine:latest
+    env:
+    - name: SHARED_DIRECTORY
+      value: /exports
+    ports: [{containerPort: 2049}]
+    volumeMounts:
+    - name: data
+      mountPath: /exports
+  volumes:
+  - name: data
+    hostPath: {path: /data/thunder/plugins}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  namespace: thunder
+spec:
+  selector: {app: nfs-server}
+  ports: [{port: 2049}]
+```
+
+优势：
+- **快速复现**：`kubectl apply -f k8s/nfs-server.yaml` 一键部署
+- **可观测**：NFS 是 K8s Pod，kubectl logs/exec/describe 可查
+- **不依赖 OS**：不需要 `apt install nfs-kernel-server`、改 `/etc/exports`
+- **换机重建**：kind delete + create + kubectl apply = 完全恢复
 
 ### kind 集群配置
 
@@ -133,7 +187,29 @@ grep "GracefulRestartWorker\|ReloadSo\|load.*so" deploy/HelloHttp/log/Hello_robo
 
 ---
 
-## 四、验证结果
+## 四、验证方法
+
+验证标准：**PUT 前后文件 md5 变化 → Worker 路径的 md5 与 PUT 的新文件一致**。
+
+```bash
+# 1. 记录旧文件 md5
+OLD=$(md5sum old.so | awk '{print $1}')
+
+# 2. PUT 新文件（内容不同，md5 必然不同）
+curl -X PUT http://admin-web:8090/plugins/HelloHttp/xxx.so --data-binary @new.so
+
+# 3. 验证 Worker dlopen 路径
+WORKER=$(kubectl exec deploy/thunder-hello -- md5sum /thunder/deploy/HelloHttp/plugins/xxx.so | awk '{print $1}')
+
+# 4. 多位置交叉验证
+NODE=$(docker exec thunder-control-plane md5sum /data/thunder/plugins/HelloHttp/xxx.so | awk '{print $1}')
+ADMIN=$(kubectl exec deploy/thunder-admin-web -- md5sum /HelloHttp/plugins/xxx.so | awk '{print $1}')
+
+# 5. 结论
+[ "$WORKER" = "$(md5sum new.so | awk '{print $1}')" ] && [ "$WORKER" != "$OLD" ] && echo "✅ PASS"
+```
+
+## 五、验证结果
 
 ### 2026-07-06 K8s (kind v1.32.0)
 
