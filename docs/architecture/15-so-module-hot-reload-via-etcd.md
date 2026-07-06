@@ -139,6 +139,10 @@ spec:
 - **不依赖 OS**：不需要 `apt install nfs-kernel-server`、改 `/etc/exports`
 - **换机重建**：kind delete + create + kubectl apply = 完全恢复
 
+> ⚠️ 当前开发机无法拉取 `itsthenetwork/nfs-server-alpine`（Docker Hub 不可达），改用 hostPath PV 提供等价共享存储。
+> 换到有网络的机器上，删掉 hostPath PV，`kubectl apply -f k8s/nfs-server.yaml` 即可启用真实 NFS。
+> hostPath 和 NFS 对代码完全透明——Worker `dlopen("plugins/xxx.so")` 不关心底层文件系统类型。
+
 ### kind 集群配置
 
 ```yaml
