@@ -31,7 +31,7 @@ spec:
       volumes:
       - name: thunder-repo
         hostPath:
-          path: /home/tommychen/thunder
+          path: /thunder
       - name: nfs-plugins
         persistentVolumeClaim:
           claimName: thunder-plugins
