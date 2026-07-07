@@ -82,7 +82,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
 ## Testing
 
 ```bash
-./deploy.sh test unit      # C++ gtest (359 cases) + Python pytest, no external deps, ~45s
+./deploy.sh test unit      # C++ gtest (382 cases) + Python pytest, no external deps, ~45s
 ./deploy.sh test e2e       # Docker E2E: compose up → 25+ pytest cases → compose down, ~3 min
 ./deploy.sh test           # unit + e2e
 ./deploy.sh clean          # remove build artifacts + Docker state
@@ -266,31 +266,32 @@ net::AsyncTask HandleRequest(net::StepCo20& step) {
 ## Writing a Plugin
 
 ```cpp
-// code/HelloHttp/src/ModuleHello/ModuleOrder.cpp
-#include "Module.hpp"
+// code/HelloHttp/src/ModuleHello/ModuleHello.cpp
+#include "cmd/Module.hpp"
+#include "util/CJsonObject.hpp"
 
-class ModuleOrder : public net::Module {
+class ModuleHello : public net::Module {
 public:
-    bool DoMsg(net::MsgHead& head, net::MsgBody& body) override {
-        util::CJsonObject req(body.data());
+    bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg) override {
+        util::CJsonObject req(oInHttpMsg.body());
         std::string action;
-        req.Get("action", action);
+        req.Get("option", action);
 
         util::CJsonObject rsp;
         rsp.Add("code", 0);
-        rsp.Add("orderId", generateId());
-        body.set_data(rsp.ToString());
+        rsp.Add("action", action);
+        net::SendToClient(stMsgShell, oInHttpMsg, rsp.ToString());
         return true;
     }
 };
 
-MUDULE_CREATE(ModuleOrder);
+MUDULE_CREATE(core::ModuleHello);
 ```
 
 Build and deploy:
 
 ```bash
-./deploy.sh build-so HelloHttp_ModuleOrder
+./deploy.sh build-so HelloHttp_ModuleHello
 
 # Extract to workers via Admin API (triggers graceful hot-swap)
 curl -X POST http://localhost:8090/api/so-extract -F "file=ModuleOrder.so"
