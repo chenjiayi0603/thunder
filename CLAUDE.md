@@ -470,7 +470,6 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 - 所有 bug/优化/设计问题用 **GitHub Issue** 记录
 - `gh issue create --title "xxx" --body "xxx" --label bug`
 - 修复后 `gh issue close <id> --comment "已修复: commit <sha>"`
-- 本地历史问题保留在 `issus-list.md`（`.gitignore`，不提交，仅本地参考）
 ### 触发词：代码移动
 - `git mv` 移动文件,同步修正所有 include 和 CMakeLists
 - 全量构建 + 冒烟验证无回归
