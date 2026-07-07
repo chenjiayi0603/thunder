@@ -167,6 +167,24 @@ Each Worker is an independent OS process. A crashing plugin takes down only that
 Manager restarts it transparently. Graceful restart drains in-flight connections before
 killing the old worker.
 
+### Work-Stealing Thread Pool
+
+Coroutines offload blocking work (disk I/O, CPU-heavy compute) to a custom work-stealing pool
+(Go LRQ style). Each worker holds two SPMC ring buffers (256 slots): `_submit_deques` receive
+committed tasks via Power of Two Choices, `_local_deques` buffer stolen tasks. Idle workers
+steal half the victim's queue in a single CAS (`steal_into`). A global MPMC queue catches overflow.
+
+| Metric                | Old (single MPMC queue) | New (work-stealing) |
+|-----------------------|------------------------:|--------------------:|
+| Throughput (4 workers)|              1,373 ns/op|         **543 ns/op**|
+| Speedup               |                        —|            **2.53×** |
+| E2E latency (avg)     |              1,394 ns   |         **700 ns**  |
+| E2E latency (P50)     |              1,586 ns   |       **1,227 ns**  |
+| Payload 64B advantage |                        —|            **2.58×** |
+
+Design doc: [`docs/architecture/23-work-stealing-threadpool.md`](docs/architecture/23-work-stealing-threadpool.md)  
+Benchmark: [`docs/performance/04-work-stealing-bench.md`](docs/performance/04-work-stealing-bench.md)
+
 ### C++20 Coroutines
 
 All async I/O — MySQL, Redis, cross-node RPC — written as `co_await`:
@@ -192,6 +210,7 @@ net::AsyncTask HandleRequest(net::StepCo20& step) {
 | Internal Protobuf RPC      | Node-to-node binary transport                             |
 | MySQL client               | `co_await db.Query(...)` — non-blocking, event loop safe  |
 | Redis client               | `co_await cache.Get/Set/HSet(...)` — async hiredis        |
+| Work-stealing thread pool  | Go LRQ style, dual SPMC deques, P2C dispatch, 2.53× faster |
 | Lua scripting              | LuaJIT, hot-reload, per-worker VM                         |
 | `.so` plugin hot-swap      | Zero-downtime deploy via etcd watch + graceful restart    |
 | etcd service mesh          | Registration, discovery, config push, TTL health          |
