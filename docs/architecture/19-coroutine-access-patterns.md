@@ -271,6 +271,32 @@ co_await MakePoolOffloadAwaiter(...)
 
 **关键**: `std::future::get()` 在 `await_resume()` 内调用，此时 future 已就绪（任务已 `PostToEventLoop` 返回），不会阻塞 event loop。
 
+### 6.4 协程 vs 线程池：怎么选
+
+二者不是竞争关系，是**互补**。协程提供异步编程模型，线程池提供阻塞任务的执行场所。
+
+| 维度 | 协程（事件循环） | 线程池 |
+|------|:-------------:|:-----:|
+| 并发模型 | 单线程协作式，co_await 挂起 | 多线程抢占式，OS 调度 |
+| 上下文切换 | 0（函数调用级） | ~1-10μs（线程切换） |
+| 内存开销 | ~几 KB/协程 | ~MB/线程 |
+| 阻塞操作 | ❌ 卡死事件循环 | ✅ 设计目的 |
+| 异步 IO | ✅ epoll/io_uring | ❌ 线程池里 epoll = 浪费 |
+| 适合任务体 | 微秒级（解析、路由、小 IO） | 毫秒级（connect、sleep、压缩）|
+
+**Thunder 的实际分工**：
+
+```
+99% 快速路径（协程）               1% 阻塞路径（线程池）
+─────────────────────             ────────────────────
+HTTP 解析、Protobuf 编解码        MySQL C 客户端 connect/query
+Redis GET/SET                    文件 SHA256 / 大压缩
+etcd 通信、RPC 转发              第三方阻塞 SDK
+内部路由、响应组装                  sleep / 同步等待
+```
+
+`co_await MakePoolOffloadAwaiter` 是两者的接口——协程挂起 → 线程池执行 → 回到事件循环 resume。写法与同步代码一致，event loop 在等待期间处理其他请求。
+
 ---
 
 ## 7. ORM 层（高阶封装）
