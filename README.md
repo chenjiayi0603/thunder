@@ -338,4 +338,13 @@ tests/            # pytest E2E, smoke scripts, benchmark scripts
 
 ## License
 
-See [`LICENSE`](LICENSE).
+Thunder 采用 **双重许可**：
+
+| 使用场景 | 许可 | 费用 |
+|---------|------|:--:|
+| 个人学习、开源项目 | [AGPL v3](LICENSE.AGPL) | 免费 |
+| 公司内部工具、测试环境 | [AGPL v3](LICENSE.AGPL) | 免费 |
+| **闭源商业产品** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
+| **SaaS / 云服务** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
+
+> 详细条款见 [`LICENSE`](LICENSE)。商业许可咨询请联系作者。
