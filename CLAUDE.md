@@ -22,18 +22,20 @@
 
 ## 会话开头必读
 
-每次新会话开始，**必须先读 `TEST_STATUS.md`**，了解当前测试状态和待做事项，避免重复测试：
+每次新会话开始，**先跑环境预检**，确认服务在线再开始工作：
 
 ```bash
-cat TEST_STATUS.md
+bash tests/check_env.sh
 ```
 
-测试跑完后立即更新：
+测试跑完后记录结果到本地：
 
 ```bash
-tests/save_status.sh          # 跑完整测试 + 更新状态
+tests/save_status.sh          # 跑完整测试 + 更新本地状态
 tests/save_status.sh --quick  # 只跑构建+ctest+pytest（跳过 E2E）
 ```
+
+> 测试结果保留在本地 `TEST_STATUS.md`（`.gitignore`，不提交）。
 
 ## 🚨 铁律：失败测试必须修到全绿
 
@@ -236,7 +238,7 @@ docker compose -p thunder-deploy -f docker/docker-compose.yml down
 3. 检查 OOM、端口冲突、依赖未就绪
 4. 定位到具体代码行或配置错误
 5. 修复 → 重新预检 → 全量回归
-6. 记录根因到 issus-list.md
+6. 记录根因到 GitHub Issue
 
 ---
 
@@ -463,11 +465,12 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 ### 触发词：chaos / 混沌
 - tests/chaos_etcd.sh 三个场景(停服/重启/灾难)
 
-### 触发词：issus / 问题清单
-- 所有 bug/优化/设计问题统一记录在 `issus-list.md`
-- 发现新问题 → 先确认是真实问题 → 再记录 → 再修复
-- 修复后标记 `✅ 已修复`,未修复标记 `🟡`
-- 不要未经确认就改状态,不要删除已有条目
+### 触发词：issus / 问题 / bug
+
+- 所有 bug/优化/设计问题用 **GitHub Issue** 记录
+- `gh issue create --title "xxx" --body "xxx" --label bug`
+- 修复后 `gh issue close <id> --comment "已修复: commit <sha>"`
+- 本地历史问题保留在 `issus-list.md`（`.gitignore`，不提交，仅本地参考）
 ### 触发词：代码移动
 - `git mv` 移动文件,同步修正所有 include 和 CMakeLists
 - 全量构建 + 冒烟验证无回归
