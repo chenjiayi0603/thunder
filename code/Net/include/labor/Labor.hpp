@@ -10,7 +10,9 @@
 #ifndef SRC_NodeLabor_HPP_
 #define SRC_NodeLabor_HPP_
 #include <deque>
+#include <vector>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include "NetDefine.hpp"
 #include "Interface.hpp"
@@ -23,9 +25,6 @@
 #include "labor/types/CustomConfigVersionData.hpp"
 #include "storage/dataproxy.pb.h"
 #include "labor/IoBackend.hpp"
-namespace netcustomcat {
-	class CatClientConnent;
-}
 
 namespace net
 {
@@ -118,7 +117,7 @@ public:     // Labor相关设置（由Cmd类或Step类调用这些方法完成La
    virtual void SetProcessName(const util::CJsonObject& oJsonConf) = 0;
 public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成数据交互，Worker类必须重新实现这些方法，Manager类可不实现）
 
-   virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep) {return false;}
+   virtual bool AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep) {return false;}
    virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr){return false;}
    /**
 	* @brief 自动连接并执行redis命令
@@ -127,7 +126,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
 	* @param pRedisStep 执行redis命令的redis步骤实例
 	* @return 是否可以执行
 	*/
-   virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword = "") {return(false);}
+   virtual bool AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword = "") {return(false);}
    /**
    	 * @brief 发送数据
    	 * @note 指定连接标识符将数据发送。此函数先查找与strIdentify匹配的stMsgShell，如果找到就调用
@@ -168,6 +167,13 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false){return(false);}
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const std::string &strBody){return(false);}
    	virtual bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>()){return(false);}
+	/**
+	 * @brief Fast-path 发送常量响应 (绕过 protobuf HttpMsg + vsnprintf 编码)
+	 * @note  适用于已知 body 是编译期常量的简单响应 (如 benchmark raw path)
+	 */
+	virtual bool SendToClientFast(const tagMsgShell& stMsgShell,
+	                               const char* body, size_t bodyLen,
+	                               int statusCode = 200) { return false; }
    	/**
 	 * @brief 发送数据到服务器（异步回调处理）
 	 * @note 异步通用回调接口简化封装
@@ -379,7 +385,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param dTimeout 超时时间
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(Step* pStep, double dTimeout = 0.0){return(false);}
+    virtual bool RegisterCallback(std::unique_ptr<Step> pStep, double dTimeout = 0.0){return(false);}
     /**
      * @brief 删除步骤回调
      * @param pStep 步骤回调
@@ -407,7 +413,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 延迟Step超时时间（重新设置超时时间）
      * @param pStep 被延迟的Step
@@ -480,7 +486,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 注册redis回调
      * @param strHost redis节点IP
@@ -488,7 +494,7 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param pRedisStep redis步骤实例
      * @return 是否注册成功
      */
-    virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep){return(false);}
+    virtual bool RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep){return(false);}
     /**
      * @brief 添加指定标识的redis context地址
      * @note 添加指定标识的redis context由Worker调用，该调用会在Step类中添加一个标识和redis context的对应关系。
@@ -557,8 +563,8 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      */
     virtual bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
 	virtual bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
-	virtual bool ExecStep(Step* pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
-	virtual bool ExecStep(RedisStep* pStep){return false;}
+	virtual bool ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = ""){return false;}
+	virtual bool ExecStep(std::unique_ptr<RedisStep> pStep){return false;}
 	virtual Step* GetStep(uint32 uiStepSeq){return nullptr;}
 public:// Labor相关设置（由Cmd类或Step类调用这些方法完成Labor自身的初始化和更新，Labor自己实现这些方法）
 	virtual const std::string& GetWorkerIdentify(){return m_strWorkerIdentify;}
@@ -678,6 +684,8 @@ protected:
 	void AddEvent(ev_tstamp dTimeout,ev_timer* timer_watcher, timer_callback pFunc);
 
 	void AddSignal(int iSignum,signal_callback callback);
+	// fork 后在子进程中调用：停止所有 ev_signal watcher，清理 libev 全局 signals[] 并 unblock 信号
+	void StopAllSignals();
 	void AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback);
 	void AddSession(Session* pSession,ev_tstamp dTimeout,timer_callback callback);
 	/**
@@ -740,6 +748,7 @@ protected:
 	int32 m_iServerSocketBackLog = 100;         ///<对服务器 socket listen backlog
 
 	struct ev_loop* m_loop = nullptr;
+	std::vector<ev_signal*> m_signalWatchers;  // 跟踪所有已注册的 ev_signal，fork 后子进程调 StopAllSignals
 
 	ev_async m_evPostToLoop {};
 	std::mutex m_postToLoopMutex;
@@ -764,7 +773,6 @@ protected:
 	log4cplus::Logger m_oDataLogger;
 
 	bool m_bCatLogSystem = true;
-	netcustomcat::CatClientConnent* m_pCatClientConnent = nullptr;
 
 	LoaderConfigVersionData m_pLoaderConfigVersionData;
 	RouteNoticeVersionData m_pRouteNoticeVersionData;

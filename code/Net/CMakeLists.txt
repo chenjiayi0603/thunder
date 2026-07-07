@@ -8,6 +8,9 @@ foreach(_d ${_libnet_dirs})
   list(APPEND LIBNET_SOURCES ${_f})
 endforeach()
 
+# picohttpparser — HTTP/1.1 parser (替代 http-parser)
+list(APPEND LIBNET_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../Util/src/util/http/pico/picohttpparser.c")
+
 file(GLOB_RECURSE NET_ALL_SOURCES CONFIGURE_DEPENDS
   "${NET_SRC}/*.cpp"
   "${NET_SRC}/*.cc"
@@ -17,11 +20,13 @@ add_library(Net SHARED ${LIBNET_SOURCES})
 set_target_properties(Net PROPERTIES OUTPUT_NAME "Net")
 
 add_executable(Hello ${NET_ALL_SOURCES})
+target_link_libraries(Hello PRIVATE "/usr/lib/x86_64-linux-gnu/libluajit-5.1.so.2")
 
 foreach(_t Net Hello)
   thunder_apply_common_compile_options(${_t})
   thunder_target_include_net(${_t})
   thunder_link_thirdparty_shared(${_t})
+  target_include_directories(${_t} PRIVATE "${THUNDER_3PARTY}")
 endforeach()
 
 target_link_options(Hello PRIVATE "LINKER:--export-dynamic")
@@ -32,6 +37,7 @@ if(THUNDER_BUILD_CENTER)
   thunder_apply_common_compile_options(Center)
   thunder_target_include_net(Center)
   thunder_link_thirdparty_shared(Center)
+  target_include_directories(Center PRIVATE "${THUNDER_3PARTY}")
   target_link_options(Center PRIVATE "LINKER:--export-dynamic")
 endif()
 

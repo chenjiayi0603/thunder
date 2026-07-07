@@ -1,9 +1,6 @@
-.git
-.gitmodules
-build
-.cmake
-*.o
-*.a
-*.so
-.vscode
-.idea
+docker/data/*
+deploy/*/log/*
+**/*.log
+build/*
+deploy/HelloHttps/conf/certs/ca.key
+deploy/HelloHttps/conf/certs/*

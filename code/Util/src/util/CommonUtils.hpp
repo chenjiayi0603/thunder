@@ -130,7 +130,7 @@ inline uint32 GetMsgSeq_S(unsigned int uiTime)
 
 inline uint32 GetMsgSeq_MS()
 {
-	//21bit作为‬毫秒的低位(2097153毫秒，约34分钟)，11bit作为流水号（2047, 7FF）,共32位 0xFFFFFFFF
+	//21bit作为毫秒的低位(2097153毫秒，约34分钟)，11bit作为流水号（2047, 7FF）,共32位 0xFFFFFFFF
 	const unsigned int ullSequenceBit =  0x7FF;
 	const unsigned int ullTimeIndexBit = 0xFFFFF800;
 	static unsigned int uiSequence = 0;
@@ -144,7 +144,7 @@ inline uint32 GetMsgSeq_MS()
 
 inline uint32 GetMsgSeq_MS(unsigned long long ullTime)
 {
-	//21bit作为‬毫秒的低位(2097153毫秒，约34分钟)，11bit作为流水号（2047, 7FF）,共32位 0xFFFFFFFF
+	//21bit作为毫秒的低位(2097153毫秒，约34分钟)，11bit作为流水号（2047, 7FF）,共32位 0xFFFFFFFF
 	const unsigned int ullSequenceBit =  0x7FF;
 	const unsigned int ullTimeIndexBit = 0xFFFFF800;
 	static unsigned int uiSequence = 0;

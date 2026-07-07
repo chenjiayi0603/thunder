@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-logic
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-logic
+  template:
+    metadata:
+      labels:
+        app: thunder-logic
+    spec:
+      containers:
+      - name: app
+        image: ubuntu:26.04
+        imagePullPolicy: IfNotPresent
+        workingDir: /thunder/deploy/Logic
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: LD_LIBRARY_PATH
+          value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
+        - name: DEBIAN_FRONTEND
+          value: noninteractive
+        command:
+        - bash
+        - -c
+        - |
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
+          chmod +x ./node.sh 2>/dev/null || true
+          mkdir -p /tmp/conf && cp /thunder/k8s/conf/Logic.json /tmp/conf/Logic.json && sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/Logic.json
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH bin/Logic /tmp/conf/Logic.json
+          exec tail -f /dev/null
+        ports:
+        - containerPort: 16068
+        volumeMounts:
+        - name: thunder-repo
+          mountPath: /thunder
+        - name: thunder-plugins
+          mountPath: /thunder/deploy/*/plugins
+          readOnly: true
+      volumes:
+      - name: thunder-repo
+        hostPath:
+          path: /home/tommychen/thunder
+      - name: thunder-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins

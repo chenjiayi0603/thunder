@@ -1,8 +1,11 @@
 {
     "node_type": "LOGIC",
-    "inner_host": "127.0.0.1",
+    "inner_host": "0.0.0.0",
     "inner_port": 16068,
-    "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
+    "center": {
+        "connector": "etcd-grpc",
+        "etcd_endpoints": "http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"
+    },
     "server_name": "Logic_robot",
     "process_num": 1,
     "worker_capacity": 1000000,
@@ -22,7 +25,7 @@
     },
     "io_timeout": 300.0,
     "step_timeout": 1.0,
-    "log_level": "TRACE",
+    "log_level": "INFO",
     "load_so_interval": 60.0,
     "so": [
         {
@@ -33,5 +36,6 @@
             "version": 1
         }
     ],
-    "module": []
+    "module": [],
+    "io_backend": "ev"
 }

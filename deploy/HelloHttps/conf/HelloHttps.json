@@ -1,11 +1,14 @@
 {
-    "node_type": "HELLO",
-    "access_host": "127.0.0.1",
+    "node_type": "HELLO_HTTPS",
+    "access_host": "0.0.0.0",
     "access_port": 27443,
     "access_codec": 11,
-    "inner_host": "127.0.0.1",
+    "inner_host": "0.0.0.0",
     "inner_port": 27444,
-    "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
+    "center": {
+        "connector": "etcd-grpc",
+        "etcd_endpoints": "http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"
+    },
     "server_name": "Hello_https_robot",
     "process_num": 1,
     "worker_capacity": 1000000,
@@ -25,7 +28,7 @@
     },
     "io_timeout": 300.0,
     "step_timeout": 5.0,
-    "log_level": "DEBUG",
+    "log_level": "INFO",
     "load_so_interval": 60.0,
     "custom": {
         "https": {
@@ -42,14 +45,26 @@
         }
     },
     "so": [],
+    "io_backend": "asio_uring",
+    "https": {
+        "server_cert": "conf/certs/server.crt",
+        "server_key": "conf/certs/server.key",
+        "verify_client": false
+    },
     "module": [
         {
             "url_path": "/hello/hello",
-            "so_path": "plugins/ModuleHello.so",
+            "so_path": "plugins/HelloHttps_ModuleHello.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        },
+        {
+            "url_path": "/hello/raw",
+            "so_path": "plugins/HelloHttps_ModuleRaw.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1
         }
-    ],
-    "io_backend": "ev"
+    ]
 }

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-etcd
+  namespace: thunder
+spec:
+  clusterIP: None
+  ports:
+  - port: 2379
+    name: client
+  - port: 2380
+    name: peer
+  selector:
+    app: thunder-etcd
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thunder-etcd
+  namespace: thunder
+spec:
+  serviceName: thunder-etcd
+  replicas: 3
+  selector:
+    matchLabels:
+      app: thunder-etcd
+  template:
+    metadata:
+      labels:
+        app: thunder-etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.5.21
+        imagePullPolicy: IfNotPresent
+        command:
+        - etcd
+        - --name=$(THUNDER_ETCD_NAME)
+        - --data-dir=/etcd-data
+        - --listen-client-urls=http://0.0.0.0:2379
+        - --advertise-client-urls=http://$(THUNDER_ETCD_NAME).thunder-etcd.thunder:2379
+        - --listen-peer-urls=http://0.0.0.0:2380
+        - --initial-advertise-peer-urls=http://$(THUNDER_ETCD_NAME).thunder-etcd.thunder:2380
+        - --initial-cluster=thunder-etcd-0=http://thunder-etcd-0.thunder-etcd.thunder:2380,thunder-etcd-1=http://thunder-etcd-1.thunder-etcd.thunder:2380,thunder-etcd-2=http://thunder-etcd-2.thunder-etcd.thunder:2380
+        env:
+        - name: THUNDER_ETCD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - containerPort: 2379
+          name: client
+        - containerPort: 2380
+          name: peer
+        volumeMounts:
+        - name: data
+          mountPath: /etcd-data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi

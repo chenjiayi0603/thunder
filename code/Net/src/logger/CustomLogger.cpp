@@ -12,10 +12,9 @@
 #include <log4cplus/helpers/property.h>
 #include <log4cplus/helpers/fileinfo.h>
 #include <log4cplus/spi/loggingevent.h>
-#include "labor/Labor.hpp"
-#include "CustomLogger.hpp"
+#include "log/CustomLogger.hpp"
 
-namespace netcustomlog4cplus
+namespace customlog4cplus
 {
 
 using namespace log4cplus;
@@ -521,7 +520,7 @@ void FixDailyRollingFileAppender::rollover(bool alreadyLocked)
 helpers::Time FixDailyRollingFileAppender::calculateNextRolloverTime(const helpers::Time& t) const
 {
 	return helpers::truncate_fractions (
-		netcustomlog4cplus::calculateNextRolloverTime (t, schedule));
+		customlog4cplus::calculateNextRolloverTime (t, schedule));
 }
 
 

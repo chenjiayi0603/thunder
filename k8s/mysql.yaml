@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-mysql
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-mysql
+  template:
+    metadata:
+      labels:
+        app: thunder-mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mariadb:11.2
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          value: "root123"
+        - name: MARIADB_DATABASE
+          value: "thunder"
+        ports:
+        - containerPort: 3306
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-mysql
+  namespace: thunder
+spec:
+  ports:
+  - port: 3306
+  selector:
+    app: thunder-mysql

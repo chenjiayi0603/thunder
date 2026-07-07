@@ -66,7 +66,7 @@ cmake --install build
 ```
 
 Interface 联调（Center → Logic → Interface，含 GenKey/VerifyKey 冒烟）：
-`python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local`
+`python3 -m pytest tests/e2e -m "integration or smoke" --mode=local`
 
 **Center 管理 CLI**（Python，`show` / `get` / `set`）：见 **`centercli/README_cn.md`**；仓库根示例：`python3 deploy/centercli/centercli.py --url http://<host>:<port>/admin show nodes`。
 

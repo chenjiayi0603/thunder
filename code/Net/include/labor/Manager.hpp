@@ -14,6 +14,7 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "labor/ManagerContext.hpp"
+#include "labor/CenterConnector.hpp"
 #include "session/Session.hpp"
 
 class NodeReportRsp;
@@ -45,6 +46,16 @@ struct tagManagerWaitExitWatcherData
     uint32 seq = 0;
     Manager* pManager = nullptr;     // 不在结构体析构时回收
     tagManagerWaitExitWatcherData() = default;
+};
+
+/** Worker 优雅重启生命周期 */
+struct WorkerLifecycle {
+    enum State { RUNNING, STARTING, DRAINING, NEW_ACTIVE };
+    State  state = RUNNING;
+    int    oldPid = -1;
+    int    newPid = -1;
+    time_t drainStartTime = 0;
+    static constexpr int DRAIN_TIMEOUT = 60;
 };
 
 /**
@@ -87,6 +98,7 @@ public:
     bool FdTransfer(int iFd);
 	bool AcceptServerConn(int iFd);
 	bool RecvDataAndDispose(tagManagerIoWatcherData* pData, struct ev_io* watcher);
+    bool RecvFdFromWorker(int workerFd);
     bool ClientConnFrequencyTimeout(tagClientConnWatcherData* pData, struct ev_timer* watcher);
 
 	bool SessionTimeout(Session* pSession, struct ev_timer* watcher);
@@ -103,6 +115,13 @@ public:
     virtual bool SendTo(const tagMsgShell& stMsgShell,uint32 cmd,uint32 seq,const std::string & strBody)override;
     virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)override;
     virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)override;
+    struct AutoSendTarget {
+        std::string host;
+        int port = 0;
+        int workerIndex = 0;
+    };
+    bool ParseAutoSendTarget(const std::string& strIdentify, AutoSendTarget& target);
+    bool DoAutoConnect(const AutoSendTarget& target, const MsgHead& oMsgHead, const MsgBody& oMsgBody);
     bool ReportToCenter(bool boRegister = false);// 向管理中心上报负载信息
     bool SendTo(tagConnectionAttr* pConn,uint32 cmd,uint32 seq,const std::string & strBody);
 	bool SendTo(tagConnectionAttr* pConn,const MsgHead& oMsgHead, const MsgBody& oMsgBody);
@@ -126,6 +145,7 @@ protected:
     void AddCmd(Cmd* pCmd,int iCmd);
     void PreloadCmd();
     bool RestartWorker(int iDeathPid);
+    bool GracefulRestartWorker(int iWorkerIndex);
     /**
 	 * @brief io事件
 	 */
@@ -147,6 +167,17 @@ protected:
      */
     bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
     bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /** @brief send_zc NOTIF 完成（buffer 可复用），驱动回收/重提/倒 pWaitForSendBuff */
+    bool HandleIoWriteNotifComplete(tagConnectionAttr* pConn, int result);
+    /** @brief 写完成后的回收/重提/倒 pWaitForSendBuff 决策（Write 与 WriteNotif 共用） */
+    bool FinishWriteAndDrain(tagConnectionAttr* pConn, int result);
+    /**
+     * @brief 创建 IPC 通道并 fork Worker 子进程（CreateWorker/RestartWorker/GracefulRestartWorker 共用）
+     * @param workerIndex Worker 编号
+     * @param outAttr     [出参] 填充完整的 tagWorkerAttr（含 fd、shm queue、eventfd）
+     * @return >0 父进程得到的子进程 PID，子进程不会返回
+     */
+    pid_t SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr);
     /**
 	 * @brief 连接创建与销毁
 	 */
@@ -186,14 +217,20 @@ protected:
     /**
    	 * @brief 数据接收处理
    	 */
+    bool ProcessMessages(tagConnectionAttr* pConn,
+                         std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter);
     bool DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataAndTransferFd(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
     bool DisposeDataFromCenter(const MsgHead& oInMsgHead, const MsgBody& oInMsgBody, tagConnectionAttr* pConn);
-    void UpdateRaftLeaderHintFromNodeReportRsp(const NodeReportRsp& oNodeReportRsp);
+    // UpdateRaftLeaderHintFromNodeReportRsp — 已迁移至 TcpCenterConnector 插件
+    // ---- CenterConnector 插件集成 ----
+    std::unique_ptr<CenterConnector> CreateCenterConnector();
+    void OnCenterEvent(const CenterEvent& ev);
 private:
-    /**
-	 * @brief 配置、记录成员
-	 */
+    std::unique_ptr<CenterConnector> m_pCenterConnector;
+    std::unordered_map<int, WorkerLifecycle> m_workerLifecycle;
+    bool m_bPendingRestart = false;  ///< #79: SO/module 变更到达时 Worker 忙，排队等待全部空闲后重启
+    bool m_bModuleConfigSeeded = false;  ///< #131: etcd 模块配置首次种子写入后为 true，之后不再回写
 };
 
 } /* namespace net */

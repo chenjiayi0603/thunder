@@ -1,5 +1,10 @@
 # Thunder 工程公共路径与编译选项（由根 CMakeLists include）
 set(THUNDER_ROOT "${CMAKE_SOURCE_DIR}" CACHE INTERNAL "")
+
+# etcd-cpp-apiv3: submodule at code/3party/etcd-cpp-apiv3 (v0.15.4)
+# Built by thirdparty_deploy target (ep_grpc + ep_etcd_cpp_apiv3 in 3party/CMakeLists.txt)
+set(ETCD_STAGE "${CMAKE_SOURCE_DIR}/code/3party" CACHE PATH "etcd-cpp-apiv3 install root")
+set(GRPC_STAGE "" CACHE PATH "gRPC stage — unused, gRPC is statically linked in libetcd-cpp-api-core.so")
 set(THUNDER_CODE "${THUNDER_ROOT}/code" CACHE INTERNAL "")
 set(THUNDER_3PARTY "${THUNDER_CODE}/3party" CACHE INTERNAL "")
 set(THUNDER_UTIL "${THUNDER_CODE}/Util" CACHE INTERNAL "")
@@ -47,6 +52,9 @@ function(thunder_target_include_net _target)
     "${THUNDER_3PARTY}/include/libev"
     "${THUNDER_3PARTY}/asio/asio/include"
   )
+  if(LIBURING_INCLUDE_DIRS)
+    target_include_directories(${_target} PRIVATE "${LIBURING_INCLUDE_DIRS}")
+  endif()
 endfunction()
 
 # Abseil：protobuf 可能编出静态 .a 或共享 .so（BUILD_SHARED_LIBS=ON 时多为 .so）
@@ -154,11 +162,23 @@ function(thunder_link_thirdparty_shared _target)
     rt
   )
 
-  if(THUNDER_IO_URING OR THUNDER_IO_ASIO_URING)
-    target_link_libraries(${_target} PRIVATE uring)
+  if((THUNDER_IO_URING OR THUNDER_IO_ASIO_URING) AND LIBURING_LIBRARY)
+    if(LIBURING_LIBRARY_DIRS)
+      target_link_directories(${_target} PRIVATE "${LIBURING_LIBRARY_DIRS}")
+    endif()
+    target_link_libraries(${_target} PRIVATE ${LIBURING_LIBRARY})
   endif()
 
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
     target_link_directories(${_target} PRIVATE /usr/lib64)
+  endif()
+
+  # etcd-cpp-apiv3: source in code/3party/etcd-cpp-apiv3 (submodule, v0.15.4)
+  # built by code/3party/build_etcd.sh → installs headers+.so into code/3party/include+lib
+  # --disable-new-dtags: use DT_RPATH (inherited by transitive deps) instead of DT_RUNPATH
+  if(EXISTS "${THUNDER_3PARTY}/include/etcd/SyncClient.hpp")
+    target_include_directories(${_target} PRIVATE "${THUNDER_3PARTY}/include")
+    target_link_libraries(${_target} PRIVATE etcd-cpp-api-core)
+    target_link_options(${_target} PRIVATE -Wl,--disable-new-dtags)
   endif()
 endfunction()

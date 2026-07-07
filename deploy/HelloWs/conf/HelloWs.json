@@ -1,11 +1,14 @@
 {
-    "node_type": "HELLO",
-    "access_host": "127.0.0.1",
+    "node_type": "HELLO_WS",
+    "access_host": "0.0.0.0",
     "access_port": 27010,
     "access_codec": 5,
-    "inner_host": "127.0.0.1",
+    "inner_host": "0.0.0.0",
     "inner_port": 27011,
-    "center": "127.0.0.1:27000,127.0.0.1:27022,127.0.0.1:27032",
+    "center": {
+        "connector": "etcd-grpc",
+        "etcd_endpoints": "http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"
+    },
     "server_name": "Hello_ws_robot",
     "process_num": 1,
     "worker_capacity": 1000000,
@@ -14,8 +17,14 @@
     "max_log_file_num": 10,
     "max_log_file_size": 20480000,
     "permission": {
-        "addr_permit": { "stat_interval": 1.0, "permit_num": 500 },
-        "uin_permit": { "stat_interval": 1.0, "permit_num": 500 }
+        "addr_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500
+        },
+        "uin_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500
+        }
     },
     "io_timeout": 300.0,
     "step_timeout": 5.0,
@@ -24,17 +33,18 @@
     "so": [
         {
             "cmd": 20001,
-            "so_path": "plugins/CmdHello.so",
+            "so_path": "plugins/HelloWs_CmdHello.so",
             "entrance_symbol": "create",
             "process_num": 0,
             "load": true,
             "version": 1
         }
     ],
+    "io_backend": "ev",
     "module": [
         {
             "url_path": "/hello/shake",
-            "so_path": "plugins/ModuleShake.so",
+            "so_path": "plugins/HelloWs_ModuleShake.so",
             "entrance_symbol": "create",
             "load": true,
             "version": 1

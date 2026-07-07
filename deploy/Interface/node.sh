@@ -6,7 +6,7 @@ SERVER_HOME="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 
 SERVER_BIN="${SERVER_HOME}/bin"
-SERVER_CONF="${SERVER_HOME}/conf"
+SERVER_CONF="${THUNDER_CONF_DIR:-${SERVER_HOME}/conf}"
 SERVER_CONF_WEB="${SERVER_HOME}/confweb"
 SERVER_LIB="${SERVER_HOME}/lib"
 SERVER_3LIB="${SERVER_HOME}/../3lib"
@@ -67,6 +67,7 @@ start_in_conf() {
 stop_in_conf() {
   local conf_dir="$1"
   local server_bin
+  local killed_pids=()
   for server_bin in "${SERVER_BIN}"/*; do
     [[ -f "${server_bin}" ]] || continue
     local bin_name conf_file target_server target_server_tag target_port running_pid
@@ -80,7 +81,17 @@ stop_in_conf() {
     if [[ -n "${running_pid}" ]]; then
       echo "kill ${running_pid}    ${target_server}"
       kill "${running_pid}"
+      killed_pids+=("${running_pid}")
     fi
+  done
+  local i pid
+  for i in $(seq 1 25); do
+    local all_gone=true
+    for pid in "${killed_pids[@]+"${killed_pids[@]}"}"; do
+      kill -0 "${pid}" 2>/dev/null && { all_gone=false; break; }
+    done
+    ${all_gone} && return 0
+    sleep 1
   done
 }
 

@@ -14,6 +14,7 @@
 #include "protocol/http.pb.h"
 #include "Cmd.hpp"
 #include "step/HttpStep.hpp"
+#include "util/json/CJsonObject.hpp"
 
 namespace net
 {
@@ -51,6 +52,12 @@ public:
         return(false);
     }
 public:
+    /**
+     * @brief 热重载模块脚本（Lua 等脚本语言专用，非 SO 重载）
+     * @return 是否重载成功。默认返回 false（非脚本模块不支持）
+     */
+    virtual bool ReloadScript() { return false; }
+
     const std::string& GetModulePath() const
     {
         return(m_strModulePath);
@@ -61,8 +68,19 @@ public:
         m_strModulePath = strModulePaht;
     }
 
+    const util::CJsonObject& GetModuleConf() const
+    {
+        return(m_oModuleConf);
+    }
+
+    void SetModuleConf(const util::CJsonObject& oConf)
+    {
+        m_oModuleConf = oConf;
+    }
+
 private:
     std::string m_strModulePath;
+    util::CJsonObject m_oModuleConf;
 };
 
 } /* namespace net */

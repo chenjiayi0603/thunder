@@ -41,7 +41,7 @@ E_CMD_STATUS StepTellWorker::Callback(const tagMsgShell& stMsgShell,const MsgHea
     {
         if (oInTargetWorker.err_no() == ERR_OK)
         {
-            LOG4_TRACE("AddMsgShell(%s, fd %d, seq %llu)!",
+            LOG4_TRACE("AddMsgShell(%s, fd %d, seq %u)!",
                             oInTargetWorker.worker_identify().c_str(), stMsgShell.iFd, stMsgShell.ulSeq);
             GetLabor()->AddMsgShell(oInTargetWorker.worker_identify(), stMsgShell);
             GetLabor()->AddNodeIdentify(oInTargetWorker.node_type(), oInTargetWorker.worker_identify());

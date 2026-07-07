@@ -350,15 +350,13 @@ int GetDirCommonFilesByExt(const char* sDirname,const char* sFileExt,int nFileEx
     //read all files in this dir
     while((dirp = ::readdir(dp)) != NULL)
     {
-        if(dirp->d_name)
+        if(dirp->d_name[0])
         {
             ::memset(fullname, 0, sizeof(fullname));
             /* ignore hidden files */
             if(dirp->d_name[0] == '.')
                 continue;
-            ::strncpy(fullname, sDirname, sizeof(fullname));//目录名
-            ::strncat(fullname, "/", sizeof(fullname));
-            strncat(fullname, dirp->d_name, sizeof(fullname));//文件名
+            snprintf(fullname, sizeof(fullname), "%s/%s", sDirname, dirp->d_name);
 //            printf("\t sDirname(%s) d_name(%s) file(%s)\n",sDirname,dirp->d_name,fullname);
             if(IsArchive(fullname))
             {
@@ -400,15 +398,13 @@ int GetSubDirFromDir(const char* sDirname,std::vector<std::string> &dirsVec)
     //read all files in this dir
     while((dirp = ::readdir(dp)) != NULL)
     {
-        if(dirp->d_name)
+        if(dirp->d_name[0])
         {
             ::memset(fullname, 0, sizeof(fullname));
             /* ignore hidden files */
             if(dirp->d_name[0] == '.')
                 continue;
-            ::strncpy(fullname, sDirname, sizeof(fullname));//目录名
-            ::strncat(fullname, "/", sizeof(fullname));
-            strncat(fullname, dirp->d_name, sizeof(fullname));//文件名
+            snprintf(fullname, sizeof(fullname), "%s/%s", sDirname, dirp->d_name);
 //            printf("\t sDirname(%s) d_name(%s) file(%s)\n",sDirname,dirp->d_name,fullname);
             if(IsArchive(fullname))
             {

@@ -50,6 +50,9 @@ add_library(thunder_net_sources_for_test OBJECT ${THUNDER_NET_ALL_SOURCES_FOR_TE
 thunder_apply_common_compile_options(thunder_net_sources_for_test)
 target_compile_definitions(thunder_net_sources_for_test PRIVATE THUNDER_SUPPRESS_NETDEFINE_AUTO_DEBUG)
 thunder_target_include_net(thunder_net_sources_for_test)
+target_include_directories(thunder_net_sources_for_test PRIVATE "${THUNDER_3PARTY}")
+# EtcdGrpcConnector.cpp 需要 etcd-cpp-apiv3 头文件（vendored in code/3party/include）
+target_include_directories(thunder_net_sources_for_test PRIVATE "${THUNDER_3PARTY}/include")
 target_compile_features(thunder_net_sources_for_test PRIVATE cxx_std_20)
 
 add_executable(thunder_test_step_co20
@@ -145,6 +148,7 @@ add_executable(thunder_test_util_threadpool
 )
 target_include_directories(thunder_test_util_threadpool PRIVATE
   "${THUNDER_UTIL}/src"
+  "${THUNDER_3PARTY}"      # 供 threadpool.h 找 concurrentqueue.h
 )
 target_compile_features(thunder_test_util_threadpool PRIVATE cxx_std_20)
 target_link_libraries(thunder_test_util_threadpool PRIVATE
@@ -152,6 +156,35 @@ target_link_libraries(thunder_test_util_threadpool PRIVATE
   Threads::Threads
 )
 gtest_discover_tests(thunder_test_util_threadpool)
+
+# ---- WorkerDeque work-stealing deque ----
+add_executable(thunder_test_util_worker_deque
+  util/test_util_worker_deque.cpp
+)
+target_include_directories(thunder_test_util_worker_deque PRIVATE
+  "${THUNDER_UTIL}/src"
+)
+target_compile_features(thunder_test_util_worker_deque PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_util_worker_deque PRIVATE
+  GTest::gtest_main
+  Threads::Threads
+)
+gtest_discover_tests(thunder_test_util_worker_deque)
+
+# ---- WorkStealingPool 集成测试 ----
+add_executable(thunder_test_util_work_stealing_pool
+  util/test_util_work_stealing_pool.cpp
+)
+target_include_directories(thunder_test_util_work_stealing_pool PRIVATE
+  "${THUNDER_UTIL}/src"
+  "${THUNDER_3PARTY}"
+)
+target_compile_features(thunder_test_util_work_stealing_pool PRIVATE cxx_std_20)
+target_link_libraries(thunder_test_util_work_stealing_pool PRIVATE
+  GTest::gtest_main
+  Threads::Threads
+)
+gtest_discover_tests(thunder_test_util_work_stealing_pool)
 
 # ---- Proto 序列化 (coor/msg) ----
 add_executable(thunder_test_proto
@@ -251,6 +284,18 @@ target_link_libraries(thunder_test_codec_http PRIVATE GTest::gtest_main)
 set_target_properties(thunder_test_codec_http PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_codec_http DISCOVERY_MODE PRE_TEST)
 
+# ---- WssCodec 编解码 E2E ----
+add_executable(thunder_test_codec_wss
+  codec/test_codec_wss.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_codec_wss PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_codec_wss)
+thunder_link_thirdparty_shared(thunder_test_codec_wss)
+target_link_libraries(thunder_test_codec_wss PRIVATE GTest::gtest_main OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(thunder_test_codec_wss PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_codec_wss DISCOVERY_MODE PRE_TEST)
+
 # ---- ClientMsgCodec 编解码 E2E ----
 add_executable(thunder_test_codec_client
   codec/test_codec_client.cpp
@@ -289,6 +334,18 @@ target_compile_features(thunder_test_shm_queue PRIVATE cxx_std_20)
 target_link_libraries(thunder_test_shm_queue PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(thunder_test_shm_queue)
 
+# ---- TcpCenterConnector 单元测试 ----
+add_executable(thunder_test_connector_tcp
+  connector/test_connector_tcp.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_connector_tcp PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_connector_tcp)
+thunder_link_thirdparty_shared(thunder_test_connector_tcp)
+target_link_libraries(thunder_test_connector_tcp PRIVATE GTest::gtest_main)
+set_target_properties(thunder_test_connector_tcp PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_connector_tcp DISCOVERY_MODE PRE_TEST)
+
 # ---- E2E 容器烟雾测试 (需 THUNDER_E2E_ENABLED=1) ----
 add_executable(thunder_test_e2e_smoke
   e2e/test_e2e_smoke.cpp
@@ -300,3 +357,63 @@ thunder_link_thirdparty_shared(thunder_test_e2e_smoke)
 target_link_libraries(thunder_test_e2e_smoke PRIVATE GTest::gtest_main curl)
 set_target_properties(thunder_test_e2e_smoke PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
 gtest_discover_tests(thunder_test_e2e_smoke DISCOVERY_MODE PRE_TEST)
+
+# ---- AsioUringIoBackend 单元测试 (需 -DENABLE_ASIO_URING=ON) ----
+add_executable(thunder_test_asio_uring
+  labor/test_asio_uring.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_test_asio_uring PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_test_asio_uring)
+thunder_link_thirdparty_shared(thunder_test_asio_uring)
+target_link_libraries(thunder_test_asio_uring PRIVATE GTest::gtest_main)
+target_compile_definitions(thunder_test_asio_uring PRIVATE THUNDER_IO_ASIO_URING ASIO_STANDALONE ASIO_HAS_IO_URING)
+set_target_properties(thunder_test_asio_uring PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+gtest_discover_tests(thunder_test_asio_uring DISCOVERY_MODE PRE_TEST)
+
+# ---- Backend 性能对比 benchmark ----
+add_executable(thunder_bench_backends
+  labor/bench_backends.cpp
+  $<TARGET_OBJECTS:thunder_net_sources_for_test>
+)
+target_compile_features(thunder_bench_backends PRIVATE cxx_std_20)
+thunder_target_include_net(thunder_bench_backends)
+thunder_link_thirdparty_shared(thunder_bench_backends)
+target_link_libraries(thunder_bench_backends PRIVATE GTest::gtest_main)
+set_target_properties(thunder_bench_backends PROPERTIES BUILD_RPATH "${_thunder_test_rpath}")
+
+# ---- ThreadPool 队列方案对比 bench（无 Net 链接依赖，仅需 3party/concurrentqueue.h）----
+add_executable(thunder_bench_threadpool_queue
+  labor/bench_threadpool_queue.cpp
+)
+target_compile_features(thunder_bench_threadpool_queue PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_threadpool_queue PRIVATE
+  "${THUNDER_3PARTY}"                    # 3party/concurrentqueue.h
+  "${THUNDER_UTIL}/src"                  # thread/threadpool.h
+)
+target_compile_options(thunder_bench_threadpool_queue PRIVATE -O2)
+target_link_libraries(thunder_bench_threadpool_queue PRIVATE GTest::gtest_main)
+
+# ---- Work Stealing vs 单全局队列 对比基准 ----
+add_executable(thunder_bench_work_stealing
+  labor/bench_work_stealing.cpp
+)
+target_compile_features(thunder_bench_work_stealing PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_work_stealing PRIVATE
+  "${THUNDER_3PARTY}"      # concurrentqueue.h
+  "${THUNDER_UTIL}/src"   # thread/threadpool.h, thread/work_stealing_pool.h
+)
+target_compile_options(thunder_bench_work_stealing PRIVATE -O2)
+target_link_libraries(thunder_bench_work_stealing PRIVATE GTest::gtest_main Threads::Threads)
+
+# ---- 队列延迟 + payload 大小 + P50/P99 基准 ----
+add_executable(thunder_bench_queue_latency
+  labor/bench_queue_latency.cpp
+)
+target_compile_features(thunder_bench_queue_latency PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_queue_latency PRIVATE
+  "${THUNDER_3PARTY}"
+  "${THUNDER_UTIL}/src"
+)
+target_compile_options(thunder_bench_queue_latency PRIVATE -O2)
+target_link_libraries(thunder_bench_queue_latency PRIVATE GTest::gtest_main Threads::Threads)

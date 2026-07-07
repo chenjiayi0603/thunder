@@ -1,121 +1,350 @@
 # Thunder
 
-`Thunder` 是一个基于 C++20 的分布式异步集群服务框架，提供 Center 注册发现、Worker 并发处理、HTTP 与内部二进制协议接入、可插拔模块（`.so`）等能力。
+Thunder is a high-performance C++20 gateway and distributed service framework.
+It handles HTTP, HTTPS, and WebSocket traffic, routes requests to backend Logic nodes via Protobuf RPC,
+and extends behavior at runtime through hot-reloadable Lua scripts and `.so` plugins —
+all within a single-threaded event loop, **230,000+ requests/second per core**.
 
-项目面向“多节点、可扩展、可脚本化联调”的服务端场景，仓库内同时提供构建脚本、部署脚本和联调/压测脚本。
-
-## 主要特性
-
-- 基于事件驱动的异步网络模型，支持高并发连接处理。
-- 多进程 Worker 架构，支持插件动态加载（`Cmd*.so`、`Module*.so`）。
-- 支持 HTTP 编解码、内部二进制协议与多种编解码器扩展。
-- Center 集群支持 Raft 选主与主从语义下的注册/上报流程。
-- 内置 C++20 协程 Step 体系（`StepCo20`）与 Awaitable 能力。
-- 提供部署脚本、联调脚本、压测脚本和 Center 管理 CLI。
-
-## 目录概览
-
-```text
-.
-├── code/                 # 核心源码（Net/Center/Logic/Interface/Hello/Proto/3party）
-├── deploy/               # 安装产物、节点配置、启停脚本、测试脚本
-├── docs/                 # 架构设计与专题文档
-├── cmake/                # CMake 选项与构建说明
-├── INSTALL.md            # 构建/安装主文档
-└── README.md
+```
+Client (HTTP / HTTPS / WS)
+        │
+        ▼
+   Worker (event loop + .so plugins + Lua VM)
+        │  io_uring / epoll
+        ▼
+   etcd Service Mesh
+        │
+   ┌────┴────┐
+ LOGIC     LOGIC     (C++20 coroutines, horizontal scale)
 ```
 
-## 能力概览
-| 方向 | 说明 |
-|------|------|
-| **路由** | 中心节点支持注册、发现与路由 |
-| **RPC / 异步** | 状态机、协程、远程过程调用（匿名函数等） |
-| **IO** | 可自定义信号处理等 |
-| **编解码** | 多种编解码器，可扩展 |
+---
 
-## 快速开始
+## Building Thunder
 
-首次建议按根目录 `INSTALL.md` 的“一键”流程执行。
-
-### 1) 拉取子模块并构建安装
-
-在仓库根目录执行：
+**Requirements**: CMake ≥ 3.20, GCC 12+ or Clang 15+, OpenSSL headers, Docker + Compose
 
 ```bash
-git submodule update --init --recursive \
-  && cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  && cmake --build build --target thirdparty_deploy -j1 \
-  && cmake --build build -j1 \
-  && cmake --install build
+git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build --target thirdparty_deploy -j1   # third-party libs, ~10–20 min first time
+cmake --build build -j1
+cmake --install build                                 # installs to deploy/
 ```
 
-默认安装前缀为 `deploy/`。更多构建选项见 `cmake/BUILD.md`。
+> `-j1` is required — parallel builds stall on disk I/O during third-party compilation.
 
-### 2) 启动节点
-
-在 `deploy/` 目录使用统一脚本：
+Subsequent builds (third-party already built):
 
 ```bash
-./nodes.sh restart all
+cmake --build build -j1 && cmake --install build
 ```
 
-常用命令：
+Optional flags:
 
 ```bash
-./nodes.sh start all
-./nodes.sh stop all
-./nodes.sh restart Logic
-./nodes.sh status
+-DTHUNDER_IO_ASIO_URING=ON    # enable asio io_uring backend (Linux 5.1+)
+-DTHUNDER_LUAJIT=ON           # enable LuaJIT scripting
 ```
 
-## 一键联调与冒烟
+---
 
-### pytest 联调用例
-
-在仓库根目录：
+## Running Thunder
 
 ```bash
-python3 -m pytest deploy/tests/pytest -m "integration or smoke" --mode=local
+./deploy.sh up          # start Docker cluster (3-node etcd + MySQL + Redis + all services)
+./deploy.sh status      # container status + listening ports
+./deploy.sh down        # stop and clean up
 ```
 
-覆盖 HTTP/HTTPS/WS/Interface/Raft 关键链路；`--mode=external` 可连接已有环境。
-
-## 压测示例（wrk）
-
-仓库提供 `pytest + wrk` 的性能用例：
+Wait ~15 seconds for all services to become healthy, then:
 
 ```bash
-python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
+curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
+# → {"code":0,"msg":"ok","data":"hi"}
 ```
 
-可覆盖参数示例：
+**Service ports:**
+
+| Service     | Protocol  | Port  |
+|-------------|-----------|-------|
+| HelloHttp   | HTTP      | 27006 |
+| HelloHttps  | HTTPS     | 27443 |
+| HelloWs     | WebSocket | 27010 |
+| Interface   | HTTP      | 27008 |
+| Logic       | Internal  | 16068 |
+| Admin       | HTTP      | 8090  |
+| etcd        | HTTP      | 2379  |
+| Redis       | TCP       | 6379  |
+| MySQL       | TCP       | 3306  |
+
+---
+
+## Testing
 
 ```bash
-WRK_THREADS=4 WRK_CONNECTIONS=100 WRK_DURATION=10s \
-  python3 -m pytest deploy/tests/pytest -m perf --mode=local -s
+./deploy.sh test unit      # C++ gtest (382 cases) + Python pytest, no external deps, ~45s
+./deploy.sh test e2e       # Docker E2E: compose up → 25+ pytest cases → compose down, ~3 min
+./deploy.sh test           # unit + e2e
+./deploy.sh clean          # remove build artifacts + Docker state
 ```
 
-示例结果见 `deploy/tests/wrk_test_result.md`。
+Smoke test (requires cluster already running):
 
-## 配置说明
+```bash
+./tests/test_smoke.sh      # HTTP / HTTPS / WS / Interface→Logic / etcd, 9 checks
+```
 
-- 节点配置示例：`deploy/HelloHttp/conf/Hello.json`、`deploy/HelloWs/conf/HelloWs.json`、`deploy/HelloHttps/conf/HelloHttps.json`
-- 网络/节点基础入口：`code/Net/src/main.cpp`、`code/Net/src/labor/Manager.cpp`、`code/Net/src/labor/Worker.cpp`
-- 默认部署和启停脚本：`deploy/nodes.sh`
+---
 
-## 文档导航
+## Performance
 
-- 构建与安装：`INSTALL.md`
-- 部署与脚本：`deploy/deploy.md`
-- Center CLI 使用：`deploy/centercli/README_cn.md`
+Benchmarked on i9-12900H, 1 worker, `wrk -t4 -c100 -d10s`, INFO log, P-cores pinned.
+Full report: [`docs/performance/10-vs-nginx-benchmark-20260610.md`](docs/performance/10-vs-nginx-benchmark-20260610.md)
 
-## 依赖与环境
+### HTTP throughput vs Nginx 1.x
 
-- CMake >= 3.20
-- C++20 编译器
-- OpenSSL 开发包
-- 子模块第三方依赖（见 `.gitmodules` 与 `code/3party/readme.md`）
+| Payload | Thunder ev | Thunder asio_uring | Nginx 1w  | Delta       |
+|--------:|:----------:|:------------------:|:---------:|:-----------:|
+| 64 B    | 232k RPS   | **235k RPS**       | 214k RPS  | **+9–10%**  |
+| 1 KB    | 229k RPS   | 232k RPS           | 191k RPS  | **+20–21%** |
+| 4 KB    | 216k RPS   | 223k RPS           | 184k RPS  | **+17–21%** |
 
-## 许可证
+### HTTP latency (asio_uring backend)
 
-本项目遵循仓库内 `LICENSE`。
+| Payload | Thunder ev | Thunder asio_uring | Nginx 1w | vs Nginx    |
+|--------:|:----------:|:------------------:|:--------:|:-----------:|
+| 64 B    | 424 µs     | **220 µs**         | 466 µs   | **2.1× lower** |
+| 4 KB    | 457 µs     | **332 µs**         | 543 µs   | **1.6× lower** |
+
+### HTTPS latency (TLS)
+
+| Payload | Thunder ev | Thunder uring | Nginx SSL | vs Nginx       |
+|--------:|:----------:|:-------------:|:---------:|:--------------:|
+| 64 B    | 803 µs     | **402 µs**    | 752 µs    | **1.9× lower** |
+| 4 KB    | 1.23 ms    | **247 µs**    | 824 µs    | **3.3× lower** |
+
+> HTTPS throughput is SSL-CPU bound; Thunder uring wins on latency because `io_uring` batches all
+> OpenSSL BIO calls into a single `io_uring_enter` instead of one syscall per BIO read/write.
+
+### WebSocket echo (persistent connections)
+
+| Payload | 10 conns | p50    | p99    |
+|--------:|:--------:|:------:|:------:|
+| 64 B    | 46,765   | 192 µs | 549 µs |
+| 1 KB    | 15,888   | 564 µs | 1.7 ms |
+| 4 KB    |  4,881   | 1.8 ms | 5.9 ms |
+
+---
+
+## Why Thunder Is Fast
+
+### Zero-Copy Fast Path
+
+Requests matching known route prefixes skip Protobuf + JSON decode entirely:
+
+```
+Normal path:  recv → parse → pb decode → handler → pb encode → send   (~162k RPS)
+Fast path:    recv → prefix match → handler → memcpy template → send   (~236k RPS)
+```
+
+### picohttpparser — SIMD HTTP Parsing
+
+Replaced `http_parser` with `picohttpparser`, a single-header SSE4.2-accelerated parser
+that scans 16 bytes per cycle instead of one. **Measured gain: +49% RPS.**
+
+### Pluggable I/O Backends
+
+| Backend        | Strength                        | Notes                              |
+|----------------|---------------------------------|------------------------------------|
+| `ev` (epoll)   | Default, lowest overhead        | Best for small-medium payloads     |
+| `asio_uring`   | Latency-sensitive, large payload| Batch submit: N I/Os → 1 syscall   |
+| `native_uring` | Raw io_uring                    | Demo backend; no batch advantage   |
+| `dpdk`         | Planned                         | Kernel bypass                      |
+
+### Multi-Process Worker Model
+
+Each Worker is an independent OS process. A crashing plugin takes down only that worker;
+Manager restarts it transparently. Graceful restart drains in-flight connections before
+killing the old worker.
+
+### Work-Stealing Thread Pool
+
+Coroutines offload blocking work (disk I/O, CPU-heavy compute) to a custom work-stealing pool
+(Go LRQ style). Each worker holds two SPMC ring buffers (256 slots): `_submit_deques` receive
+committed tasks via Power of Two Choices, `_local_deques` buffer stolen tasks. Idle workers
+steal half the victim's queue in a single CAS (`steal_into`). A global MPMC queue catches overflow.
+
+| Metric                | Old (single MPMC queue) | New (work-stealing) |
+|-----------------------|------------------------:|--------------------:|
+| Throughput (4 workers)|              1,373 ns/op|         **543 ns/op**|
+| Speedup               |                        —|            **2.53×** |
+| E2E latency (avg)     |              1,394 ns   |         **700 ns**  |
+| E2E latency (P50)     |              1,586 ns   |       **1,227 ns**  |
+| Payload 64B advantage |                        —|            **2.58×** |
+
+Design doc: [`docs/architecture/23-work-stealing-threadpool.md`](docs/architecture/23-work-stealing-threadpool.md)  
+Benchmark: [`docs/performance/04-work-stealing-bench.md`](docs/performance/04-work-stealing-bench.md)
+
+### C++20 Coroutines
+
+All async I/O — MySQL, Redis, cross-node RPC — written as `co_await`:
+
+```cpp
+net::AsyncTask HandleRequest(net::StepCo20& step) {
+    auto rows = co_await db.Query("SELECT * FROM orders WHERE user_id=?", userId);
+    bool cached = co_await cache.Set("orders:" + id, rows.toJson(), 300);
+    co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+    step.Response(200, buildResponse(rows));
+}
+```
+
+---
+
+## Features
+
+| Feature                    | Notes                                                     |
+|----------------------------|-----------------------------------------------------------|
+| HTTP/1.1                   | picohttpparser, keep-alive, chunked transfer              |
+| HTTPS / TLS                | OpenSSL, SNI                                              |
+| WebSocket (WS / WSS)       | Upgrade, ping/pong, fragmentation, TLS variant            |
+| Internal Protobuf RPC      | Node-to-node binary transport                             |
+| MySQL client               | `co_await db.Query(...)` — non-blocking, event loop safe  |
+| Redis client               | `co_await cache.Get/Set/HSet(...)` — async hiredis        |
+| Work-stealing thread pool  | Go LRQ style, dual SPMC deques, P2C dispatch, 2.53× faster |
+| Lua scripting              | LuaJIT, hot-reload, per-worker VM                         |
+| `.so` plugin hot-swap      | Zero-downtime deploy via etcd watch + graceful restart    |
+| etcd service mesh          | Registration, discovery, config push, TTL health          |
+| Admin web UI               | Plugin management, node topology, etcd browser            |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Gateway Nodes                           │
+│                                                                 │
+│  Manager                                                        │
+│    ├── fork / restart Workers                                   │
+│    ├── receive plugin updates from etcd                         │
+│    └── graceful drain + hot-swap                                │
+│                                                                 │
+│  Worker 0..N  (one event loop each)                             │
+│    ├── I/O Backend: ev / asio_uring / native_uring              │
+│    ├── HTTP Fast Path (picohttpparser + prefix match)           │
+│    ├── Codec chain: HTTP → Protobuf → response                  │
+│    ├── .so Modules (dynamically loaded)                         │
+│    ├── Lua VM (LuaJIT, per worker)                              │
+│    └── C++20 Coroutine Steps                                    │
+│         ├── co_await MySQL / Redis                              │
+│         ├── co_await HTTP upstream                              │
+│         └── co_await cross-node PB RPC                          │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ Internal Protobuf (TCP)
+┌───────────────────────────▼─────────────────────────────────────┐
+│                        Logic Nodes                              │
+│  Same Worker architecture; scaled horizontally via etcd.        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│                     etcd Cluster (3 nodes)                      │
+│       Service registry · config store · leader election          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Principle              | Implementation                                           |
+|------------------------|----------------------------------------------------------|
+| Share nothing          | One process per worker, no inter-worker locks            |
+| No blocking            | `co_await` for all I/O; thread pool for CPU-bound tasks  |
+| Zero-copy where possible | Fast Path + yyjson arena allocator                     |
+| Fault isolation        | Plugin crash kills one worker; Manager restarts it       |
+| Runtime extensibility  | Lua for logic; `.so` for hot paths; etcd for config      |
+
+---
+
+## Writing a Plugin
+
+```cpp
+// code/HelloHttp/src/ModuleHello/ModuleHello.cpp
+#include "cmd/Module.hpp"
+#include "util/CJsonObject.hpp"
+
+class ModuleHello : public net::Module {
+public:
+    bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg) override {
+        util::CJsonObject req(oInHttpMsg.body());
+        std::string action;
+        req.Get("option", action);
+
+        util::CJsonObject rsp;
+        rsp.Add("code", 0);
+        rsp.Add("action", action);
+        net::SendToClient(stMsgShell, oInHttpMsg, rsp.ToString());
+        return true;
+    }
+};
+
+MUDULE_CREATE(core::ModuleHello);
+```
+
+Build and deploy:
+
+```bash
+./deploy.sh build-so HelloHttp_ModuleHello
+
+# Extract to workers via Admin API (triggers graceful hot-swap)
+curl -X POST http://localhost:8090/api/so-extract -F "file=ModuleOrder.so"
+```
+
+---
+
+## Kubernetes
+
+```bash
+kubectl apply -f k8s/
+kubectl -n thunder rollout status deployment --timeout=120s
+
+# NodePorts: HTTP=30006  Interface=30008  HTTPS=30043  WS=30010  Admin=30090
+```
+
+---
+
+## Repository Layout
+
+```
+code/
+├── Net/          # Core: Manager, Worker, I/O backends, codec, coroutines
+├── Center/       # Cluster coordination (legacy, etcd replaces in deployment)
+├── Logic/        # Example logic node
+├── HelloHttp/    # HTTP gateway node + example plugins + Lua modules
+├── HelloHttps/   # HTTPS gateway node
+├── HelloWs/      # WebSocket gateway node
+├── Interface/    # Protobuf gateway node
+├── Proto/        # .proto definitions
+└── Util/         # JSON (yyjson), logging, DB helpers
+
+deploy/           # Built binaries, node configs, start scripts
+docs/             # See docs/README.md for the full index
+├── architecture/ # Design docs and deep-dives
+├── performance/  # Benchmark reports
+├── quality/      # Memory-safety and unit-test verification
+└── reference/    # Tooling, dependency analysis, project FAQ
+k8s/              # Kubernetes manifests
+tests/            # pytest E2E, smoke scripts, benchmark scripts
+```
+
+---
+
+## License
+
+Thunder 采用 **双重许可**：
+
+| 使用场景 | 许可 | 费用 |
+|---------|------|:--:|
+| 个人学习、开源项目 | [AGPL v3](LICENSE.AGPL) | 免费 |
+| 公司内部工具、测试环境 | [AGPL v3](LICENSE.AGPL) | 免费 |
+| **闭源商业产品** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
+| **SaaS / 云服务** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
+
+> 详细条款见 [`LICENSE`](LICENSE)。商业许可咨询请联系作者。

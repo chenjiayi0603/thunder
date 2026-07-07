@@ -1,4 +1,11 @@
-# clangd 使用 CMake 生成的 compile_commands.json（需先配置构建目录）：
-#   cmake -S . -B build -DTHUNDER_BUILD_NODE_PLUGINS=ON
-# Interface 插件（ModuleInterface.cpp）仅在开启 NODE 插件时才会出现在数据库中。
-CompilationDatabase: build
+# clangd 使用 CMake 生成的 compile_commands.json
+# cmake -S . -B build -DTHUNDER_BUILD_NODE_PLUGINS=ON
+CompileFlags:
+  CompilationDatabase: build
+  # clangd 用自己的 clang 工具链，默认找不到 g++ 系统 include（cstddef 等报红）
+  # 显式补上 g++ 15 的系统头文件路径
+  Add:
+    - -isystem/usr/include/c++/15
+    - -isystem/usr/include/x86_64-linux-gnu/c++/15
+    - -isystem/usr/include/c++/15/backward
+    - -isystem/usr/lib/gcc/x86_64-linux-gnu/15/include

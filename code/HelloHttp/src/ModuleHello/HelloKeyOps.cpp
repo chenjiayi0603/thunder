@@ -1,0 +1,108 @@
+#include "ModuleHello.hpp"
+#include "coro/StepCo20Func.hpp"
+#include "codec/StringCoder.hpp"
+#include "util/CommonUtils.hpp"
+
+namespace
+{
+
+net::AsyncTask GenKeyNotifyLogicCo(net::StepCo20& step, std::string jsonBody, std::string address)
+{
+	MsgHead head;
+	head.set_cmd(GET_TOKEN_GEN);
+	MsgBody body;
+	body.set_body(std::move(jsonBody));
+	body.set_targetid(std::move(address));
+	const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+	LOG4_TRACE("GenKey LOGIC response ok=%d body=%s", ok,
+	           ok ? step.GetLastRspMsgBody().body().c_str() : "");
+	co_return;
+}
+
+net::AsyncTask VerifyKeyLogicCo(net::StepCo20& step, std::string reqBody, std::string address)
+{
+	MsgHead head;
+	head.set_cmd(GET_TOKEN_GEN);
+	MsgBody body;
+	body.set_body(std::move(reqBody));
+	body.set_targetid(std::move(address));
+	const bool ok = co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
+	if (!ok)
+	{
+		step.ResponseToClient(500, R"({"code":1})");
+		co_return;
+	}
+	const std::string& logicBody = step.GetLastRspMsgBody().body();
+	LOG4_TRACE("VerifyKey LOGIC body %s", logicBody.c_str());
+	util::CJsonObject rspJson;
+	int code = 1;
+	if (rspJson.Parse(logicBody))
+	{
+		rspJson.Get("code", code);
+	}
+	step.ResponseToClient(code == 0 ? 200 : 401, logicBody);
+	co_return;
+}
+
+} // namespace
+
+namespace core
+{
+
+void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+{
+	const std::string strToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
+	const std::string strKey   = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(), GetLabor()->GetWorkerIndex()));
+
+	{
+		util::CJsonObject oRsp;
+		oRsp.Add("token", strToken);
+		oRsp.Add("key", strKey);
+		GetLabor()->SendToClient(stMsgShell, oInHttpMsg, oRsp.ToString(), 200);
+	}
+
+	util::CJsonObject oJson;
+	const std::string address = GetLabor()->GetClientAddr(stMsgShell);
+	oJson.Add("token",   strToken);
+	oJson.Add("key",     strKey);
+	oJson.Add("genkey",  "1");
+	oJson.Add("address", address);
+	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
+
+	net::LaunchCo(stMsgShell, oInHttpMsg,
+		[oJson, address](net::StepCo20& step) -> net::AsyncTask {
+			return GenKeyNotifyLogicCo(step, oJson.ToString(), address);
+		});
+}
+
+void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
+{
+	std::map<std::string, std::string> mapParameters;
+	util::DecodeParameter(oInHttpMsg.url(), mapParameters, '?');
+	util::CJsonObject oJson;
+	for (auto p : mapParameters)
+	{
+		oJson.Add(p.first, p.second);
+		LOG4_TRACE("Param(%s %s)", p.first.c_str(), p.second.c_str());
+	}
+	std::string strToken = oJson("token");
+	std::string strKey = oJson("key");
+	if (strToken.empty() || strKey.empty())
+	{
+		LOG4_ERROR("%s() strToken.empty() || strKey.empty()", __FUNCTION__);
+		GetLabor()->SendToClient(stMsgShell, oInHttpMsg, "strToken empty or strKey empty", 400);
+		return;
+	}
+	oJson.Add("verifykey", "1");
+	const std::string address = GetLabor()->GetClientAddr(stMsgShell);
+	oJson.Add("address", address);
+	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
+
+	const std::string reqBody = oJson.ToString();
+	net::LaunchCo(stMsgShell, oInHttpMsg,
+		[reqBody, address](net::StepCo20& step) -> net::AsyncTask {
+			return VerifyKeyLogicCo(step, reqBody, address);
+		});
+}
+
+} // namespace core

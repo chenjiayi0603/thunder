@@ -13,9 +13,23 @@
 #include "util/http/http_parser.h"
 #include "protocol/http.pb.h"
 #include "ThunderCodec.hpp"
+#include "google/protobuf/arena.h"
 
 namespace net
 {
+
+/**
+ * @brief HTTP 连接专属上下文
+ * @note  挂在 tagConnectionAttr::pProtoCtx 上, 连接关闭时 delete
+ *        Arena 预分配 8KB, 每个请求结束后 Reset() 复用
+ */
+struct HttpConnContext
+{
+    // Arena 默认构造, 首次使用自动分配 block (8KB+)
+    google::protobuf::Arena arena;
+    HttpConnContext() = default;
+    ~HttpConnContext() = default;
+};
 //#define HTTP_CMD
 /**
  * @brief http格式通信编码解码器
@@ -40,20 +54,7 @@ public:
     virtual void AddHttpHeader(const std::string& strHeaderName, const std::string& strHeaderValue);
 
     const std::string& ToString(const HttpMsg& oHttpMsg);
-protected:
-    static int OnMessageBegin(http_parser *parser);
-    static int OnUrl(http_parser *parser, const char *at, size_t len);
-    static int OnStatus(http_parser *parser, const char *at, size_t len);
-    static int OnHeaderField(http_parser *parser, const char *at, size_t len);
-    static int OnHeaderValue(http_parser *parser, const char *at, size_t len);
-    static int OnHeadersComplete(http_parser *parser);
-    static int OnBody(http_parser *parser, const char *at, size_t len);
-    static int OnMessageComplete(http_parser *parser);
-    static int OnChunkHeader(http_parser *parser);
-    static int OnChunkComplete(http_parser *parser);
-
 private:
-    http_parser_settings m_parser_setting;
     std::string m_strHttpString;
     std::unordered_map<std::string, std::string> m_mapAddingHttpHeader;       ///< encode前添加的http头，encode之后要清空
 };

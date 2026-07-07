@@ -68,6 +68,8 @@ enum E_CMD
     CMD_REQ_NODE_RESTART_WORKERS        = 37,   ///< 重启工作者请求
     CMD_RSP_NODE_RESTART_WORKERS        = 38,   ///< 重启工作者应答
 
+    CMD_REQ_RELOAD_LUA                  = 41,   ///< 重新加载Lua脚本请求（manager to worker，只重建VM不动so）
+    CMD_RSP_RELOAD_LUA                  = 42,   ///< 重新加载Lua脚本响应（无须响应）
     CMD_REQ_RELOAD_LOGIC_CONFIG         = 39,   ///< Center通知配置到节点服务器,重新加载逻辑配置
     CMD_RSP_RELOAD_LOGIC_CONFIG         = 40,   ///< 节点服务器得到通知应答Center
 
@@ -115,6 +117,11 @@ enum E_CMD
 
     CMD_REQ_SYS_ERROR                   = 999,     ///< 系统错误请求（无意义，不会被使用）
     CMD_RSP_SYS_ERROR                   = 1000,    ///< 系统错误响应
+
+    // Worker 优雅重启 (Manager ↔ Worker)
+    CMD_WORKER_READY                    = 520,     ///< Worker→Manager: 新Worker初始化完成
+    CMD_WORKER_DRAIN                    = 521,     ///< Manager→Worker: 开始排空已有连接
+    CMD_WORKER_DRAIN_DONE               = 522,     ///< Worker→Manager: 排空完成,即将退出
 };
 
 }   // namespace net

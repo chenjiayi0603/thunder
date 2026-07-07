@@ -13,16 +13,19 @@
 #include "../NetError.hpp"
 #include "labor/Labor.hpp"
 #include "step/Step.hpp"
-#include "logger/CustomLogger.hpp"
+#include "log/CustomLogger.hpp"
 
 #include "util/IpUtil.hpp"
 #include "util/json/CJsonObject.hpp"
-#include "EvIoBackend.hpp"
-#ifdef THUNDER_IO_URING
-#include "UringIoBackend.hpp"
+#include "labor/io/EvIoBackend.hpp"
+#ifdef __linux__
+#include "labor/io/NativeUringIoBackend.hpp"
 #endif
 #ifdef THUNDER_IO_ASIO_URING
-#include "AsioUringIoBackend.hpp"
+#include "labor/io/AsioUringIoBackend.hpp"
+#endif
+#ifdef THUNDER_IO_DPDK
+#include "labor/io/DpdkIoBackend.hpp"
 #endif
 
 //每个进程只有一个labor，使用单例模式
@@ -145,7 +148,6 @@ Labor::Labor()
 
 Labor::~Labor()
 {
-	delete m_pCatClientConnent; m_pCatClientConnent = nullptr;
 }
 
 void  Labor::SetSocketAttr(int iFd,bool boNeedKeepInterval)
@@ -287,7 +289,8 @@ const std::string& Labor::GetHostName()
 	{
 		 if (!util::GetHostName(m_strHostName))
 		 {
-			 strerror_r(errno, m_pErrBuff, gc_iErrBuffLen);
+			 const char* errStr = strerror_r(errno, m_pErrBuff, gc_iErrBuffLen);
+			 (void)errStr;
 		 }
 	}
 	return m_strHostName;
@@ -423,7 +426,7 @@ bool Labor::InitDataLogger(const util::CJsonObject& oJsonConf)
 			std::string strLogPreName = strDataLogPath + std::string("/") + getproctitle() + ".";// + std::string(".data");
 
 			log4cplus::initialize();
-			log4cplus::SharedAppenderPtr file_append(new netcustomlog4cplus::FixDailyRollingFileAppender(
+			log4cplus::SharedAppenderPtr file_append(new customlog4cplus::FixDailyRollingFileAppender(
 					strLogPreName,fileExt,
 					(log4cplus::DailyRollingFileSchedule) iLogschedule ,
 					iMaxLogFileSize,iMaxLogFileNum,iMaxHistory,
@@ -470,26 +473,48 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: asio_uring init failed, falling back to uring");
+        LOG4_WARN("IoBackend: asio_uring init failed, falling back to ev");
 #else
-        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to uring");
+        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to ev");
 #endif
     }
 
-    if (strBackend == "uring" || strBackend == "asio_uring")
+    if (strBackend == "native_uring")
     {
-#ifdef THUNDER_IO_URING
-        UringIoBackend* pBackend = new UringIoBackend();
+#ifdef __linux__
+        NativeUringIoBackend* pBackend = new NativeUringIoBackend();
         if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
         {
             m_pIoBackend = pBackend;
-            LOG4_INFO("IoBackend: io_uring initialized successfully");
+            LOG4_INFO("IoBackend: native_uring initialized successfully");
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: io_uring init failed, falling back to ev");
+        LOG4_WARN("IoBackend: native_uring init failed, falling back to ev");
 #else
-        LOG4_WARN("IoBackend: io_uring requested but THUNDER_IO_URING not compiled, falling back to ev");
+        LOG4_WARN("IoBackend: native_uring not supported on this platform, falling back to ev");
+#endif /* __linux__ */
+    }
+
+    if (strBackend == "uring")
+    {
+        LOG4_WARN("IoBackend: \"uring\" backend has been removed, falling back to ev");
+    }
+
+    if (strBackend == "dpdk")
+    {
+#ifdef THUNDER_IO_DPDK
+        DpdkIoBackend* pBackend = new DpdkIoBackend();
+        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: dpdk initialized successfully");
+            return true;
+        }
+        delete pBackend;
+        LOG4_WARN("IoBackend: dpdk init failed, falling back to ev");
+#else
+        LOG4_WARN("IoBackend: dpdk requested but THUNDER_IO_DPDK not compiled, falling back to ev");
 #endif
     }
 
@@ -605,6 +630,24 @@ void Labor::AddSignal(int iSignum,signal_callback callback)
 	ev_signal* watcher = new ev_signal();
 	watcher->data = static_cast<void*>(this);
 	AddEvent(watcher,callback,iSignum);
+	m_signalWatchers.push_back(watcher);
+}
+
+void Labor::StopAllSignals()
+{
+	// fork 后子进程中调用（在 ev_loop_destroy 之前）。
+	// 1. 清零 libev 全局 signals[].head，防止 Worker 新 loop AddSignal 时看到悬空的父进程 watcher，
+	//    导致 !w->next == false 而跳过 sigaction 安装。
+	// 2. Unblock 父进程通过 signalfd 阻塞的信号，使 Worker 的 sigaction 能正常接收信号。
+	// 注意：不调用 ev_signal_stop，避免修改父子共享的 signalfd（否则破坏父进程 SIGCHLD 处理）。
+	ev_signal_reset_after_fork();
+
+	sigset_t unblockSet;
+	sigemptyset(&unblockSet);
+	for (auto* w : m_signalWatchers)
+		sigaddset(&unblockSet, w->signum);
+	sigprocmask(SIG_UNBLOCK, &unblockSet, nullptr);
+	m_signalWatchers.clear();
 }
 
 void Labor::AddStep(Step* pStep,ev_tstamp dTimeout,timer_callback callback)

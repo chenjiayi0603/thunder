@@ -1,4 +1,0 @@
-backend,protocol,connections,rps,latency_ms
-ev,http,10,55140.05 143.69us
-ev,http,100,164051.53 649.32us
-ev,http,500,177856.97 4.80ms

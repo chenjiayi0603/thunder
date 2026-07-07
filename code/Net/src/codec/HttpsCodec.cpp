@@ -4,6 +4,8 @@
  * @brief    HTTPS codec（当前复用 HttpCodec 编解码，TLS 传输层待扩展）
  ******************************************************************************/
 #include "HttpsCodec.hpp"
+#include <cstring>
+#include <cstdlib>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -76,12 +78,14 @@ E_CODEC_STATUS HttpsCodec::Decode(tagConnectionAttr* pConn, MsgHead& oMsgHead, M
             return CODEC_STATUS_ERR;
         }
     }
-    // 4) 从 SSL 引擎持续提取解密后的明文，再复用 HttpCodec 解析 HTTP 消息。
+    // 4) 从 SSL 引擎持续提取解密后的明文。
     E_CODEC_STATUS eDrainStatus = DrainSslToPlain(pState);
     if (eDrainStatus == CODEC_STATUS_ERR)
     {
         return CODEC_STATUS_ERR;
     }
+
+    // 4) TLS 解密后的明文直接走 HttpCodec::Decode (内部 Fast-Path → http_parser 回退)
     return HttpCodec::Decode(&pState->oPlainRecvBuff, oMsgHead, oMsgBody);
 }
 
@@ -246,6 +250,8 @@ HttpsCodec::TlsConnState* HttpsCodec::EnsureState(tagConnectionAttr* pConn)
             {
                 LOG4_ERROR("load server cert/key failed(cert=%s,key=%s)", m_oConfig.strServerCertFile.c_str(), m_oConfig.strServerKeyFile.c_str());
             }
+            // 设置兼容的加密套件, 避免 "no shared cipher" 握手失败
+            SSL_CTX_set_cipher_list(pNew->pCtx, "DEFAULT:!aNULL:!eNULL:!MD5:!3DES");
         }
         if (!m_oConfig.strServerCaFile.empty())
         {

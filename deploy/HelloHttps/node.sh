@@ -5,7 +5,7 @@ set -euo pipefail
 SERVER_HOME="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 SERVER_BIN="${SERVER_HOME}/bin"
-SERVER_CONF="${SERVER_HOME}/conf"
+SERVER_CONF="${THUNDER_CONF_DIR:-${SERVER_HOME}/conf}"
 SERVER_LIB="${SERVER_HOME}/lib"
 SERVER_3LIB="${SERVER_HOME}/../3lib"
 _THUNDER_DEPLOY="$(cd "${SERVER_HOME}/.." && pwd)"
@@ -16,7 +16,7 @@ LOG_FILE="${SERVER_HOME}/log/${SCRIPT_NAME}.log"
 
 BIN_NAME="HelloHttps"
 JSON_NAME="HelloHttps.json"
-CONF_FILE="${SERVER_CONF}/${JSON_NAME}"
+CONF_FILE="${THUNDER_CONF_FILE:-${SERVER_CONF}/${JSON_NAME}}"
 
 usage() {
   echo "Usage: ./node.sh start|stop|restart|reload|worker"
@@ -54,6 +54,11 @@ do_stop() {
   if [[ -n "${pid}" ]]; then
     echo "kill ${pid}    ${BIN_NAME}"
     kill "${pid}"
+    local i
+    for i in $(seq 1 25); do
+      kill -0 "${pid}" 2>/dev/null || { echo "${BIN_NAME}(${pid}) stopped."; return 0; }
+      sleep 1
+    done
   else
     echo "no running process found for ${BIN_NAME}"
   fi

@@ -29,7 +29,7 @@ namespace util
      */
     char *url_encode(const char *s, int len, int *new_length)
     {
-        register int x, y;
+        int x, y;
         unsigned char *str;
 
         str = (unsigned char *)malloc(3 * len + 1);

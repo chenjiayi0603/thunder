@@ -103,7 +103,7 @@ bool DbOperator::AddDbField(const std::string& strFieldName, uint32 uiFieldValue
                 const std::string& strColAs, bool bGroupBy, bool bOrderBy, const std::string& strOrder)
 {
     char szFieldValue[64] = {0};
-    snprintf(szFieldValue, sizeof(szFieldValue), "%lu", uiFieldValue);
+    snprintf(szFieldValue, sizeof(szFieldValue), "%u", uiFieldValue);
     return(AddDbField(strFieldName, (std::string)szFieldValue, DataMem::INT, strColAs, bGroupBy, bOrderBy, strOrder));
 }
 

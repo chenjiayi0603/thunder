@@ -141,7 +141,7 @@ time_t util::TimeStr2time_t(const char *szTimeStr)
             case '7':
             case '8':
             case '9':
-                sprintf(szTime, "%s%c", szTime, szTimeStr[i]);
+                { size_t n = strlen(szTime); szTime[n] = szTimeStr[i]; szTime[n+1] = '\0'; }
                 break;
             default:
                 return 0;

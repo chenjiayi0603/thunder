@@ -48,6 +48,9 @@ public:
            int iMgrToWorkerEfd = -1, int iWorkerToMgrEfd = -1);
     ~Worker();
     void Run();
+    // === 优雅重启排空 ===
+    void EnterDrainMode();
+    bool IsDrainComplete();
     /**
 	* @brief libev异步回调函数
 	* @param loop libev循环对象
@@ -113,7 +116,7 @@ public:
     /**
 	* @brief 注册步骤
 	*/
-    virtual bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0)override;
+    virtual bool RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout = 0.0)override;
     /**
    	* @brief 删除步骤
    	*/
@@ -129,7 +132,7 @@ public:
     /**
 	* @brief 注册RedisStep
 	*/
-    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep)override;
+    virtual bool RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep)override;
     /**
 	* @brief 重置定时器
 	*/
@@ -141,8 +144,8 @@ public:
     virtual Session* GetSession(const std::string& strSessionId, const std::string& strSessionClass = "net::Session")override;
     virtual bool ExecStep(uint32 uiCallerStepSeq, uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
     virtual bool ExecStep(uint32 uiCalledStepSeq,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
-    virtual bool ExecStep(Step* pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
-    virtual bool ExecStep(RedisStep* pStep)override;
+    virtual bool ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout = 0.0,int iErrno = 0, const std::string& strErrMsg = "", const std::string& strErrShow = "")override;
+    virtual bool ExecStep(std::unique_ptr<RedisStep> pStep)override;
     virtual Step* GetStep(uint32 uiStepSeq)override;
     /**
 	* @brief 线程池等跨线程完成时校验 Step 是否仍由本 Worker 持有，避免晚到 resume UAF
@@ -193,8 +196,8 @@ public:
     virtual bool SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string& strIdentify)override;
     virtual bool AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)override;
 	virtual bool AutoSend(const std::string& strHost, int iPort, const std::string& strUrlPath, const HttpMsg& oHttpMsg, Step* pStep = nullptr)override;
-    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword = "")override;
-    virtual bool AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep)override;
+    virtual bool AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword = "")override;
+    virtual bool AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep)override;
     virtual bool AutoConnect(const std::string& strIdentify)override;
     virtual bool HttpsGet(const std::string & strUrl, std::string & strResponse,const std::string& strUserpwd = "",
     		util::CurlClient::eContentType eType = util::CurlClient::eContentType_none,const std::string& strCaPath= "",int iPort = 0)override;
@@ -210,6 +213,10 @@ public:
     virtual bool SendToClient(const std::string& strIdentify,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
     virtual bool SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgHead,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
     virtual bool SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode=200,const std::unordered_map<std::string,std::string> &heads = std::unordered_map<std::string,std::string>())override;
+    // Fast-path: 绕过 protobuf HttpMsg 构建 + vsnprintf 编码, 直接写 HTTP 字节流
+    virtual bool SendToClientFast(const tagMsgShell& stMsgShell,
+                                   const char* body, size_t bodyLen,
+                                   int statusCode = 200) override;
     virtual bool BuildMsgBody(MsgHead& oMsgHead,MsgBody &oMsgBody,const google::protobuf::Message &message,const std::string& additional = "",const std::string& strTargetId = "",bool boJsonBody=false)override;
 	virtual bool ParseMsgBody(const MsgBody& oInMsgBody,google::protobuf::Message &message)override;
 	/**
@@ -242,8 +249,8 @@ public:
 	virtual void DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)override;
 	virtual void GetNodeIdentifys(const std::string& strNodeType, std::vector<std::string>& strIdentifys)override;
 	virtual bool HasNodeIdentifys(const std::string& strNodeType)override;
-	virtual bool RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)override;
-	virtual bool RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)override;
+	virtual bool RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep)override;
+	virtual bool RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep)override;
 	virtual bool AddRedisContextAddr(const std::string& strHost, int iPort, redisAsyncContext* ctx)override;
 	virtual void DelRedisContextAddr(const redisAsyncContext* ctx)override;
 	virtual void AddInnerFd(const tagMsgShell& stMsgShell) override;
@@ -300,6 +307,10 @@ protected:
      */
     bool HandleIoReadComplete(tagConnectionAttr* pConn, int result);
     bool HandleIoWriteComplete(tagConnectionAttr* pConn, int result);
+    /** @brief send_zc NOTIF 完成（buffer 可复用），驱动回收/重提/倒 pWaitForSendBuff */
+    bool HandleIoWriteNotifComplete(tagConnectionAttr* pConn, int result);
+    /** @brief 写完成后的回收/重提/倒 pWaitForSendBuff 决策（Write 与 WriteNotif 共用） */
+    bool FinishWriteAndDrain(tagConnectionAttr* pConn, int result);
     /**
      * @brief 读完成后继续调度消息，并在有部分写时重新提交写
      */
@@ -336,7 +347,8 @@ public:
     void UnloadSoAndDeleteCmd(int iCmd);
     void LoadModule(util::CJsonObject& oModuleConf,bool boForce=false);
     void ReloadModule(util::CJsonObject& oUrlPaths);
-    tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
+    void LuaReloadScript(util::CJsonObject& oModuleConf);  // #129: 只重载 Lua 脚本，不动 SO
+    tagModule* LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject& oConf = util::CJsonObject());
     void UnloadSoAndDeleteModule(const std::string& strModulePath);
 private:
     int32 m_iC2SListenFd = -1;
@@ -349,6 +361,15 @@ private:
     int m_iMgrToWorkerEfd = -1;                      ///< 通知 Worker
     int m_iWorkerToMgrEfd = -1;                      ///< 通知 Manager
     ev_io* m_pShmReadWatcher = nullptr;              ///< libev watcher for shm eventfd
+
+    // 抽取 SendTo 中 write-to-fd 逻辑为公共 helper, 供 Fast path 复用
+    bool FlushSendBuf(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter);
+
+    // 优雅重启排空状态
+    std::atomic<bool> m_bDraining{false};
+    std::atomic<bool> m_bAccepting{true};
+    time_t m_drainStartTime = 0;
+    static constexpr int DRAIN_GRACE_PERIOD = 30;
 };
 
 } /* namespace net */

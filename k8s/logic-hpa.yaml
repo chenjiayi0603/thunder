@@ -1,0 +1,44 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: thunder-logic
+  namespace: thunder
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: thunder-logic
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # CPU 连续 5 分钟低于 70% 才缩容，防抖动
+      policies:
+      - type: Pods
+        value: 1                        # 每次最多缩 1 个 Pod
+        periodSeconds: 60               # 每分钟最多缩 1 次
+    scaleUp:
+      stabilizationWindowSeconds: 60    # 扩容评估窗口 1 分钟
+      policies:
+      - type: Pods
+        value: 1                        # 每次最多扩 1 个 Pod
+        periodSeconds: 60               # 每分钟最多扩 1 次
+
+# 为什么 Logic 配 HPA 而 Hello/Interface 不配:
+#   Logic: S2S 内部调用, 连接数固定, 无状态, CPU 与请求量正相关 → HPA 合适
+#   Hello/Interface: 海量客户端连接, 瓶颈是连接数非 CPU, 缩容导致客户端断连 → HPA 不合适
+
+# 验证 HPA 生效:
+#   kubectl apply -f k8s/logic-hpa.yaml
+#   kubectl get hpa -n thunder -w           # 观察 CPU% 和副本数变化
+#   kubectl top pods -n thunder -l app=thunder-logic   # 查看单个 Pod CPU
+#   # 压测触发扩容:
+#   for i in $(seq 1 10000); do curl -s http://<logic-pod>:16068/... &; done
+#   # 观察缩容: 停止压测, 等 5 分钟 → CPU < 70% → 缩回 1 个

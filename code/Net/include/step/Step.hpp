@@ -131,7 +131,7 @@ public:
      * @param dTimeout 超时时间
      * @return 是否登记成功
      */
-    bool RegisterCallback(Step* pStep, ev_tstamp dTimeout = 0.0);
+    bool RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout = 0.0);
     /**
      * @brief 删除回调步骤
      * @note 在RegisterCallback()成功，但执行pStep->Start()失败时被调用

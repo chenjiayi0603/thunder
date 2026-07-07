@@ -32,6 +32,8 @@
 #include "codec/ClientMsgCodec.hpp"
 #include "codec/HttpCodec.hpp"
 #include "codec/HttpsCodec.hpp"
+#include "codec/WssCodec.hpp"
+#include "codec/WssCodec.hpp"
 #include "codec/CodecWebSocketJson.hpp"
 #include "codec/CodecWebSocketPb.hpp"
 #include "codec/CodecWebSocketPbApp.hpp"
@@ -54,6 +56,7 @@
 #include "cmd/sys_cmd/CmdReloadSo.hpp"
 #include "cmd/sys_cmd/CmdReloadModule.hpp"
 #include "cmd/sys_cmd/CmdReloadCustom.hpp"
+#include "cmd/sys_cmd/CmdReloadLua.hpp"
 #include "storage/RedisOperator.hpp"
 
 namespace net
@@ -284,17 +287,54 @@ Worker::~Worker()
 void Worker::Run()
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    ev_run (m_loop, 0);
+
+    // 通知 Manager: Worker 初始化完成 (优雅重启时 Manager 等待此消息)
+    {
+        MsgHead oHead;
+        MsgBody oBody;
+        oHead.set_cmd(CMD_WORKER_READY);
+        oHead.set_seq(GetSequence());
+        SendToParent(oHead, oBody);
+    }
+
+    while (true)
+    {
+        ev_run(m_loop, EVRUN_ONCE);
+
+        // 排空模式: 等所有在途请求完成后退出
+        if (m_bDraining)
+        {
+            if (IsDrainComplete())
+            {
+                LOG4_INFO("Worker %d drain complete, exiting", iWorkerIndex);
+                break;
+            }
+            if (time(nullptr) - m_drainStartTime > DRAIN_GRACE_PERIOD)
+            {
+                LOG4_WARN("Worker %d drain timeout %ds, force exit",
+                          iWorkerIndex, DRAIN_GRACE_PERIOD);
+                break;
+            }
+        }
+    }
+
+    // 排空完成或超时 → 优雅退出。Manager 通过 WIFEXITED 识别为优雅退出, 不重复重启。
+    LOG4_INFO("Worker %d drain loop done, destroy and exit", iWorkerIndex);
+    Destroy();
+    exit(0);
 }
 
 void Worker::OnTerminated(struct ev_signal* watcher)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
     int iSignum = watcher->signum;
+    // 先从 libev 注销再释放 —— 不再立即 exit, 否则 loop 仍引用已 delete 的 watcher (UAF)。
+    ev_signal_stop(m_loop, watcher);
     delete watcher;
-    Destroy();
-    LOG4_FATAL("terminated by signal %d!", iSignum);
-    exit(iSignum);
+    LOG4_INFO("Worker %d got signal %d, graceful draining (grace %ds)",
+              iWorkerIndex, iSignum, DRAIN_GRACE_PERIOD);
+    // 不立即 Destroy/exit: 进入排空, 由 Run() 主循环等在途请求完成后再优雅退出。
+    EnterDrainMode();
 }
 
 bool Worker::CheckParent()// 向父进程上报当前进程负载
@@ -575,24 +615,96 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
         if (iReadLen > 0)
         {
             iRecvByte += iReadLen;
+
+            // === Receive Fast-Path ===
+            // 对于 /hello/raw 等简单请求, 直接从 raw buffer 提取 path 并响应,
+            // 绕过 HttpCodec::Decode (http-parser 回调 + protobuf HttpMsg 构造)
+            // 和 Dispose → AnyMessage → SendToClient 全流程.
+            if (pConn->eCodecType == util::CODEC_HTTP
+                && pConn->pRecvBuff->ReadableBytes() > 0)
+            {
+                const char* raw = pConn->pRecvBuff->GetRawReadBuffer();
+                size_t rawLen = pConn->pRecvBuff->ReadableBytes();
+
+                // 快速匹配: 检查请求行是否为 "POST /hello/raw HTTP/..."
+                static const char kRawPrefix[] = "POST /hello/raw ";
+                if (rawLen > sizeof(kRawPrefix) - 1
+                    && memcmp(raw, kRawPrefix, sizeof(kRawPrefix) - 1) == 0)
+                {
+                    // 用 memchr 跳行找 \r\n\r\n (header 结束标记), 避免逐字节扫描
+                    const char* bodyStart = nullptr;
+                    const char* p = raw + 4;
+                    const char* end = raw + rawLen;
+                    while (p + 3 < end)
+                    {
+                        p = static_cast<const char*>(memchr(p, '\r', end - p));
+                        if (!p) break;
+                        if (p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+                        {
+                            bodyStart = p + 4;
+                            break;
+                        }
+                        ++p;
+                    }
+                    if (bodyStart != nullptr)
+                    {
+                        // 快速解析 Content-Length (避免 memmem 需要 _GNU_SOURCE)
+                        size_t contentLen = 0;
+                        const char* cl = nullptr;
+                        size_t hdrLen = static_cast<size_t>(bodyStart - raw);
+                        for (size_t i = 0; i + 15 < hdrLen; ++i)
+                        {
+                            if ((raw[i] == 'C' || raw[i] == 'c')
+                                && memcmp(raw + i + 1, "ontent-Length:", 14) == 0)
+                            {
+                                cl = raw + i;
+                                break;
+                            }
+                        }
+                        if (cl != nullptr)
+                        {
+                            cl += 15;  // skip "Content-Length:"
+                            while (*cl == ' ' || *cl == '\t') ++cl;
+                            contentLen = static_cast<size_t>(strtoul(cl, nullptr, 10));
+                        }
+                        size_t totalLen = static_cast<size_t>(bodyStart - raw) + contentLen;
+                        if (totalLen <= rawLen)
+                        {
+                            // 完整的请求, 直接 fast-response
+                            static const char kRespBody[] = "{\"code\":0,\"msg\":\"ok\"}";
+                            pConn->pRecvBuff->AdvanceReadIndex(totalLen);
+                            tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                            SendToClientFast(stMsgShell, kRespBody, sizeof(kRespBody) - 1);
+                            goto read_again;
+                        }
+                        // 请求不完整, 回退到正常 decode 流程继续读
+                    }
+                }
+            }
+            // === Receive Fast-Path End ===
+
             MsgHead oInMsgHead, oOutMsgHead;
             MsgBody oInMsgBody, oOutMsgBody;
-            auto codec_iter = mapCodec.find(conn_iter->second->eCodecType);
-            if (codec_iter == mapCodec.end())
+            ThunderCodec* pCodec = pConn->pCodec;
+            if (!pCodec)
             {
-                LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
-                DestroyConnect(conn_iter);
-                return(false);
+                auto codec_iter = mapCodec.find(conn_iter->second->eCodecType);
+                if (codec_iter == mapCodec.end())
+                {
+                    LOG4_ERROR("no codec found for %d!", conn_iter->second->eCodecType);
+                    DestroyConnect(conn_iter);
+                    return(false);
+                }
+                pCodec = codec_iter->second.get();
             }
-            ThunderCodec* pCodec = codec_iter->second.get();
-            while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
-                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+            while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
+                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
             {
                 oInMsgHead.Clear();
                 oInMsgBody.Clear();
 
                 E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
-                if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+                if ((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pSendBuff->ReadableBytes() > 0)
                 {
                     conn_iter->second->pSendBuff->WriteFD(pData->iFd, iErrno);
                     conn_iter->second->pSendBuff->Compact(8192);
@@ -754,7 +866,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         HttpMsg oOutHttpMsg;
                         if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
                         {
-                            if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                            if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                             {
                             	pConn->dKeepAlive = 10;   // 未带KeepAlive参数的http协议，默认10秒钟关闭
                                 LOG4_TRACE("set dKeepAlive(%lf)",pConn->dKeepAlive);
@@ -793,7 +905,7 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
 										AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
 									}
                             	}
-                                else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                                else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                                                 && pConn->dKeepAlive > 0)
                                 {
                                     // 无 Keep-Alive / Connection 时，上面未刷新定时器；accept 阶段 1s 检测仍在，
@@ -934,9 +1046,41 @@ bool Worker::FdTransfer()
 
 bool Worker::AcceptClientConn(int iFd)
 {
+    if (m_bDraining || !m_bAccepting)
+    {
+        return true;  // 排空模式: 不accept新连接, SO_REUSEPORT下内核分发给其他Worker
+    }
+
+    int iAcceptFd = -1;
+
+    if (m_pIoBackend)
+    {
+        // 策略模式: 通过 IoBackend accept（内置 SetSocketOpt）
+        net::PeerAddr peerAddr;
+        iAcceptFd = m_pIoBackend->Accept(iFd, peerAddr);
+        if (iAcceptFd < 0)
+        {
+            if (errno != EAGAIN)
+            {
+                LOG4_ERROR("IoBackend Accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            }
+            return false;
+        }
+        tagConnectionAttr* pConnAttr = CreateAcceptFdAttr(iAcceptFd, GetFdSequence(), m_eAccessCodec);
+        if (pConnAttr == nullptr)
+        {
+            LOG4_ERROR("CreateAcceptFdAttr failed for client fd %d", iAcceptFd);
+            m_pIoBackend->CloseFd(iAcceptFd);
+            return false;
+        }
+        snprintf(pConnAttr->szRemoteAddr, sizeof(pConnAttr->szRemoteAddr), "%s", peerAddr.ip);
+        return true;
+    }
+
+    // Legacy 路径: 直接内核 socket API
     struct sockaddr_in stClientAddr;
     socklen_t clientAddrSize = sizeof(stClientAddr);
-    int iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
+    iAcceptFd = accept(iFd, (struct sockaddr*) &stClientAddr, &clientAddrSize);
     if (iAcceptFd < 0)
     {
         LOG4_ERROR("accept error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
@@ -1075,6 +1219,10 @@ void Worker::OnIoComplete(int fd, uint32_t seq, IoOp op, int result, void* user_
     {
         pWorker->HandleIoReadComplete(pConn, result);
     }
+    else if (op == IoOp::WriteNotif)
+    {
+        pWorker->HandleIoWriteNotifComplete(pConn, result);
+    }
     else
     {
         pWorker->HandleIoWriteComplete(pConn, result);
@@ -1124,6 +1272,82 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
 
     iRecvByte += result;
 
+    // === Receive Fast-Path (IoBackend) ===
+    if (pConn->eCodecType == util::CODEC_HTTP
+        && pConn->pRecvBuff->ReadableBytes() > 0)
+    {
+        const char* raw = pConn->pRecvBuff->GetRawReadBuffer();
+        size_t rawLen = pConn->pRecvBuff->ReadableBytes();
+
+        // 快速匹配: 检查请求行是否为 "POST /hello/raw HTTP/..."
+        static const char kRawPrefix[] = "POST /hello/raw ";
+        if (rawLen > sizeof(kRawPrefix) - 1
+            && memcmp(raw, kRawPrefix, sizeof(kRawPrefix) - 1) == 0)
+        {
+            // 用 memchr 跳行找 \r\n\r\n (header 结束标记)
+            const char* bodyStart = nullptr;
+            const char* p = raw + 4;
+            const char* end = raw + rawLen;
+            while (p + 3 < end)
+            {
+                p = static_cast<const char*>(memchr(p, '\r', end - p));
+                if (!p) break;
+                if (p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+                {
+                    bodyStart = p + 4;
+                    break;
+                }
+                ++p;
+            }
+            if (bodyStart != nullptr)
+            {
+                // 快速解析 Content-Length
+                size_t contentLen = 0;
+                const char* cl = nullptr;
+                size_t hdrLen = static_cast<size_t>(bodyStart - raw);
+                for (size_t i = 0; i + 15 < hdrLen; ++i)
+                {
+                    if ((raw[i] == 'C' || raw[i] == 'c')
+                        && memcmp(raw + i + 1, "ontent-Length:", 14) == 0)
+                    {
+                        cl = raw + i;
+                        break;
+                    }
+                }
+                if (cl != nullptr)
+                {
+                    cl += 15;  // skip "Content-Length:"
+                    while (*cl == ' ' || *cl == '\t') ++cl;
+                    contentLen = static_cast<size_t>(strtoul(cl, nullptr, 10));
+                }
+                size_t totalLen = static_cast<size_t>(bodyStart - raw) + contentLen;
+                if (totalLen <= rawLen)
+                {
+                    // 完整的请求, 直接 fast-response
+                    static const char kRespBody[] = "{\"code\":0,\"msg\":\"ok\"}";
+                    pConn->pRecvBuff->AdvanceReadIndex(totalLen);
+                    tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                    SendToClientFast(stMsgShell, kRespBody, sizeof(kRespBody) - 1);
+
+                    // IoBackend: re-submit read for keep-alive (same as normal path end)
+                    if (m_pIoBackend)
+                    {
+                        auto recheck = mapFdAttr.find(iFd);
+                        if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+                            && !m_pIoBackend->HasPending(iFd))
+                        {
+                            pConn->pRecvBuff->Compact(8192);
+                            pConn->pRecvBuff->EnsureWritableBytes(8192);
+                            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
+                        }
+                    }
+                    return true;
+                }
+                // 请求不完整, 回退到正常 decode 流程
+            }
+        }
+    }
+    // === Receive Fast-Path End ===
     MsgHead oInMsgHead, oOutMsgHead;
     MsgBody oInMsgBody, oOutMsgBody;
     auto codec_iter = mapCodec.find(pConn->eCodecType);
@@ -1135,8 +1359,8 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
     }
     ThunderCodec* pCodec = codec_iter->second.get();
 
-    while ((pConn->eCodecType == util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() > 0)
-            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+    while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
+            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
     {
         oInMsgHead.Clear();
         oInMsgBody.Clear();
@@ -1144,7 +1368,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
         E_CODEC_STATUS eCodecStatus = pCodec->Decode(pConn, oInMsgHead, oInMsgBody);
         // HTTPS TLS 握手要求同步双向 I/O：SSL_do_handshake 产生的响应数据
         // 必须立即写出，否则下一轮 Read/WantRead 循环会被异步 SubmitWrite 中断。
-        if (pConn->eCodecType == util::CODEC_HTTPS && pConn->pSendBuff->ReadableBytes() > 0)
+        if ((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pSendBuff->ReadableBytes() > 0)
         {
             int iErrno = 0;
             pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
@@ -1201,7 +1425,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                     {
                         if (m_pIoBackend)
                         {
-                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                            m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
                         }
                         else
                         {
@@ -1223,7 +1447,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                 HttpMsg oInHttpMsg, oOutHttpMsg;
                 if (oInHttpMsg.ParseFromString(oInMsgBody.body()))
                 {
-                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                    if (util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                     {
                         pConn->dKeepAlive = 10;
                     }
@@ -1253,7 +1477,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                                 AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
                             }
                         }
-                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType)
+                        else if ((util::CODEC_HTTP == pConn->eCodecType || util::CODEC_HTTPS == pConn->eCodecType || util::CODEC_WSS == pConn->eCodecType)
                                         && pConn->dKeepAlive > 0)
                         {
                             AddIoTimeout(pConn->iFd, pConn->ulSeq, pConn, pConn->dKeepAlive);
@@ -1285,7 +1509,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                         {
                             if (m_pIoBackend)
                             {
-                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+                                m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
                             }
                             else
                             {
@@ -1329,7 +1553,7 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
         {
             pConn->pRecvBuff->Compact(8192);
             pConn->pRecvBuff->EnsureWritableBytes(8192);
-            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
         }
     }
 
@@ -1349,6 +1573,37 @@ bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
     }
 
     pConn->dActiveTime = ev_now(m_loop);
+    return FinishWriteAndDrain(pConn, result);
+}
+
+bool Worker::HandleIoWriteNotifComplete(tagConnectionAttr* pConn, int result)
+{
+    LOG4_TRACE("%s()", __FUNCTION__);
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = mapFdAttr.find(iFd);
+    if (attr_iter == mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    pConn->dActiveTime = ev_now(m_loop);
+    return FinishWriteAndDrain(pConn, result);
+}
+
+bool Worker::FinishWriteAndDrain(tagConnectionAttr* pConn, int result)
+{
+    int iFd = pConn->iFd;
+    uint32 ulSeq = pConn->ulSeq;
+
+    auto attr_iter = mapFdAttr.find(iFd);
+    if (attr_iter == mapFdAttr.end() || attr_iter->second->ulSeq != ulSeq)
+    {
+        return false;
+    }
+
+    // 写完成回调到达。buffer 生命周期由 shared_ptr 保护，无需手动计数。
 
     if (result < 0)
     {
@@ -1357,7 +1612,7 @@ bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
             return true;
         }
@@ -1376,7 +1631,7 @@ bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
         {
             if (m_pIoBackend)
             {
-                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff.get(), ulSeq);
+                m_pIoBackend->SubmitWrite(iFd, pConn->pSendBuff, ulSeq);
             }
         }
         else
@@ -1414,7 +1669,7 @@ bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
                     if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq)
                     {
                         pConn->pRecvBuff->Compact(8192);
-                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff.get(), ulSeq);
+                        m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
                     }
                 }
             }
@@ -1424,6 +1679,12 @@ bool Worker::HandleIoWriteComplete(tagConnectionAttr* pConn, int result)
             }
         }
     }
+
+    // buffer 生命周期由 shared_ptr 保护：DestroyConnect 释放 mapFdAttr 中的
+    // shared_ptr 后，若后端 PendingOp 仍持有引用，buffer 不会析构。NOTIF CQE
+    // 到达后 PendingOp 被 delete，最后一个 shared_ptr 释放 → buffer 安全析构。
+    // 无需 pendingDestroy/zcInFlight 手动补刀。
+
     return true;
 }
 
@@ -1836,27 +2097,29 @@ const std::string& Worker::GetWorkerIdentify()
 	return(m_strWorkerIdentify);
 }
 
-bool Worker::RegisterCallback(Step* pStep, ev_tstamp dTimeout)
+bool Worker::RegisterCallback(std::unique_ptr<Step> pStep, ev_tstamp dTimeout)
 {
-    LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep, dTimeout);
-    if (pStep == nullptr)return(false);
+    LOG4_TRACE("%s(Step* 0x%p, lifetime %lf)", __FUNCTION__, pStep.get(), dTimeout);
+    if (!pStep) return(false);
     if (pStep->IsRegistered())  // 已注册过，不必重复注册，不过认为本次注册成功
     {
-        LOG4_WARN("Step(0x%p,seq %u) registered already.",pStep,pStep->GetSequence());
+        LOG4_WARN("Step(0x%p,seq %u) registered already.",pStep.get(),pStep->GetSequence());
+        (void)pStep.release(); // 已由 mapCallbackStep 持有，防止 unique_ptr 析构误删
         return(true);
     }
     pStep->SetRegistered();
     pStep->SetActiveTime(ev_now(m_loop));
-    auto ret = mapCallbackStep.insert(std::make_pair(pStep->GetSequence(), std::unique_ptr<Step>(pStep)));
+    Step* pRawStep = pStep.get();
+    auto ret = mapCallbackStep.insert(std::make_pair(pRawStep->GetSequence(), std::move(pStep)));
     if (ret.second)
     {
-    	AddStep(pStep,dTimeout,StepTimeoutCallback);
-        LOG4_TRACE("Step(0x%p,seq %u, active_time %lf, lifetime %lf) register successful.",pStep,
-                        pStep->GetSequence(), pStep->GetActiveTime(), pStep->GetTimeout());
+    	AddStep(pRawStep,dTimeout,StepTimeoutCallback);
+        LOG4_TRACE("Step(0x%p,seq %u, active_time %lf, lifetime %lf) register successful.",pRawStep,
+                        pRawStep->GetSequence(), pRawStep->GetActiveTime(), pRawStep->GetTimeout());
     }
     else
     {
-        LOG4_WARN("Step(seq %u) register failed.",pStep->GetSequence());
+        LOG4_WARN("Step(seq %u) register failed.",pRawStep->GetSequence());
     }
     return(ret.second);
 }
@@ -1960,10 +2223,10 @@ void Worker::DeleteCallback(Session* pSession)
     }
 }
 
-bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s()", __FUNCTION__);
-    if (pRedisStep == nullptr)
+    if (!pRedisStep)
     {
         return(false);
     }
@@ -1992,6 +2255,8 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     ev_timer_start (m_loop, timeout_watcher);
     */
 
+    RedisStep* pRawStep = pRedisStep.get();
+
     auto iter = mapRedisAttr.find((redisAsyncContext*)pRedisContext);
     if (iter == mapRedisAttr.end())
     {
@@ -2002,10 +2267,10 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
     {
         if (iter->second->bIsReady)
         {
-        	if (pRedisStep->RedisCmd()->GetRawCmds().size() > 0)
+        	if (pRawStep->RedisCmd()->GetRawCmds().size() > 0)
         	{//批处理指令
         		bool boPush(false);
-				const std::vector<std::string>& rawCmds = pRedisStep->RedisCmd()->GetRawCmds();
+				const std::vector<std::string>& rawCmds = pRawStep->RedisCmd()->GetRawCmds();
 				for(int i = 0;i < rawCmds.size() ;++i)
 				{
 					int status = redisAsyncCommand((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, rawCmds[i].c_str());
@@ -2015,9 +2280,9 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 						if (!boPush)
 						{
 							boPush = true;
-							iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+							iter->second->listData.push_back(std::move(pRedisStep));
 						}
-						pRedisStep->AddSendCounter();
+						pRawStep->AddSendCounter();
 					}
 					else
 					{
@@ -2029,13 +2294,13 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
         	else
         	{//一般指令
         		int status;
-				size_t args_size = pRedisStep->GetRedisCmd()->GetCmdArguments().size() + 1;
+				size_t args_size = pRawStep->GetRedisCmd()->GetCmdArguments().size() + 1;
 				const char* argv[args_size];
 				size_t arglen[args_size];
-				argv[0] = pRedisStep->GetRedisCmd()->GetCmd().c_str();
-				arglen[0] = pRedisStep->GetRedisCmd()->GetCmd().size();
-				std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRedisStep->GetRedisCmd()->GetCmdArguments().begin();
-				for (size_t i = 1; c_iter != pRedisStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
+				argv[0] = pRawStep->GetRedisCmd()->GetCmd().c_str();
+				arglen[0] = pRawStep->GetRedisCmd()->GetCmd().size();
+				std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRawStep->GetRedisCmd()->GetCmdArguments().begin();
+				for (size_t i = 1; c_iter != pRawStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
 				{
 					argv[i] = c_iter->first.c_str();
 					arglen[i] = c_iter->first.size();
@@ -2043,9 +2308,9 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				status = redisAsyncCommandArgv((redisAsyncContext*)pRedisContext, RedisCmdCallback, nullptr, args_size, argv, arglen);
 				if (status == REDIS_OK)
 				{
-					LOG4_TRACE("succeed in sending redis cmd: %s", pRedisStep->GetRedisCmd()->ToString().c_str());
-					iter->second->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
-					pRedisStep->AddSendCounter();
+					LOG4_TRACE("succeed in sending redis cmd: %s", pRawStep->GetRedisCmd()->ToString().c_str());
+					iter->second->listData.push_back(std::move(pRedisStep));
+					pRawStep->AddSendCounter();
 					return(true);
 				}
 				else
@@ -2065,7 +2330,7 @@ bool Worker::RegisterCallback(const redisAsyncContext* pRedisContext, RedisStep*
 				return(false);
 			}
             LOG4_TRACE("listWaitData.push_back()");
-            iter->second->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+            iter->second->listWaitData.push_back(std::move(pRedisStep));
             return(true);
         }
     }
@@ -2222,7 +2487,7 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     m_oCustomConf.Get("cat_log_system", m_bCatLogSystem);
 
     {
-        int iPoolThreads = 4;
+        int iPoolThreads = 0;  // 0 = auto（hardware_concurrency()/2）
         (void)m_oCustomConf.Get("worker_thread_pool_size", iPoolThreads);
         if (iPoolThreads < 1)
         {
@@ -2248,29 +2513,48 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
     mapCodec.insert(std::make_pair(util::CODEC_PB_INTERNAL, std::make_unique<ProtoCodec>(util::CODEC_PB_INTERNAL)));
     mapCodec.insert(std::make_pair(util::CODEC_HTTP, std::make_unique<HttpCodec>(util::CODEC_HTTP)));
     mapCodec.insert(std::make_pair(util::CODEC_HTTPS, std::make_unique<HttpsCodec>()));
+    // 从配置文件中读取 HTTPS 证书 (需要 "https" 段: server_cert, server_key)
+    {
+        auto* pHttpsCodec = static_cast<HttpsCodec*>(mapCodec[util::CODEC_HTTPS].get());
+        HttpsCodec::HttpsConfig oHttpsConfig;
+        std::string strCertFile, strKeyFile;
+        if (m_oCurrentConf["https"].Get("server_cert", strCertFile) && !strCertFile.empty())
+        {
+            oHttpsConfig.strServerCertFile = strCertFile;
+        }
+        if (m_oCurrentConf["https"].Get("server_key", strKeyFile) && !strKeyFile.empty())
+        {
+            oHttpsConfig.strServerKeyFile = strKeyFile;
+        }
+        m_oCurrentConf["https"].Get("verify_client", oHttpsConfig.bServerVerifyClient);
+        pHttpsCodec->SetHttpsConfig(oHttpsConfig);
+    }
+
+    mapCodec.insert(std::make_pair(util::CODEC_WSS, std::make_unique<WssCodec>()));
+    // 从配置文件中读取 WSS 证书 (与 https 共用 "wss" 段或回退到 "https" 段)
+    {
+        auto* pWssCodec = static_cast<WssCodec*>(mapCodec[util::CODEC_WSS].get());
+        WssCodec::SslConfig oSslConfig;
+        std::string strCertFile, strKeyFile;
+        if (m_oCurrentConf["wss"].Get("server_cert", strCertFile) && !strCertFile.empty())
+        {
+            oSslConfig.strServerCertFile = strCertFile;
+        }
+        else { std::string s; if (m_oCurrentConf["https"].Get("server_cert", s) && !s.empty()) oSslConfig.strServerCertFile = s; }
+        if (m_oCurrentConf["wss"].Get("server_key", strKeyFile) && !strKeyFile.empty())
+        {
+            oSslConfig.strServerKeyFile = strKeyFile;
+        }
+        else { std::string s; if (m_oCurrentConf["https"].Get("server_key", s) && !s.empty()) oSslConfig.strServerKeyFile = s; }
+        m_oCurrentConf["wss"].Get("verify_client", oSslConfig.bServerVerifyClient);
+        pWssCodec->SetSslConfig(oSslConfig);
+    }
     mapCodec.insert(std::make_pair(util::CODEC_PRIVATE, std::make_unique<ClientMsgCodec>(util::CODEC_PRIVATE)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_JS, std::make_unique<CodecWebSocketJson>(util::CODEC_WEBSOCKET_EX_JS)));
     mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB, std::make_unique<CodecWebSocketPb>(util::CODEC_WEBSOCKET_EX_PB)));
 	mapCodec.insert(std::make_pair(util::CODEC_TEST, std::make_unique<CodecCustom>(util::CODEC_TEST)));
 	mapCodec.insert(std::make_pair(util::CODEC_APP, std::make_unique<AppMsgCodec>(util::CODEC_APP)));
 	mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, std::make_unique<CodecWebSocketPbApp>(util::CODEC_WEBSOCKET_EX_PB_APP)));
-    {
-        auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
-        if (codec_iter != mapCodec.end())
-        {
-            HttpsCodec::HttpsConfig oHttpsCfg;
-            util::CJsonObject oHttpsConf = m_oCustomConf["https"];
-            util::CJsonObject oHttpsServer = oHttpsConf["server"];
-            util::CJsonObject oHttpsClient = oHttpsConf["client"];
-            oHttpsServer.Get("cert_file", oHttpsCfg.strServerCertFile);
-            oHttpsServer.Get("key_file", oHttpsCfg.strServerKeyFile);
-            oHttpsServer.Get("ca_file", oHttpsCfg.strServerCaFile);
-            oHttpsServer.Get("verify_client", oHttpsCfg.bServerVerifyClient);
-            oHttpsClient.Get("ca_file", oHttpsCfg.strClientCaFile);
-            oHttpsClient.Get("verify_peer", oHttpsCfg.bClientVerifyPeer);
-            static_cast<HttpsCodec*>(codec_iter->second.get())->SetHttpsConfig(oHttpsCfg);
-        }
-    }
 
     bool bCpuAffinity = false;
 	oJsonConf.Get("cpu_affinity", bCpuAffinity);
@@ -2301,7 +2585,6 @@ bool Worker::CreateEvents()
     signal(SIGPIPE, SIG_IGN);
     // 注册信号事件
     AddSignal(SIGINT,TerminatedCallback);
-	AddSignal(SIGKILL,TerminatedCallback);
 	AddSignal(SIGTERM,TerminatedCallback);
 
     AddPeriodicTaskEvent();
@@ -2343,38 +2626,58 @@ bool Worker::InitClientListener()
         LOG4_WARN("%s() worker_reuseport enabled but access host/port invalid.", __FUNCTION__);
         return true;
     }
+
     int iFd = -1;
-    struct sockaddr addr;
-    if (!HostPort2SockAddr(m_strHostForClient, m_iPortForClient, addr, iFd, true))
+
+    if (m_pIoBackend)
     {
-        LOG4_ERROR("HostPort2SockAddr error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        return false;
+        // 策略模式: 通过 IoBackend 创建监听 socket（支持 ev/io_uring/DPDK）
+        iFd = m_pIoBackend->CreateListenSocket(m_strHostForClient.c_str(),
+                                                static_cast<uint16_t>(m_iPortForClient),
+                                                true /*SO_REUSEPORT*/, m_iClientSocketBackLog);
+        if (iFd < 0)
+        {
+            LOG4_ERROR("IoBackend CreateListenSocket failed for %s:%d",
+                       m_strHostForClient.c_str(), m_iPortForClient);
+            return false;
+        }
     }
+    else
+    {
+        // Legacy 路径: 直接内核 socket API
+        struct sockaddr addr;
+        if (!HostPort2SockAddr(m_strHostForClient, m_iPortForClient, addr, iFd, true))
+        {
+            LOG4_ERROR("HostPort2SockAddr error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            return false;
+        }
 #ifdef SO_REUSEPORT
-    int iOpt = 1;
-    if (setsockopt(iFd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
-    {
-        LOG4_ERROR("setsockopt SO_REUSEPORT error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
-    }
+        int iOpt = 1;
+        if (setsockopt(iFd, SOL_SOCKET, SO_REUSEPORT, &iOpt, sizeof(iOpt)) != 0)
+        {
+            LOG4_ERROR("setsockopt SO_REUSEPORT error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
 #else
-    LOG4_ERROR("SO_REUSEPORT not supported by current build environment.");
-    close(iFd);
-    return false;
+        LOG4_ERROR("SO_REUSEPORT not supported by current build environment.");
+        close(iFd);
+        return false;
 #endif
-    if (bind(iFd, &addr, sizeof(addr)) < 0)
-    {
-        LOG4_ERROR("bind error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
+        if (bind(iFd, &addr, sizeof(addr)) < 0)
+        {
+            LOG4_ERROR("bind error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
+        if (listen(iFd, m_iClientSocketBackLog) < 0)
+        {
+            LOG4_ERROR("listen error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
+            close(iFd);
+            return false;
+        }
     }
-    if (listen(iFd, m_iClientSocketBackLog) < 0)
-    {
-        LOG4_ERROR("listen error %d: %s", errno, strerror_r(errno, m_pErrBuff, gc_iErrBuffLen));
-        close(iFd);
-        return false;
-    }
+
     m_iC2SListenFd = iFd;
     tagConnectionAttr* pListenConn = CreateFdAttr(m_iC2SListenFd, GetFdSequence(), util::CODEC_PB_INTERNAL);
     if (pListenConn == nullptr)
@@ -2389,8 +2692,9 @@ bool Worker::InitClientListener()
         DestroyConnect(mapFdAttr.find(m_iC2SListenFd));
         return false;
     }
-    LOG4_INFO("%s() worker_%d listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d)",
-              __FUNCTION__, iWorkerIndex, m_iPortForClient, m_strHostForClient.c_str(), m_iClientSocketBackLog);
+    LOG4_INFO("%s() worker_%d listen on iPortForClient(%d) strHostForClient(%s) iClientSocketBackLog(%d) backend=%s",
+              __FUNCTION__, iWorkerIndex, m_iPortForClient, m_strHostForClient.c_str(), m_iClientSocketBackLog,
+              m_pIoBackend ? m_pIoBackend->Name() : "legacy");
     return true;
 }
 
@@ -2414,6 +2718,7 @@ void Worker::PreloadCmd()
 
     AddCmd(new CmdReloadSo(),CMD_REQ_RELOAD_SO);
     AddCmd(new CmdReloadModule(),CMD_REQ_RELOAD_MODULE);
+    AddCmd(new CmdReloadLua(), CMD_REQ_RELOAD_LUA);
     AddCmd(new CmdReloadCustom(),CMD_REQ_SET_NODE_CUSTOM_CONFIG);
 }
 
@@ -2609,13 +2914,13 @@ bool Worker::HasNodeIdentifys(const std::string& strNodeType)
 	return (identifySet.size() > 0);
 }
 
-bool Worker::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const std::string& strIdentify, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
     int iPosIpPortSeparator = strIdentify.find(',');
     if (iPosIpPortSeparator != std::string::npos)
     {
-        return(AutoRedisCluster(strIdentify,pRedisStep));
+        return(AutoRedisCluster(strIdentify, std::move(pRedisStep)));
     }
     iPosIpPortSeparator = strIdentify.find(':');//"192.168.11.71:29000@abcab"
     if (iPosIpPortSeparator == std::string::npos)
@@ -2648,16 +2953,16 @@ bool Worker::RegisterCallback(const std::string& strIdentify, RedisStep* pRedisS
     if (ctx_iter != mapRedisContext.end())
     {
         LOG4_TRACE("redis context %s", szIdentify);
-        return(RegisterCallback(ctx_iter->second, pRedisStep));
+        return(RegisterCallback(ctx_iter->second, std::move(pRedisStep)));
     }
     else
     {
         LOG4_TRACE("AutoRedisCmd(%s, %d, %s)", strHost.c_str(), iPort,strPassword.c_str());
-        return(AutoRedisCmd(strHost, iPort, pRedisStep,strPassword));
+        return(AutoRedisCmd(strHost, iPort, std::move(pRedisStep),strPassword));
     }
 }
 
-bool Worker::RegisterCallback(const std::string& strHost, int iPort, RedisStep* pRedisStep)
+bool Worker::RegisterCallback(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     char szIdentify[32] = {0};
@@ -2666,12 +2971,12 @@ bool Worker::RegisterCallback(const std::string& strHost, int iPort, RedisStep* 
     if (ctx_iter != mapRedisContext.end())
     {
         LOG4_TRACE("redis context %s", szIdentify);
-        return(RegisterCallback(ctx_iter->second, pRedisStep));
+        return(RegisterCallback(ctx_iter->second, std::move(pRedisStep)));
     }
     else
     {
         LOG4_TRACE("GetLabor()->AutoRedisCmd(%s, %d)", strHost.c_str(), iPort);
-        return(AutoRedisCmd(strHost, iPort, pRedisStep));
+        return(AutoRedisCmd(strHost, iPort, std::move(pRedisStep)));
     }
 }
 
@@ -2694,7 +2999,7 @@ void Worker::DelRedisContextAddr(const redisAsyncContext* ctx)
 
 bool Worker::RegisterCallback(MysqlStep* pMysqlStep)
 {
-#define MYSQL_CONTEXT_MAP_MAX_SIZE (10)
+#define MYSQL_CONTEXT_MAP_MAX_SIZE (80)
 	LOG4_TRACE("%s pMysqlStep(%s, %d)", __FUNCTION__, pMysqlStep->m_strHost.c_str(), pMysqlStep->m_iPort);
 	if (pMysqlStep->CurTask().size() == 0 || pMysqlStep->m_strHost.size() == 0 || 0 == pMysqlStep->m_iPort)//MysqlStep必须含mysql访问任务
     {
@@ -2707,12 +3012,14 @@ bool Worker::RegisterCallback(MysqlStep* pMysqlStep)
 	if (ctx_iter != mapMysqlContext.end())//每个连接符对应最多10连接
 	{
 		if (ctx_iter->second.second.size() < MYSQL_CONTEXT_MAP_MAX_SIZE)
-		{//new conn
+		{//池未满：创建新连接并加入池
 			return(AutoMysqlCmd(pMysqlStep));
 		}
+		// 池已满（>= 50）：round-robin 复用已有连接
+		// ctx_iter->second.first = 轮转迭代器, second.second = set<MysqlAsyncConn*>
 		util::MysqlAsyncConn* pMysqlConn(nullptr);
 		if (ctx_iter->second.first == ctx_iter->second.second.end())
-		{
+		{//绕回开头
 			ctx_iter->second.first = ctx_iter->second.second.begin();
 		}
 		pMysqlConn = *ctx_iter->second.first;
@@ -2945,28 +3252,164 @@ bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const MsgHead& oInMsgH
 
 bool Worker::SendToClient(const tagMsgShell& stInMsgShell,const HttpMsg& oInHttpMsg,const std::string &strBody,int iCode,const std::unordered_map<std::string,std::string> &heads)
 {
-    // auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
-    // if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
-    // {
-    //     LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
-    //               __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
-    //     return false;
-    // }
+    auto conn_iter = mapFdAttr.find(stInMsgShell.iFd);
+    if (conn_iter == mapFdAttr.end() || conn_iter->second->ulSeq != stInMsgShell.ulSeq)
+    {
+        LOG4_WARN("%s() skip response to stale shell(fd %d, seq %u)",
+                  __FUNCTION__, stInMsgShell.iFd, stInMsgShell.ulSeq);
+        return false;
+    }
 
-	HttpMsg oHttpMsg;
-	for(const auto & iter:heads)
+    auto* pConn = conn_iter->second.get();
+    bool bUseArena = false;
+    auto* ctx = static_cast<net::HttpConnContext*>(pConn->pProtoCtx);
+
+    // 全链路 Arena: recv 侧已在 HttpCodec::Decode 中 Reset, send 侧从同一 Arena 分配响应 HttpMsg
+    HttpMsg oHttpMsg_fallback;  // 栈分配, 仅当 Arena 不可用时使用
+    HttpMsg* pHttpMsg = nullptr;
+    if (ctx != nullptr)
+    {
+        pHttpMsg = google::protobuf::Arena::Create<HttpMsg>(&ctx->arena);
+        bUseArena = true;
+    }
+    else
+    {
+        pHttpMsg = &oHttpMsg_fallback;
+    }
+
+    for(const auto & iter:heads)
+    {
+        pHttpMsg->mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>(iter.first, iter.second));
+    }
+    pHttpMsg->set_type(HTTP_RESPONSE);
+    pHttpMsg->set_status_code(iCode);
+    pHttpMsg->set_http_major(oInHttpMsg.http_major());
+    pHttpMsg->set_http_minor(oInHttpMsg.http_minor());
+    pHttpMsg->set_body(strBody);
+    bool bRet = SendTo(stInMsgShell, *pHttpMsg);
+    if (!bRet)
+    {
+        LOG4_ERROR("send to tagMsgShell(fd %d, seq %u) error!", stInMsgShell.iFd, stInMsgShell.ulSeq);
+    }
+
+    if (bUseArena)
+    {
+        ctx->arena.Reset();  // 请求完成, Arena 游标归零
+    }
+    return bRet;
+}
+
+// Fast-path: 绕过 protobuf HttpMsg + HttpCodec::Encode(vsnprintf) 全流程
+// 直接将预格式化的 HTTP 响应写入 send buffer
+// HTTPS: 需要通过 SSL 加密, 走正常 EncodeByConnectionCodec 路径
+bool Worker::SendToClientFast(const tagMsgShell& stMsgShell,
+                               const char* body, size_t bodyLen,
+                               int statusCode)
+{
+	auto conn_iter = mapFdAttr.find(stMsgShell.iFd);
+	if (conn_iter == mapFdAttr.end())
 	{
-		oHttpMsg.mutable_headers()->insert(google::protobuf::MapPair<std::string, std::string>(iter.first, iter.second));
-	}
-	oHttpMsg.set_type(HTTP_RESPONSE);
-	oHttpMsg.set_status_code(iCode);
-	oHttpMsg.set_http_major(oInHttpMsg.http_major());
-	oHttpMsg.set_http_minor(oInHttpMsg.http_minor());
-	oHttpMsg.set_body(strBody);
-	if (!SendTo(stInMsgShell, oHttpMsg))
-	{
-		LOG4_ERROR("send to tagMsgShell(fd %d, seq %u) error!", stInMsgShell.iFd, stInMsgShell.ulSeq);
+		LOG4_ERROR("SendToClientFast: no fd %d", stMsgShell.iFd);
 		return false;
+	}
+	auto& pConn = conn_iter->second;
+	if (pConn->ulSeq != stMsgShell.ulSeq || pConn->iFd != stMsgShell.iFd)
+	{
+		LOG4_ERROR("SendToClientFast: seq mismatch fd %d", stMsgShell.iFd);
+		return false;
+	}
+
+	// HTTPS: 必须经过 SSL 加密, 走正常 SendToClient 路径
+	if (pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+	{
+		auto codec_iter = mapCodec.find(pConn->eCodecType);
+		if (codec_iter == mapCodec.end())
+		{
+			LOG4_ERROR("SendToClientFast: no HTTPS codec for fd %d", stMsgShell.iFd);
+			return false;
+		}
+		HttpMsg oOutHttpMsg;
+		oOutHttpMsg.set_type(HTTP_RESPONSE);
+		oOutHttpMsg.set_status_code(statusCode);
+		oOutHttpMsg.set_http_major(1);
+		oOutHttpMsg.set_http_minor(1);
+		oOutHttpMsg.set_body(std::string(body, bodyLen));
+		(*oOutHttpMsg.mutable_headers())["Connection"] = "keep-alive";
+		(*oOutHttpMsg.mutable_headers())["Content-Type"] = "application/json;charset=UTF-8";
+
+		E_CODEC_STATUS eStatus = EncodeByConnectionCodec(pConn.get(), codec_iter->second.get(),
+		        oOutHttpMsg, pConn->pSendBuff.get());
+		if (eStatus != CODEC_STATUS_OK)
+		{
+			LOG4_ERROR("SendToClientFast: HTTPS encode failed for fd %d", stMsgShell.iFd);
+			return false;
+		}
+		return FlushSendBuf(conn_iter);
+	}
+
+	// 预格式化 HTTP 响应 (替代 HttpCodec::Encode 的 5+ 次 vsnprintf)
+	char header[256];
+	int n = snprintf(header, sizeof(header),
+		"HTTP/1.1 %d OK\r\n"
+		"Connection: keep-alive\r\n"
+		"Content-Type: application/json;charset=UTF-8\r\n"
+		"Content-Length: %zu\r\n\r\n",
+		statusCode, bodyLen);
+	if (n < 0 || static_cast<size_t>(n) >= sizeof(header))
+	{
+		LOG4_ERROR("SendToClientFast: header buffer overflow");
+		return false;
+	}
+
+	pConn->pSendBuff->Write(header, static_cast<size_t>(n));
+	pConn->pSendBuff->Write(body, bodyLen);
+
+	return FlushSendBuf(conn_iter);
+}
+
+// 抽取自 SendTo: write-to-fd 公共逻辑 (EV_WRITE 检测 / WriteFD / EAGAIN / 部分写入)
+bool Worker::FlushSendBuf(std::unordered_map<int32, std::unique_ptr<tagConnectionAttr>>::iterator conn_iter)
+{
+	auto& pConn = conn_iter->second;
+	if (pConn->pSendBuff->ReadableBytes() == 0)
+	{
+		return true;
+	}
+	++iSendNum;
+	if ((pConn->pIoWatcher != nullptr) && (pConn->pIoWatcher->events & EV_WRITE))
+	{
+		// 正在监听写事件(send buffer 满), 等 EV_WRITE 回调再写
+		return true;
+	}
+	int iErrno = 0;
+	int iNeedWriteLen = static_cast<int>(pConn->pSendBuff->ReadableBytes());
+	int iWriteLen = pConn->pSendBuff->WriteFD(pConn->iFd, iErrno);
+	pConn->pSendBuff->Compact(8192);
+	if (iWriteLen < 0)
+	{
+		if (EAGAIN != iErrno && EINTR != iErrno)
+		{
+			LOG4_ERROR("send to fd %d error %d: %s", pConn->iFd, iErrno,
+			           strerror_r(iErrno, m_pErrBuff, gc_iErrBuffLen));
+			DestroyConnect(conn_iter);
+			return false;
+		}
+		// EAGAIN/EINTR: buffer 满, 注册写事件等待下次可写
+		pConn->dActiveTime = ev_now(m_loop);
+		AddIoWriteEvent(pConn.get());
+	}
+	else if (iWriteLen > 0)
+	{
+		iSendByte += iWriteLen;
+		pConn->dActiveTime = ev_now(m_loop);
+		if (iWriteLen == iNeedWriteLen)
+		{
+			RemoveIoWriteEvent(pConn.get());
+		}
+		else
+		{
+			AddIoWriteEvent(pConn.get());
+		}
 	}
 	return true;
 }
@@ -3004,22 +3447,22 @@ bool Worker::SendToCallback(net::Session* pSession,const DataMem::MemOperate* pM
 		LOG4_ERROR("pSession empty!");
 		return false;
 	}
-	StepNode* pStep = new StepNode(pMemOper,pStepParam);
+	auto pStep = std::make_unique<StepNode>(pMemOper,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,nodeTypeOrIdentify,strModFactor,uiCmd);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3034,10 +3477,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3046,22 +3488,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(pMemOper,pStepParam);
+	auto pStep = std::make_unique<StepNode>(pMemOper,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,nodeType,strModFactor,uiCmd);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3069,22 +3511,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,const DataMem::MemOperate* pMe
 
 bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const std::string &nodeType,const std::string & strModFactor,StepParam* pStepParam)
 {
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,nodeType,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3099,10 +3541,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3111,22 +3552,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,nodeTypeOrIdentify,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3134,22 +3575,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 
 bool Worker::SendToCallback(net::Session* pSession,uint32 uiCmd,const std::string &strBody,SessionCallback callback,const tagMsgShell& stMsgShell,const std::string & strModFactor,StepParam* pStepParam)
 {
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pSession,stMsgShell,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3164,10 +3605,9 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	}
 	if (!pUpperStep->IsRegistered())
 	{
-		if (!RegisterCallback(pUpperStep))
+		if (!RegisterCallback(std::unique_ptr<Step>(pUpperStep)))
 		{
 			LOG4_ERROR("RegisterCallback(pUpperStep) error!");
-			delete pUpperStep; pUpperStep = nullptr;
 			return(false);
 		}
 		LOG4_TRACE("RegisterCallback(pUpperStep)");
@@ -3176,22 +3616,22 @@ bool Worker::SendToCallback(net::Step* pUpperStep,uint32 uiCmd,const std::string
 	{
 		pUpperStep->DelayDel();//已经注册的需要延迟删除
 	}
-	StepNode* pStep = new StepNode(strBody,pStepParam);
+	auto pStep = std::make_unique<StepNode>(strBody,pStepParam);
+    StepNode* pRawStep = pStep.get();
     if (pStep == nullptr)
     {
         LOG4_ERROR("new StepNode() error!");
         return(false);
     }
-    if (!RegisterCallback(pStep))
+    if (!RegisterCallback(std::move(pStep)))
     {
         LOG4_ERROR("RegisterCallback(pStep) error!");
-        delete pStep; pStep = nullptr;
         return(false);
     }
-    pStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
-    if (net::STATUS_CMD_RUNNING != pStep->Emit(ERR_OK))
+    pRawStep->SetCallBack(callback,pUpperStep,stMsgShell,uiCmd,strModFactor);
+    if (net::STATUS_CMD_RUNNING != pRawStep->Emit(ERR_OK))
     {
-        DeleteCallback(pStep);
+        DeleteCallback(pRawStep);
         return(false);
     }
     return true;
@@ -3651,28 +4091,35 @@ bool Worker::SendTo(const tagMsgShell& stMsgShell, const HttpMsg& oHttpMsg, Step
     	tagConnectionAttr* pConn = conn_iter->second.get();
         if (pConn->ulSeq == stMsgShell.ulSeq && pConn->iFd == stMsgShell.iFd)
         {
-            auto codec_iter = mapCodec.find(pConn->eCodecType);
-            if (codec_iter == mapCodec.end())
+            // 优先使用连接缓存的 codec 指针 (CreateFdAttr 时已填入), 避免 hash 查找
+            ThunderCodec* pCodec = pConn->pCodec;
+            if (!pCodec)
             {
-                LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
-                DestroyConnect(conn_iter);
-                return(false);
+                auto codec_iter = mapCodec.find(pConn->eCodecType);
+                if (codec_iter == mapCodec.end())
+                {
+                    LOG4_ERROR("no codec found for %d!", pConn->eCodecType);
+                    DestroyConnect(conn_iter);
+                    return(false);
+                }
+                pCodec = codec_iter->second.get();
             }
             E_CODEC_STATUS eCodecStatus;
             if (util::CODEC_HTTP == conn_iter->second->eCodecType
                     || util::CODEC_HTTPS == conn_iter->second->eCodecType
+					|| util::CODEC_WSS == conn_iter->second->eCodecType
             		|| util::CODEC_WEBSOCKET_EX_PB == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_JS == conn_iter->second->eCodecType
 					|| util::CODEC_WEBSOCKET_EX_PB_APP == conn_iter->second->eCodecType)
 			{
 				if (pConn->pWaitForSendBuff->ReadableBytes() > 0)   // 正在连接
 				{
-					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pWaitForSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oHttpMsg, pConn->pWaitForSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pWaitForSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pWaitForSendBuff->ReadableBytes());
 				}
 				else
 				{
-					eCodecStatus = EncodeByConnectionCodec(pConn, codec_iter->second.get(), oHttpMsg, pConn->pSendBuff.get());
+					eCodecStatus = EncodeByConnectionCodec(pConn, pCodec, oHttpMsg, pConn->pSendBuff.get());
 					LOG4_TRACE("fd[%d], seq[%u], pSendBuff %zu", stMsgShell.iFd, stMsgShell.ulSeq, pConn->pSendBuff->ReadableBytes());
 				}
 			}
@@ -3795,7 +4242,7 @@ bool Worker::SetConnectIdentify(const tagMsgShell& stMsgShell, const std::string
 bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, const MsgBody& oMsgBody)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
-    int iPosIpPortSeparator = strIdentify.find(':');
+    size_t iPosIpPortSeparator = strIdentify.find(':');
     if (iPosIpPortSeparator == std::string::npos)
     {
     	LOG4_ERROR("iPosIpPortSeparator == std::string::npos");
@@ -3808,7 +4255,7 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 		return false;
 	}
 
-    int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    size_t iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
     // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
     // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
     if (iPosPortWorkerIndexSeparator == std::string::npos
@@ -3877,6 +4324,19 @@ bool Worker::AutoSend(const std::string& strIdentify, const MsgHead& oMsgHead, c
 	tagMsgShell stMsgShell(iFd,ulSeq);
 	AddMsgShell(strIdentify, stMsgShell);
 	connect(iFd, &addr, sizeof(addr));
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
 	return(true);
 }
 
@@ -3912,6 +4372,10 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
+	// #130: HTTPS outbound needs connect before encode (SSL client handshake requires connected fd)
+	if (eHttpCodecType == util::CODEC_HTTPS) {
+		connect(stMsgShell.iFd, &addr, sizeof(addr));
+	}
 	E_CODEC_STATUS eCodecStatus = EncodeByConnectionCodec(pConnAttr, codec_iter->second.get(), oHttpMsg, pConnAttr->pWaitForSendBuff.get());
 	if (CODEC_STATUS_OK == eCodecStatus)
 	{
@@ -3923,7 +4387,22 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(false);
 	}
-	connect(stMsgShell.iFd, &addr, sizeof(addr));
+	if (eHttpCodecType != util::CODEC_HTTPS) {
+		connect(stMsgShell.iFd, &addr, sizeof(addr));
+	}
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConnAttr))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConnAttr))");
+		DestroyConnect(mapFdAttr.find(stMsgShell.iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConnAttr))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConnAttr))");
+		DestroyConnect(mapFdAttr.find(stMsgShell.iFd));
+		return(false);
+	}
 	if (pStep != nullptr)
 	{
 		mapHttpAttr[stMsgShell.iFd].push_back(pStep->GetSequence());
@@ -3933,8 +4412,42 @@ bool Worker::AutoSend(const std::string& strHost, int iPort, const std::string& 
 
 }
 
-bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRedisStep,const std::string &strPassword)
+bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, std::unique_ptr<RedisStep> pRedisStep,const std::string &strPassword)
 {
+    // ── 连接复用：先查同 host:port 的已有连接 ──
+    char szIdentify[64] = {0};
+    snprintf(szIdentify, sizeof(szIdentify), "%s:%d", strHost.c_str(), iPort);
+    {
+        auto ctxIter = mapRedisContext.find(szIdentify);
+        if (ctxIter != mapRedisContext.end())
+        {
+            redisAsyncContext* existing = const_cast<redisAsyncContext*>(ctxIter->second);
+            auto attrIter = mapRedisAttr.find(existing);
+            if (attrIter != mapRedisAttr.end() && attrIter->second != nullptr)
+            {
+                LOG4_TRACE("%s() reuse connection %s", __FUNCTION__, szIdentify);
+                if (attrIter->second->bIsReady)
+                {
+                    // 连接已就绪，直接发送命令
+                    RedisStep* pRawStep = pRedisStep.get();
+                    pRawStep->SetRegistered();
+                    attrIter->second->listWaitData.push_back(std::move(pRedisStep));
+                    OnRedisConnect(existing, REDIS_OK);
+                    return(true);
+                }
+                else
+                {
+                    // 连接存在但尚未就绪，加入等待队列（连接就绪后会由 OnRedisConnect 处理）
+                    LOG4_TRACE("%s() connection %s exists but not ready, queue command", __FUNCTION__, szIdentify);
+                    RedisStep* pRawStep = pRedisStep.get();
+                    pRawStep->SetRegistered();
+                    attrIter->second->listWaitData.push_back(std::move(pRedisStep));
+                    return(true);
+                }
+            }
+        }
+    }
+
     LOG4_TRACE("%s() redisAsyncConnect(%s, %d)", __FUNCTION__, strHost.c_str(), iPort);
     redisAsyncContext *c = redisAsyncConnect(strHost.c_str(), iPort);
     if (c == nullptr)
@@ -3949,14 +4462,15 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
         return(false);
     }
     c->data = this;
+    RedisStep* pRawStep = pRedisStep.get();
+    pRawStep->SetRegistered();
     tagRedisAttr* pRedisAttr = new tagRedisAttr();
     pRedisAttr->ulSeq = GetFdSequence();
-    pRedisAttr->listWaitData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+    pRedisAttr->listWaitData.push_back(std::move(pRedisStep));
     if (strPassword.size() > 0)
     {
     	pRedisAttr->strPassword = strPassword;
     }
-    pRedisStep->SetRegistered();
     mapRedisAttr.insert(std::make_pair(c, pRedisAttr));
 //    LOG4_TRACE("redisLibevAttach(0x%p, 0x%p)", m_loop, c);
     redisLibevAttach(m_loop, c);
@@ -3969,14 +4483,15 @@ bool Worker::AutoRedisCmd(const std::string& strHost, int iPort, RedisStep* pRed
     return(true);
 }
 
-bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisStep)
+bool Worker::AutoRedisCluster(const std::string& sAddrList, std::unique_ptr<RedisStep> pRedisStep)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, sAddrList.c_str());
     //sAddrList "192.168.18.78:6000,192.168.18.78:6001,192.168.18.78:6002,192.168.18.78:6003,192.168.18.78:6004,192.168.18.78:6005"
-    if (sAddrList.size() == 0 || nullptr == pRedisStep)
+    if (sAddrList.size() == 0 || !pRedisStep)
     {
         return false;
     }
+    RedisStep* pRawStep = pRedisStep.get();
     redisClusterAsyncContext *acc(nullptr);
     std::unordered_map<std::string,redisClusterAsyncContext*>::iterator it = mapRedisClusterContext.find(sAddrList);
     if (it == mapRedisClusterContext.end())
@@ -4006,13 +4521,13 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         LOG4_TRACE("%s use redisClusterAsyncConnect(%s,%d)", __FUNCTION__,acc->cc->ip,acc->cc->port);
     }
     {//format cmd ,直接发送，在客户端api内已有发送缓存
-        size_t args_size = pRedisStep->GetRedisCmd()->GetCmdArguments().size() + 1;
+        size_t args_size = pRawStep->GetRedisCmd()->GetCmdArguments().size() + 1;
         const char* argv[args_size];
         size_t arglen[args_size];
-        argv[0] = pRedisStep->GetRedisCmd()->GetCmd().c_str();
-        arglen[0] = pRedisStep->GetRedisCmd()->GetCmd().size();
-        std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRedisStep->GetRedisCmd()->GetCmdArguments().begin();
-        for (size_t i = 1; c_iter != pRedisStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
+        argv[0] = pRawStep->GetRedisCmd()->GetCmd().c_str();
+        arglen[0] = pRawStep->GetRedisCmd()->GetCmd().size();
+        std::vector<std::pair<std::string, bool> >::const_iterator c_iter = pRawStep->GetRedisCmd()->GetCmdArguments().begin();
+        for (size_t i = 1; c_iter != pRawStep->GetRedisCmd()->GetCmdArguments().end(); ++c_iter, ++i)
         {
             argv[i] = c_iter->first.c_str();
             arglen[i] = c_iter->first.size();
@@ -4021,7 +4536,7 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
         int iCmdStatus = redisClusterAsyncCommandArgv(acc, RedisClusterCmdCallback, this, args_size, argv, arglen);
         if (iCmdStatus == REDIS_OK)
         {
-            LOG4_TRACE("succeed in sending redis cmd: %s",pRedisStep->GetRedisCmd()->ToString().c_str());
+            LOG4_TRACE("succeed in sending redis cmd: %s",pRawStep->GetRedisCmd()->ToString().c_str());
             tagRedisAttr* ptagRedisAttr(nullptr);
             std::unordered_map<redisClusterAsyncContext*, tagRedisAttr*>::iterator acc_iter = mapRedisClusterAttr.find(acc);
             if (acc_iter == mapRedisClusterAttr.end())
@@ -4034,19 +4549,25 @@ bool Worker::AutoRedisCluster(const std::string& sAddrList, RedisStep* pRedisSte
             {
                 ptagRedisAttr = acc_iter->second;
             }
-            ptagRedisAttr->listData.push_back(std::unique_ptr<RedisStep>(pRedisStep));
+            ptagRedisAttr->listData.push_back(std::move(pRedisStep));
         }
         else    // 命令执行失败，不再继续执行，等待下一次回调
         {
-            LOG4_WARN("failed in sending redis cmd: %s,err:%d,errstr:%s", pRedisStep->GetRedisCmd()->ToString().c_str(),acc->err,acc->errstr);
+            LOG4_WARN("failed in sending redis cmd: %s,err:%d,errstr:%s", pRawStep->GetRedisCmd()->ToString().c_str(),acc->err,acc->errstr);
             redisAsyncContext cobj;//对逻辑层只是抛出错误信息，不直接使用连接对象
             cobj.err = acc->err;
             cobj.errstr = acc->errstr;
             redisAsyncContext *c = &cobj;
-            pRedisStep->AddCallBackCounter();
-            if (STATUS_CMD_RUNNING != pRedisStep->Callback(c, acc->err, nullptr))
+            pRawStep->AddCallBackCounter();
+            E_CMD_STATUS eStatus = pRawStep->Callback(c, acc->err, nullptr);
+            if (eStatus != STATUS_CMD_RUNNING)
             {
-            	delete pRedisStep; pRedisStep = nullptr;
+                // unique_ptr destructor will delete pRedisStep on scope exit
+            }
+            else
+            {
+                // ownership transferred to callback, prevent double-free
+                (void)pRedisStep.release();
             }
         }
     }
@@ -4068,13 +4589,13 @@ bool Worker::AutoMysqlCmd(MysqlStep* pMysqlStep)
 bool Worker::AutoConnect(const std::string& strIdentify)
 {
     LOG4_TRACE("%s(%s)", __FUNCTION__, strIdentify.c_str());
-    int iPosIpPortSeparator = strIdentify.find(':');
+    size_t iPosIpPortSeparator = strIdentify.find(':');
     if (iPosIpPortSeparator == std::string::npos)
     {
     	LOG4_ERROR("iPosIpPortSeparator == std::string::npos");
         return(false);
     }
-    int iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
+    size_t iPosPortWorkerIndexSeparator = strIdentify.rfind('.');
     // 当 identify 不含 .worker_index 后缀时（如 "127.0.0.1:27009"），rfind('.')
     // 会错误命中 IP 中的点号。此时应把整个 "port" 段正确提取出来，并默认 worker_index=0。
     if (iPosPortWorkerIndexSeparator == std::string::npos
@@ -4126,6 +4647,19 @@ bool Worker::AutoConnect(const std::string& strIdentify)
 	tagMsgShell stMsgShell(iFd,ulSeq);
 	AddMsgShell(strIdentify, stMsgShell);
 	connect(iFd, &addr, sizeof(addr));
+	// IO events after connect: EV → idempotent RefreshEvent, io_uring → safe SubmitRead/SubmitWrite
+	if (!AddIoReadEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoReadEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
+	if (!AddIoWriteEvent(pConn))
+	{
+		LOG4_ERROR("if (!AddIoWriteEvent(pConn))");
+		DestroyConnect(mapFdAttr.find(iFd));
+		return(false);
+	}
 	return(true);
 }
 
@@ -4475,28 +5009,26 @@ bool Worker::ExecStep(uint32 uiStepSeq,int iErrno, const std::string& strErrMsg,
     return false;
 }
 
-bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
+bool Worker::ExecStep(std::unique_ptr<Step> pStep,ev_tstamp dTimeout,int iErrno, const std::string& strErrMsg, const std::string& strErrShow)
 {
 	if (!pStep)
 	{
 		LOG4_ERROR("%s() null pStep",__FUNCTION__);
 		return false;
 	}
-	if (!pStep->IsRegistered())
+	Step* pRawStep = pStep.get();
+	if (!RegisterCallback(std::move(pStep),dTimeout))
 	{
-		if (!RegisterCallback(pStep,dTimeout))
-		{
-			LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
-			delete pStep; pStep = nullptr;
-			return(false);
-		}
-		LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,pStep->GetSequence());
+		LOG4_ERROR("%s() RegisterCallback error",__FUNCTION__);
+		return(false);
 	}
-    LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,pStep->GetSequence());
-    auto step_iter = mapCallbackStep.find(pStep->GetSequence());
+	uint32 uiStepSeq = pRawStep->GetSequence();
+	LOG4_TRACE("%s(RegisterCallback[%u])", __FUNCTION__,uiStepSeq);
+    LOG4_TRACE("%s(uiStepSeq[%u])", __FUNCTION__,uiStepSeq);
+    auto step_iter = mapCallbackStep.find(uiStepSeq);
     if (step_iter == mapCallbackStep.end())
     {
-        LOG4_WARN("step %u is not in the callback list.", pStep->GetSequence());
+        LOG4_WARN("step %u is not in the callback list.", uiStepSeq);
     }
     else
     {
@@ -4508,9 +5040,9 @@ bool Worker::ExecStep(Step* pStep,ev_tstamp dTimeout,int iErrno, const std::stri
     return false;
 }
 
-bool Worker::ExecStep(RedisStep* pRedisStep)
+bool Worker::ExecStep(std::unique_ptr<RedisStep> pRedisStep)
 {
-	if (nullptr == pRedisStep)
+	if (!pRedisStep)
 	{
 		LOG4_ERROR("nullptr == pRedisStep");
 		return(false);
@@ -4518,10 +5050,10 @@ bool Worker::ExecStep(RedisStep* pRedisStep)
 	LOG4_TRACE("%s() pRedisStep",__FUNCTION__);
 	if (net::STATUS_CMD_RUNNING == pRedisStep->Emit(ERR_OK))//RedisStep注册在其Emit内实现
 	{
+		(void)pRedisStep.release(); // ownership transferred to framework via Emit
 		return(true);
 	}
 	LOG4_WARN("%s() pRedisStep",__FUNCTION__);
-	delete pRedisStep; pRedisStep = nullptr;
 	return false;
 }
 
@@ -4748,13 +5280,13 @@ void Worker::LoadModule(util::CJsonObject& oModuleConf,bool boForce)
                 module_iter = mapModule.find(strModulePath);
                 if (module_iter == mapModule.end())
                 {
-                    LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion);
+                    LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion, oModuleConf[i]);
                 }
                 else
                 {
                     if (iVersion != module_iter->second->iVersion || boForce)
                     {
-                        LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion);
+                        LoadSoAndGetModule(strModulePath, strSoPath, oModuleConf[i]("entrance_symbol"), iVersion, oModuleConf[i]);
                     }
                     else
                     {
@@ -4802,7 +5334,7 @@ void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
                 LOG4_WARN("%s not exist!", strSoPath.c_str());
                 continue;
             }
-            LoadSoAndGetModule(url_path, strSoPath, strSymbol, iVersion);
+            LoadSoAndGetModule(url_path, strSoPath, strSymbol, iVersion, module_iter->second->oConf);
         }
         else
         {
@@ -4811,25 +5343,66 @@ void Worker::ReloadModule(util::CJsonObject& oUrlPaths)
     }
 }
 
-tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion)
+void Worker::LuaReloadScript(util::CJsonObject& oModuleConf)
+{
+    // #129: 只重载 Lua 脚本（替换 VM 中的 handle_request），不碰 .so 和 dlclose
+    for (int i = 0; i < oModuleConf.GetArraySize(); ++i) {
+        std::string urlPath;
+        oModuleConf[i].Get("url_path", urlPath);
+        if (urlPath.empty()) continue;
+        auto it = mapModule.find(urlPath);
+        if (it == mapModule.end()) {
+            LOG4_WARN("LuaReloadScript: module %s not found", urlPath.c_str());
+            continue;
+        }
+        // 更新模块配置（tagModule.oConf + Module 实例内部 m_oModuleConf）
+        it->second->oConf = oModuleConf[i];
+        if (it->second->pModule) {
+            it->second->pModule->SetModuleConf(oModuleConf[i]);
+        }
+        // 虚方法调用 — 非 Lua 模块默认返回 false，无副作用
+        if (it->second->pModule && it->second->pModule->ReloadScript()) {
+            LOG4_INFO("LuaReloadScript: %s reloaded in-place (no SO restart)", urlPath.c_str());
+        } else {
+            LOG4_ERROR("LuaReloadScript: %s reload failed", urlPath.c_str());
+        }
+    }
+}
+
+tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject& oConf)
 {
     LOG4_TRACE("%s() strModulePath:%s", __FUNCTION__,strModulePath.c_str());
     UnloadSoAndDeleteModule(strModulePath);
     tagModule* pSo = nullptr;
-    void* pHandle = nullptr;
-    pHandle = dlopen(strSoPath.c_str(), RTLD_NOW|RTLD_NODELETE);
-    char* dlsym_error = dlerror();
-    if (dlsym_error)
-    {
-        LOG4_FATAL("cannot load dynamic lib %s!" , dlsym_error);
-        return(pSo);
+
+    // #128: 同 so_path 复用 shared_ptr，引用计数管理 dlclose
+    std::shared_ptr<void> soHandle;
+    for (auto& [url, m] : mapModule) {
+        if (m->strSoPath == strSoPath && m->pSoHandle) {
+            soHandle = m->pSoHandle;  // copy → refcount++
+            break;
+        }
     }
+    void* pHandle = nullptr;
+    if (!soHandle) {
+        pHandle = dlopen(strSoPath.c_str(), RTLD_NOW|RTLD_NODELETE);
+        if (!pHandle) {
+            LOG4_FATAL("cannot load dynamic lib %s: %s", strSoPath.c_str(), dlerror());
+            return nullptr;
+        }
+        soHandle = std::shared_ptr<void>(pHandle, [](void* h) {
+            if (h) dlclose(h);
+        });
+    } else {
+        pHandle = soHandle.get();
+    }
+
+    char* dlsym_error = dlerror();  // clear previous
     CreateCmd* pCreateModule = (CreateCmd*)dlsym(pHandle, strSymbol.c_str());
     dlsym_error = dlerror();
     if (dlsym_error)
     {
         LOG4_FATAL("dlsym error %s!" , dlsym_error);
-        dlclose(pHandle);
         return(pSo);
     }
     Module* pModule = (Module*)pCreateModule();
@@ -4840,12 +5413,14 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         pSo = new tagModule();
         if (pSo != nullptr)
         {
-            pSo->pSoHandle = pHandle;
+            pSo->pSoHandle = soHandle;  // shared_ptr copy → refcount++
             pSo->pModule.reset(pModule);
             pSo->strSoPath = strSoPath;
             pSo->strSymbol = strSymbol;
             pSo->iVersion = iVersion;
+            pSo->oConf = oConf;
             pSo->pModule->SetModulePath(strModulePath);
+            pSo->pModule->SetModuleConf(oConf);
             if (!pSo->pModule->Init())
             {
                 LOG4_FATAL("Module %s %s init error", strModulePath.c_str(), strSoPath.c_str());
@@ -4858,7 +5433,6 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         {
             LOG4_FATAL("new tagSo() error for %s!",strSoPath.c_str());
             delete pModule;
-            dlclose(pHandle);
         }
     }
     return(pSo);
@@ -4872,12 +5446,15 @@ void Worker::UnloadSoAndDeleteModule(const std::string& strModulePath)
     {
         LOG4_INFO("succeed in unloading(%s) strLoadTime(%s),strNowTime(%s)",
                 mapMoIt->second->strSoPath.c_str(),mapMoIt->second->strLoadTime.c_str(),util::GetCurrentTime(20).c_str());
-        void* pSoHandle = mapMoIt->second->pSoHandle;
-        if(pSoHandle)
-        {
-            LOG4_TRACE("%s() dlclose strModulePath:%s", __FUNCTION__, strModulePath.c_str());
-            dlclose(pSoHandle);
-            pSoHandle = nullptr;
+        // #128: 不手动 dlclose — shared_ptr 引用计数归零时自动调 dlclose
+        bool lastHandle = (mapMoIt->second->pSoHandle.use_count() <= 1);
+        if (lastHandle) {
+            LOG4_TRACE("%s() last handle for %s, dlclose will happen automatically",
+                       __FUNCTION__, mapMoIt->second->strSoPath.c_str());
+        } else {
+            LOG4_TRACE("%s() %d other module(s) still use %s, skipping dlclose",
+                       __FUNCTION__, mapMoIt->second->pSoHandle.use_count() - 1,
+                       mapMoIt->second->strSoPath.c_str());
         }
         mapModule.erase(mapMoIt);
     }
@@ -4909,7 +5486,7 @@ bool Worker::AddIoReadEvent(tagConnectionAttr* pConn)
         && pConn->iFd != iManagerControlFd)
     {
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -4953,7 +5530,7 @@ bool Worker::AddIoWriteEvent(tagConnectionAttr* pConn)
         && pConn->iFd != iManagerDataFd
         && pConn->iFd != iManagerControlFd)
     {
-        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff.get(), pConn->ulSeq);
+        return m_pIoBackend->SubmitWrite(pConn->iFd, pConn->pSendBuff, pConn->ulSeq);
     }
 
     // 原有 ev_io 路径
@@ -5007,7 +5584,7 @@ bool Worker::RemoveIoWriteEvent(tagConnectionAttr* pConn)
         // 会因 HasPending==true 而跳过，不会重复提交。
         pConn->pRecvBuff->Compact(8192);
         pConn->pRecvBuff->EnsureWritableBytes(8192);
-        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff.get(), pConn->ulSeq);
+        m_pIoBackend->SubmitRead(pConn->iFd, pConn->pRecvBuff, pConn->ulSeq);
         return true;
     }
 
@@ -5068,6 +5645,10 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
     }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        return static_cast<WssCodec*>(pCodec)->EncodeToConnection(pConn, oMsgHead, oMsgBody, pBuff);
+    }
     return pCodec->Encode(oMsgHead, oMsgBody, pBuff);
 }
 
@@ -5081,6 +5662,10 @@ E_CODEC_STATUS Worker::EncodeByConnectionCodec(tagConnectionAttr* pConn, Thunder
     if (pConn->eCodecType == util::CODEC_HTTPS)
     {
         return static_cast<HttpsCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
+    }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        return static_cast<WssCodec*>(pCodec)->EncodeToConnection(pConn, oHttpMsg, pBuff);
     }
     return pCodec->Encode(oHttpMsg, pBuff);
 }
@@ -5101,18 +5686,22 @@ tagConnectionAttr* Worker::CreateConnectFdAttr(int iFd, uint32 ulSeq,const std::
 		DestroyConnect(mapFdAttr.find(iFd));
 		return(nullptr);
 	}
-	if (!AddIoReadEvent(pConn))
+	if (!m_pIoBackend)  // EV mode: register watchers before connect (harmless for epoll)
 	{
-		LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
+		if (!AddIoReadEvent(pConn))
+		{
+			LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
+		if (!AddIoWriteEvent(pConn))
+		{
+			LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
 	}
-	if (!AddIoWriteEvent(pConn))
-	{
-		LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
-	}
+	// io_uring mode: IO events deferred to caller (after connect())
 	return pConn;
 }
 
@@ -5150,6 +5739,14 @@ tagConnectionAttr* Worker::CreateAcceptFdAttr(int iFd, uint32 ulSeq,util::E_CODE
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
         }
     }
+    else if (eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, true);
+        }
+    }
 	return(pConn);
 }
 
@@ -5162,13 +5759,19 @@ tagConnectionAttr* Worker::CreateFdAttr(int iFd, uint32 ulSeq, util::E_CODEC_TYP
     {
         auto pConnAttr = std::make_unique<tagConnectionAttr>();
         pConnAttr->iFd = iFd;
-        pConnAttr->pRecvBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pSendBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pWaitForSendBuff = std::make_unique<util::CBuffer>();
-        pConnAttr->pClientData = std::make_unique<util::CBuffer>();
+        pConnAttr->pRecvBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pSendBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pWaitForSendBuff = std::make_shared<util::CBuffer>();
+        pConnAttr->pClientData = std::make_shared<util::CBuffer>();
         pConnAttr->dActiveTime = ev_now(m_loop);
         pConnAttr->ulSeq = ulSeq;
         pConnAttr->eCodecType = eCodecType;
+        // 缓存 codec 指针, 避免每次 SendTo/Recv 都 mapCodec.find()
+        auto codec_cache_iter = mapCodec.find(eCodecType);
+        if (codec_cache_iter != mapCodec.end())
+        {
+            pConnAttr->pCodec = codec_cache_iter->second.get();
+        }
         tagConnectionAttr* pRaw = pConnAttr.get();
         mapFdAttr.insert(std::make_pair(iFd, std::move(pConnAttr)));
         return(pRaw);
@@ -5197,24 +5800,36 @@ tagConnectionAttr* Worker::CreateHttpFdAttr(int iFd, uint32 ulSeq,const std::str
 	}
 	pConnAttr->dKeepAlive = 10;
 	LOG4_TRACE("set dKeepAlive(%lf)",pConnAttr->dKeepAlive);
-	if (!AddIoReadEvent(pConnAttr))
+	if (!m_pIoBackend)  // EV mode: register watchers before connect (harmless for epoll)
 	{
-		LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
+		if (!AddIoReadEvent(pConnAttr))
+		{
+			LOG4_ERROR("if (!AddIoReadEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
+		if (!AddIoWriteEvent(pConnAttr))
+		{
+			LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
+			DestroyConnect(mapFdAttr.find(iFd));
+			return(nullptr);
+		}
 	}
-	if (!AddIoWriteEvent(pConnAttr))
-	{
-		LOG4_ERROR("if (!AddIoWriteEvent(conn_iter))");
-		DestroyConnect(mapFdAttr.find(iFd));
-		return(nullptr);
-	}
+	// io_uring mode: IO events deferred to caller (after connect())
     if (eCodecType == util::CODEC_HTTPS)
     {
         auto codec_iter = mapCodec.find(util::CODEC_HTTPS);
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
+        }
+    }
+    else if (eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->SetConnectionRole(iFd, false);
         }
     }
 	return pConnAttr;
@@ -5246,6 +5861,11 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
         return(false);
     }
     tagConnectionAttr* pConn = iter->second.get();
+
+    // buffer 为 shared_ptr：DestroyConnect 释放 mapFdAttr 中的引用后，
+    // 若后端 PendingOp 仍持有引用（内核 DMA 中），buffer 不会析构。
+    // NOTIF CQE 到达 → delete PendingOp → buffer 最后一个引用释放 → 安全析构。
+
     if (pConn->iFd == iManagerControlFd || pConn->iFd == iManagerDataFd)//收到父进程通信fd关闭
     {
     	LOG4_TRACE("refuse DestroyConnect on manager ipc fd(%u) control(%u) data(%u)",
@@ -5258,6 +5878,14 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
         if (codec_iter != mapCodec.end())
         {
             static_cast<HttpsCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
+        }
+    }
+    else if (pConn->eCodecType == util::CODEC_WSS)
+    {
+        auto codec_iter = mapCodec.find(util::CODEC_WSS);
+        if (codec_iter != mapCodec.end())
+        {
+            static_cast<WssCodec*>(codec_iter->second.get())->RemoveConnection(pConn->iFd);
         }
     }
     LOG4_TRACE("%s disconnect, identify %s", pConn->szRemoteAddr, pConn->strIdentify.c_str());
@@ -5288,17 +5916,38 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
 		LOG4_TRACE("%s() timer ev_timer_stop",__FUNCTION__);
 		DelEvent(pConn->pTimeWatcher,(tagIoWatcherData*)pConn->pTimeWatcher->data);
 	}
-    int iResult = close(iter->first);
-    if (0 != iResult)
+    // Close fd: IoBackend (CloseFd supports kernel close + mtcp_close), legacy path uses ::close
+    if (m_pIoBackend)
     {
-        if (EINTR != errno)
+        m_pIoBackend->CloseFd(iter->first);
+    }
+    else
+    {
+        int iResult = close(iter->first);
+        if (0 != iResult)
         {
-            LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            if (EINTR != errno)
+            {
+                LOG4_ERROR("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            }
+            else
+            {
+                LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            }
         }
-        else
+    }
+    // 清理协议专属上下文 (如 HTTP 的 HttpConnContext/Arena)
+    if (pConn->pProtoCtx != nullptr)
+    {
+        if (pConn->eCodecType == util::CODEC_HTTP || pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
         {
-            LOG4_TRACE("close(%d) failed, result %d and errno %d", pConn->iFd, iResult, errno);
+            delete static_cast<net::HttpConnContext*>(pConn->pProtoCtx);
         }
+        else if (pConn->eCodecType == util::CODEC_PB_INTERNAL)
+        {
+            delete static_cast<net::ProtoConnContext*>(pConn->pProtoCtx);
+        }
+        pConn->pProtoCtx = nullptr;
     }
     mapFdAttr.erase(iter);
     return(true);
@@ -5542,6 +6191,46 @@ bool Worker::Dispose(util::MysqlAsyncConn *c, util::SqlTask *task, MYSQL_RES *pR
 		LOG4_WARN("%s", m_pErrBuff);
 	}
 	return(true);
+}
+
+// ========== 优雅重启排空 ==========
+
+void Worker::EnterDrainMode()
+{
+    if (m_bDraining) return;  // 幂等: 重复信号不重置 grace 计时
+    LOG4_INFO("Worker %d entering drain mode", iWorkerIndex);
+    m_bDraining  = true;
+    m_bAccepting = false;
+    m_drainStartTime = time(nullptr);
+
+    // 设计说明 (issus #2/#3): 进入排空后不主动关闭或转移任何已有连接。
+    //   - 新连接: Manager 已先拉起新 Worker, SO_REUSEPORT 下内核把新连接分发给它
+    //     (AcceptClientConn 在 m_bDraining 时不再 accept), 本 Worker 不再接新活。
+    //   - 在途请求: 已有连接上正在处理的请求 (含协程挂起等 DB/S2S 的) 留在本 Worker
+    //     跑完并把响应发出去, 不被打断。
+    //   - 为何不"关空闲连接": 仅凭收发缓冲是否为空无法区分"真空闲"与"请求已读完、
+    //     协程挂起、响应尚未生成"——后者缓冲也为空, 误关会丢在途请求 (响应发不出去)。
+    //   交由 Run() 主循环的 IsDrainComplete (缓冲空 + 无活跃 Step + 无 pending HTTP)
+    //   + DRAIN_GRACE_PERIOD 兜底自然排空, 排空/超时后在 Run() 末尾 Destroy() 统一关闭。
+}
+
+bool Worker::IsDrainComplete()
+{
+    // 检查是否有在途数据
+    for (auto& [fd, conn] : mapFdAttr)
+    {
+        if (fd == m_iC2SListenFd) continue;
+        if (conn->eCodecType == util::CODEC_PB_INTERNAL) continue;
+        if (conn->pRecvBuff->ReadableBytes() > 0) return false;
+        if (conn->pSendBuff->ReadableBytes() > 0) return false;
+    }
+    // 检查是否有活跃 Step
+    if (!mapCallbackStep.empty()) return false;
+    for (auto& kv : mapHttpAttr)
+    {
+        if (!kv.second.empty()) return false;
+    }
+    return true;
 }
 
 } /* namespace net */

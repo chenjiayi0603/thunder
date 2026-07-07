@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-hello
+  namespace: thunder
+  labels:
+    app: thunder-hello
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-hello
+  template:
+    metadata:
+      labels:
+        app: thunder-hello
+    spec:
+      containers:
+      - name: hello
+        image: ubuntu:26.04
+        workingDir: /thunder/deploy/HelloHttp
+        command: ["bash", "-c", "apt-get update -qq && apt-get install -y -qq libjemalloc2 curl && cp /thunder/code/3party/lib/*.so* /usr/lib/x86_64-linux-gnu/ 2>/dev/null && cp /thunder/deploy/HelloHttp/libluajit-5.1.so.2 /usr/lib/x86_64-linux-gnu/ 2>/dev/null && ldconfig; export LD_LIBRARY_PATH=/thunder/deploy/lib:/thunder/code/3party/lib:/thunder/deploy/3lib:/thunder/deploy/HelloHttp:${LD_LIBRARY_PATH}; sed -i 's|127.0.0.1:2379,127.0.0.1:2381,127.0.0.1:2383|thunder-etcd-0.thunder-etcd.thunder.svc.cluster.local:2379|' /thunder/deploy/HelloHttp/conf/Hello.json; ./node.sh start; tail -f /dev/null"]
+        ports:
+        - containerPort: 27006
+        volumeMounts:
+        - name: thunder-repo
+          mountPath: /thunder
+        - name: nfs-plugins
+          mountPath: /thunder/deploy/HelloHttp/plugins
+          subPath: HelloHttp
+      volumes:
+      - name: thunder-repo
+        hostPath:
+          path: /thunder
+      - name: nfs-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-hello
+  namespace: thunder
+spec:
+  type: NodePort
+  selector:
+    app: thunder-hello
+  ports:
+  - port: 27006
+    targetPort: 27006
+    nodePort: 30006

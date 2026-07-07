@@ -11,8 +11,13 @@
 #include <vector>
 #include <cstring>
 #include <sys/wait.h>
+#include <poll.h>
 #include <unistd.h>
 #include "labor/types/ShmRingQueue.hpp"
+
+// 具名常量,替代硬编码 4096/128 (#4: 尺寸参数去重复)
+static constexpr uint32_t kSlotSize = ShmRingQueue::kDefaultSlotSize;
+static constexpr uint32_t kSlotCnt  = ShmRingQueue::kDefaultSlotCount;
 
 // ==========================================================================
 // Unit tests — single-process, multi-thread SPSC correctness
@@ -20,20 +25,20 @@
 
 TEST(ShmRingQueueUnit, CreateAndDestroy)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(128, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlotCnt, kSlotSize);
     ASSERT_NE(q, nullptr);
     EXPECT_EQ(q->ctrl.magic, 0x53484D51u);
-    EXPECT_EQ(q->ctrl.slot_size, 4096u);
-    EXPECT_EQ(q->ctrl.slot_count, 128u);
+    EXPECT_EQ(q->ctrl.slot_size, kSlotSize);
+    EXPECT_EQ(q->ctrl.slot_count, kSlotCnt);
     EXPECT_TRUE(q->IsEmpty());
     EXPECT_FALSE(q->IsFull());
     EXPECT_EQ(q->Count(), 0u);
-    ShmRingQueue::Destroy(q, 128, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(8, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     const char* msg = "hello shm";
@@ -53,12 +58,12 @@ TEST(ShmRingQueueUnit, EnqueueDequeueSingle)
     EXPECT_STREQ(buf, "hello shm");
 
     EXPECT_TRUE(q->IsEmpty());
-    ShmRingQueue::Destroy(q, 8, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(8, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     uint32_t cmd, seq, out_len;
@@ -66,13 +71,13 @@ TEST(ShmRingQueueUnit, EmptyDequeueReturnsFalse)
     EXPECT_FALSE(q->TryDequeue(cmd, seq, buf, out_len));
     EXPECT_EQ(out_len, 0u);
 
-    ShmRingQueue::Destroy(q, 8, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
 {
     constexpr uint32_t kSlots = 4;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     char body[1024] = {};
@@ -89,25 +94,39 @@ TEST(ShmRingQueueUnit, FullQueueRejectsEnqueue)
     EXPECT_FALSE(q->IsFull());
     EXPECT_TRUE(q->TryEnqueue(999, 1, body, sizeof(body)));
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueueUnit, CreateDestroyNonDefaultSize)
+{
+    // #4 验证: 非默认尺寸 Create → Destroy 从 ctrl 读尺寸正确 munmap,不崩溃不泄漏
+    constexpr uint32_t kNonDefSlots = 16;
+    constexpr uint32_t kNonDefSize  = 2048;
+    ShmRingQueue* q = ShmRingQueue::Create(kNonDefSlots, kNonDefSize);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->ctrl.slot_count, kNonDefSlots);
+    EXPECT_EQ(q->ctrl.slot_size,  kNonDefSize);
+    EXPECT_NE(q->ctrl.slot_size,  kSlotSize);  // 证明不是默认值
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, BodyTooLargeRejected)
 {
-    ShmRingQueue* q = ShmRingQueue::Create(8, 128);
+    constexpr uint32_t kTinySlotSize = 128;
+    ShmRingQueue* q = ShmRingQueue::Create(8, kTinySlotSize);
     ASSERT_NE(q, nullptr);
 
     char big[200] = {};
     EXPECT_FALSE(q->TryEnqueue(1, 1, big, sizeof(big)));
 
-    ShmRingQueue::Destroy(q, 8, 128);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, SingleProducerSingleConsumerThreaded)
 {
     constexpr uint32_t kSlots = 128;
     constexpr uint32_t kMsgs  = 100000;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     std::atomic<bool> producer_done{false};
@@ -156,7 +175,7 @@ TEST(ShmRingQueueUnit, SingleProducerSingleConsumerThreaded)
     EXPECT_EQ(consumed.load(), kMsgs);
     EXPECT_TRUE(q->IsEmpty());
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueUnit, EventFdCreateClose)
@@ -184,8 +203,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     constexpr uint32_t kSlots = 64;
     constexpr uint32_t kMsgs  = 5000;
 
-    ShmRingQueue* q_mgr_to_wkr = ShmRingQueue::Create(kSlots, 4096);
-    ShmRingQueue* q_wkr_to_mgr = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q_mgr_to_wkr = ShmRingQueue::Create(kSlots, kSlotSize);
+    ShmRingQueue* q_wkr_to_mgr = ShmRingQueue::Create(kSlots, kSlotSize);
     int efd_mgr_to_wkr = ShmRingQueue::CreateEventFd();
     int efd_wkr_to_mgr = ShmRingQueue::CreateEventFd();
 
@@ -200,7 +219,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     if (pid == 0)
     {
         // ====== Child: simulates Worker ======
-        close(efd_wkr_to_mgr);
+        // Do NOT close efd_wkr_to_mgr here — child is the producer for that direction.
+        // (Closing it before use was the original #72 bug: set var to -1, breaking notification.)
 
         uint32_t cmd, seq, out_len;
         char buf[4096];
@@ -226,17 +246,18 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
                 ShmRingQueue::NotifyEventFd(efd_wkr_to_mgr);
             }
 
+            // Wait for parent to signal via eventfd (poll avoids spin and proves notification fires).
+            struct pollfd pfd = {efd_mgr_to_wkr, POLLIN, 0};
+            poll(&pfd, 1, 200);  // 200ms timeout; bust out if signal doesn't arrive
             uint64_t ev;
-            ssize_t ret = read(efd_mgr_to_wkr, &ev, sizeof(ev));
-            if (ret > 0) {} // consumed
-            else if (errno != EAGAIN) break;
+            read(efd_mgr_to_wkr, &ev, sizeof(ev));  // drain (EAGAIN is fine)
         }
 
         while (!q_wkr_to_mgr->TryEnqueue(0xFFFF, static_cast<uint32_t>(received), "done", 4)) {}
         ShmRingQueue::NotifyEventFd(efd_wkr_to_mgr);
 
-        ShmRingQueue::Destroy(q_mgr_to_wkr, kSlots, 4096);
-        ShmRingQueue::Destroy(q_wkr_to_mgr, kSlots, 4096);
+        ShmRingQueue::Destroy(q_mgr_to_wkr);
+        ShmRingQueue::Destroy(q_wkr_to_mgr);
         ShmRingQueue::CloseEventFd(efd_mgr_to_wkr);
         ShmRingQueue::CloseEventFd(efd_wkr_to_mgr);
         _exit(0);
@@ -244,7 +265,7 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
     else
     {
         // ====== Parent: simulates Manager ======
-        close(efd_mgr_to_wkr);
+        // Do NOT close efd_mgr_to_wkr here — parent is the producer for that direction.
 
         for (uint32_t i = 0; i < kMsgs; ++i)
         {
@@ -276,9 +297,11 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
                 EXPECT_GT(out_len, 5u);
             }
 
+            // Wait for child to signal via eventfd.
+            struct pollfd pfd = {efd_wkr_to_mgr, POLLIN, 0};
+            poll(&pfd, 1, 200);
             uint64_t ev;
-            ssize_t ret = read(efd_wkr_to_mgr, &ev, sizeof(ev));
-            if (ret < 0 && errno != EAGAIN) break;
+            read(efd_wkr_to_mgr, &ev, sizeof(ev));  // drain
         }
 
         EXPECT_EQ(responses, kMsgs + 1u);
@@ -288,8 +311,8 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
         EXPECT_TRUE(WIFEXITED(status));
         EXPECT_EQ(WEXITSTATUS(status), 0);
 
-        ShmRingQueue::Destroy(q_mgr_to_wkr, kSlots, 4096);
-        ShmRingQueue::Destroy(q_wkr_to_mgr, kSlots, 4096);
+        ShmRingQueue::Destroy(q_mgr_to_wkr);
+        ShmRingQueue::Destroy(q_wkr_to_mgr);
         ShmRingQueue::CloseEventFd(efd_mgr_to_wkr);
         ShmRingQueue::CloseEventFd(efd_wkr_to_mgr);
     }
@@ -298,7 +321,7 @@ TEST(ShmRingQueueE2E, ForkedProducerConsumer)
 TEST(ShmRingQueueE2E, FallbackWhenQueueFull)
 {
     constexpr uint32_t kSlots = 2;
-    ShmRingQueue* q = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q, nullptr);
 
     char body[1024] = {};
@@ -307,29 +330,277 @@ TEST(ShmRingQueueE2E, FallbackWhenQueueFull)
     EXPECT_TRUE(q->IsFull());
     EXPECT_FALSE(q->TryEnqueue(3, 300, body, sizeof(body)));
 
-    ShmRingQueue::Destroy(q, kSlots, 4096);
+    ShmRingQueue::Destroy(q);
 }
 
 TEST(ShmRingQueueE2E, WorkerRestartSimulation)
 {
     constexpr uint32_t kSlots = 8;
 
-    ShmRingQueue* q1 = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q1 = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q1, nullptr);
     q1->TryEnqueue(1, 1, "old", 3);
-    ShmRingQueue::Destroy(q1, kSlots, 4096);
+    ShmRingQueue::Destroy(q1);
 
-    ShmRingQueue* q2 = ShmRingQueue::Create(kSlots, 4096);
+    ShmRingQueue* q2 = ShmRingQueue::Create(kSlots, kSlotSize);
     ASSERT_NE(q2, nullptr);
     EXPECT_TRUE(q2->IsEmpty());
     EXPECT_EQ(q2->Count(), 0u);
 
     q2->TryEnqueue(2, 2, "new", 3);
     uint32_t cmd, seq, out_len;
-    char buf[256];
+    char buf[256] = {};
     EXPECT_TRUE(q2->TryDequeue(cmd, seq, buf, out_len));
     EXPECT_EQ(cmd, 2u);
-    EXPECT_STREQ(buf, "new");
+    EXPECT_EQ(out_len, 3u);
+    EXPECT_EQ(memcmp(buf, "new", 3), 0);
 
-    ShmRingQueue::Destroy(q2, kSlots, 4096);
+    ShmRingQueue::Destroy(q2);
+}
+
+// ==========================================================================
+// Performance benchmarks — SPSC throughput + latency
+// ==========================================================================
+
+TEST(ShmRingQueuePerf, Throughput_1M_Messages)
+{
+    constexpr uint32_t kSlots = 256;
+    constexpr uint32_t kMsgs  = 1000000;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    ASSERT_NE(q, nullptr);
+
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> produced{0}, consumed{0};
+
+    std::thread producer([&]() {
+        char body[256] = {};
+        while (!start.load(std::memory_order_acquire)) {}
+        for (uint32_t i = 0; i < kMsgs; ++i) {
+            while (!q->TryEnqueue(1, i, body, 128)) { std::this_thread::yield(); }
+            produced.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread consumer([&]() {
+        uint32_t cmd, seq, out_len; char buf[256];
+        while (!start.load(std::memory_order_acquire)) {}
+        uint64_t local = 0;
+        while (local < kMsgs) {
+            if (q->TryDequeue(cmd, seq, buf, out_len)) { ++local; }
+            else { std::this_thread::yield(); }
+        }
+        consumed.store(local, std::memory_order_relaxed);
+    });
+
+    auto t0 = std::chrono::steady_clock::now();
+    start.store(true, std::memory_order_release);
+    producer.join(); consumer.join();
+    auto t1 = std::chrono::steady_clock::now();
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    double mps = (kMsgs / 1000000.0) / (ms / 1000.0);  // million msgs/sec
+    EXPECT_EQ(produced.load(), kMsgs);
+    EXPECT_EQ(consumed.load(), kMsgs);
+    std::cout << "[perf] SPSC 1M msgs: " << ms << "ms, " << mps << " M msg/s" << std::endl;
+    EXPECT_GT(mps, 0.5);  // at least 0.5M msg/s (conservative)
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueuePerf, Latency_SingleMessage)
+{
+    constexpr uint32_t kSlots = 8;
+    constexpr uint32_t kRounds = 100000;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, ShmRingQueue::kDefaultSlotSize);
+    ASSERT_NE(q, nullptr);
+
+    auto t0 = std::chrono::steady_clock::now();
+    char body[128] = {};
+    for (uint32_t i = 0; i < kRounds; ++i) {
+        while (!q->TryEnqueue(1, i, body, 64)) {}
+        uint32_t cmd, seq, out_len; char buf[256];
+        while (!q->TryDequeue(cmd, seq, buf, out_len)) {}
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    double avg_ns = static_cast<double>(ns) / kRounds;
+    std::cout << "[perf] single-msg latency: " << avg_ns << " ns/round (" << kRounds << " rounds)" << std::endl;
+    EXPECT_LT(avg_ns, 5000.0);  // < 5us per round-trip
+    ShmRingQueue::Destroy(q);
+}
+
+// ==========================================================================
+// Performance benchmarks — 不同包大小吞吐+QPS
+// ==========================================================================
+
+static void RunThroughputTest(uint32_t bodySize, const char* label)
+{
+    constexpr uint32_t kSlots = 256;
+    constexpr uint32_t kMsgs  = 500000;
+    // slot_size 必须容纳 HEADER + body, 否则 TryEnqueue 永远被拒导致死循环
+    uint32_t slotSize = bodySize + ShmRingQueue::HEADER_SIZE;
+    if (slotSize < ShmRingQueue::kDefaultSlotSize)
+        slotSize = ShmRingQueue::kDefaultSlotSize;
+    ShmRingQueue* q = ShmRingQueue::Create(kSlots, slotSize);
+    ASSERT_NE(q, nullptr);
+
+    std::vector<char> body(bodySize, 'x');
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> produced{0}, consumed{0};
+
+    std::thread producer([&]() {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (uint32_t i = 0; i < kMsgs; ++i) {
+            while (!q->TryEnqueue(1, i, body.data(), bodySize)) {
+                std::this_thread::yield();
+            }
+            produced.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread consumer([&]() {
+        uint32_t cmd, seq, out_len;
+        std::vector<char> buf(bodySize + 256);
+        while (!start.load(std::memory_order_acquire)) {}
+        uint64_t local = 0;
+        while (local < kMsgs) {
+            if (q->TryDequeue(cmd, seq, buf.data(), out_len)) { ++local; }
+            else { std::this_thread::yield(); }
+        }
+        consumed.store(local, std::memory_order_relaxed);
+    });
+
+    auto t0 = std::chrono::steady_clock::now();
+    start.store(true, std::memory_order_release);
+    producer.join(); consumer.join();
+    auto t1 = std::chrono::steady_clock::now();
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    double qps = (kMsgs / 1000000.0) / (ms / 1000.0);       // M msgs/sec
+    double bw  = (qps * 1e6 * bodySize) / (1024*1024);      // MB/s
+
+    EXPECT_EQ(produced.load(), kMsgs);
+    EXPECT_EQ(consumed.load(), kMsgs);
+    std::cout << "[perf] " << label << " " << bodySize << "B: "
+              << ms << "ms, " << qps << " M QPS, " << bw << " MB/s" << std::endl;
+    EXPECT_GT(qps, 1.0);  // > 1M QPS
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueuePerf, QPS_64B)   { RunThroughputTest(64,   "QPS"); }
+TEST(ShmRingQueuePerf, QPS_256B)  { RunThroughputTest(256,  "QPS"); }
+TEST(ShmRingQueuePerf, QPS_1K)    { RunThroughputTest(1024, "QPS"); }
+TEST(ShmRingQueuePerf, QPS_4K)    { RunThroughputTest(4096, "QPS"); }
+
+TEST(ShmRingQueueUnit, Destroy_Nullptr_NoCrash)
+{
+    ShmRingQueue::Destroy(nullptr);  // 应该不崩溃
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, CloseEventFd_Invalid)
+{
+    { int invalid=-1; ShmRingQueue::CloseEventFd(invalid); }
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, EventFd_SemaphoreMode)
+{
+    int efd = ShmRingQueue::CreateEventFd();
+    ASSERT_GE(efd, 0);
+    // 信号量模式: 写2次, 读2次(每次-1)
+    uint64_t val = 1;
+    write(efd, &val, sizeof(val));
+    write(efd, &val, sizeof(val));
+    uint64_t out;
+    EXPECT_EQ(read(efd, &out, sizeof(out)), (ssize_t)sizeof(out));
+    EXPECT_EQ(out, 1u);
+    EXPECT_EQ(read(efd, &out, sizeof(out)), (ssize_t)sizeof(out));
+    EXPECT_EQ(out, 1u);
+    ShmRingQueue::CloseEventFd(efd);
+}
+
+TEST(ShmRingQueueUnit, MultipleCreateDestroy)
+{
+    // 反复创建销毁, 验证无泄漏(手工验证 valgrind)
+    for (int i = 0; i < 100; ++i) {
+        ShmRingQueue* q = ShmRingQueue::Create(32, 4096);
+        ASSERT_NE(q, nullptr);
+        q->TryEnqueue(i, 100, "ok", 2);
+        ShmRingQueue::Destroy(q);
+    }
+    SUCCEED();
+}
+
+TEST(ShmRingQueueUnit, MaxBodySize)
+{
+    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ASSERT_NE(q, nullptr);
+    // MaxBodySize = slot_size - HEADER_SIZE = 4096 - 12 = 4084
+    EXPECT_EQ(q->MaxBodySize(), 4096u - ShmRingQueue::HEADER_SIZE);
+    ShmRingQueue::Destroy(q);
+}
+
+TEST(ShmRingQueueUnit, Count_TracksMessages)
+{
+    ShmRingQueue* q = ShmRingQueue::Create(8, 4096);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->Count(), 0u);
+    const char* msg = "test";
+    EXPECT_TRUE(q->TryEnqueue(1, 1, msg, 4));
+    EXPECT_EQ(q->Count(), 1u);
+    EXPECT_TRUE(q->TryEnqueue(2, 2, msg, 4));
+    EXPECT_EQ(q->Count(), 2u);
+    uint32_t cmd, seq, out_len; char buf[256];
+    EXPECT_TRUE(q->TryDequeue(cmd, seq, buf, out_len));
+    EXPECT_EQ(q->Count(), 1u);
+    ShmRingQueue::Destroy(q);
+}
+
+// Regression test for #72: eventfd must remain open in both parent and child after fork.
+// If either side closes its producer-fd before use (the original bug), poll() times out
+// and this test fails — proving the fast-path notification is broken.
+TEST(ShmRingQueueE2E, EventFdNotificationAcrossFork)
+{
+    int efd_to_child  = ShmRingQueue::CreateEventFd();  // parent writes, child reads
+    int efd_to_parent = ShmRingQueue::CreateEventFd();  // child writes, parent reads
+    ASSERT_GE(efd_to_child,  0);
+    ASSERT_GE(efd_to_parent, 0);
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+
+    if (pid == 0)
+    {
+        // Child: wait for parent's signal, then reply.
+        // Must NOT close efd_to_parent here (that was the #72 bug).
+        struct pollfd pfd = {efd_to_child, POLLIN, 0};
+        int ret = poll(&pfd, 1, 500);  // 500ms — far longer than actual µs latency
+        if (ret <= 0) _exit(1);        // timed out → notification broken
+
+        uint64_t ev;
+        read(efd_to_child, &ev, sizeof(ev));
+
+        ShmRingQueue::NotifyEventFd(efd_to_parent);
+        ShmRingQueue::CloseEventFd(efd_to_child);
+        ShmRingQueue::CloseEventFd(efd_to_parent);
+        _exit(0);
+    }
+    else
+    {
+        // Parent: signal child, then wait for reply.
+        // Must NOT close efd_to_child here (that was the #72 bug).
+        ShmRingQueue::NotifyEventFd(efd_to_child);
+
+        struct pollfd pfd = {efd_to_parent, POLLIN, 0};
+        int ret = poll(&pfd, 1, 500);
+        EXPECT_GT(ret, 0) << "eventfd reply from child timed out — eventfd broken across fork (#72)";
+
+        int status;
+        waitpid(pid, &status, 0);
+        EXPECT_TRUE(WIFEXITED(status));
+        EXPECT_EQ(WEXITSTATUS(status), 0) << "child: parent's eventfd signal never arrived";
+
+        ShmRingQueue::CloseEventFd(efd_to_child);
+        ShmRingQueue::CloseEventFd(efd_to_parent);
+    }
 }

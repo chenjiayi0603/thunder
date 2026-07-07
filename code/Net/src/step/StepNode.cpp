@@ -35,7 +35,7 @@ StepNode::StepNode(const std::string &strBody,StepParam* pStepParam):m_strMsgSer
 
 net::E_CMD_STATUS StepNode::Emit(int iErrno , const std::string& strErrMsg , const std::string& strErrShow )
 {
-	LOG4_TRACE("m_uiCmd(%u) m_strNodeType(%s) m_strMsgSerial.size(%u).",m_uiCmd,m_strNodeType.c_str(),m_strMsgSerial.size());
+	LOG4_TRACE("m_uiCmd(%u) m_strNodeType(%s) m_strMsgSerial.size(%zu).",m_uiCmd,m_strNodeType.c_str(),m_strMsgSerial.size());
 	if (m_uiCmd > 0)
 	{
         MsgHead oOutHead;

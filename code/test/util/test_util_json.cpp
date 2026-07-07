@@ -289,3 +289,157 @@ TEST(CJsonObject, ObjectOperatorParen)
     util::CJsonObject o(R"({"code":200})");
     EXPECT_EQ("200", o("code"));
 }
+
+TEST(CJsonObject, GetUint64)
+{
+    util::CJsonObject o(R"({"big":18446744073709551615})");
+    uint64 v = 0;
+    EXPECT_TRUE(o.Get("big", v));
+    EXPECT_EQ(18446744073709551615ULL, v);
+}
+
+TEST(CJsonObject, AddAndGetUint32)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.Add("port", (uint32)65535));
+    uint32 v = 0;
+    EXPECT_TRUE(o.Get("port", v));
+    EXPECT_EQ(65535u, v);
+}
+
+TEST(CJsonObject, AddAndGetFloat)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.Add("pi", 3.14f));
+    float f = 0;
+    EXPECT_TRUE(o.Get("pi", f));
+    EXPECT_NEAR(3.14f, f, 0.001f);
+}
+
+TEST(CJsonObject, AddAndGetDouble)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.Add("e", 2.718281828));
+    double d = 0;
+    EXPECT_TRUE(o.Get("e", d));
+    EXPECT_NEAR(2.718281828, d, 1e-9);
+}
+
+TEST(CJsonObject, ReplaceInt32)
+{
+    util::CJsonObject o(R"({"n":1})");
+    EXPECT_TRUE(o.Replace("n", (int32)99));
+    int32 v = 0;
+    EXPECT_TRUE(o.Get("n", v));
+    EXPECT_EQ(99, v);
+}
+
+TEST(CJsonObject, ReplaceBool)
+{
+    util::CJsonObject o(R"({"flag":false})");
+    EXPECT_TRUE(o.Replace("flag", true, true));
+    bool b = false;
+    EXPECT_TRUE(o.Get("flag", b));
+    EXPECT_TRUE(b);
+}
+
+TEST(CJsonObject, ReplaceDouble)
+{
+    util::CJsonObject o(R"({"val":1.0})");
+    EXPECT_TRUE(o.Replace("val", 3.14));
+    double d = 0;
+    EXPECT_TRUE(o.Get("val", d));
+    EXPECT_NEAR(3.14, d, 1e-9);
+}
+
+TEST(CJsonObject, GetAsStringOnPlainString)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.Parse(R"("hello")"));
+    std::string s;
+    EXPECT_TRUE(o.GetAsString(s));
+    EXPECT_EQ("hello", s);
+}
+
+TEST(CJsonObject, GetAsStringOnObject)
+{
+    util::CJsonObject o(R"({"a":1})");
+    std::string s;
+    EXPECT_FALSE(o.GetAsString(s));
+}
+
+TEST(CJsonObject, IsEmpty)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.IsEmpty());
+    o.Parse(R"({"a":1})");
+    EXPECT_FALSE(o.IsEmpty());
+}
+
+TEST(CJsonObject, IsArray)
+{
+    util::CJsonObject o(R"([1,2,3])");
+    EXPECT_TRUE(o.IsArray());
+    util::CJsonObject o2(R"({"a":1})");
+    EXPECT_FALSE(o2.IsArray());
+}
+
+TEST(CJsonObject, IsNull)
+{
+    util::CJsonObject o;
+    EXPECT_TRUE(o.Parse("null"));
+    EXPECT_TRUE(o.IsNull());
+}
+
+TEST(CJsonObject, AddAsFirstString)
+{
+    util::CJsonObject arr;
+    arr.Add(std::string("b"));
+    arr.AddAsFirst(std::string("a"));
+    std::string s;
+    EXPECT_TRUE(arr.Get(0, s));
+    EXPECT_EQ("a", s);
+}
+
+TEST(CJsonObject, SubObjectBracketOperator)
+{
+    util::CJsonObject o(R"({"inner":{"x":42}})");
+    int32 v = 0;
+    EXPECT_TRUE(o["inner"].Get("x", v));
+    EXPECT_EQ(42, v);
+}
+
+TEST(CJsonObject, RoundtripComplexJson)
+{
+    std::string json = R"({"code":0,"msg":"ok","list":[1,2,3],"nested":{"k":"v"}})";
+    util::CJsonObject o(json);
+    // Verify round-trip parse → serialize preserves content
+    util::CJsonObject o2(o.ToString());
+    int32 code = -1;
+    std::string msg;
+    EXPECT_TRUE(o2.Get("code", code));
+    EXPECT_EQ(0, code);
+    EXPECT_TRUE(o2.Get("msg", msg));
+    EXPECT_EQ("ok", msg);
+    EXPECT_EQ(3, o2["list"].GetArraySize());
+}
+
+TEST(CJsonObject, ArrayReplaceInt)
+{
+    util::CJsonObject arr;
+    arr.Parse("[1,2,3]");
+    EXPECT_TRUE(arr.Replace(1, (int32)99));
+    int32 v = 0;
+    EXPECT_TRUE(arr.Get(1, v));
+    EXPECT_EQ(99, v);
+}
+
+TEST(CJsonObject, AddSubObjectByValue)
+{
+    util::CJsonObject inner(R"({"x":1})");
+    util::CJsonObject outer;
+    EXPECT_TRUE(outer.Add("sub", inner));
+    int32 v = 0;
+    EXPECT_TRUE(outer["sub"].Get("x", v));
+    EXPECT_EQ(1, v);
+}
