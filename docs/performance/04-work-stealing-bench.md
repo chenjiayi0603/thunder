@@ -218,3 +218,168 @@ cmake --build build --target thunder_bench_work_stealing -j$(nproc)
 | 1P-16C（16 worker）| 2097.2 | 968.1 | 0.48 | 1.03 | **2.17x** ✅ |
 | 1P-4C（task=10μs）| 2830.8 | 2624.9 | 0.35 | 0.38 | 1.08x |
 | 1P-4C（task=100μs）| 25324.2 | 25215.6 | 0.04 | 0.04 | 1.00x |
+
+---
+
+## 10. 端到端延迟 + payload 大小（Run #2 — 2026-07-07）
+
+> 基准程序：`code/test/labor/bench_queue_latency.cpp`  
+> 测量：端到端延迟 = commit() 调用前 → worker 取出开始执行（不含任务体，task=0）  
+> payload：lambda 按值捕获的字节数组，影响 std::function 内存分配大小
+
+### 10.1 P50 / P99 / avg 延迟
+
+| 场景 | 池 | P50 ns | P99 ns | avg ns | avg 加速比 |
+|------|:--:|-------:|-------:|-------:|:--------:|
+| 1 worker, 0B | LF | 1455776 | 3964679 | 1251 | — |
+| | WS | 416287 | 10252507 | 660 | **1.90x** |
+| 4 worker, 0B | LF | 1586 | 6837 | 1394 | — |
+| | WS | 1227 | 7428 | 700 | **1.99x** |
+| 8 worker, 0B | LF | 1573 | 6033 | 1628 | — |
+| | WS | 1433 | 6813 | 787 | **2.07x** |
+| 4 worker, 64B | LF | 2434 | 11816 | 1789 | — |
+| | WS | 1076 | 5420 | 694 | **2.58x** |
+| 4 worker, 256B | LF | 2066 | 13737 | 1668 | — |
+| | WS | 1209 | 8812 | 770 | **2.17x** |
+| 4 worker, 1KB | LF | 1787 | 5775 | 1594 | — |
+| | WS | 1207 | 5899 | 823 | **1.94x** |
+| 4 worker, 4KB | LF | 2040 | 8102 | 1794 | — |
+| | WS | 1737 | 7009 | 1326 | **1.35x** |
+
+### 10.2 关键发现
+
+- **WS avg 延迟始终比 LF 快 1.35x~2.58x**，无退化场景
+- **中等 payload（64B~256B）WS 优势最大（2.17x~2.58x）**：LF 的 MPMC block 管理对 payload 大小敏感，WS 的 ring buffer 不受影响
+- **4KB 时差距缩小到 1.35x**：内存拷贝开销开始主导，队列差异被淹没
+- **1 worker 场景 P50 很高（ms 级）**：单消费者跟不上生产者速度，任务大量排队——这是吞吐极限，不是队列操作开销
+- **WS P99 在 1 worker 0B 场景出现 10ms 尖峰**：worker 全空后进入 cv.wait_for(10ms)，符合设计预期
+
+---
+
+## 附录 A：LF 队列 — moodycamel::ConcurrentQueue 设计简述
+
+**是什么**：C++11 无锁 MPMC 队列（Cameron Desrochers, 2014）。  
+GitHub: <https://github.com/cameron314/concurrentqueue>  
+LF 线程池（`util::threadpool`）内部用它作为唯一任务队列。
+
+**内部结构**：
+
+**内部结构（以 Thunder 1P-4C 为例）**：
+
+```
+  事件循环线程                        ConcurrentQueue<T>
+  (唯一生产者)
+      │                    ┌────────────────────────────────────┐
+      │  commit()          │  隐式生产者哈希表                    │
+      │  enqueue() ───────→│  ┌──────────────────────────────┐  │
+      │                    │  │ thread_id → hash → slot      │  │
+      │                    │  │                              │  │
+      │                    │  │  事件循环线程 → hash → slot[0]│  │
+      │                    │  │  ┌─────────────────────┐     │  │
+      │                    │  │  │ ImplicitProducer     │     │  │
+      │                    │  │  │  ├─ block_index      │     │  │
+      │                    │  │  │  ├─ block 链表 (私有)│     │  │
+      │                    │  │  │  │  ┌───────┐       │     │  │
+      │                    │  │  │  │  │Block A│→ ...  │     │  │
+      │                    │  │  │  │  │[32槽] │       │     │  │
+      │                    │  │  │  │  └───────┘       │     │  │
+      │                    │  │  └─────────────────────┘     │  │
+      │                    │  └──────────────────────────────┘  │
+      │                    │                                    │
+      │                    │  空闲 block 池（预分配 + 回收）      │
+      │                    │  ┌───────┐ ┌───────┐              │
+      │                    │  │Block C│ │Block D│ ...          │
+      │                    │  │[32槽] │ │[32槽] │              │
+      │                    │  └───────┘ └───────┘              │
+      │                    │     ↑ 生产者 block 满时从这里取     │
+      │                    └────────────────────────────────────┘
+      │
+      │    消费者怎么取：
+      │    1. 遍历所有隐式生产者的 block 链表（组成逻辑上的全局队列）
+      │    2. CAS 竞争一个全局原子索引（subqueue_index）
+      │    3. 谁抢到索引指向的 block+slot，谁取走任务
+      │
+      │    worker[0] ──┐
+      │    worker[1] ──┼──→ 全部 CAS 同一个 subqueue_index ──→ 取走任务
+      │    worker[2] ──┤
+      │    worker[3] ──┘
+```
+
+**block 分配策略**：
+
+```
+生产者 enqueue 时：
+  if 当前 block 未满 → 写入 slot, 推进 block 内 index
+  if 当前 block 满   → 从空闲池取一个 block（池空则 malloc 新 block）
+                    → 挂到生产者自己的 block 链表尾部
+                    → 新 block 的 slot 对消费者可见
+
+消费者 try_dequeue 时：
+  遍历所有生产者 block 链 → 找到下一个可消费 slot → CAS 抢
+```
+
+**Thunder 1P-4C 下的实际状态**：
+
+| 角色 | 线程数 | 在队列中对应的结构 |
+|------|:-----:|-------------------|
+| 生产者 | 1（事件循环） | 哈希表 1 个 slot → 1 个 ImplicitProducer → 1~N 个 block（满了就加） |
+| 消费者 | 4（worker） | 全部遍历同一批 block → CAS 同一个 subqueue_index |
+| 争用点 | — | `subqueue_index`（1 个原子变量），4 个线程抢 |
+
+生产者少时 block 链表短、遍历快；生产者多时哈希表扩容、遍历路径长。这是 MPMC 通用性换来的代价。
+
+**哈希碰撞处理**：线性探测。首表默认 32 槽。`thread_id` hash → `index = hash % 32`，碰撞则 `++index` 线性往后找空槽。槽满（>32 个生产者线程同时写）→ 分配新表，`prev` 指针链到旧表，查找从新往旧遍历。
+
+**Thunder 1 生产者下的浪费**：
+
+```
+首表 32 个哈希槽       → 只用 1 个，31 空置
+block 索引数组 32 槽   → 每个 ImplicitProducer 创建时立即分配，1 生产者用 1~2 槽
+初始 block 池          → 构造时预分配多个空 block，单生产者大部分闲置
+```
+
+全部是**创建时立即分配**，不是懒加载。这是 MPMC 通用设计的代价——空间换"任意线程随时并发入队"的保证。
+
+**block 列表的并发操作**：
+
+```
+  生产者 (唯一写 tail，无争用)         多消费者 (CAS 竞争 head)
+  ──────────────────────────         ──────────────────────────
+  enqueue:                           try_dequeue:
+  ① 读 tailIndex (relaxed)           ① 遍历所有 producer
+  ② block 满?→CAS 插入新 block       ② headIndex.fetch_add(1,acq_rel)
+     →从空闲池取/malloc 新 block         ← N 消费者 CAS 争用!
+  ③ 写入 slot                        ③ 二分查找索引数组定位 block
+  ④ tailIndex.store(++,release)      ④ 读 slot → 输出
+```
+
+| 操作 | 原子指令 | 争用 |
+|------|:------:|------|
+| enqueue 写 slot | 1× release store | 无（1 个生产者） |
+| enqueue 追加 block | 1× CAS + malloc | 无（低频） |
+| try_dequeue | 2× fetch_add + 二分查找 | **N 消费者抢 1 个 headIndex** |
+
+每次 dequeue 至少 2 次原子 fetch_add + 1 次二分查找 vs WorkerDeque 的 1 次 CAS。这就是 1P-1C 仍差 3.59x 的微观原因。
+
+**操作开销**：
+
+| 操作 | 原子指令数 | 说明 |
+|------|:-------:|------|
+| enqueue（无 token） | 4~5 | 申请/查找 block → 写入 slot → 更新 block 内 index → 更新全局 index |
+| try_dequeue（无 token） | 4~5 | 查找活跃 block → 读取 slot → 推进 block index → 可能回收 block |
+
+**设计定位**：通用 MPMC。适合生产者/消费者数量任意、任务大小不可预测、需要动态扩容的场景。代价是链表式 block 结构导致单次操作需多级索引、多步原子指令。
+
+**与 WorkerDeque ring buffer 的对照**：
+
+```
+moodycamel MPMC                  WorkerDeque ring buffer
+─────────────────                ──────────────────────
+链表式 block，按需分配           固定 256-slot 连续数组
+enqueue: 4~5 次原子操作          push: 1 次原子 store
+dequeue: 4~5 次原子操作          dequeue: 1 次原子 CAS
+动态扩容                         固定容量，满→global_q
+所有消费者争同一队列              各消费者有自己的 deque
+```
+
+这就是 1P-1C 零争用场景下 WS 仍快 3.59x 的原因——数据结构本身的效率差距。

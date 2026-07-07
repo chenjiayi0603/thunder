@@ -24,6 +24,11 @@ namespace util
  *
  * 内存布局：head 和 tail 各占独立 cache line，消除 false sharing。
  * 单个 deque：128B (head+tail) + CAP * sizeof(Task)
+ *
+ * 并发模型：SPMC（Single Producer, Multiple Consumers）。
+ *   tail 端 — 1 个写者（_submit_deques: commit 线程 push；_local_deques: 本 worker steal_into dst）
+ *   head 端 — 多读者（owner dequeue + thief steal_into src），用 CAS 协调
+ * 正常路径退化到近似 SPSC：只有 owner 在 dequeue，CAS 第一次就成功，零重试。
  */
 template<typename Task, uint32_t CAP = 256>
 class WorkerDeque

@@ -405,3 +405,15 @@ target_include_directories(thunder_bench_work_stealing PRIVATE
 )
 target_compile_options(thunder_bench_work_stealing PRIVATE -O2)
 target_link_libraries(thunder_bench_work_stealing PRIVATE GTest::gtest_main Threads::Threads)
+
+# ---- 队列延迟 + payload 大小 + P50/P99 基准 ----
+add_executable(thunder_bench_queue_latency
+  labor/bench_queue_latency.cpp
+)
+target_compile_features(thunder_bench_queue_latency PRIVATE cxx_std_20)
+target_include_directories(thunder_bench_queue_latency PRIVATE
+  "${THUNDER_3PARTY}"
+  "${THUNDER_UTIL}/src"
+)
+target_compile_options(thunder_bench_queue_latency PRIVATE -O2)
+target_link_libraries(thunder_bench_queue_latency PRIVATE GTest::gtest_main Threads::Threads)
