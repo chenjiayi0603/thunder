@@ -214,7 +214,6 @@ net::AsyncTask HandleRequest(net::StepCo20& step) {
 | Lua scripting              | LuaJIT, hot-reload, per-worker VM                         |
 | `.so` plugin hot-swap      | Zero-downtime deploy via etcd watch + graceful restart    |
 | etcd service mesh          | Registration, discovery, config push, TTL health          |
-| Raft consensus (built-in)  | 3-node Center cluster, no external Zookeeper              |
 | Admin web UI               | Plugin management, node topology, etcd browser            |
 
 ---
@@ -248,8 +247,8 @@ net::AsyncTask HandleRequest(net::StepCo20& step) {
 └───────────────────────────┬─────────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────────┐
-│                       Center Cluster                            │
-│  3-node Raft — leader election, service registry, config store  │
+│                     etcd Cluster (3 nodes)                      │
+│       Service registry · config store · leader election          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -315,7 +314,7 @@ kubectl -n thunder rollout status deployment --timeout=120s
 ```
 code/
 ├── Net/          # Core: Manager, Worker, I/O backends, codec, coroutines
-├── Center/       # Raft consensus + service registry
+├── Center/       # Cluster coordination (legacy, etcd replaces in deployment)
 ├── Logic/        # Example logic node
 ├── HelloHttp/    # HTTP gateway node + example plugins + Lua modules
 ├── HelloHttps/   # HTTPS gateway node
