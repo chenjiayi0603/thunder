@@ -100,3 +100,11 @@ liburing-dev_*.deb
 so-images/
 TEST_STATUS.md
 rocksdb_bench.sh
+
+# IDE / AI 工具
+.vscode/
+.workbuddy/
+
+# 本地文件（不提交）
+TEST_STATUS.md
+issus-list.md
