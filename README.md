@@ -52,7 +52,7 @@ Optional flags:
 ## Running Thunder
 
 ```bash
-./deploy.sh up          # start Docker cluster (etcd + MySQL + Redis + all nodes)
+./deploy.sh up          # start Docker cluster (3-node etcd + MySQL + Redis + all services)
 ./deploy.sh status      # container status + listening ports
 ./deploy.sh down        # stop and clean up
 ```
@@ -73,6 +73,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
 | HelloWs     | WebSocket | 27010 |
 | Interface   | HTTP      | 27008 |
 | Logic       | Internal  | 16068 |
+| Admin       | HTTP      | 8090  |
 | etcd        | HTTP      | 2379  |
 | Redis       | TCP       | 6379  |
 | MySQL       | TCP       | 3306  |
