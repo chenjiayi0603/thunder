@@ -10,7 +10,7 @@
 git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build --target thirdparty_deploy -j1   # 编译三方库，约 10~20 分钟
-cmake --build build -j1                               # 编译主工程
+cmake --build build -j1                               # ← 全量编译（三方库 + 主工程）
 cmake --install build
 ```
 
@@ -19,7 +19,7 @@ cmake --install build
 ### 日常重编（三方库已就绪）
 
 ```bash
-cmake --build build -j1 && cmake --install build
+cmake --build build -j1 && cmake --install build      # ← 全量重编
 ```
 
 ### 只重编某模块
@@ -34,21 +34,32 @@ cmake --build build --target HelloPlugins -j1        # Hello 插件
 
 ```bash
 cmake --build build --target thunder_proto_gen -j1
-cmake --build build -j1
+cmake --build build -j1                              # ← 重新全量编译
 ```
 
 ---
 
 ## 二、启动 / 停止
 
+### Docker Compose（本地开发 / 测试）
+
 ```bash
-./deploy.sh up          # 启动 Docker 集群（etcd + MySQL + Redis + 各节点）
+./deploy.sh up          # 启动集群（3-node etcd + MySQL + Redis + 全部服务）
 ./deploy.sh status      # 查看容器状态 + 监听端口
 ./deploy.sh restart     # 重启所有容器
 ./deploy.sh down        # 停止并清理
 ```
 
 等待约 15 秒，所有服务进入 healthy 状态后再测试。
+
+### Kubernetes（生产部署）
+
+```bash
+kubectl apply -f k8s/                                       # 部署全部服务
+kubectl -n thunder rollout status deployment --timeout=120s # 等待就绪
+
+# NodePort: HTTP=30006  Interface=30008  HTTPS=30043  WS=30010  Admin=30090
+```
 
 ---
 
@@ -98,6 +109,7 @@ cmake --build build -j1
 | HelloWs | WebSocket | 27010 |
 | Interface | HTTP | 27008 |
 | Logic | 内部 S2S | 16068 |
+| Admin | HTTP | 8090 |
 | etcd | HTTP | 2379 |
 | Redis | TCP | 6379 |
 | MySQL | TCP | 3306 |
@@ -106,34 +118,50 @@ cmake --build build -j1
 
 ## Admin 管理后台
 
+**作用**：Web 管理界面，管理节点拓扑、SO 插件热更新、Lua 脚本下发、etcd 配置浏览。
+
 ### 访问地址
 
 | 环境 | 地址 |
 |------|------|
-| 本地 | `http://127.0.0.1:8090` |
-| k8s | `http://192.168.3.61:30090/?etcd=192.168.3.61:30079` |
+| Docker Compose | `http://127.0.0.1:8090` |
+| K8s | `http://<node>:30090/?etcd=<etcd-ip>:30079` |
 
-`?etcd=` 参数告诉浏览器直连 etcd API（静态 HTML，非服务端转发）。默认用页面 IP + `:2379`。
+`?etcd=` 参数让浏览器直连 etcd API（静态 HTML，非服务端转发）。
 
 ### 启动
 
 ```bash
-# 本地
-cd deploy/admin-web && python3 server.py --port 8090
+# Docker Compose（随 deploy.sh up 自动启动）
+# 手动: cd deploy/admin-web && python3 server.py --port 8090
 
-# k8s
+# K8s
 kubectl apply -f k8s/admin-web-deployment.yaml
 ```
 
-### SO 模块热更新
+### 后台 API
+
+| API | 方法 | 作用 |
+|-----|:---:|------|
+| `/api/so-images` | GET | 列出可用 SO 镜像 |
+| `/api/so-files?image=xxx` | GET | 列出镜像内 .so 文件 |
+| `/api/so-extract` | POST | 从镜像提取 SO → NFS 分发 → etcd 更新 → worker 热加载 |
+| `/api/fetch` | POST | 从远端 URL 拉取 SO 文件 |
+| `/api/lua-scripts` | GET | 列出 Lua 脚本及版本 |
+| `/api/lua-scripts` | POST | 上传 Lua 脚本 → 推送到 etcd → worker 热加载 |
+| `/api/sync-config` | POST | 从本地配置文件初始化 etcd 模块配置 |
+
+### SO 模块热更新流程
 
 ```
-Admin → 🖥 节点 → 类型行 [⚙ 模块] → 选镜像 → 选文件 → ⬇ 提取
+构建 SO 镜像 → Admin 选择镜像/文件 → 提取 → NFS 分发 → etcd 版本更新
+                                                       ↓
+                                              GracefulRestartWorker
+                                              (旧 worker 排空连接 → 新 worker 启动，零中断)
 ```
-流程：docker pull → 提取 SO → NFS 分发 → etcd 更新 → GracefulRestartWorker (零中断)
 
-**构建 SO 镜像**: `./deploy.sh build-so HelloHttp_ModuleHello`
-**回滚**: 📋 版本历史 → 选版本 → ↩ 回滚
-**节点配置**: 节点行 [⚙ 配置] → 编辑 custom JSON
+**构建 SO 镜像**: `./deploy.sh build-so HelloHttp_ModuleHello`  
+**回滚**: 版本历史 → 选版本 → 回滚  
+**节点配置**: 节点行 → 编辑 custom JSON
 
 > 详细流程见 `docs/architecture/15-so-module-hot-reload-via-etcd.md`
