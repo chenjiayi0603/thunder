@@ -513,3 +513,47 @@ HPA 看的是**所有 Pod 的平均 CPU 利用率**，不是单个 Pod：
 ### 配置文件中查看
 
 `k8s/logic-hpa.yaml`，可直接 `kubectl apply -f` 部署。
+
+---
+
+## 附录 D：Thunder 网关 hostNetwork vs NodePort
+
+### D.1 为什么网关要考虑 hostNetwork
+
+Thunder 作为高性能网关（HTTP 64B 延迟 220μs），K8s 默认的 NodePort 在数据面多一跳 kube-proxy + CNI 转发，额外消耗几~几十 μs。对于 ms 级业务可忽略，但对 Thunder 的 μs 级优势有影响。
+
+### D.2 数据路径对比
+
+```
+hostNetwork:
+  网卡 → 内核协议栈 → Pod 进程 (直通, 零 K8s 组件)
+
+NodePort:
+  网卡 → 内核 iptables/IPVS → CNI veth pair → Pod 进程 (多两跳)
+```
+
+### D.3 推荐配置
+
+| 服务类型 | 网络模式 | 原因 |
+|---------|:------:|------|
+| 网关 (hello/http/ws/https) | **hostNetwork** | 对外服务，延迟敏感，端口固定不冲突 |
+| Logic | ClusterIP | 内部通信，可水平扩缩容 |
+| etcd / MySQL / Redis | ClusterIP | 内部通信，有状态服务，固定端口 |
+
+### D.4 如何开启
+
+```yaml
+spec:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet  # hostNetwork 必须显式设 DNS 策略
+```
+
+### D.5 为什么内部服务不需要 hostNetwork
+
+etcd/MySQL/Redis 一次请求自身百 μs~ms 级，ClusterIP 多几 μs 转发可忽略。它们更需要 K8s 的 Service 抽象（Pod 重启 IP 不变）和扩缩容支持。
+
+### D.6 hostNetwork 下控制面开销
+
+containerd、kubelet、API Server 只影响 Pod 生命周期，不影响已建立连接的数据包转发。hostNetwork 下数据面零 K8s 开销，全部来自内核协议栈。
+
+> 详细分析见 `docs/reference/gateway-deployment.md` §4.3 和附录 A。
