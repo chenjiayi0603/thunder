@@ -6,7 +6,7 @@
   "inner_host": "0.0.0.0",
   "inner_port": 27007,
   "center": {
-    "connector": "etcd",
+    "connector": "etcd-grpc",
     "etcd_endpoints": "http://thunder-etcd.thunder:2379"
   },
   "server_name": "Hello_robot",

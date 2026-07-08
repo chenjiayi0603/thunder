@@ -13,6 +13,8 @@ spec:
       labels:
         app: thunder-interface
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: app
         image: ubuntu:26.04
@@ -42,7 +44,8 @@ spec:
         - name: thunder-repo
           mountPath: /thunder
         - name: thunder-plugins
-          mountPath: /thunder/deploy/*/plugins
+          mountPath: /thunder/deploy/Interface/plugins
+          subPath: Interface
           readOnly: true
       volumes:
       - name: thunder-repo
