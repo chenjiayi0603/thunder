@@ -2892,6 +2892,19 @@ void Worker::AddNodeIdentify(const std::string& strNodeType, const std::string& 
     nodesMgr.AddNodeIdentify(strNodeType,strIdentify);
 }
 
+void Worker::SetCanaryWeights(const std::string& strNodeType,
+                               const std::map<std::string, int32_t>& mapWeights)
+{
+    LOG4_TRACE("%s(%s, %zu entries)", __FUNCTION__, strNodeType.c_str(), mapWeights.size());
+    nodesMgr.SetCanaryWeights(strNodeType, mapWeights);
+}
+
+void Worker::ClearCanaryWeights(const std::string& strNodeType)
+{
+    LOG4_TRACE("%s(%s)", __FUNCTION__, strNodeType.c_str());
+    nodesMgr.ClearCanaryWeights(strNodeType);
+}
+
 void Worker::DelNodeIdentify(const std::string& strNodeType, const std::string& strIdentify)
 {
     LOG4_TRACE("%s(%s, %s)", __FUNCTION__, strNodeType.c_str(), strIdentify.c_str());

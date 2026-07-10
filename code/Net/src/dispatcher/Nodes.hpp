@@ -77,17 +77,29 @@ public:
     const std::string& GetNodeIdentify(const std::string& strNodeType, const std::string& strHashKey);
     const std::string&  GetNodeIdentify(const std::string& strNodeType, uint32 uiHash);
     /**
-	 * @brief 获取轮询节点信息
-	 * @param[in] strNodeType节点类型
-	 * @return strNodeIdentify 节点标识
-	 */
+     * @brief 获取轮询节点信息
+     * @param[in] strNodeType节点类型
+     * @return strNodeIdentify 节点标识
+     */
     const std::string&  GetNodeIdentify(const std::string& strNodeType);
     /**
-	 * @brief 获取所有节点信息
-	 * @param[in] strNodeType节点类型
-	 * @return strNodeIdentify 节点标识集合
-	 */
+     * @brief 获取所有节点信息
+     * @param[in] strNodeType节点类型
+     * @return strNodeIdentify 节点标识集合
+     */
     const std::unordered_set<std::string>& GetNodeIdentifys(const std::string& strNodeType);
+    /**
+     * @brief 设置灰度权重表（Manager 侧调用，通过共享内存推送给所有 Worker）
+     * @param strNodeType 节点类型
+     * @param mapWeights ip:port → weight 的扁平权重表
+     */
+    void SetCanaryWeights(const std::string& strNodeType,
+                          const std::map<std::string, int32_t>& mapWeights);
+    /**
+     * @brief 清除灰度权重表（恢复一致性哈希路由）
+     * @param strNodeType 节点类型（空则清除所有）
+     */
+    void ClearCanaryWeights(const std::string& strNodeType = "");
     /**
      * @brief 添加节点
      * @note 添加节点信息，每个节点均有一个主节点一个被节点构成。
@@ -121,6 +133,9 @@ private:
 
     std::string m_sEmptyNodeIdentify;
     std::unordered_set<std::string> m_setEmptyIdentifySet;
+
+    // 灰度权重表：nodeType → {ip:port → weight}
+    std::map<std::string, std::map<std::string, int32_t>> m_mapCanaryWeights;
 
     static const uint32 mc_uiBeat = 0x00000001;
 	static const uint32 mc_uiAlive = 0x00000007;   ///< 最近三次心跳任意一次成功则认为在线

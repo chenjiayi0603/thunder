@@ -12,6 +12,7 @@
 #include "cryptopp/md5.h"
 #include "Nodes.hpp"
 #include "labor/Labor.hpp"
+#include <cstdlib>
 
 namespace net
 {
@@ -48,6 +49,50 @@ const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, const 
 
 const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, uint32 uiHash)
 {
+    // ── 灰度加权随机路由（优先于一致性哈希） ──
+    auto canary_iter = m_mapCanaryWeights.find(strNodeType);
+    if (canary_iter != m_mapCanaryWeights.end() && !canary_iter->second.empty())
+    {
+        const auto& weightMap = canary_iter->second;
+        int32_t totalWeight = 0;
+        for (const auto& kv : weightMap)
+            totalWeight += kv.second;
+
+        if (totalWeight > 0)
+        {
+            int32_t randVal = std::rand() % totalWeight;
+            int32_t acc = 0;
+            for (const auto& kv : weightMap)
+            {
+                acc += kv.second;
+                if (randVal < acc)
+                {
+                    // 验证节点仍在注册表中（防止发到已下线的节点）
+                    auto node_type_iter = m_mapNode.find(strNodeType);
+                    if (node_type_iter != m_mapNode.end() &&
+                        node_type_iter->second->mapNode2Hash.find(kv.first) !=
+                            node_type_iter->second->mapNode2Hash.end())
+                    {
+                        return kv.first; // Weighted random hit
+                    }
+                }
+            }
+            // fallback: 返回权重表中第一个有效节点
+            for (const auto& kv : weightMap)
+            {
+                auto node_type_iter = m_mapNode.find(strNodeType);
+                if (node_type_iter != m_mapNode.end() &&
+                    node_type_iter->second->mapNode2Hash.find(kv.first) !=
+                        node_type_iter->second->mapNode2Hash.end())
+                {
+                    return kv.first;
+                }
+            }
+        }
+        // totalWeight == 0 或所有节点已下线 → 回退到一致性哈希
+    }
+
+    // ── 默认：一致性哈希路由（不变） ──
     auto node_type_iter = m_mapNode.find(strNodeType);
     if (node_type_iter == m_mapNode.end())
     {
@@ -387,5 +432,37 @@ void Nodes::ClearAlive(const std::string& strNodeIdentify)
 	}
 }
 
+// ============================================================
+// 灰度权重管理（Manager 通过 CmdNodeNotice 下发，Worker 调用）
+// ============================================================
 
-} /* namespace neb */
+void Nodes::SetCanaryWeights(const std::string& strNodeType,
+                              const std::map<std::string, int32_t>& mapWeights)
+{
+    if (mapWeights.empty())
+    {
+        m_mapCanaryWeights.erase(strNodeType);
+    }
+    else
+    {
+        m_mapCanaryWeights[strNodeType] = mapWeights;
+    }
+    LOG4_TRACE("SetCanaryWeights nodeType=%s entries=%zu",
+               strNodeType.c_str(), mapWeights.size());
+}
+
+void Nodes::ClearCanaryWeights(const std::string& strNodeType)
+{
+    if (strNodeType.empty())
+    {
+        m_mapCanaryWeights.clear();
+    }
+    else
+    {
+        m_mapCanaryWeights.erase(strNodeType);
+    }
+    LOG4_TRACE("ClearCanaryWeights nodeType=%s", strNodeType.c_str());
+}
+
+
+} /* namespace net */

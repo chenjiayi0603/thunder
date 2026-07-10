@@ -18,6 +18,7 @@
 #include <log4cplus/loggingmacros.h>
 
 #include <chrono>
+#include <cstdlib>
 
 static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 #define GLOG_INFO(msg)  LOG4CPLUS_INFO(sLogger,  msg)
@@ -29,6 +30,7 @@ static constexpr int      kKeepAliveRefresh = 10;   // unary keepalive interval
 static constexpr int      kPollInterval     = 5;    // config poll interval
 static constexpr uint32_t kMaxSlot          = 255;
 static constexpr const char* kRegistryPrefix = "/thunder/registry/";
+static constexpr const char* kCanaryPrefix   = "/thunder/canary/";
 static constexpr const char* kConfigPrefix   = "/thunder/config/";
 
 namespace net
@@ -86,7 +88,12 @@ bool EtcdGrpcConnector::Init(struct ev_loop* loop, CenterEventCallback cb, void*
     m_stopFlag   = false;
     m_grpcThread = std::thread([this] { GrpcThreadMain(); });
 
-    GLOG_INFO("EtcdGrpcConnector::Init — endpoint=" << m_endpoint);
+    // 读 NODE_VERSION 环境变量（用于灰度权重分组）
+    const char* nodeVer = std::getenv("NODE_VERSION");
+    m_myNodeVersion = nodeVer ? nodeVer : "v1";
+
+    GLOG_INFO("EtcdGrpcConnector::Init — endpoint=" << m_endpoint
+              << " node_version=" << m_myNodeVersion);
     return true;
 }
 
@@ -207,12 +214,9 @@ void EtcdGrpcConnector::GrpcThreadMain()
     // Stop 时先 Cancel/reset m_watcher（join Watcher::task_），再让 etcdClient 析构。
     etcd::SyncClient etcdClient(m_endpoint);
 
-    auto cancelWatcher = [this] {
-        if (m_watcher)
-        {
-            m_watcher->Cancel();
-            m_watcher.reset();
-        }
+    auto cancelWatchers = [this] {
+        if (m_registryWatcher) { m_registryWatcher->Cancel(); m_registryWatcher.reset(); }
+        if (m_canaryWatcher)   { m_canaryWatcher->Cancel();   m_canaryWatcher.reset();   }
     };
 
     try
@@ -256,14 +260,14 @@ void EtcdGrpcConnector::GrpcThreadMain()
             {
                 GLOG_INFO("GrpcThread: received Stop");
                 // leaserevoke 优先（快，<1s），确保在 docker stop 10s 超时前完成注销。
-                // cancelWatcher 可能因 gRPC Watch stream 关闭慢而阻塞，放在后面无妨。
-                // etcdClient 仍比 m_watcher 活得长（return 后才析构）。
+                // cancelWatchers 可能因 gRPC Watch stream 关闭慢而阻塞，放在后面无妨。
+                // etcdClient 仍比 watchers 活得长（return 后才析构）。
                 if (m_leaseId)
                 {
                     etcdClient.leaserevoke(m_leaseId);
                     m_leaseId = 0;
                 }
-                cancelWatcher();   // join Watcher::task_ before etcdClient destroyed
+                cancelWatchers();   // join Watcher::task_ before etcdClient destroyed
                 return;
             }
 
@@ -289,9 +293,12 @@ void EtcdGrpcConnector::GrpcThreadMain()
                     m_myNodePort  = cmd.nodePort;
                     m_myWorkerNum = cmd.workerNum;
                     ev.node_id    = m_nodeId;
-                    GLOG_INFO("GrpcThread: registered node_id=" << m_nodeId);
+                    GLOG_INFO("GrpcThread: registered node_id=" << m_nodeId
+                              << " version=" << m_myNodeVersion);
                     DoInitialSnapshot(etcdClient);
                     DoStartWatch(etcdClient);
+                    DoCanarySnapshot(etcdClient);
+                    DoStartCanaryWatch(etcdClient);
                     lastPoll = Clock::now();
                 }
                 else
@@ -314,9 +321,12 @@ void EtcdGrpcConnector::GrpcThreadMain()
         {
             GLOG_WARN("GrpcThread: Watch ended, rebuilding snapshot + Watch");
             m_watchEnded = false;
-            m_watcher.reset();   // join task_，确保 OnWatchEvent 不再并发
+            m_registryWatcher.reset();   // join task_，确保 OnWatchEvent 不再并发
+            m_canaryWatcher.reset();
             DoInitialSnapshot(etcdClient);
             DoStartWatch(etcdClient);
+            DoCanarySnapshot(etcdClient);
+            DoStartCanaryWatch(etcdClient);
         }
 
         if (m_leaseId && now - lastKeepalive >= Seconds(kKeepAliveRefresh))
@@ -335,7 +345,7 @@ void EtcdGrpcConnector::GrpcThreadMain()
     } // try
     catch (const std::exception& e)
     {
-        cancelWatcher();   // join Watcher::task_ before etcdClient goes out of scope
+        cancelWatchers();   // join Watcher::task_ before etcdClient goes out of scope
         GLOG_ERROR("GrpcThread: uncaught exception: " << e.what());
         CenterEvent ev{};
         ev.type   = CenterEventType::ConnectionLost;
@@ -365,7 +375,7 @@ bool EtcdGrpcConnector::DoRegisterGrpc(etcd::SyncClient& client,
         if (nid > 0)
         {
             const std::string slotKey  = SlotKey(static_cast<int>(nid));
-            const std::string regValue = BuildRegistryValue(nid, nodeType, ip, port, workerNum);
+            const std::string regValue = BuildRegistryValue(nid, nodeType, ip, port, workerNum, m_myNodeVersion);
             const auto s = client.put(slotKey,     ipPort,   m_leaseId);
             const auto r = client.put(registryKey, regValue, m_leaseId);
             if (s.error_code() == 0 && r.error_code() == 0)
@@ -386,7 +396,7 @@ bool EtcdGrpcConnector::DoRegisterGrpc(etcd::SyncClient& client,
         const int         slot     = static_cast<int>(((startSlot - 1 + i) % kMaxSlot) + 1);
         const std::string slotKey  = SlotKey(slot);
         const std::string regValue = BuildRegistryValue(
-            static_cast<uint32_t>(slot), nodeType, ip, port, workerNum);
+            static_cast<uint32_t>(slot), nodeType, ip, port, workerNum, m_myNodeVersion);
 
         etcdv3::Transaction txn;
         txn.add_compare_create(slotKey, etcdv3::CompareResult::EQUAL, 0);
@@ -451,7 +461,7 @@ void EtcdGrpcConnector::DoStartWatch(etcd::SyncClient& client)
 {
     m_watchEnded = false;
     // fromIndex = m_watchRevision + 1：快照已包含 revision 及之前的状态，Watch 从下一个事件开始
-    m_watcher = std::make_unique<etcd::Watcher>(
+    m_registryWatcher = std::make_unique<etcd::Watcher>(
         client,
         kRegistryPrefix,
         m_watchRevision + 1,
@@ -557,7 +567,7 @@ void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
     const std::string regKey     = BuildRegistryKey(m_myNodeType, m_myNodeIp, m_myNodePort);
     const std::string ipPort     = m_myNodeIp + ":" + std::to_string(m_myNodePort);
     const std::string regValue   = BuildRegistryValue(m_nodeId, m_myNodeType,
-                                                       m_myNodeIp, m_myNodePort, m_myWorkerNum);
+                                                       m_myNodeIp, m_myNodePort, m_myWorkerNum, m_myNodeVersion);
 
     client.put(slotKey, ipPort,   newLeaseId);
     client.put(regKey,  regValue, newLeaseId);
@@ -590,12 +600,131 @@ void EtcdGrpcConnector::DoPollConfig(etcd::SyncClient& client)
 }
 
 // ============================================================
+// Canary 权重快照（gRPC 线程）
+// ============================================================
+
+void EtcdGrpcConnector::DoCanarySnapshot(etcd::SyncClient& client)
+{
+    auto resp = client.ls(kCanaryPrefix);
+    if (resp.error_code() != 0)
+    {
+        GLOG_INFO("DoCanarySnapshot: no canary keys (err=" << resp.error_message() << ")");
+        return;
+    }
+
+    m_canaryWatchRevision = resp.index();
+
+    {
+        std::lock_guard<std::mutex> lk(m_canaryMutex);
+        m_canaryWeights.clear();
+        for (const auto& v : resp.values())
+        {
+            const std::string& key = v.key();
+            if (key.size() <= strlen(kCanaryPrefix)) continue;
+            // key: /thunder/canary/{NODE_TYPE}/weights
+            std::string rest = key.substr(strlen(kCanaryPrefix));
+            auto slash = rest.rfind('/');
+            if (slash == std::string::npos) continue;
+            std::string nodeType = rest.substr(0, slash);
+            m_canaryWeights[nodeType] = v.as_string();
+        }
+        GLOG_INFO("DoCanarySnapshot: " << m_canaryWeights.size()
+                  << " canary entries, revision=" << m_canaryWatchRevision);
+    }
+}
+
+// ============================================================
+// 启动 Canary Watch
+// ============================================================
+
+void EtcdGrpcConnector::DoStartCanaryWatch(etcd::SyncClient& client)
+{
+    m_canaryWatcher = std::make_unique<etcd::Watcher>(
+        client,
+        kCanaryPrefix,
+        m_canaryWatchRevision > 0 ? m_canaryWatchRevision + 1 : 0,
+        [this](etcd::Response resp) {
+            if (resp.error_code() != 0) {
+                GLOG_WARN("CanaryWatch event error: " << resp.error_code() << " " << resp.error_message());
+                return;
+            }
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(m_canaryMutex);
+                for (const auto& ev : resp.events())
+                {
+                    if (!ev.has_kv()) continue;
+                    const std::string& key = ev.kv().key();
+                    if (key.size() <= strlen(kCanaryPrefix)) continue;
+                    std::string rest = key.substr(strlen(kCanaryPrefix));
+                    auto slash = rest.rfind('/');
+                    if (slash == std::string::npos) continue;
+                    std::string nodeType = rest.substr(0, slash);
+
+                    if (ev.event_type() == etcd::Event::EventType::PUT)
+                    {
+                        m_canaryWeights[nodeType] = ev.kv().as_string();
+                        changed = true;
+                        GLOG_INFO("CanaryWatch: PUT " << nodeType << " = " << ev.kv().as_string());
+                    }
+                    else if (ev.event_type() == etcd::Event::EventType::DELETE_)
+                    {
+                        m_canaryWeights.erase(nodeType);
+                        changed = true;
+                        GLOG_INFO("CanaryWatch: DELETE " << nodeType);
+                    }
+                }
+            }
+            if (changed)
+            {
+                // Canary 权重重载整个路由表
+                std::lock_guard<std::mutex> lk(m_registryMutex);
+                AssembleAndPushRouteUpdated();
+            }
+        },
+        [this](bool cancelled) { OnWatchEnded(cancelled); },
+        true   // recursive
+    );
+    GLOG_INFO("DoStartCanaryWatch: watching " << kCanaryPrefix
+              << " from revision=" << (m_canaryWatchRevision + 1));
+}
+
+// ============================================================
 // 组装路由快照并推送（调用方须持有 m_registryMutex）
+// 新增：按 canary_weights 将 version 权重展开为 ip:port 权重
 // ============================================================
 
 void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
 {
     NodeNotice notice;
+
+    // ── 收集 nodeType 的 canary 权重 map ──
+    std::map<std::string, std::map<std::string, int32_t>> typeVerWeights; // nodeType → {version → weight}
+    {
+        std::lock_guard<std::mutex> lk(m_canaryMutex);
+        for (const auto& kv : m_canaryWeights)
+        {
+            util::CJsonObject oWeight;
+            if (!oWeight.Parse(kv.second)) continue;
+            std::map<std::string, int32_t> verW;
+            std::vector<std::string> keys;
+            oWeight.GetKeys(keys);
+            for (const auto& member : keys)
+            {
+                int32_t w = 0;
+                if (oWeight.Get(member, w) && w > 0)
+                    verW[member] = w;
+            }
+            if (!verW.empty())
+                typeVerWeights[kv.first] = std::move(verW);
+        }
+    }
+
+    // ── 收集 ip:port 权重表（用于最终填充 NodeNotice） ──
+    // nodeType → {ip:port → weight}, {ip:port → version → weight}
+    struct IpVerW { std::string ipPort; std::string version; int32_t verWeight; };
+    std::map<std::string, std::vector<IpVerW>> typeIpList;
+
     for (const auto& kv : m_nodeRegistry)
     {
         const std::string& kvIpPort = kv.first;
@@ -606,10 +735,12 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
 
         int32_t  nid  = 0;
         uint32_t wnum = 0;
-        std::string ntype;
-        oVal.Get("node_id",    nid);
-        oVal.Get("worker_num", wnum);
-        oVal.Get("node_type",  ntype);
+        std::string ntype, ver;
+        oVal.Get("node_id",      nid);
+        oVal.Get("worker_num",   wnum);
+        oVal.Get("node_type",    ntype);
+        oVal.Get("node_version", ver);
+        if (ver.empty()) ver = "v1";
 
         auto* nr = notice.add_node_arry_reg();
         nr->set_node_ip(kvIpPort.substr(0, c));
@@ -617,6 +748,48 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
         if (nid  > 0)       nr->set_node_id(static_cast<uint32_t>(nid));
         if (!ntype.empty()) nr->set_node_type(ntype);
         nr->set_worker_num(wnum > 0 ? wnum : 1);
+        nr->set_node_version(ver);
+
+        // 汇总 ip:port → version 用于权重展开
+        typeIpList[ntype].push_back({kvIpPort, ver, 0});
+    }
+
+    // ── 展开权重：按 typeVerWeights[ntype] 的 version 权重，均分给同 version 的所有 ip:port ──
+    for (auto& typeEntry : typeIpList)
+    {
+        const std::string& ntype = typeEntry.first;
+        auto& ipList = typeEntry.second;
+
+        auto verWeights = typeVerWeights.find(ntype);
+        if (verWeights == typeVerWeights.end()) continue; // 无 canary 配置
+
+        // 统计每个 version 有多少个节点
+        std::map<std::string, int32_t> verCount;
+        for (auto& ipv : ipList)
+            verCount[ipv.version]++;
+
+        // 计算每个 ip:port 的最终权重
+        for (auto& ipv : ipList)
+        {
+            auto verW = verWeights->second.find(ipv.version);
+            if (verW == verWeights->second.end() || verCount[ipv.version] == 0)
+            {
+                ipv.verWeight = 0; // version 不在权重 map → 不接收灰度流量
+            }
+            else
+            {
+                ipv.verWeight = verW->second / verCount[ipv.version];
+            }
+        }
+
+        // 填入 NodeNotice.canary_weights（ip:port → weight）
+        for (auto& ipv : ipList)
+        {
+            if (ipv.verWeight > 0)
+            {
+                (*notice.mutable_canary_weights())[ipv.ipPort] = ipv.verWeight;
+            }
+        }
     }
 
     CenterEvent cev{};
@@ -637,13 +810,17 @@ std::string EtcdGrpcConnector::BuildRegistryKey(const std::string& nodeType,
 
 std::string EtcdGrpcConnector::BuildRegistryValue(uint32_t nodeId, const std::string& nodeType,
                                                     const std::string& ip, uint32_t port,
-                                                    uint32_t workerNum)
+                                                    uint32_t workerNum, const std::string& nodeVersion)
 {
-    return "{\"node_id\":"     + std::to_string(nodeId)    +
-           ",\"node_type\":\"" + nodeType                  + "\"" +
-           ",\"node_ip\":\""   + ip                        + "\"" +
-           ",\"node_port\":"   + std::to_string(port)      +
-           ",\"worker_num\":"  + std::to_string(workerNum > 0 ? workerNum : 1) + "}";
+    std::string val = "{\"node_id\":"     + std::to_string(nodeId)    +
+                      ",\"node_type\":\"" + nodeType                  + "\"" +
+                      ",\"node_ip\":\""   + ip                        + "\"" +
+                      ",\"node_port\":"   + std::to_string(port)      +
+                      ",\"worker_num\":"  + std::to_string(workerNum > 0 ? workerNum : 1);
+    if (!nodeVersion.empty())
+        val += ",\"node_version\":\"" + nodeVersion + "\"";
+    val += "}";
+    return val;
 }
 
 std::string EtcdGrpcConnector::SlotKey(int slot)

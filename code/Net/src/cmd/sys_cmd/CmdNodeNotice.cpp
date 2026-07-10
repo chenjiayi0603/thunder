@@ -46,6 +46,44 @@ bool CmdNodeNotice::AnyMessage(
 				}
 			}
 		}
+
+		// ── 灰度权重表处理（新增） ──
+		// canary_weights: map<string,int32> → ip:port → weight
+		// 按 nodeType 分组，每组收集 ip:port → weight 后批量设置
+		if (m_oNodeNotice.canary_weights().size() > 0)
+		{
+			std::map<std::string, std::map<std::string, int32_t>> typeWeights;
+			// 先收集每个 nodeType 的 ip:port → weight
+			for (const auto& entry : m_oNodeNotice.canary_weights())
+			{
+				const std::string& ipPort = entry.first;
+				int32_t weight = entry.second;
+
+				// 从 node_arry_reg 查找对应 ip:port 的 nodeType
+				for (int j = 0; j < m_oNodeNotice.node_arry_reg_size(); j++)
+				{
+					const auto& nr = m_oNodeNotice.node_arry_reg(j);
+					std::string nodeIpPort = nr.node_ip() + ":" + std::to_string(nr.node_port());
+					if (nodeIpPort == ipPort)
+					{
+						typeWeights[nr.node_type()][ipPort] = weight;
+						break;
+					}
+				}
+			}
+
+			// 批量设置到 Nodes 路由表
+			for (auto& tw : typeWeights)
+			{
+				GetLabor()->SetCanaryWeights(tw.first, tw.second);
+			}
+		}
+		else
+		{
+			// 无 canary 权重 → 清除所有灰度路由，恢复一致性哈希
+			GetLabor()->ClearCanaryWeights();
+		}
+
 		GetLabor()->SendToClient(stMsgShell,oInMsgHead,"ok");
 	}
 	else
