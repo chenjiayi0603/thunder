@@ -17,7 +17,23 @@
 
 > **不具备以上条件的测试结果无效。**
 
+
+> 范围: `./deploy.sh build` 全量构建 + 核心源码人工审查 (Net 模块: ShmRingQueue / AsioUringIoBackend / Worker 优雅重启)
+> 状态说明: 🔴 阻塞 / 🟠 待处理(高) / 🟡 待处理(中) / 🔵 优化建议 / ⚪ 记录(信息) / ✅ 已修复
+
 ---
+## 测试执行结果 (2026-06-03)
+
+| 阶段 | 结果 | 备注 |
+|------|------|------|
+| 全量构建 `./deploy.sh build` | ✅ 100% 通过, 0 error | 用 `CPATH` 绕过 #1(未删系统头),**737 warning**(Thunder 自身 46 去重项, 详见 #7) |
+| C++ gtest (ctest) | ✅ **288/288 通过** | 5 skipped: 3 个 E2E 冒烟需在线服务 + 2 个 ORM 需 MySQL/Redis |
+| Python pytest unit | ✅ **60/60 通过** | 0.03s, 零外部依赖 |
+| Docker E2E | ⚠️ **18/25 通过, 1 失败, 6 skip** | 失败的 `genkey_verifykey_chain` 暴露 #9(etcd 节点发现 bug, 已修复待验证);6 skip 为 Center 下线后的 admin 用例(预期) |
+| 手动冒烟 — Interface→Logic | ❌→修复中 | GenKey 报 "no LOGIC node in route table",根因 #9,已改 `EtcdCenterConnector.cpp` 待重编验证 |
+
+> E2E 过程中环境本身的问题见 #10(Docker 守护进程僵尸容器, 需 root 重启)、#11(etcd/日志 bind-mount 跨运行残留, 非 hermetic)。
+> 这两个环境问题导致前两次 E2E 在 `docker compose up` 阶段失败, 最终用「全新项目名 + 清空 etcd + external 模式」绕过才跑通用例。
 
 ---
 
@@ -42,29 +58,6 @@
 - 开源用户：AGPL v3 免费使用（闭源/SaaS 需开源衍生代码）
 - 商业用户：付费获取闭源商用 + SaaS 部署权
 - 版权方（自己）：不受任何许可限制
-
----
-> 范围: `./deploy.sh build` 全量构建 + 核心源码人工审查 (Net 模块: ShmRingQueue / AsioUringIoBackend / Worker 优雅重启)
-> 状态说明: 🔴 阻塞 / 🟠 待处理(高) / 🟡 待处理(中) / 🔵 优化建议 / ⚪ 记录(信息) / ✅ 已修复
-
----
-
----
-
-## 测试执行结果 (2026-06-03)
-
-| 阶段 | 结果 | 备注 |
-|------|------|------|
-| 全量构建 `./deploy.sh build` | ✅ 100% 通过, 0 error | 用 `CPATH` 绕过 #1(未删系统头),**737 warning**(Thunder 自身 46 去重项, 详见 #7) |
-| C++ gtest (ctest) | ✅ **288/288 通过** | 5 skipped: 3 个 E2E 冒烟需在线服务 + 2 个 ORM 需 MySQL/Redis |
-| Python pytest unit | ✅ **60/60 通过** | 0.03s, 零外部依赖 |
-| Docker E2E | ⚠️ **18/25 通过, 1 失败, 6 skip** | 失败的 `genkey_verifykey_chain` 暴露 #9(etcd 节点发现 bug, 已修复待验证);6 skip 为 Center 下线后的 admin 用例(预期) |
-| 手动冒烟 — Interface→Logic | ❌→修复中 | GenKey 报 "no LOGIC node in route table",根因 #9,已改 `EtcdCenterConnector.cpp` 待重编验证 |
-
-> E2E 过程中环境本身的问题见 #10(Docker 守护进程僵尸容器, 需 root 重启)、#11(etcd/日志 bind-mount 跨运行残留, 非 hermetic)。
-> 这两个环境问题导致前两次 E2E 在 `docker compose up` 阶段失败, 最终用「全新项目名 + 清空 etcd + external 模式」绕过才跑通用例。
-
----
 
 ## ✅ #1 [已修复] 全量构建失败 — `/usr/local/include/dirent.h` 被 DPDK 的 Windows 版遮蔽
 

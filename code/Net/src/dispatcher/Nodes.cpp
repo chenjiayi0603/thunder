@@ -49,17 +49,39 @@ const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, const 
 
 const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, uint32 uiHash)
 {
-    // ── 灰度加权随机路由（优先于一致性哈希） ──
+    // ════════════════════════════════════════════════════════════════
+    // Canary 灰度加权随机路由
+    //
+    // 数据流:
+    //   etcd PUT /thunder/canary/{TYPE}/weights '{"v1":80,"v2":20}'
+    //     → Manager gRPC Watch → AssembleAndPushRouteUpdated
+    //       → 按 version 展开为 ip:port 权重 (v1 的 80 均分给所有 v1 节点)
+    //         → NodeNotice.canary_weights → 共享内存 → Worker
+    //           → CmdNodeNotice → SetCanaryWeights → m_mapCanaryWeights
+    //             → 本函数: 加权随机选节点
+    //
+    // m_mapCanaryWeights 结构:
+    //   "LOGIC" → {"10.0.0.1:16068"→80, "10.0.0.2:16069"→20}
+    //   key=nodeType, value=map<ip:port, weight>
+    //
+    // 权重键不存在或被删除 → m_mapCanaryWeights 为空
+    //   → 跳过本段 → 走一致性哈希（原始行为，不变量）
+    // ════════════════════════════════════════════════════════════════
+
     auto canary_iter = m_mapCanaryWeights.find(strNodeType);
     if (canary_iter != m_mapCanaryWeights.end() && !canary_iter->second.empty())
     {
         const auto& weightMap = canary_iter->second;
+
+        // 计算总权重
         int32_t totalWeight = 0;
         for (const auto& kv : weightMap)
             totalWeight += kv.second;
 
         if (totalWeight > 0)
         {
+            // 加权随机: 取 [0, totalWeight) 随机数，按累积权重命中
+            // 例: {"A"→70, "B"→30}, randVal=45 → A 累积=70≥45 → 命中 A
             int32_t randVal = std::rand() % totalWeight;
             int32_t acc = 0;
             for (const auto& kv : weightMap)
@@ -67,17 +89,18 @@ const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, uint32
                 acc += kv.second;
                 if (randVal < acc)
                 {
-                    // 验证节点仍在注册表中（防止发到已下线的节点）
+                    // 安全检查: 节点必须在当前注册表中（防止连到已下线 Pod）
                     auto node_type_iter = m_mapNode.find(strNodeType);
                     if (node_type_iter != m_mapNode.end() &&
                         node_type_iter->second->mapNode2Hash.find(kv.first) !=
                             node_type_iter->second->mapNode2Hash.end())
                     {
-                        return kv.first; // Weighted random hit
+                        return kv.first; // 加权随机命中
                     }
                 }
             }
-            // fallback: 返回权重表中第一个有效节点
+
+            // 所有权重节点都已下线 → 返回权重表中第一个存活节点
             for (const auto& kv : weightMap)
             {
                 auto node_type_iter = m_mapNode.find(strNodeType);
@@ -89,10 +112,14 @@ const std::string& Nodes::GetNodeIdentify(const std::string& strNodeType, uint32
                 }
             }
         }
-        // totalWeight == 0 或所有节点已下线 → 回退到一致性哈希
+        // totalWeight==0 (全 0 权重) 或所有节点下线 → 回退到一致性哈希
     }
 
-    // ── 默认：一致性哈希路由（不变） ──
+    // ════════════════════════════════════════════════════════════════
+    // 默认: 一致性哈希路由
+    // 以下代码与 canary 无关，是 Thunder 原有路由逻辑
+    // m_mapCanaryWeights 为空时直接走到这里
+    // ════════════════════════════════════════════════════════════════
     auto node_type_iter = m_mapNode.find(strNodeType);
     if (node_type_iter == m_mapNode.end())
     {
