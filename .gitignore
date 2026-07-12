@@ -115,3 +115,14 @@ deploy/Logic/bin/Hello
 deploy/HelloWss/bin/Hello
 deploy/HelloWss/bin/HelloWs
 deploy/Interface/bin/Hello
+.gitkeep
+deploy/*/plugins/ModuleHello.so
+deploy/*/plugins/CmdHello.so
+deploy/*/plugins/ModuleShake.so
+deploy/*/plugins/CmdGetToken_v1.so
+deploy/HelloHttp/log/.gitkeep
+deploy/HelloHttp/plugins/echo.wasm
+deploy/HelloHttps/conf/certs/.gitkeep
+deploy/HelloHttps/log/.gitkeep
+deploy/HelloWs/log/.gitkeep
+deploy/HelloWss/log/.gitkeep
