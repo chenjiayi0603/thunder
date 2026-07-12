@@ -108,3 +108,10 @@ rocksdb_bench.sh
 # 本地文件（不提交）
 TEST_STATUS.md
 issus-list.md
+deploy/Logic/bin/Logic.bak
+deploy/3lib/readme.txt
+deploy/Logic_v2/bin/Logic
+deploy/Logic/bin/Hello
+deploy/HelloWss/bin/Hello
+deploy/HelloWss/bin/HelloWs
+deploy/Interface/bin/Hello
