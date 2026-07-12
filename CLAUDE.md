@@ -20,6 +20,38 @@
 
 ---
 
+## k8s regression — K8s 回归测试流程
+
+### 原则
+- 所有 K8s 测试通过 `./deploy.sh deploy` 一键完成，不手动操作
+- 环境问题修根因，不靠每次重启 kubelet/清理磁盘应付
+- 测试结果以 `tests/e2e/test_canary_k8s.py` 全绿为准
+
+### 命令
+
+```bash
+# 一键部署 + 等待 Running
+./deploy.sh deploy && kubectl wait --for=condition=Ready pods --all -n thunder --timeout=120s
+
+# 运行 K8s canary E2E
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 tests/e2e/test_canary_k8s.py
+
+# 验证 canary 权重分流（需要 2 个 Logic 节点注册成功）
+python3 tools/canary.py LOGIC canary v2 30
+```
+
+### 根因修复（已固化，不需要每次测试前手动执行）
+
+| 问题 | 永久修复 | 位置 |
+|------|---------|------|
+| br_netfilter 重启丢失 | `echo br_netfilter > /etc/modules-load.d/br_netfilter.conf` | `/etc/modules-load.d/` |
+| DiskPressure taint | `evictionHard.nodefs.available: 5%` | `/var/lib/kubelet/config.yaml` |
+| 镜像不在 containerd | `deploy.sh deploy` 自动 `docker save \| ctr import` | `deploy.sh` |
+| worker 缺 lib | Dockerfile 预装 `libluajit-5.1-2`，去掉 TSan 编译 | `deploy/*/Dockerfile` |
+| etcd endpoint 硬编码 | 配置改为 `thunder-etcd.thunder.svc.cluster.local:2379` | `deploy/*/conf/*.json` |
+
+---
+
 ## 会话开头必读
 
 每次新会话开始，**先跑环境预检**，确认服务在线再开始工作：
@@ -166,11 +198,6 @@ tests/test_smoke.sh 2>&1 | tee /tmp/smoke_$(date +%Y%m%d_%H%M%S).txt
 - 部分通过 = 未通过，要么全通要么明确列出未通过项及原因
 - 模拟测试通过 ≠ 测试通过，硬件限制的标注"当前环境无法测试"及原因
 - git add + commit + push 所有改动
----
-
-
----
-
 ---
 
 ## dockercomposeregression — Docker Compose 全量回归测试
