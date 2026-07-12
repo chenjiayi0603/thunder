@@ -8,11 +8,17 @@
   canary.py <service> rollback [ver]          # 回滚到上一稳定版本（或指定版本）
   canary.py <service> reset                  # 删除权重键，恢复默认路由
 
+环境变量:
+  ETCD_ENDPOINT    etcd 地址 (默认 127.0.0.1:2379, Docker Compose 用 127.0.0.1:12379)
+
 依赖: pip install etcd3
 """
 import sys
 import json
 import os
+
+# Python 3.14 + protobuf 兼容（避免 "Descriptors cannot be created directly"）
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 ETCD_HOST = os.environ.get("ETCD_ENDPOINT", "127.0.0.1:2379")
 KEY_PREFIX = "/thunder/canary"
@@ -21,7 +27,7 @@ KEY_PREFIX = "/thunder/canary"
 try:
     import etcd3
 except ImportError:
-    print("需要 pip install etcd3")
+    print("需要 pip install etcd3", file=sys.stderr)
     sys.exit(1)
 
 
@@ -72,6 +78,11 @@ def canary(service, new_ver, pct):
 
     new_weights = {}
     remaining = 100 - pct
+
+    # 新版本不在旧权重中时需要补上
+    if new_ver not in old_weights:
+        new_weights[new_ver] = pct
+
     old_total = sum(w for v, w in old_weights.items() if v != new_ver)
 
     for ver, w in old_weights.items():
@@ -129,10 +140,18 @@ def rollback(service, to_version=None):
             return
         old_weights = json.loads(old_value.decode())
         sorted_vers = sorted(old_weights.items(), key=lambda x: x[1], reverse=True)
-        if len(sorted_vers) >= 2 and sorted_vers[0][1] > 0:
-            stable_ver = sorted_vers[1][0]
+
+        # 如果最高权重=100，说明是全量切换 → 回滚到最近的非满权重版本
+        if len(sorted_vers) >= 2 and sorted_vers[0][1] == 100:
+            for v, w in sorted_vers[1:]:
+                if w > 0:
+                    stable_ver = v
+                    break
+            else:
+                stable_ver = "v1"
         elif len(sorted_vers) >= 1:
-            stable_ver = "v1"
+            # 灰度场景: 最高权重 = 稳定版本
+            stable_ver = sorted_vers[0][0]
         else:
             stable_ver = "v1"
 

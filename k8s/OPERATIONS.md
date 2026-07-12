@@ -55,8 +55,34 @@
 - Ubuntu 26.04（或 24.04/22.04）
 - containerd 已安装
 - 禁用 swap：`swapoff -a`
-- 内核模块：`br_netfilter`
 - 代理：Clash Verge `127.0.0.1:7897`（下载镜像用）
+
+#### 内核模块 + bridge sysctl（必须持久化，否则每次重启 flannel 挂）
+
+```bash
+# 加载 br_netfilter（flannel vxlan 依赖）
+sudo modprobe br_netfilter
+
+# 持久化：systemd 开机自动加载
+cat <<'EOF' | sudo tee /etc/modules-load.d/br_netfilter.conf
+br_netfilter
+EOF
+
+# 持久化 bridge-nf sysctl（K8s 网络依赖）
+cat <<'EOF' | sudo tee /etc/sysctl.d/99-kubernetes-bridge.conf
+net.bridge.bridge-nf-call-iptables=1
+net.bridge.bridge-nf-call-ip6tables=1
+EOF
+
+# 立即生效
+sudo sysctl --system
+
+# 验证
+lsmod | grep br_netfilter
+sysctl net.bridge.bridge-nf-call-iptables   # 必须 = 1
+```
+
+> **为什么重启会掉？** `modprobe br_netfilter` 只在当前运行时加载，没有写入 `/etc/modules-load.d/` 就不会开机自动加载。flannel 启动时读 `/proc/sys/net/bridge/bridge-nf-call-iptables` 和 `/run/flannel/subnet.env`，模块未加载直接 Error → 所有 ClusterIP Pod `FailedCreatePodSandBox`。
 
 ### 1. 安装 kubeadm
 
@@ -326,7 +352,9 @@ curl -s -X PUT "http://192.168.3.61:30090/plugins/HelloHttp/xxx.so" \
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
+| flannel Error (br_netfilter) | `br_netfilter` 内核模块未加载或未持久化 | `sudo modprobe br_netfilter` + 写入 `/etc/modules-load.d/br_netfilter.conf`（见前置条件） |
 | flannel CrashLoop | initContainer command 错误 | 用官方 YAML，command 为 `cp` |
+| 所有 ClusterIP Pod `FailedCreatePodSandBox` | flannel 不可用 → `/run/flannel/subnet.env` 缺失 | 先修 flannel→kubelet 重建 sandbox |
 | CoreDNS CrashLoop | CNI 未就绪 | flannel Running 后自动恢复 |
 | etcd-x Pending | PVC 无对应 PV | 创建 PV |
 | Worker 未启动 | 缺 libjemalloc、libluajit | `apt install -y libjemalloc2 libluajit-5.1-2` |

@@ -231,6 +231,33 @@ etcdctl del /thunder/canary/LOGIC/weights
 
 修改后 Manager Watch 即时感知 → 共享内存 version++ → Worker 下一笔请求即用新权重。不用 reload、不用重启、不用进 Pod。
 
+#### Worker 日志示例（实际运行输出）
+
+权重写入 etcd 后，Worker 日志中可观测到完整链路：
+
+```
+# etcdctl put /thunder/canary/LOGIC/weights '{"v1":80,"v2":20}'
+
+CanaryWatch: PUT LOGIC = {"v1":80,"v2":20}
+  ↑ etcd 写入被 gRPC Watch 感知
+
+CanaryParsed[LOGIC]: v1=80 v2=20
+  ↑ 自定义 JSON 解析器解析 version→权重
+
+CanaryExpand[LOGIC]: 10.244.0.145:16068=80 10.244.0.146:16069=20
+  ↑ Manager 读取 etcd 注册表，按 version 分组，权重均分到 ip:port
+
+CanaryNotice[LOGIC]: 10.244.0.145:16068=80 10.244.0.146:16069=20
+  ↑ 填入 NodeNotice.canary_weights，序列化后推共享内存
+
+# 删除权重键后：
+
+CanaryWatch: DELETE LOGIC
+  ↑ Worker 侧 ClearCanaryWeights → m_mapCanaryWeights 清空 → 恢复一致性哈希
+```
+
+**日志位置**：Manager 的 `{NodeType}_robot.log`（如 `Hello_robot.log`、`Logic_robot.log`）。所有上游网关（Hello、Interface）的 Manager 都会收到同一份 canary 事件，各自推给本节点的 Worker。
+
 #### 验证流量分流
 
 ```bash

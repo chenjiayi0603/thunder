@@ -28,6 +28,7 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 static constexpr int      kLeaseTTL         = 30;   // seconds
 static constexpr int      kKeepAliveRefresh = 10;   // unary keepalive interval
 static constexpr int      kPollInterval     = 5;    // config poll interval
+static constexpr int      kZombieMaxAge     = 60;   // skip entries older than 2× lease TTL
 static constexpr uint32_t kMaxSlot          = 255;
 static constexpr const char* kRegistryPrefix = "/thunder/registry/";
 static constexpr const char* kCanaryPrefix   = "/thunder/canary/";
@@ -699,24 +700,67 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
     NodeNotice notice;
 
     // ── 收集 nodeType 的 canary 权重 map ──
-    std::map<std::string, std::map<std::string, int32_t>> typeVerWeights; // nodeType → {version → weight}
+    // 绕过 CJsonObject/BSON 的解析 bug，直接用简单 JSON 解析
+    std::map<std::string, std::map<std::string, int32_t>> typeVerWeights;
     {
         std::lock_guard<std::mutex> lk(m_canaryMutex);
         for (const auto& kv : m_canaryWeights)
         {
-            util::CJsonObject oWeight;
-            if (!oWeight.Parse(kv.second)) continue;
+            const std::string& rawJson = kv.second;
             std::map<std::string, int32_t> verW;
-            std::vector<std::string> keys;
-            oWeight.GetKeys(keys);
-            for (const auto& member : keys)
+
+            // 简单 JSON 解析: {"key":val, ...} 或 {"key":"val", ...}
+            size_t pos = 0;
+            while (pos < rawJson.size())
             {
+                // skip whitespace/brace/comma/colon
+                while (pos < rawJson.size() && (rawJson[pos] == ' ' || rawJson[pos] == '{'
+                       || rawJson[pos] == '}' || rawJson[pos] == ',' || rawJson[pos] == ':'))
+                    ++pos;
+                if (pos >= rawJson.size()) break;
+
+                // read key (quoted string)
+                if (rawJson[pos] != '"') break;
+                size_t keyStart = ++pos;
+                while (pos < rawJson.size() && rawJson[pos] != '"') ++pos;
+                if (pos >= rawJson.size()) break;
+                std::string key = rawJson.substr(keyStart, pos - keyStart);
+                ++pos; // skip closing quote
+
+                // skip colon
+                while (pos < rawJson.size() && (rawJson[pos] == ' ' || rawJson[pos] == ':'))
+                    ++pos;
+
+                // read value (number or quoted string)
                 int32_t w = 0;
-                if (oWeight.Get(member, w) && w > 0)
-                    verW[member] = w;
+                if (pos < rawJson.size() && rawJson[pos] == '"')
+                {
+                    // string value
+                    size_t valStart = ++pos;
+                    while (pos < rawJson.size() && rawJson[pos] != '"') ++pos;
+                    std::string valStr = rawJson.substr(valStart, pos - valStart);
+                    ++pos;
+                    try { w = std::stoi(valStr); } catch (...) { w = 0; }
+                }
+                else
+                {
+                    // number value
+                    size_t valStart = pos;
+                    while (pos < rawJson.size() && (rawJson[pos] >= '0' && rawJson[pos] <= '9'))
+                        ++pos;
+                    std::string valStr = rawJson.substr(valStart, pos - valStart);
+                    if (!valStr.empty()) try { w = std::stoi(valStr); } catch (...) { w = 0; }
+                }
+                if (w > 0) verW[key] = w;
             }
-            if (!verW.empty())
+            if (!verW.empty()) {
                 typeVerWeights[kv.first] = std::move(verW);
+                // DEBUG
+                std::string dbg = "CanaryParsed[" + kv.first + "]: ";
+                for (auto& vw : typeVerWeights[kv.first])
+                    dbg += vw.first + "=" + std::to_string(vw.second) + " ";
+                GLOG_INFO(dbg);
+            }
         }
     }
 
@@ -724,6 +768,9 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
     // nodeType → {ip:port → weight}, {ip:port → version → weight}
     struct IpVerW { std::string ipPort; std::string version; int32_t verWeight; };
     std::map<std::string, std::vector<IpVerW>> typeIpList;
+
+    int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
 
     for (const auto& kv : m_nodeRegistry)
     {
@@ -741,6 +788,17 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
         oVal.Get("node_type",    ntype);
         oVal.Get("node_version", ver);
         if (ver.empty()) ver = "v1";
+
+        // 僵尸节点过滤：跳过 registered_at 超过 kZombieMaxAge 的条目
+        // 新注册的条目带 registered_at 字段；旧注册（无此字段）不受影响
+        int32_t registeredAt = 0;
+        oVal.Get("registered_at", registeredAt);
+        if (registeredAt > 0 && (nowSec - registeredAt) > kZombieMaxAge)
+        {
+            GLOG_INFO("AssembleAndPushRouteUpdated: skip zombie " << kvIpPort
+                      << " (age=" << (nowSec - registeredAt) << "s)");
+            continue;
+        }
 
         auto* nr = notice.add_node_arry_reg();
         nr->set_node_ip(kvIpPort.substr(0, c));
@@ -772,23 +830,47 @@ void EtcdGrpcConnector::AssembleAndPushRouteUpdated()
         for (auto& ipv : ipList)
         {
             auto verW = verWeights->second.find(ipv.version);
-            if (verW == verWeights->second.end() || verCount[ipv.version] == 0)
+            if (verW != verWeights->second.end() && verCount[ipv.version] > 0)
             {
-                ipv.verWeight = 0; // version 不在权重 map → 不接收灰度流量
+                ipv.verWeight = verW->second / verCount[ipv.version];
             }
             else
             {
-                ipv.verWeight = verW->second / verCount[ipv.version];
+                // 版本匹配失败 → fallback: ip:port 直接匹配
+                auto directW = verWeights->second.find(ipv.ipPort);
+                if (directW != verWeights->second.end() && directW->second > 0)
+                    ipv.verWeight = directW->second;
+                else
+                    ipv.verWeight = 0;
             }
         }
 
         // 填入 NodeNotice.canary_weights（ip:port → weight）
+        // DEBUG: 打印展开后的权重
+        {
+            std::string dbg = "CanaryExpand[" + ntype + "]: ";
+            for (auto& ipv : ipList) {
+                if (ipv.verWeight > 0) {
+                    dbg += ipv.ipPort + "=" + std::to_string(ipv.verWeight) + " ";
+                }
+            }
+            GLOG_INFO(dbg);
+        }
+
         for (auto& ipv : ipList)
         {
             if (ipv.verWeight > 0)
             {
                 (*notice.mutable_canary_weights())[ipv.ipPort] = ipv.verWeight;
             }
+        }
+
+        // DEBUG: 确认 protobuf 写入后
+        {
+            std::string dbg2 = "CanaryNotice[" + ntype + "]: ";
+            for (const auto& e : notice.canary_weights())
+                dbg2 += e.first + "=" + std::to_string(e.second) + " ";
+            GLOG_INFO(dbg2);
         }
     }
 
@@ -812,6 +894,8 @@ std::string EtcdGrpcConnector::BuildRegistryValue(uint32_t nodeId, const std::st
                                                     const std::string& ip, uint32_t port,
                                                     uint32_t workerNum, const std::string& nodeVersion)
 {
+    int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     std::string val = "{\"node_id\":"     + std::to_string(nodeId)    +
                       ",\"node_type\":\"" + nodeType                  + "\"" +
                       ",\"node_ip\":\""   + ip                        + "\"" +
@@ -819,6 +903,7 @@ std::string EtcdGrpcConnector::BuildRegistryValue(uint32_t nodeId, const std::st
                       ",\"worker_num\":"  + std::to_string(workerNum > 0 ? workerNum : 1);
     if (!nodeVersion.empty())
         val += ",\"node_version\":\"" + nodeVersion + "\"";
+    val += ",\"registered_at\":" + std::to_string(now);
     val += "}";
     return val;
 }

@@ -7,7 +7,7 @@
     "inner_port": 27444,
     "center": {
         "connector": "etcd-grpc",
-        "etcd_endpoints": "http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"
+        "etcd_endpoints": "http://127.0.0.1:12379,http://127.0.0.1:12381,http://127.0.0.1:12383"
     },
     "server_name": "Hello_https_robot",
     "process_num": 1,

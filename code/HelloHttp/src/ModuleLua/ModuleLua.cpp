@@ -136,14 +136,15 @@ static int lua_SendToNodeType(lua_State* L)
             lua_pushvalue(L, i);
             cbRef = luaL_ref(L, LUA_REGISTRYINDEX);
         }
+        else if (lua_isnumber(L, i))
+        {
+            // 必须在 lua_isstring 之前: lua_isstring 对数字也返回 true
+            timeoutSec = lua_tonumber(L, i);
+        }
         else if (lua_isstring(L, i))
         {
             const char* s = lua_tostring(L, i);
             if (s) targetId = s;
-        }
-        else if (lua_isnumber(L, i))
-        {
-            timeoutSec = lua_tonumber(L, i);
         }
     }
 

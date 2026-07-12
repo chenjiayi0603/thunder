@@ -1,32 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: thunder-hello-ws
+  name: thunder-logic-v2
   namespace: thunder
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: thunder-hello-ws
+      app: thunder-logic
+      version: v2
   template:
     metadata:
       labels:
-        app: thunder-hello-ws
+        app: thunder-logic
+        version: v2
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: app
-        image: thunder-hello-ws:latest
+        image: thunder-logic-v2:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: NODE_VERSION
-          value: "v1"
+          value: "v2"
+        - name: INNER_PORT
+          value: "16069"
         - name: POD_IP
           valueFrom:
             fieldRef:
-              fieldPath: status.hostIP
-
+              fieldPath: status.podIP
         ports:
-        - containerPort: 27010
-        - containerPort: 27011
+        - containerPort: 16069
