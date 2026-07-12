@@ -126,3 +126,4 @@ deploy/HelloHttps/conf/certs/.gitkeep
 deploy/HelloHttps/log/.gitkeep
 deploy/HelloWs/log/.gitkeep
 deploy/HelloWss/log/.gitkeep
+*.wasm
