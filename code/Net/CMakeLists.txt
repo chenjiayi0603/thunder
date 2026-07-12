@@ -50,13 +50,17 @@ if(THUNDER_DEPLOY_AUTO)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/HelloWs/bin"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/HelloHttps/bin"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THUNDER_DEPLOY_ROOT}/HelloWss/bin"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:Hello>"
             "${THUNDER_DEPLOY_ROOT}/HelloWs/bin/HelloWs"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:Hello>"
             "${THUNDER_DEPLOY_ROOT}/HelloHttps/bin/HelloHttps"
-    COMMENT "Deploy: deploy/HelloWs/bin/HelloWs + deploy/HelloHttps/bin/HelloHttps"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Hello>"
+            "${THUNDER_DEPLOY_ROOT}/HelloWss/bin/HelloWss"
+    COMMENT "Deploy: deploy/HelloWs/bin/HelloWs + deploy/HelloHttps/bin/HelloHttps + deploy/HelloWss/bin/HelloWss"
   )
   if(THUNDER_BUILD_CENTER AND TARGET Center)
     # 与 deploy 脚本默认 CENTER_BIN=deploy/Center/bin/Center 一致

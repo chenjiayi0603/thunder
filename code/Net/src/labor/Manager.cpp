@@ -2651,7 +2651,8 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
         return std::make_unique<net::EtcdGrpcConnector>(centerConf);
     }
 
-    LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
+    // tcp 是老 Center 协议，etcd-grpc 已在上面处理；其余均为非法配置
+    LOG4_ERROR("unknown center.connector '%s', only 'etcd-grpc' supported. fallback to tcp (legacy)", connectorType.c_str());
     auto p = std::make_unique<TcpCenterConnector>(m_oCurrentConf["center"]);
     auto* tcp = static_cast<TcpCenterConnector*>(p.get());
     tcp->SetNodeInfo(m_strNodeType,

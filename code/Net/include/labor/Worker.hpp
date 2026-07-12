@@ -340,6 +340,9 @@ public:
     //连接
     const std::unordered_map<std::string, tagMsgShell>& GetMsgShellMap()const {return mapMsgShell;}
     Nodes& GetNodesMgr() {return nodesMgr;}
+    void SetCanaryWeights(const std::string& strNodeType,
+                           const std::map<std::string, int32_t>& mapWeights) override;
+    void ClearCanaryWeights(const std::string& strNodeType = "") override;
     //动态库
     void LoadSo(util::CJsonObject& oSoConf,bool boForce=false);
     void ReloadSo(util::CJsonObject& oCmds);

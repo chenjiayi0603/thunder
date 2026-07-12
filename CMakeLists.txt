@@ -103,9 +103,12 @@ if(THUNDER_BUILD_NODE_PLUGINS)
 endif()
 
 # cmake --install 与 POST_BUILD 复制布局一致（路径相对于安装前缀，默认 deploy/）
-install(TARGETS Hello RUNTIME DESTINATION HelloHttp/bin)
+install(TARGETS Hello RUNTIME DESTINATION HelloHttp/bin RENAME HelloHttp)
 install(TARGETS Hello RUNTIME DESTINATION HelloWs/bin RENAME HelloWs)
 install(TARGETS Hello RUNTIME DESTINATION HelloHttps/bin RENAME HelloHttps)
+install(TARGETS Hello RUNTIME DESTINATION HelloWss/bin RENAME HelloWss)
+install(TARGETS Hello RUNTIME DESTINATION Logic/bin RENAME Logic)
+install(TARGETS Hello RUNTIME DESTINATION Interface/bin RENAME Interface)
 install(TARGETS Util Net Proto LIBRARY DESTINATION lib)
 
 

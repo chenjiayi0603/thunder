@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: logic-v2-debug
+  namespace: thunder
+  labels:
+    app: thunder-logic
+    version: v2
+spec:
+  containers:
+  - name: app
+    image: thunder-logic:latest
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: NODE_VERSION
+      value: "v2"
+    - name: INNER_PORT
+      value: "16069"
+    command: ["/bin/bash", "-c", "apt-get install -y -qq strace 2>/dev/null; strace -f -o /tmp/strace.log ./bin/Logic ./conf/Logic.json; echo EXIT:$?; sleep 9999"]

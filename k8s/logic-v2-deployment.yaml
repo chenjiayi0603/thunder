@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-logic-v2
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-logic
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: thunder-logic
+        version: v2
+    spec:
+      containers:
+      - name: app
+        image: thunder-logic-v2:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NODE_VERSION
+          value: "v2"
+        - name: INNER_PORT
+          value: "16069"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 16069

@@ -47,15 +47,17 @@ TESTS_DIR="${PROJECT_DIR}/tests"
 # ─── 颜色 ───────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
-log()  { echo -e "${BLUE}▸${NC} $*"; }
-ok()   { echo -e "${GREEN}✔${NC} $*"; }
-warn() { echo -e "${YELLOW}⚠${NC} $*"; }
+log()   { echo -e "${BLUE}▸${NC} $*"; }
+ok()    { echo -e "${GREEN}✔${NC} $*"; }
+warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
+error() { echo -e "${RED}✘${NC} $*"; }
 err()  { echo -e "${RED}✘${NC} $*"; }
 
 # ─── 参数解析 ───────────────────────────────────
 CMD="${1:-help}"; shift || true
 _ADMIN_SUB="${1:-}"  # admin nodes/status/config 透传
 _ADMIN_ARGS=("$@")   # save all remaining args before the option-parse loop shifts them
+_EXTRA_ARGS=("$@")
 FORCE=false; SKIP_BUILD=false; KEEP_DOCKER=false; VERBOSE=false; MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -499,6 +501,122 @@ cmd_status() {
     ss -tln 2>/dev/null | grep -E ':(27000|27006|27008|27010|27443|16068|6379|3306)\s' || echo "(无)"
 }
 
+cmd_image() {
+    local tag="${IMAGE_TAG:-latest}"
+    local registry="${IMAGE_REGISTRY:-}"
+    local services=("${@}")
+
+    if [[ ${#services[@]} -eq 0 ]]; then
+        services=(logic hello http https ws wss interface admin-web)
+    fi
+
+    for svc in "${services[@]}"; do
+        local dir ctx tag_name
+        case "$svc" in
+            logic)     dir="deploy/Logic";       ctx="."; tag_name="thunder-logic" ;;
+            hello)     dir="deploy/HelloHttp";   ctx="."; tag_name="thunder-hello-http" ;;
+            https)     dir="deploy/HelloHttps";  ctx="."; tag_name="thunder-hello-https" ;;
+            ws)        dir="deploy/HelloWs";     ctx="."; tag_name="thunder-hello-ws" ;;
+            wss)       dir="deploy/HelloWss";    ctx="."; tag_name="thunder-hello-wss" ;;
+            interface) dir="deploy/Interface";   ctx="."; tag_name="thunder-interface" ;;
+            admin-web) dir="deploy/admin-web";   ctx="deploy/admin-web"; tag_name="thunder-admin-web" ;;
+            *)
+                warn "未知服务: $svc, 跳过"
+                continue
+                ;;
+        esac
+
+        local full_tag="${tag_name}:${tag}"
+        if [[ -n "$registry" ]]; then
+            full_tag="${registry}/${tag_name}:${tag}"
+        fi
+
+        log "构建镜像: ${full_tag}"
+        docker build -t "$full_tag" -f "${dir}/Dockerfile" "$ctx" || {
+            error "镜像构建失败: $full_tag"
+            return 1
+        }
+        ok "${full_tag}"
+    done
+}
+
+cmd_push() {
+    local registry="${IMAGE_REGISTRY:-}"
+    if [[ -z "$registry" ]]; then
+        error "请设置 IMAGE_REGISTRY 环境变量"
+        return 1
+    fi
+    local tag="${IMAGE_TAG:-latest}"
+    local services=("${@}")
+
+    if [[ ${#services[@]} -eq 0 ]]; then
+        services=(logic hello http https ws wss interface admin-web)
+    fi
+
+    for svc in "${services[@]}"; do
+        local tag_name
+        case "$svc" in
+            logic)     tag_name="thunder-logic" ;;
+            hello)     tag_name="thunder-hello-http" ;;
+            https)     tag_name="thunder-hello-https" ;;
+            ws)        tag_name="thunder-hello-ws" ;;
+            wss)       tag_name="thunder-hello-wss" ;;
+            interface) tag_name="thunder-interface" ;;
+            admin-web) tag_name="thunder-admin-web" ;;
+            *) warn "未知服务: $svc, 跳过"; continue ;;
+        esac
+
+        local full_tag="${registry}/${tag_name}:${tag}"
+        log "推送: ${full_tag}"
+        docker push "$full_tag" || {
+            error "推送失败: $full_tag"
+            return 1
+        }
+        ok "${full_tag}"
+    done
+}
+
+cmd_deploy() {
+    local ns="${K8S_NAMESPACE:-thunder}"
+    local tag="${IMAGE_TAG:-latest}"
+
+    echo ""
+    log "K8s 一键部署 (ns=${ns})"
+
+    # 1. 清理旧 Pod
+    kubectl delete pods -n "$ns" --all --force --grace-period=0 2>/dev/null
+    kubectl scale deploy -n "$ns" thunder-admin-web --replicas=1 2>/dev/null
+    sleep 3
+
+    # 2. 构建镜像
+    cmd_image || return 1
+
+    # 3. 导入 containerd
+    log "导入镜像到 containerd ..."
+    for img in thunder-logic thunder-hello-http thunder-hello-https \
+               thunder-hello-ws thunder-hello-wss thunder-interface; do
+        docker save "$img:$tag" 2>/dev/null | sudo -S ctr -n k8s.io image import - 2>/dev/null
+    done
+
+    # 4. 部署基础设施
+    kubectl apply -f k8s/etcd-statefulset.yaml 2>/dev/null
+    kubectl apply -f k8s/mysql.yaml 2>/dev/null
+    kubectl apply -f k8s/redis.yaml 2>/dev/null
+    sleep 10
+
+    # 5. 部署业务服务
+    for yaml in k8s/logic-deployment.yaml k8s/logic-v2-deployment.yaml \
+                k8s/hello-deployment.yaml k8s/hello-https-deployment.yaml \
+                k8s/hello-ws-deployment.yaml k8s/hello-wss-deployment.yaml \
+                k8s/interface-deployment.yaml; do
+        kubectl apply -f "$yaml" 2>/dev/null
+    done
+
+    ok "deploy 完成，等待 Pod ..."
+    kubectl wait --for=condition=Ready pods --all -n "$ns" --timeout=180s 2>/dev/null || true
+    kubectl get pods -n "$ns" 2>/dev/null | grep -v -E "Completed|Error|Evicted" | head -20
+}
+
 cmd_clean() {
     echo ""
     log "清理 build/ ..."
@@ -562,6 +680,15 @@ case "${CMD}" in
         ;;
     build-so)
         cmd_build_so
+        ;;
+    image)
+        cmd_image "${_EXTRA_ARGS[@]}"
+        ;;
+    push)
+        cmd_push "${_EXTRA_ARGS[@]}"
+        ;;
+    deploy)
+        cmd_deploy
         ;;
     up)
         cmd_up

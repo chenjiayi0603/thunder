@@ -55,8 +55,34 @@
 - Ubuntu 26.04（或 24.04/22.04）
 - containerd 已安装
 - 禁用 swap：`swapoff -a`
-- 内核模块：`br_netfilter`
 - 代理：Clash Verge `127.0.0.1:7897`（下载镜像用）
+
+#### 内核模块 + bridge sysctl（必须持久化，否则每次重启 flannel 挂）
+
+```bash
+# 加载 br_netfilter（flannel vxlan 依赖）
+sudo modprobe br_netfilter
+
+# 持久化：systemd 开机自动加载
+cat <<'EOF' | sudo tee /etc/modules-load.d/br_netfilter.conf
+br_netfilter
+EOF
+
+# 持久化 bridge-nf sysctl（K8s 网络依赖）
+cat <<'EOF' | sudo tee /etc/sysctl.d/99-kubernetes-bridge.conf
+net.bridge.bridge-nf-call-iptables=1
+net.bridge.bridge-nf-call-ip6tables=1
+EOF
+
+# 立即生效
+sudo sysctl --system
+
+# 验证
+lsmod | grep br_netfilter
+sysctl net.bridge.bridge-nf-call-iptables   # 必须 = 1
+```
+
+> **为什么重启会掉？** `modprobe br_netfilter` 只在当前运行时加载，没有写入 `/etc/modules-load.d/` 就不会开机自动加载。flannel 启动时读 `/proc/sys/net/bridge/bridge-nf-call-iptables` 和 `/run/flannel/subnet.env`，模块未加载直接 Error → 所有 ClusterIP Pod `FailedCreatePodSandBox`。
 
 ### 1. 安装 kubeadm
 
@@ -326,7 +352,9 @@ curl -s -X PUT "http://192.168.3.61:30090/plugins/HelloHttp/xxx.so" \
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
+| flannel Error (br_netfilter) | `br_netfilter` 内核模块未加载或未持久化 | `sudo modprobe br_netfilter` + 写入 `/etc/modules-load.d/br_netfilter.conf`（见前置条件） |
 | flannel CrashLoop | initContainer command 错误 | 用官方 YAML，command 为 `cp` |
+| 所有 ClusterIP Pod `FailedCreatePodSandBox` | flannel 不可用 → `/run/flannel/subnet.env` 缺失 | 先修 flannel→kubelet 重建 sandbox |
 | CoreDNS CrashLoop | CNI 未就绪 | flannel Running 后自动恢复 |
 | etcd-x Pending | PVC 无对应 PV | 创建 PV |
 | Worker 未启动 | 缺 libjemalloc、libluajit | `apt install -y libjemalloc2 libluajit-5.1-2` |
@@ -513,3 +541,47 @@ HPA 看的是**所有 Pod 的平均 CPU 利用率**，不是单个 Pod：
 ### 配置文件中查看
 
 `k8s/logic-hpa.yaml`，可直接 `kubectl apply -f` 部署。
+
+---
+
+## 附录 D：Thunder 网关 hostNetwork vs NodePort
+
+### D.1 为什么网关要考虑 hostNetwork
+
+Thunder 作为高性能网关（HTTP 64B 延迟 220μs），K8s 默认的 NodePort 在数据面多一跳 kube-proxy + CNI 转发，额外消耗几~几十 μs。对于 ms 级业务可忽略，但对 Thunder 的 μs 级优势有影响。
+
+### D.2 数据路径对比
+
+```
+hostNetwork:
+  网卡 → 内核协议栈 → Pod 进程 (直通, 零 K8s 组件)
+
+NodePort:
+  网卡 → 内核 iptables/IPVS → CNI veth pair → Pod 进程 (多两跳)
+```
+
+### D.3 推荐配置
+
+| 服务类型 | 网络模式 | 原因 |
+|---------|:------:|------|
+| 网关 (hello/http/ws/https) | **hostNetwork** | 对外服务，延迟敏感，端口固定不冲突 |
+| Logic | ClusterIP | 内部通信，可水平扩缩容 |
+| etcd / MySQL / Redis | ClusterIP | 内部通信，有状态服务，固定端口 |
+
+### D.4 如何开启
+
+```yaml
+spec:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet  # hostNetwork 必须显式设 DNS 策略
+```
+
+### D.5 为什么内部服务不需要 hostNetwork
+
+etcd/MySQL/Redis 一次请求自身百 μs~ms 级，ClusterIP 多几 μs 转发可忽略。它们更需要 K8s 的 Service 抽象（Pod 重启 IP 不变）和扩缩容支持。
+
+### D.6 hostNetwork 下控制面开销
+
+containerd、kubelet、API Server 只影响 Pod 生命周期，不影响已建立连接的数据包转发。hostNetwork 下数据面零 K8s 开销，全部来自内核协议栈。
+
+> 详细分析见 `docs/reference/gateway-deployment.md` §4.3 和附录 A。

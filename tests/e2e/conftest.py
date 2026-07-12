@@ -283,3 +283,8 @@ def http_session() -> requests.Session:
     # 强制忽略 HTTP(S)_PROXY / ALL_PROXY
     s.trust_env = False
     return s
+
+
+def pytest_addoption(parser):
+    parser.addoption("--mode", default="local",
+        help="Test mode: local (docker compose), external (K8s/compose already running), compose (compose already running)")

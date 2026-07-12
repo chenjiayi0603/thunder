@@ -359,7 +359,7 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
         file_append->setName(strLogname);
         std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
         file_append->setLayout(std::move(layout));
-        //log4cplus::Logger::getRoot().addAppender(file_append);
+        log4cplus::Logger::getRoot().addAppender(file_append);
         m_oLogger = log4cplus::Logger::getInstance(strLogname);
         m_oLogger.setLogLevel(iLogLevel);
         m_oLogger.addAppender(file_append);

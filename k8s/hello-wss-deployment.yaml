@@ -13,56 +13,20 @@ spec:
       labels:
         app: thunder-hello-wss
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: app
-        image: ubuntu:26.04
+        image: thunder-hello-wss:latest
         imagePullPolicy: IfNotPresent
-        workingDir: /thunder/deploy/HelloWss
         env:
+        - name: NODE_VERSION
+          value: "v1"
         - name: POD_IP
           valueFrom:
             fieldRef:
-              fieldPath: status.podIP
-        - name: LD_LIBRARY_PATH
-          value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
-        - name: DEBIAN_FRONTEND
-          value: noninteractive
-        command:
-        - bash
-        - -c
-        - |
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
-          chmod +x ./node.sh 2>/dev/null || true
-          mkdir -p /tmp/conf/certs
-          cp /thunder/k8s/conf/HelloWss.json /tmp/conf/HelloWss.json
-          sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/HelloWss.json
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH bin/HelloWss /tmp/conf/HelloWss.json
-          exec tail -f /dev/null
+              fieldPath: status.hostIP
+
         ports:
         - containerPort: 27012
-        volumeMounts:
-        - name: thunder-repo
-          mountPath: /thunder
-        - name: thunder-plugins
-          mountPath: /thunder/deploy/*/plugins
-          readOnly: true
-      volumes:
-      - name: thunder-repo
-        hostPath:
-          path: /home/tommychen/thunder
-      - name: thunder-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: thunder-hello-wss
-  namespace: thunder
-spec:
-  type: NodePort
-  ports:
-  - port: 27012
-    nodePort: 30012
-  selector:
-    app: thunder-hello-wss
+        - containerPort: 27013
