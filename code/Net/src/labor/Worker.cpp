@@ -5116,13 +5116,13 @@ void Worker::LoadSo(util::CJsonObject& oSoConf,bool boForce)
                 if (cmd_iter == mapSo.end())
                 {
                     LOG4_INFO("try to load:%s", strSoPath.c_str());
-                    LoadSoAndGetCmd(iCmd, strSoPath, oSoConf[i]("entrance_symbol"), iVersion);
+                    LoadSoAndGetCmd(iCmd, strSoPath, oSoConf[i]("entrance_symbol"), iVersion, &oSoConf[i]);
                 }
                 else
                 {
                     if (iVersion != cmd_iter->second->iVersion || boForce)
                     {
-                        LoadSoAndGetCmd(iCmd, strSoPath, oSoConf[i]("entrance_symbol"), iVersion);
+                        LoadSoAndGetCmd(iCmd, strSoPath, oSoConf[i]("entrance_symbol"), iVersion, &oSoConf[i]);
                     }
                     else
                     {
@@ -5178,7 +5178,7 @@ void Worker::ReloadSo(util::CJsonObject& oCmds)
                 LOG4_WARN("%s not exist!", strSoPath.c_str());
                 continue;
             }
-            LoadSoAndGetCmd(iCmd, strSoPath, strSymbol, iVersion);
+            LoadSoAndGetCmd(iCmd, strSoPath, strSymbol, iVersion, nullptr);
         }
         else
         {
@@ -5187,7 +5187,7 @@ void Worker::ReloadSo(util::CJsonObject& oCmds)
     }
 }
 
-tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std::string& strSymbol, int iVersion)
+tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject* pConf)
 {
     LOG4_TRACE("%s() iCmd:%d", __FUNCTION__,iCmd);
     UnloadSoAndDeleteCmd(iCmd);
@@ -5225,6 +5225,12 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
             pSo->strSymbol = strSymbol;
             pSo->iVersion = iVersion;
             pSo->pCmd->SetCmd(iCmd);
+            if (pConf) {
+                // dynamic_cast 跨 SO 边界在某些编译器/链接器组合下会失败，
+                // 但 create() 返回的必定是 Module 子类，用 static_cast 即可
+                net::Module* pMod = static_cast<net::Module*>(pCmd);
+                if (pMod) pMod->SetModuleConf(*pConf);
+            }
             if (!pSo->pCmd->Init())
             {
                 LOG4_FATAL("Cmd %d %s init error",iCmd, strSoPath.c_str());

@@ -1,5 +1,6 @@
 #include "ModuleLua.hpp"
 #include "labor/Labor.hpp"
+#include <dirent.h>
 #include <lua.hpp>
 #include <cstring>
 #define GET_TOKEN_GEN (10001)
@@ -241,10 +242,30 @@ bool ModuleLua::Init() {
     lua_pushcfunction(m_pLua, lua_SendToNodeType); lua_setglobal(m_pLua, "SendToNodeType");
     lua_pushcfunction(m_pLua, lua_SendToLogic); lua_setglobal(m_pLua, "SendToLogic");
 
+    // 从 SetModuleConf 读取配置
     if (m_strScriptPath.empty())
         GetModuleConf().Get("script_path", m_strScriptPath);
     std::string scriptContent;
     GetModuleConf().Get("script_content", scriptContent);
+
+    // 无配置: opendir 查找 scripts/ 下第一个 .lua 文件
+    if (m_strScriptPath.empty() && scriptContent.empty()) {
+        DIR* dir = opendir("scripts");
+        if (dir) {
+            struct dirent* ent;
+            while ((ent = readdir(dir)) != NULL) {
+                std::string name(ent->d_name);
+                if (name.size() > 4 && name.substr(name.size()-4) == ".lua") {
+                    m_strScriptPath = std::string("scripts/") + name;
+                    break;
+                }
+            }
+            closedir(dir);
+        }
+    }
+
+    LOG4_TRACE("ModuleLua::Init: cmd=%d script_path='%s' script_content_len=%zu",
+              GetCmd(), m_strScriptPath.c_str(), scriptContent.size());
     if (!scriptContent.empty()) {
         // etcd 下发的内联脚本内容优先于文件路径
         if (luaL_loadbuffer(m_pLua, scriptContent.data(), scriptContent.size(), m_strScriptPath.empty() ? "etcd" : m_strScriptPath.c_str()) != LUA_OK) {
@@ -266,6 +287,53 @@ bool ModuleLua::Init() {
     lua_getglobal(m_pLua, "handle_request");
     if (!lua_isfunction(m_pLua, -1)) return false;
     m_iFuncRef = luaL_ref(m_pLua, LUA_REGISTRYINDEX);
+    return true;
+}
+
+bool ModuleLua::AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody) {
+    // cmd 模式（Logic 节点使用）：将请求体作为字符串传给 Lua
+    LOG4_TRACE("ModuleLua(cmd) ENTER: cmd=%u seq=%u fd=%d", oInMsgHead.cmd(), oInMsgHead.seq(), stMsgShell.iFd);
+    if (m_iFuncRef == LUA_NOREF) {
+        LOG4_ERROR("ModuleLua(cmd): m_iFuncRef is LUA_NOREF, handler not loaded");
+        return false;
+    }
+    lua_pushstring(m_pLua, "__current_shell");
+    lua_pushlightuserdata(m_pLua, const_cast<net::tagMsgShell*>(&stMsgShell));
+    lua_rawset(m_pLua, LUA_REGISTRYINDEX);
+    lua_rawgeti(m_pLua, LUA_REGISTRYINDEX, m_iFuncRef);
+    std::string body = oInMsgBody.body();
+    lua_pushlstring(m_pLua, body.data(), body.size());
+    LOG4_TRACE("ModuleLua(cmd): calling handle_request, body_len=%zu", body.size());
+    int nret = 0;
+    if (lua_pcall(m_pLua, 1, 1, 0) != LUA_OK) {
+        LOG4_ERROR("ModuleLua(cmd): %s", lua_tostring(m_pLua, -1));
+        lua_pop(m_pLua, 1);
+        lua_pushstring(m_pLua, "__current_shell"); lua_pushnil(m_pLua); lua_rawset(m_pLua, LUA_REGISTRYINDEX);
+        return false;
+    }
+    nret = lua_gettop(m_pLua);
+    LOG4_TRACE("ModuleLua(cmd): handle_request returned, nret=%d", nret);
+    if (nret > 0 && lua_isstring(m_pLua, -1)) {
+        size_t len;
+        const char* resp = lua_tolstring(m_pLua, -1, &len);
+        LOG4_TRACE("ModuleLua(cmd): response string len=%zu, sending via SendToClient", len);
+        // SendToClient(MsgHead, string) 内部会 set_cmd(cmd+1)，
+        // 所以这里传原始请求 cmd 即可（不预先 +1）
+        MsgHead oOutMsgHead;
+        oOutMsgHead.set_cmd(oInMsgHead.cmd());  // SendToClient 会 +1 → 10002
+        oOutMsgHead.set_seq(oInMsgHead.seq());
+        oOutMsgHead.set_msgbody_len(static_cast<uint32_t>(len));
+        bool ok = GetLabor()->SendToClient(stMsgShell, oOutMsgHead, std::string(resp, len));
+        LOG4_TRACE("ModuleLua(cmd): SendToClient returned %d", ok);
+        lua_pop(m_pLua, 1);
+    } else if (nret > 0) {
+        LOG4_TRACE("ModuleLua(cmd): non-string return value, discarding");
+        lua_pop(m_pLua, 1);
+    } else {
+        LOG4_TRACE("ModuleLua(cmd): no return value from handle_request");
+    }
+    lua_pushstring(m_pLua, "__current_shell"); lua_pushnil(m_pLua); lua_rawset(m_pLua, LUA_REGISTRYINDEX);
+    LOG4_TRACE("ModuleLua(cmd) EXIT OK");
     return true;
 }
 

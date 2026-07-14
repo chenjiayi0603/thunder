@@ -11,6 +11,7 @@ public:
     virtual ~ModuleLua();
     virtual bool Init() override;
     virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg) override;
+    virtual bool AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& oInMsgHead, const MsgBody& oInMsgBody) override;
     void SetScriptPath(const std::string& path) { m_strScriptPath = path; }
     /// 热重载 Lua 脚本：销毁旧 VM → 新建 VM → 加载最新脚本，不动 C++ 对象和 .so
     bool ReloadScript();
