@@ -5154,7 +5154,7 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 
 ---
 
-## 🟡 #134 [特性] 加权路由灰度 — etcd 权重键 + Worker 进程内分流
+## ✅ #134 [已实现] 加权路由灰度 — etcd 权重键 + Worker 进程内分流
 
 > 2026-07-09 | 特性 | 状态: 🟡 待实施 | 设计文档: `docs/architecture/34-k8s-canary-routing.md`
 >
