@@ -627,7 +627,15 @@ void EtcdGrpcConnector::DoCanarySnapshot(etcd::SyncClient& client)
             auto slash = rest.rfind('/');
             if (slash == std::string::npos) continue;
             std::string nodeType = rest.substr(0, slash);
-            m_canaryWeights[nodeType] = v.as_string();
+            std::string raw = v.as_string();
+            // #137 防御: 校验 JSON 合法性, 跳过脏数据避免 Worker SIGSEGV
+            if (raw.size() < 4 || raw[0] != '{' || raw.find("\\\"") != std::string::npos)
+            {
+                GLOG_WARN("DoCanarySnapshot: skip invalid JSON for " << nodeType
+                          << " (len=" << raw.size() << "): " << raw);
+                continue;
+            }
+            m_canaryWeights[nodeType] = std::move(raw);
         }
         GLOG_INFO("DoCanarySnapshot: " << m_canaryWeights.size()
                   << " canary entries, revision=" << m_canaryWatchRevision);
@@ -664,9 +672,17 @@ void EtcdGrpcConnector::DoStartCanaryWatch(etcd::SyncClient& client)
 
                     if (ev.event_type() == etcd::Event::EventType::PUT)
                     {
-                        m_canaryWeights[nodeType] = ev.kv().as_string();
+                        std::string raw = ev.kv().as_string();
+                        // #137 防御: 校验 JSON 合法性
+                        if (raw.size() < 4 || raw[0] != '{' || raw.find("\\\"") != std::string::npos)
+                        {
+                            GLOG_WARN("CanaryWatch: skip invalid JSON for " << nodeType
+                                      << " (len=" << raw.size() << "): " << raw);
+                            continue;
+                        }
+                        m_canaryWeights[nodeType] = std::move(raw);
                         changed = true;
-                        GLOG_INFO("CanaryWatch: PUT " << nodeType << " = " << ev.kv().as_string());
+                        GLOG_INFO("CanaryWatch: PUT " << nodeType << " = " << m_canaryWeights[nodeType]);
                     }
                     else if (ev.event_type() == etcd::Event::EventType::DELETE_)
                     {
