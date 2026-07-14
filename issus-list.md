@@ -5128,7 +5128,7 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 **影响**: HTTPS/WS/Interface hostNetwork 验证未完成
 **修复**: 给 HTTPS/WS/WSS/Interface 各补上对应 subPath（如 `subPath: HelloHttps`），WSS 需同时修正 mountPath 为 `/thunder/deploy/HelloWss/plugins`
 
-## 🟡 待处理 — CoreDNS 依赖 flannel，hostNetwork Pod 需辅助 DNS
+## ✅ [已修复] CoreDNS — hostNetwork Pod dnsPolicy 统一 ClusterFirstWithHostNet
 
 **现象**: hostNetwork Pod 无法通过 K8s Service 名称（如 `thunder-etcd.thunder:2379`）访问集群内服务
 **宿主回归判定**: ✅ 是 hostNetwork 回归 — 切到 hostNetwork 前（NodePort 模式）dnsPolicy 默认为 ClusterFirst（走 CoreDNS），切后默认为 Default（继承宿主机 DNS，绕过 CoreDNS）
