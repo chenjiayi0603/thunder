@@ -5102,28 +5102,16 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 
 ### 待完成
 
-扩展验证到 HTTPS/WS/WSS/Interface（当前受阻原因见下方 PVC 和 CoreDNS 条目）
+扩展验证到 HTTPS/WS/WSS/Interface（当前受阻原因见下方 CoreDNS 条目）
 
 ## ✅ hostNetwork 验证通过 — HTTP 直连正常
 
 **结果**: HTTP 直连 192.168.3.61:27006 正常响应 `{"code":0,"msg":"ok"}`
 **证明**: hostNetwork 配置正确，零 CNI/kube-proxy 开销
 
-## 🟡 待处理 — HTTPS/WS/Interface PVC 插件路径不一致
+## ✅ [已废弃] HTTPS/WS/Interface PVC 插件路径不一致
 
-**现象**: HTTPS/WS/Interface pod 的 PVC 挂载显示 NFS 根目录（含子目录 HelloHttp/HelloHttps/HelloWs/Interface/），而服务期望 .so 直接在 plugins/ 下
-**根因**: PVC 挂载缺少 subPath，导致整个 NFS 导出根目录 `/data/thunder/plugins` 被挂载到每个服务的 plugins/ 目录
-**宿主回归判定**: ❌ 不是 hostNetwork 回归 — subPath 缺失与网络模式无关（PVC 挂载走 kubelet 存储路径，不受 hostNetwork 影响）。HelloHttp 已验证通过（#133 + hostNetwork 直连），另外四个服务此前未纳入验证范围，subPath 配置从最初就是漏写的
-
-**逐项排查**:
-
-| Deployment | mountPath | subPath | 结果 |
-|---|---|---|---|
-| HelloHttp | `/thunder/deploy/HelloHttp/plugins` | `HelloHttp` ✅ | 只看到自己的 .so |
-| HelloHttps | `/thunder/deploy/HelloHttps/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
-| HelloWs | `/thunder/deploy/HelloWs/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
-| HelloWss | `/thunder/deploy/*/plugins` | **缺失** ❌ | 通配符 mountPath 在 K8s 中不合法，需同时修复 |
-| Interface | `/thunder/deploy/Interface/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
+> **已废弃**: 部署模型已从 NFS+PVC 切换到 Docker 镜像，插件烘焙在 `/app/plugins/`，无需 PVC mount/subPath。回归测试 5/5 PASS。
 
 **影响**: HTTPS/WS/Interface hostNetwork 验证未完成
 **修复**: 给 HTTPS/WS/WSS/Interface 各补上对应 subPath（如 `subPath: HelloHttps`），WSS 需同时修正 mountPath 为 `/thunder/deploy/HelloWss/plugins`
