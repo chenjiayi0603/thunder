@@ -5,6 +5,7 @@ PORT="${INNER_PORT:-27007}"
 # hostNetwork Pod 需要真实 pod IP 才能被连接到 (0.0.0.0 会被解析到 127.0.0.1)
 MY_IP="${POD_IP:-$(hostname -i 2>/dev/null || echo '0.0.0.0')}"
 [ "$MY_IP" != "0.0.0.0" ] && sed -i "s/\"inner_host\": \"0.0.0.0\"/\"inner_host\": \"$MY_IP\"/" ./conf/Hello.json
+[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/Hello.json
 echo "Starting HelloHttp on $MY_IP:$PORT..."
 ./bin/HelloHttp ./conf/Hello.json
 EXIT=$?

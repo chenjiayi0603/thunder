@@ -5,6 +5,7 @@ PORT="${INNER_PORT:-16068}"
 # hostNetwork Pod 需要真实 pod IP 才能被连接到 (0.0.0.0 会被解析到 127.0.0.1)
 MY_IP="${POD_IP:-$(hostname -i 2>/dev/null || echo '0.0.0.0')}"
 [ "$MY_IP" != "0.0.0.0" ] && sed -i "s/\"inner_host\": \"0.0.0.0\"/\"inner_host\": \"$MY_IP\"/" ./conf/Logic.json
+[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/Logic.json
 echo "Starting Logic on $MY_IP:$PORT..."
 ./bin/Logic ./conf/Logic.json
 EXIT=$?

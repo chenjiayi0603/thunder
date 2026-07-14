@@ -5716,6 +5716,42 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 
 ---
 
+## 🔵 #140 [优化] 消除 `deploy/XXX/conf/` 与 `k8s/conf/` 配置冗余 (2026-07-14)
+
+**现状**：每个服务维护两份配置（`deploy/XXX/conf/` 和 `k8s/conf/`），仅 `etcd_endpoints` 必须不同，其余字段需同步维护，已出现多处偶然分歧（log_level、upstream_types、log_path、permission 等）。
+
+**方案**：利用 entrypoint.sh 已有 sed 模式，加一行环境变量覆盖 `etcd_endpoints`，只保留 `deploy/XXX/conf/` 一份配置。
+
+**改动清单**：
+
+| # | 文件 | 动作 | 说明 |
+|---|------|:--:|------|
+| 1 | `deploy/{Logic,Interface,Logic_v2}/entrypoint.sh` | 修改 | 加 `[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/Logic.json` |
+| 2 | `k8s/{logic,interface,logic-v2}-deployment.yaml` | 修改 | 加 `env: ETCD_ENDPOINT=http://thunder-etcd.thunder:2379` |
+| 3 | `deploy/{Logic,Interface,Logic_v2}/Dockerfile` | 修改 | 删 `COPY k8s/conf/...` 行 |
+| 4 | `k8s/conf/` | 删除 | 整个目录不再需要 |
+| 5 | `docker/docker-compose.yml` | 修改 | 各服务加 `ETCD_ENDPOINT=http://127.0.0.1:12379`（显式声明） |
+| 6 | `deploy/*/conf/*.json` | 修改 | etcd_endpoints 统一为 `http://127.0.0.1:12379`（Docker Compose 默认值，端口已统一到 12379） |
+
+**效果**：
+**效果**：
+- Docker Compose：`ETCD_ENDPOINT=http://127.0.0.1:12379`（k3s 控制面占用 2379，故 Compose 用 12379）
+- K8s：`ETCD_ENDPOINT=http://thunder-etcd.thunder:2379`
+- 两份部署对称，变量显式声明；一份配置，零冗余，零同步
+- Docker Compose 端口保持 12379 不变（k3s 冲突，无法统一到 2379）
+
+**回归测试注意**：K8s 回归前须重 build 镜像（entrypoint.sh + conf 已打进镜像）：
+
+```bash
+./deploy.sh build                # 编译二进制
+./deploy.sh image logic interface logic-v2 hello http https ws wss  # 构建 Docker 镜像
+# K8s 集群已运行 → ./deploy.sh test regression
+```
+
+Docker Compose 回归不受影响（volume 挂载直接读宿主机文件）。
+
+---
+
 ## 回归测试结果 (2026-07-12)
 
 | 测试类别 | 结果 |
