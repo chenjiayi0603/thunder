@@ -4731,9 +4731,9 @@ listen tcp 127.0.0.1:2380: bind: address already in use
 
 ---
 
-## 🟡 #125 [bug] admin-web Lua/SO 下发路径写错目录
+## ✅ #125 [已修复] admin-web Lua/SO 下发路径写错目录
 
-> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-25）
+> 2026-06-25 | bug | 已修复（2026-06-25）
 
 ### 现象
 
@@ -4770,9 +4770,9 @@ UploadServer.upload_base = serve_dir
 
 ---
 
-## 🟡 #126 [bug] Lua 脚本版本变更误触发 Worker 优雅重启
+## ✅ #126 [已修复] Lua 脚本版本变更误触发 Worker 优雅重启
 
-> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-29）
+> 2026-06-25 | bug | 已修复（2026-06-29）
 
 ### 现象
 
@@ -4822,9 +4822,9 @@ Lua 脚本通过步骤 5 的共享内存（`SetCustomConfig`）或步骤 7 的 `
 
 ---
 
-## 🟡 #131 [bug] Manager sync 覆盖 admin API 的 etcd 配置，阻断热更新 + E2E
+## ✅ #131 [已修复] Manager sync 覆盖 admin API 的 etcd 配置
 
-> 2026-07-03 | bug | 状态: 🟡 待修复  阻塞: Lua E2E 热更新测试 4/4
+> 2026-07-03 | bug | #129 Lua 热重载路径修复同步解决 (etcd 为准, 节点不回写覆盖)
 
 ### 现象
 
@@ -4874,9 +4874,9 @@ Manager 不再回写 etcd（不调 sync module config）
 - Worker 响应即时更新
 - Lua E2E 4/4 全部通过
 
-## 🟡 #128 [bug] Lua 热重载误伤同 SO 的其他 URL
+## ✅ #128 [已修复] Lua 热重载误伤同 SO 的其他 URL
 
-> 2026-06-29 | bug | 状态: 🟡 待修复
+> 2026-06-29 | bug | #129 Lua 独立热重载路径已解决 dlclose 问题
 
 ### 现象
 
@@ -4904,7 +4904,7 @@ succeed in unloading HelloHttp_ModuleLua.so
 
 ## 🟡 #132 [设计] SO 模块部署：废弃 Docker 镜像提取，用直接上传
 
-> 2026-07-04 | 设计 | 状态: 🟡 待实施
+> 2026-07-04 | 设计 | 🟡 待重新评估 — 部署模型已切 Docker 镜像烘焙 .so，上传方案需适配
 
 ### 背景
 
