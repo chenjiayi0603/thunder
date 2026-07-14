@@ -5270,6 +5270,45 @@ Python CLI 和未来的 GrayRelease CRD 写的是**同一个 etcd key**。先用
 | v1/v2 命中次数在权重±10% 范围内 | 证明 Worker 加权随机路由生效 |
 | 100 次请求零失败 | 热更新后路由正常 |
 | 可重复执行 | 脚本化，非手工验证 |
+| 阻塞 | Logic Worker SIGSEGV (#137) 导致请求 50% 失败, canary 权重分布无法正确统计 |
+
+---
+
+## 🟡 #137 [bug] Canary 权重脏数据触发 Logic Worker SIGSEGV 崩溃
+
+> 2026-07-14 | bug | 🟡 待修复 | 关联: #134
+
+### 现象
+
+Logic Worker 启动后立即 SIGSEGV，Manager 日志:
+```
+error 139: duty XXXX exit and sent signal 17 with code 11!
+worker 0 had been restarted 1780 times!
+```
+Worker 以 ~100ms 间隔持续崩溃→重启循环。
+
+### 复现
+
+1. etcd 中 canary 权重键值为脏数据 `{\"v2\":100}`（带转义引号的非法 JSON）
+2. Logic Pod 启动 → `DoCanarySnapshot` 解析失败 → 未做防御 → `CanaryExpand` 访问无效数据 → SIGSEGV
+3. **删除 canary 权重键后崩溃立即停止**
+4. canary.py 重新写入标准 JSON → Worker 正常运行
+
+### 修复方向
+
+1. `DoCanarySnapshot` JSON 解析失败时 clear canary_weights 并 return
+2. `CanaryExpand` 增加空值/非法值防御检查
+
+### 临时 workaround
+
+```bash
+etcdctl del /thunder/canary/ --prefix
+python3 tools/canary.py LOGIC canary v2 30
+```
+
+---
+
+## 🟡 #138 [工具] 新版本镜像打包与部署脚本
 
 > 2026-07-09 | 工具 | 状态: 🟡 待实施 | 关联: #134 #135
 >
