@@ -5684,7 +5684,7 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 
 ---
 
-## 🔵 #140 [优化] 消除 `deploy/XXX/conf/` 与 `k8s/conf/` 配置冗余 (2026-07-14)
+## ✅ #140 [已修复] 消除 `deploy/XXX/conf/` 与 `k8s/conf/` 配置冗余 (2026-07-14)
 
 **现状**：每个服务维护两份配置（`deploy/XXX/conf/` 和 `k8s/conf/`），仅 `etcd_endpoints` 必须不同，其余字段需同步维护，已出现多处偶然分歧（log_level、upstream_types、log_path、permission 等）。
 
