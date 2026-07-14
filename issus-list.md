@@ -5274,37 +5274,23 @@ Python CLI 和未来的 GrayRelease CRD 写的是**同一个 etcd key**。先用
 
 ---
 
-## 🟡 #137 [bug] Canary 权重脏数据触发 Logic Worker SIGSEGV 崩溃
+## ✅ #137 [已修复] Canary 权重脏数据触发 Logic Worker SIGSEGV 崩溃
 
-> 2026-07-14 | bug | 🟡 待修复 | 关联: #134
+> 2026-07-14 | bug | ✅ 已修复 | 关联: #134
 
-### 现象
+### 修复
 
-Logic Worker 启动后立即 SIGSEGV，Manager 日志:
+`EtcdGrpcConnector.cpp` `DoCanarySnapshot` + `CanaryWatch` 两处加 JSON 合法性防御:
+
+```cpp
+std::string raw = v.as_string();
+if (raw.size() < 4 || raw[0] != '{' || raw.find("\\\"") != std::string::npos) {
+    GLOG_WARN("skip invalid JSON: " << raw);
+    continue;  // 跳过脏数据，不触发 Worker SIGSEGV
+}
 ```
-error 139: duty XXXX exit and sent signal 17 with code 11!
-worker 0 had been restarted 1780 times!
-```
-Worker 以 ~100ms 间隔持续崩溃→重启循环。
 
-### 复现
-
-1. etcd 中 canary 权重键值为脏数据 `{\"v2\":100}`（带转义引号的非法 JSON）
-2. Logic Pod 启动 → `DoCanarySnapshot` 解析失败 → 未做防御 → `CanaryExpand` 访问无效数据 → SIGSEGV
-3. **删除 canary 权重键后崩溃立即停止**
-4. canary.py 重新写入标准 JSON → Worker 正常运行
-
-### 修复方向
-
-1. `DoCanarySnapshot` JSON 解析失败时 clear canary_weights 并 return
-2. `CanaryExpand` 增加空值/非法值防御检查
-
-### 临时 workaround
-
-```bash
-etcdctl del /thunder/canary/ --prefix
-python3 tools/canary.py LOGIC canary v2 30
-```
+判断条件: 不以 `{` 开头 或 含 `\"` 转义序列 → 视为非法 JSON，跳过不存。
 
 ---
 
