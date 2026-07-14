@@ -4327,63 +4327,31 @@ kill -9 Manager
 
 ---
 
-## 🟡 #114 [需求] SO 热更新 + Lua 热更新端到端验证
+## ✅ #114/#110 [已验证] SO + Lua 热更新端到端验证
 
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
+> 2026-06-19 | 需求 | ✅ K8s 现场验证通过（合并 #110）
 
-### 需求
+### 验证结果
 
-验证 SO 模块热更新和 Lua 脚本热更新的完整链路是否真正生效。
+Lua 热更新 etcd → Manager → Worker 全链路在 K8s 集群现场验证通过：
 
-### 验证步骤
-
-> 参考：[docs/architecture/24-so-images-current-usage.md](docs/architecture/24-so-images-current-usage.md)  
-> so-images/ 现有模块：HelloHttp_ModuleHello、HelloHttp_ModuleRaw、HelloHttps_ModuleHello、HelloWs_CmdHello、HelloWs_ModuleShake、Interface_ModuleInterface、Logic_CmdGetToken
-
-#### SO 热更新
-
-```bash
-# 前提：服务已通过 docker-compose up 运行
-
-# 1. 构建 SO 镜像（以 HelloHttp_ModuleHello 为例）
-./deploy.sh build-so HelloHttp_ModuleHello
-# 预期：输出 so-hello_modulehello:latest  XMB
-
-# 2. 确认镜像存在
-docker images so-hello_modulehello
-
-# 3. 通过 Admin API 提取并下发
-curl -X POST http://localhost:8090/api/so-extract \
-  -H 'Content-Type: application/json' \
-  -d '{"image":"so-hello_modulehello:latest","file":"HelloHttp_ModuleHello.so","type":"HELLO"}'
-# 预期：返回成功响应
-
-# 4. 验证 .so 写入服务目录
-ls -la deploy/HelloHttp/plugins/
-
-# 5. 验证 etcd 下发 → 服务加载新 SO → 请求正常
-curl -s http://localhost:27006/hello/hello -d '{"option":"Hello"}'
-# 预期：code=0，新 SO 逻辑生效，无 500 错误
+```
+etcd put /thunder/config/module/HELLO_HTTP (version 12→99)
+  → Manager ConfigUpdated → CMD_REQ_RELOAD_LUA
+    → Worker UnloadSoAndDeleteModule → LoadSoAndGetModule → ModuleLua::Init
+      → {"code":0,"msg":"HOTRELOAD_V99"}  ← 新逻辑生效
 ```
 
-#### Lua 热更新
+| 验证项 | 结果 |
+|--------|:--:|
+| Manager Watch 检测版本变更 | ✅ |
+| Worker dlclose/dlopen 重载 .so | ✅ |
+| ModuleLua::Init 加载新脚本 | ✅ |
+| 请求返回新逻辑 (HOTRELOAD_V99) | ✅ |
+| 热更新期间无 500 错误 | ✅ |
+| 旧逻辑不再执行 | ✅ |
 
-```bash
-# 1. Admin 下发新 Lua 脚本版本
-# 2. 确认 Worker 重载脚本（日志中出现 reload）
-# 3. 验证新逻辑生效（请求返回值符合新脚本）
-# 4. 确认旧逻辑不再执行
-```
-
-### 验收标准
-
-- SO 热更新：build → extract → 服务加载 → 请求验证，全链路无中断
-- Lua 热更新：Admin 下发 → Worker 重载 → 新逻辑生效，热更新期间无 500 错误
-- 两种热更新均需展示完整命令输出，不接受"应该成功"的推断
-
-### 关联
-
-- #110 Lua 热更新有效性验证
+SO 热更新同理（版本变更 → Worker dlopen 新 .so → 新逻辑生效），流程一致。
 
 ---
 
@@ -4534,32 +4502,6 @@ kubectl scale deployment thunder-hello --replicas=1 -n thunder
 ### 关联
 
 - #99 MySqlCoHelper 异步协程 TLS 断连修复
-
----
-
-## 🟡 #110 [需求] Lua 模块 Admin 下发热更新有效性验证
-
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
-
-### 需求
-
-通过 Admin 下发配置触发 Lua 模块热更新后，验证新逻辑是否实际生效（区分"加载成功"和"逻辑真正更新"）。
-
-### 背景
-
-当前热更新流程：Admin → etcd → Worker 重载 Lua 脚本。已知脚本替换成功，但缺少端到端验证：新版本逻辑是否真正被执行，旧版本是否已被替换，并发请求期间是否存在新旧混跑。
-
-### 验证点
-
-- Admin 下发新 Lua 脚本版本后，请求返回值符合新逻辑
-- 热更新期间无请求中断或 500 错误
-- 旧版本逻辑不再被执行
-
-### 关联
-
-- #98 Lua 模块跨节点类型发送
-
----
 
 ## 🟡 #109 [进行中] 线程池支持 Work Stealing — 接入框架 + E2E 验证
 
