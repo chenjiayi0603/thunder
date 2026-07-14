@@ -5614,38 +5614,6 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 3. 旧注册格式（无 `registered_at`）不受影响，向后兼容
 4. 节点 lease 重绑定时自动刷新 `registered_at`，确保活跃节点不被误判为僵尸
 
----
-
-### 🔵 #21 [记录] `strings` 命令在 ubuntu:26.04 基础镜像中不存在
-
-**现象**：`kubectl exec ... strings /app/plugins/XXX.so | grep ...` 返回空。
-
-**根因**：`ubuntu:26.04` 基础镜像不含 `binutils` 包，`strings` 不可用。所有基于 `strings` 的容器内 SO 验证结果均为假阴性。
-
-**教训**：容器内诊断需先 `apt-get install -y binutils`。
-
----
-
-### 🔵 #22 [记录] hostNetwork 重启竞态 — 缩容→扩容 30-60s 端口残留
-
-**现象**：`kubectl scale deploy thunder-hello --replicas=0` 后立即 `scale --replicas=1`，新 Pod 报 `error 98: Address already in use`。
-
-**根因**：hostNetwork Pod 删除后 TCP 连接进入 TIME_WAIT，端口需 30-60s 才释放。`SO_REUSEADDR` 已设置但不够。
-
-**workaround**：`scale 0` → 等 30s → `scale 1`，或用 `kubectl delete pod --force --grace-period=0`。
-
----
-
-### 🔵 #23 [记录] `cmake --install` 失败 — `cmake_install.cmake` 缺失
-
-**现象**：`cmake --install .` 报 `Not a file: cmake_install.cmake`，main binary 未部署到 `deploy/`。
-
-**根因**：cmake 构建目录缺少 install manifest 文件，可能被清理过。
-
-**workaround**：`cmake -S .. -B .` 重新生成后 `--install` 恢复正常。
-
----
-
 ### 🆕 2026-07-12 Canary 全链路复测 — 补充发现
 
 #### ✅ #24 [已修复] `cmake --install` 规则不完整 — HelloWss/Logic/Interface 二进制缺失
