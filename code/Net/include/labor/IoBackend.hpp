@@ -64,7 +64,6 @@ using IoCompletionCallback = void (*)(int fd, uint32_t seq, IoOp op, int result,
  *     Worker (业务) → IoBackend (策略接口)
  *           → EvIoBackend      — libev epoll（内核 fd）
  *           → AsioUringIoBackend — io_uring（内核 fd，I/O 走 uring）
- *           → DpdkIoBackend    — DPDK+mTCP（用户态 sockid）
  */
 class IoBackend
 {

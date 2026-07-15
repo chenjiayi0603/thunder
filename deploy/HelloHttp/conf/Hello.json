@@ -37,23 +37,6 @@
         "server_key": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key",
         "verify_client": false
     },
-    "dpdk": {
-        "_comment": "DPDK + F-Stack 用户态 TCP 配置 (需要编译 THUNDER_IO_DPDK=ON)",
-        "eal_args": "--no-pci -l 0 -n 1",
-        "vdevs": [
-            "net_af_packet0,iface=lo"
-        ],
-        "pmd_plugins": [
-            "dpdk/pmds-26.0/librte_mempool_ring.so",
-            "dpdk/pmds-26.0/librte_net_af_packet.so"
-        ],
-        "port_id": 0,
-        "lcore_id": 0,
-        "max_concurrency": 100000,
-        "rcv_buf_size": 8192,
-        "snd_buf_size": 8192,
-        "tcp_timeout": 30
-    },
     "module": [
         {
             "url_path": "/hello/hello",
