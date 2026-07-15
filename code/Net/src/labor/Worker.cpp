@@ -5935,7 +5935,7 @@ bool Worker::DestroyConnect(std::unordered_map<int32, std::unique_ptr<tagConnect
 		LOG4_TRACE("%s() timer ev_timer_stop",__FUNCTION__);
 		DelEvent(pConn->pTimeWatcher,(tagIoWatcherData*)pConn->pTimeWatcher->data);
 	}
-    // Close fd: IoBackend (CloseFd supports kernel close + mtcp_close), legacy path uses ::close
+    // Close fd: IoBackend (CloseFd), legacy path uses ::close
     if (m_pIoBackend)
     {
         m_pIoBackend->CloseFd(iter->first);
