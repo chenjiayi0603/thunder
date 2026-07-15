@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thunder Admin — Design Preview</title>
+<link rel="stylesheet" href="css/admin.css">
+<style>
+  body { padding: 0; }
+  .preview-section { margin: 0; padding: 20px 24px; border-bottom: 2px solid #d9d9d9; }
+  .preview-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #262626; }
+</style>
+</head>
+<body>
+
+<div class="preview-section">
+<div class="preview-title">📊 概览页</div>
+<div class="hint-bar hint-success" style="margin-bottom:16px">✅ etcd 已连接 · 节点 12 · 在线 10 · 离线 2 · 自动刷新 10s</div>
+<div class="card"><div class="card-header">服务分布</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+<div class="card-stat" style="border:1px solid var(--border);border-radius:8px;padding:16px">
+<div class="num">3例</div>
+<div class="label">LOGIC <span class="badge badge-success">在线</span></div>
+<div class="text-sm text-muted mt">v1×2 v2×1</div>
+</div>
+<div class="card-stat" style="border:1px solid var(--border);border-radius:8px;padding:16px">
+<div class="num">2例</div>
+<div class="label">INTERFACE <span class="badge badge-success">在线</span></div>
+<div class="text-sm text-muted mt">v1×2 undefined</div>
+</div>
+<div class="card-stat" style="border:1px solid var(--border);border-radius:8px;padding:16px">
+<div class="num">2例</div>
+<div class="label">HELLO_HTTP <span class="badge badge-success">在线</span></div>
+<div class="text-sm text-muted mt">v1×2 undefined</div>
+</div>
+<div class="card-stat" style="border:1px solid var(--border);border-radius:8px;padding:16px">
+<div class="num">1例</div>
+<div class="label">HELLO_HTTPS <span class="badge badge-success">在线</span></div>
+<div class="text-sm text-muted mt">v1×1 undefined</div>
+</div>
+</div></div></div>
+<div class="preview-section">
+<div class="preview-title">🖥 节点管理页</div>
+<div class="toolbar"><label>服务 <select class="select"><option>LOGIC</option><option>INTERFACE</option><option>HELLO_HTTP</option></select></label>
+<input class="input" placeholder="搜索 IP..."><button class="btn btn-primary btn-sm">搜索</button></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+<div class="node-card">
+<div class="node-card-header"><span class="badge badge-default">v1</span><span class="dot dot-online"></span></div>
+<div class="node-card-body">
+<div>10.0.0.1:16001</div>
+<div>node_id: 2</div>
+<div>Worker: 4</div>
+<div class="text-muted">2min ago</div>
+</div>
+<div class="node-card-footer"><button class="btn btn-ghost btn-xs">详情</button></div>
+</div>
+<div class="node-card">
+<div class="node-card-header"><span class="badge badge-default">v1</span><span class="dot dot-online"></span></div>
+<div class="node-card-body">
+<div>10.0.0.2:16002</div>
+<div>node_id: 3</div>
+<div>Worker: 4</div>
+<div class="text-muted">30s ago</div>
+</div>
+<div class="node-card-footer"><button class="btn btn-ghost btn-xs">详情</button></div>
+</div>
+<div class="node-card">
+<div class="node-card-header"><span class="badge badge-default">v2</span><span class="dot dot-offline"></span></div>
+<div class="node-card-body">
+<div>10.0.0.3:16003</div>
+<div>node_id: 5</div>
+<div>Worker: 4</div>
+<div class="text-muted">-</div>
+</div>
+<div class="node-card-footer"><button class="btn btn-ghost btn-xs">详情</button></div>
+</div>
+<div class="node-card">
+<div class="node-card-header"><span class="badge badge-default">v2</span><span class="dot dot-online"></span></div>
+<div class="node-card-body">
+<div>10.0.0.4:16004</div>
+<div>node_id: 6</div>
+<div>Worker: 4</div>
+<div class="text-muted">5min ago</div>
+</div>
+<div class="node-card-footer"><button class="btn btn-ghost btn-xs">详情</button></div>
+</div>
+</div></div>
+<div class="preview-section">
+<div class="preview-title">⚖ 灰度管理页</div>
+<div class="toolbar"><label>服务 <select class="select"><option>LOGIC</option></select></label></div>
+<div class="card"><div class="card-header">权重分配</div>
+<div class="slider-group"><label><span>v1</span><span class="font-bold">70%</span></label><input type="range" value="70" min="0" max="100"></div>
+<div class="slider-group"><label><span>v2</span><span class="font-bold">30%</span></label><input type="range" value="30" min="0" max="100"></div>
+<div class="flex gap-sm mt"><button class="btn btn-primary btn-sm">应用</button><button class="btn btn-ghost btn-sm">重置</button><button class="btn btn-ghost btn-sm">一键回滚</button></div>
+</div>
+<div class="card" style="margin-top:12px"><div class="card-header">变更预览</div>
+<pre class="diff-view"><div class="diff-del">- v1: 80%</div><div class="diff-add">+ v1: 70%</div><div class="diff-del">- v2: 20%</div><div class="diff-add">+ v2: 30%</div></pre>
+</div></div>
+<div class="preview-section">
+<div class="preview-title">⚙ 配置管理页</div>
+<div class="toolbar"><label>模块 <select class="select"><option>LOGIC</option></select></label><label>类型 <select class="select"><option>Logic.json</option></select></label></div>
+<div class="card"><div class="card-header"><span>当前配置</span><span class="text-sm text-muted">revision: 15 · 2026-07-15 10:30</span></div>
+<pre style="background:var(--border-light);padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px">{
+  "node_type": "LOGIC",
+  "listen_port": 16001,
+  "worker_num": 4,
+  "log_level": "info",
+  "etcd_endpoints": "http://127.0.0.1:12379"
+}</pre>
+<div class="flex gap-sm mt"><button class="btn btn-primary btn-sm">编辑</button><button class="btn btn-ghost btn-sm">下载</button></div>
+</div>
+<div class="card" style="margin-top:12px"><div class="card-header">历史版本</div>
+<table class="table"><thead><tr><th>Revision</th><th>时间</th><th>变更</th><th>操作</th></tr></thead>
+<tbody><tr><td>15</td><td>07-15 10:30</td><td>+12B</td><td><button class="btn btn-ghost btn-xs">查看</button> <button class="btn btn-ghost btn-xs">回滚</button></td></tr>
+<tr><td>14</td><td>07-14 16:20</td><td>-8B</td><td><button class="btn btn-ghost btn-xs">查看</button> <button class="btn btn-ghost btn-xs">回滚</button></td></tr>
+</tbody></table></div></div>
+<div class="preview-section">
+<div class="preview-title">📦 插件管理页</div>
+<div class="card"><div class="card-header">上传插件</div>
+<div style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;color:var(--text-muted)">拖拽 .so 文件到此处 或 点击选择</div>
+<div class="flex gap-sm mt items-center"><label>类型 <select class="select"><option>LOGIC</option><option>INTERFACE</option></select></label><label>版本 <select class="select"><option>v1</option><option>v2</option></select></label><button class="btn btn-primary btn-sm">上传并部署</button></div>
+</div>
+<div class="card" style="margin-top:12px"><div class="card-header">已部署插件</div>
+<table class="table"><thead><tr><th>名称</th><th>类型</th><th>版本</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+<tbody><tr><td>hello.so</td><td><span class="badge badge-default">Logic</span></td><td>v1</td><td>1.2M</td><td>10:30</td><td><button class="btn btn-ghost btn-xs">回滚</button></td></tr>
+<tr><td>world.so</td><td><span class="badge badge-default">Interface</span></td><td>v2</td><td>0.8M</td><td>09:15</td><td><button class="btn btn-ghost btn-xs">回滚</button></td></tr>
+</tbody></table></div></div>
+</body>
+</html>
