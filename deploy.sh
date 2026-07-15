@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
         --keep-docker) KEEP_DOCKER=true ;;
         --verbose) VERBOSE=true ;;
         --help|-h) CMD="help"; break ;;
-        unit|e2e|bench|smoke|regression|perf|all) MODE="$1" ;;
+        unit|e2e|bench|smoke|regression|perf|all|k8s|compose) MODE="$1" ;;
         Hello_*|Logic_*|Interface_*|HelloWs_*|HelloHttps_*) MODE="$1" ;;
         	*) ;;  # pass-through for admin/extra args
     esac
@@ -97,6 +97,8 @@ show_help() {
     echo "  admin config  查改配置"
     echo "  logs          查看所有节点最近日志 (需集群)"
     echo "  clean         清理 build/ + Docker + tmp"
+    echo "  release       一键: cmake → image → 部署 → 回归"
+    echo "  release k8s   K8s 版本 (需集群)"
     echo ""
     echo "Options:"
     echo "  --force       强制全量构建"
@@ -507,13 +509,14 @@ cmd_image() {
     local services=("${@}")
 
     if [[ ${#services[@]} -eq 0 ]]; then
-        services=(logic hello http https ws wss interface admin-web)
+        services=(logic logic-v2 hello http https ws wss interface admin-web)
     fi
 
     for svc in "${services[@]}"; do
         local dir ctx tag_name
         case "$svc" in
             logic)     dir="deploy/Logic";       ctx="."; tag_name="thunder-logic" ;;
+            logic-v2)  dir="deploy/Logic_v2";    ctx="."; tag_name="thunder-logic-v2" ;;
             hello)     dir="deploy/HelloHttp";   ctx="."; tag_name="thunder-hello-http" ;;
             https)     dir="deploy/HelloHttps";  ctx="."; tag_name="thunder-hello-https" ;;
             ws)        dir="deploy/HelloWs";     ctx="."; tag_name="thunder-hello-ws" ;;
@@ -550,13 +553,14 @@ cmd_push() {
     local services=("${@}")
 
     if [[ ${#services[@]} -eq 0 ]]; then
-        services=(logic hello http https ws wss interface admin-web)
+        services=(logic logic-v2 hello http https ws wss interface admin-web)
     fi
 
     for svc in "${services[@]}"; do
         local tag_name
         case "$svc" in
             logic)     tag_name="thunder-logic" ;;
+            logic-v2)  tag_name="thunder-logic-v2" ;;
             hello)     tag_name="thunder-hello-http" ;;
             https)     tag_name="thunder-hello-https" ;;
             ws)        tag_name="thunder-hello-ws" ;;
@@ -593,7 +597,7 @@ cmd_deploy() {
 
     # 3. 导入 containerd
     log "导入镜像到 containerd ..."
-    for img in thunder-logic thunder-hello-http thunder-hello-https \
+    for img in thunder-logic thunder-logic-v2 thunder-hello-http thunder-hello-https \
                thunder-hello-ws thunder-hello-wss thunder-interface; do
         docker save "$img:$tag" 2>/dev/null | sudo -S ctr -n k8s.io image import - 2>/dev/null
     done
@@ -632,6 +636,59 @@ cmd_clean() {
     rm -f /tmp/asio_uring_diag.log 2>/dev/null || true
     rm -rf /tmp/e2e-* /tmp/stress-* 2>/dev/null || true
     ok "临时文件已清理"
+}
+
+# ─── Release ────────────────────────────────────
+# 一键: cmake → image → 部署 → 回归
+#   ./deploy.sh release        Docker Compose
+#   ./deploy.sh release k8s    K8s (需集群)
+cmd_release() {
+    local target="${1:-compose}"
+    local tag="${IMAGE_TAG:-latest}"
+
+    echo ""
+    echo -e "${BOLD}=== Thunder Release: ${target} ===${NC}"
+
+    # 1. cmake build
+    cmd_build
+
+    # 2. docker image build (所有服务)
+    log "构建 Docker 镜像..."
+    cmd_image logic interface logic-v2 hello https ws wss || {
+        err "镜像构建失败"
+        return 1
+    }
+
+    if [[ "$target" == "k8s" ]]; then
+        # 3a. K8s deploy
+        cmd_deploy
+        # 4a. K8s 回归
+        log "K8s 回归测试..."
+        cmd_test_regression
+    else
+        # 3b. Docker Compose up
+        log "启动 Docker Compose..."
+        cd "${DOCKER_DIR}"
+        docker compose down --remove-orphans 2>/dev/null || true
+        docker run --rm -v "${DOCKER_DIR}/data:/data" alpine:3.20 rm -rf /data/etcd1 /data/etcd2 /data/etcd3 2>/dev/null || true
+        docker compose up -d || { err "compose up 失败"; return 1; }
+
+        # 4b. 等待就绪
+        log "等待服务就绪 (最长 120s)..."
+        local deadline=$(($(date +%s) + 120))
+        while [[ $(date +%s) -lt ${deadline} ]]; do
+            ss -tln 2>/dev/null | grep -q ':27006 ' && ss -tln 2>/dev/null | grep -q ':27008 ' && break
+            sleep 3
+        done
+
+        # 5b. 回归测试
+        log "回归测试..."
+        run_cpp_unit
+        run_py_unit
+        cmd_test_regression
+    fi
+
+    ok "Release 完成 (${target})"
 }
 
 # ─── Main ───────────────────────────────────────
@@ -707,6 +764,9 @@ case "${CMD}" in
         ;;
     clean)
         cmd_clean
+        ;;
+    release)
+        cmd_release "${MODE:-compose}"
         ;;
     *)
         echo "未知命令: ${CMD}" >&2

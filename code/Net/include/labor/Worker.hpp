@@ -346,7 +346,7 @@ public:
     //动态库
     void LoadSo(util::CJsonObject& oSoConf,bool boForce=false);
     void ReloadSo(util::CJsonObject& oCmds);
-    tagSo* LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std::string& strSymbol, int iVersion);
+    tagSo* LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std::string& strSymbol, int iVersion, const util::CJsonObject* pConf = nullptr);
     void UnloadSoAndDeleteCmd(int iCmd);
     void LoadModule(util::CJsonObject& oModuleConf,bool boForce=false);
     void ReloadModule(util::CJsonObject& oUrlPaths);

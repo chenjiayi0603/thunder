@@ -119,7 +119,7 @@ services:
       retries: 30
       start_period: 35s
 
-  # 3 节点 etcd Raft 集群（Phase C）
+  # 3 节点 etcd Raft 集群
   # - 客户端端口: etcd1=12379, etcd2=12381, etcd3=12383
   # - Peer 端口:  etcd1=2380, etcd2=2382, etcd3=2384
   # - Thunder 服务连接 etcd1 (port 12379)；集群内部自动转发到 leader
@@ -205,6 +205,7 @@ services:
     environment:
       NODE_VERSION: v1
       INNER_PORT: "16068"
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -246,6 +247,7 @@ services:
     environment:
       NODE_VERSION: v2
       INNER_PORT: "16069"        # 与 logic v1 的 16068 不冲突
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -281,6 +283,8 @@ services:
   hello:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttp
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -310,6 +314,8 @@ services:
   hello_ws:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloWs
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -345,6 +351,8 @@ services:
   hello_https:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttps
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -381,6 +389,8 @@ services:
   interface:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Interface
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       logic:
         condition: service_healthy

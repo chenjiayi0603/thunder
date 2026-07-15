@@ -26,7 +26,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
-
+        - name: ETCD_ENDPOINT
+          value: "http://thunder-etcd.thunder:2379"
         ports:
         - containerPort: 27443
         - containerPort: 27444

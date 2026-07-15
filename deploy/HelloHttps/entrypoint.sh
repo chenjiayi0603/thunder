@@ -4,6 +4,7 @@ PORT="${INNER_PORT:-27444}"
 [ -n "$INNER_PORT" ] && sed -i "s/\"inner_port\": [0-9]*/\"inner_port\": $INNER_PORT/" ./conf/HelloHttps.json
 MY_IP="${POD_IP:-$(hostname -i 2>/dev/null || echo '0.0.0.0')}"
 [ "$MY_IP" != "0.0.0.0" ] && sed -i "s/\"inner_host\": \"0.0.0.0\"/\"inner_host\": \"$MY_IP\"/" ./conf/HelloHttps.json
+[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/HelloHttps.json
 echo "Starting HelloHttps on $MY_IP:$PORT..."
 ./bin/HelloHttps ./conf/HelloHttps.json
 EXIT=$?

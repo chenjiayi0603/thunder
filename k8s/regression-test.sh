@@ -43,49 +43,39 @@ for dep in $GATEWAYS; do
   [ "$STATUS" -ge 1 ] && check "$dep Running" "PASS" || check "$dep" "FAIL" "0 Running"
 done
 
-# ============== 3. PVC subPath 验证 ==============
+# ============== 3. 插件隔离 ==============
 echo ""
-echo "--- 3. PVC subPath 隔离 ---"
+echo "--- 3. 插件隔离 ---"
 
 declare -A PLUGIN_EXPECT
 PLUGIN_EXPECT[thunder-hello]="HelloHttp_ModuleHello.so"
-PLUGIN_EXPECT[thunder-hello-https]="ModuleHello.so"
-PLUGIN_EXPECT[thunder-hello-ws]="CmdHello.so"
-PLUGIN_EXPECT[thunder-hello-wss]=""  # WSS 目录可能为空，但有 subPath 就不该看到别的 dir
+PLUGIN_EXPECT[thunder-hello-https]="HelloHttps_ModuleHello.so"
+PLUGIN_EXPECT[thunder-hello-ws]="HelloWs_CmdHello.so"
+PLUGIN_EXPECT[thunder-hello-wss]="HelloWs_CmdHello.so"
 PLUGIN_EXPECT[thunder-interface]="ModuleInterface.so"
 
-declare -A PLUGIN_PATH
-PLUGIN_PATH[thunder-hello]="/thunder/deploy/HelloHttp/plugins"
-PLUGIN_PATH[thunder-hello-https]="/thunder/deploy/HelloHttps/plugins"
-PLUGIN_PATH[thunder-hello-ws]="/thunder/deploy/HelloWs/plugins"
-PLUGIN_PATH[thunder-hello-wss]="/thunder/deploy/HelloWss/plugins"
-PLUGIN_PATH[thunder-interface]="/thunder/deploy/Interface/plugins"
-
-# 不应该出现的文件（说明 subPath 没生效）
-BAD_GLOB="HelloHttp\|HelloHttps\|HelloWs\|Interface\|HELLO_HTTP"
+# Docker 镜像: COPY deploy/XXX/ → /app/, 各容器自带插件, 无 NFS 跨容器污染
+PLUGIN_DIR="/app/plugins"
 
 for dep in $GATEWAYS; do
   POD=$(kubectl get pods -n $NS -l app=$dep --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
   if [ -z "$POD" ]; then
-    check "$dep subPath" "FAIL" "no running pod"
+    check "$dep 插件" "FAIL" "no running pod"
     continue
   fi
-  LS=$(kubectl exec -n $NS "$POD" -- ls "${PLUGIN_PATH[$dep]}/" 2>/dev/null || echo "__ERROR__")
-  if echo "$LS" | grep -qE "$BAD_GLOB"; then
-    check "$dep subPath (看到 NFS 根目录=未隔离)" "FAIL" "$(echo "$LS" | head -3)"
-  elif echo "$LS" | grep -q "__ERROR__"; then
-    check "$dep subPath" "FAIL" "ls 失败"
+  LS=$(kubectl exec -n $NS "$POD" -- ls "${PLUGIN_DIR}/" 2>/dev/null || echo "__ERROR__")
+  if echo "$LS" | grep -q "__ERROR__"; then
+    check "$dep 插件" "FAIL" "ls 失败"
   else
     EXPECT="${PLUGIN_EXPECT[$dep]}"
     if [ -n "$EXPECT" ]; then
       if echo "$LS" | grep -qF "$EXPECT"; then
-        check "$dep subPath (含 $EXPECT)" "PASS"
+        check "$dep 插件 (含 $EXPECT)" "PASS"
       else
-        check "$dep subPath" "FAIL" "期望含 $EXPECT, 实际: $(echo "$LS" | head -3)"
+        check "$dep 插件" "FAIL" "期望含 $EXPECT, 实际: $(echo "$LS" | head -3)"
       fi
     else
-      # WSS: 只要是空或只有自己的 .so 就行
-      check "$dep subPath" "PASS"
+      check "$dep 插件" "PASS"
     fi
   fi
 done

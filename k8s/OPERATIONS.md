@@ -1,27 +1,132 @@
 # Thunder K8s 运维手册
 
 > 集群: kubeadm v1.32.13 | CNI: flannel v0.28.5 | Runtime: containerd | OS: Ubuntu 26.04
-> 更新: 2026-07-06
+> 更新: 2026-07-14
 
 ---
 
-## 一、集群概览
+## 一、快速操作（已验证）
+
+### 1.1 一键发布
+
+```bash
+# 编译 → 镜像 → 导入 containerd → 部署 → 回归测试
+./deploy.sh release k8s
+
+# 或分步：
+./deploy.sh build                          # cmake 编译
+./deploy.sh image logic interface logic-v2 hello http https ws wss  # 构建镜像
+./deploy.sh deploy                         # 导入 containerd + kubectl apply
+bash k8s/regression-test.sh                # 回归测试
+```
+
+### 1.2 导入镜像到 containerd
+
+```bash
+# 需要 sudo 密码
+docker save thunder-logic:latest | sudo ctr -n k8s.io image import -
+```
+
+### 1.3 灰度权重管理 (`canary.py`)
+
+```bash
+# 端口转发 etcd 到本地
+kubectl port-forward -n thunder pod/thunder-etcd-0 12379:2379 &
+
+# 查看当前权重
+ETCD_ENDPOINT=127.0.0.1:12379 python3 tools/canary.py LOGIC
+# →  LOGIC: 无灰度配置（使用默认一致性哈希路由）
+
+# 灰度 v2 占 30%
+ETCD_ENDPOINT=127.0.0.1:12379 python3 tools/canary.py LOGIC canary v2 30
+# → ✅ LOGIC: {"v2": 30, "v1": 70}
+#     v1:   70 ( 70.0%)  ██████████████░░░░░░
+#     v2:   30 ( 30.0%)  ██████░░░░░░░░░░░░░░
+
+# 全量切换 v2
+ETCD_ENDPOINT=127.0.0.1:12379 python3 tools/canary.py LOGIC full v2
+# → ✅ LOGIC 全量切换 → v2
+
+# 回滚
+ETCD_ENDPOINT=127.0.0.1:12379 python3 tools/canary.py LOGIC rollback
+# → ✅ LOGIC 已回滚 → v1=100%
+
+# 清除灰度
+ETCD_ENDPOINT=127.0.0.1:12379 python3 tools/canary.py LOGIC reset
+```
+
+### 1.4 Lua 热更新（直接 etcd）
+
+```bash
+ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
+
+# 写新 Lua 脚本（version 99，script_content 含新逻辑）
+kubectl exec -n thunder "$ETCD_POD" -- etcdctl --endpoints=http://127.0.0.1:2379 \
+  put /thunder/config/module/HELLO_HTTP \
+  '{"module":[{"url_path":"/hello/lua_echo","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":99,"script_content":"function handle_request(msg)\n  SendToClientFast('"'"'{\"code\":0,\"msg\":\"NEW_LOGIC\"}'"'"')\n  return true\nend"}]}'
+
+# 验证：请求应返回新逻辑
+curl -s -X POST http://192.168.3.61:27006/hello/lua_echo -d 'test'
+# → {"code":0,"msg":"NEW_LOGIC"}
+
+# 全链路日志确认：
+# Manager: ConfigUpdated → CMD_REQ_RELOAD_LUA
+# Worker:  UnloadSoAndDeleteModule → LoadSoAndGetModule → ModuleLua::Init
+```
+
+### 1.5 回归测试
+
+```bash
+bash k8s/regression-test.sh
+# 通过: 19  失败: 0  跳过: 0  总计: 19
+
+# 测试覆盖：
+#  1. CoreDNS Running
+#  2. 5 个网关 Pod Running
+#  3. 5 个网关插件隔离 (/app/plugins/)
+#  4. DNS 解析 (resolv.conf, 短名, FQDN)
+#  5. 服务直连 (hello, https, ws, wss, interface)
+```
+
+### 1.6 快速验证
+
+```bash
+# 集群状态
+kubectl get pods -n thunder
+
+# 服务连通性
+curl -s -X POST http://192.168.3.61:27006/hello/hello \
+  -H "Content-Type: application/json" -d '{"option":"Echo","size":5}'
+# → {"code":0,"msg":"ok","size":5,"data":"XXXXX"}
+
+# etcd canary 权重
+kubectl exec -n thunder thunder-etcd-0 -- \
+  etcdctl --endpoints=http://127.0.0.1:2379 get /thunder/canary/ --prefix
+
+# Worker 渲染追踪
+kubectl logs -n thunder deploy/thunder-hello --tail=5
+```
+
+---
+
+## 二、集群概览
 
 ### 拓扑
 
 ```
 外部客户端
   │
-  ├─► NodePort :30090 ──► admin-web Pod :8090   (SO/Lua 上传)
-  ├─► NodePort :30006 ──► hello Pod :27006      (HTTP 对外)
-  └─► NodePort :30008 ──► interface Pod :27008  (API 网关)
+  ├─► 192.168.3.61:27006 ──► hello Pod (hostNetwork, HTTP)
+  ├─► 192.168.3.61:27443 ──► hello-https Pod (hostNetwork, HTTPS)
+  ├─► 192.168.3.61:27010 ──► hello-ws Pod (hostNetwork, WS)
+  ├─► 192.168.3.61:27012 ──► hello-wss Pod (hostNetwork, WSS)
+  └─► 192.168.3.61:27008 ──► interface Pod (hostNetwork, API 网关)
 
 内部:
   control-plane (192.168.3.61)
     ├─► kube-apiserver :6443
     ├─► flannel CNI (Pod CIDR: 10.244.0.0/16)
-    ├─► CoreDNS (Service CIDR: 10.96.0.0/12)
-    ├─► NFS Server (host, /data/thunder/plugins → 所有节点共享)
+    ├─► CoreDNS (10.96.0.10) — ClusterFirstWithHostNet DNS
     └─► containerd
 ```
 
@@ -29,22 +134,32 @@
 
 | 入口 | 地址 | 协议 | 用途 |
 |------|------|------|------|
-| kube-apiserver | `192.168.3.61:6443` | HTTPS | kubectl, kubelet, 集群管理 |
-| admin-web | `192.168.3.61:30090` | HTTP | SO/Lua 上传 (PUT/POST) |
-| hello | `192.168.3.61:30006` | HTTP | 业务服务 |
-| interface | `192.168.3.61:30008` | HTTP | API 网关 |
-| NFS Server | `192.168.3.61:2049` | TCP/NFS | Pod 间 SO 文件共享 |
+| hello (HTTP) | `192.168.3.61:27006` | HTTP | Echo / Lua 路由 |
+| hello-https | `192.168.3.61:27443` | HTTPS | 加密 echo |
+| hello-ws | `192.168.3.61:27010` | WebSocket | 长连接 |
+| hello-wss | `192.168.3.61:27012` | WSS | 加密 WebSocket |
+| interface | `192.168.3.61:27008` | HTTP | API 网关 (→ Logic) |
+| etcd (内部) | `thunder-etcd.thunder:2379` | gRPC | 配置中心 + 服务发现 |
 
 ### 关键组件
 
 | 组件 | 类型 | 用途 |
 |------|------|------|
 | flannel | CNI | Pod 网络 (10.244.0.0/16) |
-| CoreDNS | DNS | 集群内服务发现 |
-| NFS (host) | 存储 | SO 文件跨节点共享 (PV pv-thunder-plugins-nfs) |
-| etcd (thunder) | StatefulSet×3 | 应用层配置中心、服务发现 |
+| CoreDNS | DNS | 集群内服务发现 (10.96.0.10) |
+| etcd (thunder) | StatefulSet×3 | 应用层配置中心、服务发现、canary 权重 |
 | Redis | Deployment | 缓存 |
 | MySQL | Deployment | 持久化 |
+
+### 部署模型
+
+| 服务 | 网络 | 镜像 | 插件 |
+|------|:--:|------|------|
+| 网关 (hello/interface) | hostNetwork | Docker (`/app/`) | 烘焙 (`/app/plugins/`) |
+| Logic | ClusterIP | Docker (`/app/`) | 烘焙 (`/app/plugins/`) |
+| etcd/Redis/MySQL | ClusterIP | 官方镜像 | — |
+
+> **已废弃**: NFS 共享存储、NodePort 暴露、PVC subPath 隔离。改为 Docker 镜像部署。
 
 ---
 
@@ -171,15 +286,21 @@ EOF
 ### 5. 部署 Thunder 服务
 
 ```bash
-# namespace + 基础设施 + 业务
+# 一键部署（编译 + 镜像 + 导入 + apply）
+./deploy.sh release k8s
+
+# 或手动分步：
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/etcd-statefulset.yaml
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/mysql.yaml
 kubectl apply -f k8s/logic-deployment.yaml
+kubectl apply -f k8s/logic-v2-deployment.yaml
 kubectl apply -f k8s/interface-deployment.yaml
 kubectl apply -f k8s/hello-deployment.yaml
-kubectl apply -f k8s/admin-web-deployment.yaml
+kubectl apply -f k8s/hello-https-deployment.yaml
+kubectl apply -f k8s/hello-ws-deployment.yaml
+kubectl apply -f k8s/hello-wss-deployment.yaml
 ```
 
 ### 6. etcd StatefulSet PV

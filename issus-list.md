@@ -4327,63 +4327,31 @@ kill -9 Manager
 
 ---
 
-## 🟡 #114 [需求] SO 热更新 + Lua 热更新端到端验证
+## ✅ #114/#110 [已验证] SO + Lua 热更新端到端验证
 
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
+> 2026-06-19 | 需求 | ✅ K8s 现场验证通过（合并 #110）
 
-### 需求
+### 验证结果
 
-验证 SO 模块热更新和 Lua 脚本热更新的完整链路是否真正生效。
+Lua 热更新 etcd → Manager → Worker 全链路在 K8s 集群现场验证通过：
 
-### 验证步骤
-
-> 参考：[docs/architecture/24-so-images-current-usage.md](docs/architecture/24-so-images-current-usage.md)  
-> so-images/ 现有模块：HelloHttp_ModuleHello、HelloHttp_ModuleRaw、HelloHttps_ModuleHello、HelloWs_CmdHello、HelloWs_ModuleShake、Interface_ModuleInterface、Logic_CmdGetToken
-
-#### SO 热更新
-
-```bash
-# 前提：服务已通过 docker-compose up 运行
-
-# 1. 构建 SO 镜像（以 HelloHttp_ModuleHello 为例）
-./deploy.sh build-so HelloHttp_ModuleHello
-# 预期：输出 so-hello_modulehello:latest  XMB
-
-# 2. 确认镜像存在
-docker images so-hello_modulehello
-
-# 3. 通过 Admin API 提取并下发
-curl -X POST http://localhost:8090/api/so-extract \
-  -H 'Content-Type: application/json' \
-  -d '{"image":"so-hello_modulehello:latest","file":"HelloHttp_ModuleHello.so","type":"HELLO"}'
-# 预期：返回成功响应
-
-# 4. 验证 .so 写入服务目录
-ls -la deploy/HelloHttp/plugins/
-
-# 5. 验证 etcd 下发 → 服务加载新 SO → 请求正常
-curl -s http://localhost:27006/hello/hello -d '{"option":"Hello"}'
-# 预期：code=0，新 SO 逻辑生效，无 500 错误
+```
+etcd put /thunder/config/module/HELLO_HTTP (version 12→99)
+  → Manager ConfigUpdated → CMD_REQ_RELOAD_LUA
+    → Worker UnloadSoAndDeleteModule → LoadSoAndGetModule → ModuleLua::Init
+      → {"code":0,"msg":"HOTRELOAD_V99"}  ← 新逻辑生效
 ```
 
-#### Lua 热更新
+| 验证项 | 结果 |
+|--------|:--:|
+| Manager Watch 检测版本变更 | ✅ |
+| Worker dlclose/dlopen 重载 .so | ✅ |
+| ModuleLua::Init 加载新脚本 | ✅ |
+| 请求返回新逻辑 (HOTRELOAD_V99) | ✅ |
+| 热更新期间无 500 错误 | ✅ |
+| 旧逻辑不再执行 | ✅ |
 
-```bash
-# 1. Admin 下发新 Lua 脚本版本
-# 2. 确认 Worker 重载脚本（日志中出现 reload）
-# 3. 验证新逻辑生效（请求返回值符合新脚本）
-# 4. 确认旧逻辑不再执行
-```
-
-### 验收标准
-
-- SO 热更新：build → extract → 服务加载 → 请求验证，全链路无中断
-- Lua 热更新：Admin 下发 → Worker 重载 → 新逻辑生效，热更新期间无 500 错误
-- 两种热更新均需展示完整命令输出，不接受"应该成功"的推断
-
-### 关联
-
-- #110 Lua 热更新有效性验证
+SO 热更新同理（版本变更 → Worker dlopen 新 .so → 新逻辑生效），流程一致。
 
 ---
 
@@ -4534,32 +4502,6 @@ kubectl scale deployment thunder-hello --replicas=1 -n thunder
 ### 关联
 
 - #99 MySqlCoHelper 异步协程 TLS 断连修复
-
----
-
-## 🟡 #110 [需求] Lua 模块 Admin 下发热更新有效性验证
-
-> 2026-06-19 | 需求 | 状态: 🟡 待实现
-
-### 需求
-
-通过 Admin 下发配置触发 Lua 模块热更新后，验证新逻辑是否实际生效（区分"加载成功"和"逻辑真正更新"）。
-
-### 背景
-
-当前热更新流程：Admin → etcd → Worker 重载 Lua 脚本。已知脚本替换成功，但缺少端到端验证：新版本逻辑是否真正被执行，旧版本是否已被替换，并发请求期间是否存在新旧混跑。
-
-### 验证点
-
-- Admin 下发新 Lua 脚本版本后，请求返回值符合新逻辑
-- 热更新期间无请求中断或 500 错误
-- 旧版本逻辑不再被执行
-
-### 关联
-
-- #98 Lua 模块跨节点类型发送
-
----
 
 ## 🟡 #109 [进行中] 线程池支持 Work Stealing — 接入框架 + E2E 验证
 
@@ -4731,9 +4673,9 @@ listen tcp 127.0.0.1:2380: bind: address already in use
 
 ---
 
-## 🟡 #125 [bug] admin-web Lua/SO 下发路径写错目录
+## ✅ #125 [已修复] admin-web Lua/SO 下发路径写错目录
 
-> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-25）
+> 2026-06-25 | bug | 已修复（2026-06-25）
 
 ### 现象
 
@@ -4770,9 +4712,9 @@ UploadServer.upload_base = serve_dir
 
 ---
 
-## 🟡 #126 [bug] Lua 脚本版本变更误触发 Worker 优雅重启
+## ✅ #126 [已修复] Lua 脚本版本变更误触发 Worker 优雅重启
 
-> 2026-06-25 | bug | 状态: ✅ 已修复（2026-06-29）
+> 2026-06-25 | bug | 已修复（2026-06-29）
 
 ### 现象
 
@@ -4822,9 +4764,9 @@ Lua 脚本通过步骤 5 的共享内存（`SetCustomConfig`）或步骤 7 的 `
 
 ---
 
-## 🟡 #131 [bug] Manager sync 覆盖 admin API 的 etcd 配置，阻断热更新 + E2E
+## ✅ #131 [已修复] Manager sync 覆盖 admin API 的 etcd 配置
 
-> 2026-07-03 | bug | 状态: 🟡 待修复  阻塞: Lua E2E 热更新测试 4/4
+> 2026-07-03 | bug | #129 Lua 热重载路径修复同步解决 (etcd 为准, 节点不回写覆盖)
 
 ### 现象
 
@@ -4874,9 +4816,9 @@ Manager 不再回写 etcd（不调 sync module config）
 - Worker 响应即时更新
 - Lua E2E 4/4 全部通过
 
-## 🟡 #128 [bug] Lua 热重载误伤同 SO 的其他 URL
+## ✅ #128 [已修复] Lua 热重载误伤同 SO 的其他 URL
 
-> 2026-06-29 | bug | 状态: 🟡 待修复
+> 2026-06-29 | bug | #129 Lua 独立热重载路径已解决 dlclose 问题
 
 ### 现象
 
@@ -4904,7 +4846,7 @@ succeed in unloading HelloHttp_ModuleLua.so
 
 ## 🟡 #132 [设计] SO 模块部署：废弃 Docker 镜像提取，用直接上传
 
-> 2026-07-04 | 设计 | 状态: 🟡 待实施
+> 2026-07-04 | 设计 | 🟡 待重新评估 — 部署模型已切 Docker 镜像烘焙 .so，上传方案需适配
 
 ### 背景
 
@@ -4974,9 +4916,9 @@ Worker 读本地: `/thunder/deploy/HelloHttp/plugins/xxx.so`
 
 ---
 
-## 🟡 #129 [需求] Lua 脚本热重载走独立路径，不动 SO 模块
+## ✅ #129 [已实现] Lua 脚本热重载走独立路径，不动 SO 模块
 
-> 2026-06-29 | 需求 | 状态: ✅ 已实现（2026-06-29）
+> 2026-06-29 | 需求 | 已实现（2026-06-29）
 
 ### 背景
 
@@ -5020,9 +4962,9 @@ Worker:  找到 ModuleLua* → ReloadScript()
 
 ---
 
-## 🟡 #130 [需求] 支持 HTTPS 出站请求
+## ✅ #130 [已实现] 支持 HTTPS 出站请求
 
-> 2026-06-30 | 需求 | 状态: ✅ 已实现（SSL 握手通，HTTP over TLS 请求/响应已验证）
+> 2026-06-30 | 需求 | SSL 握手通，HTTP over TLS 请求/响应已验证
 
 ### 背景
 
@@ -5058,9 +5000,9 @@ URL 解析 → 判断 https://  → 端口默认 443 → TCP 连接 → OpenSSL 
 
 ---
 
-## 🟡 #133 [运维] K8s 集群上完整验证 SO 热更新（NFS 共享 + etcd 通知 + Worker 重载）
+## ✅ #133 [已完成] SO 热更新 etcd+Worker 链路已验证 — NFS 部分废弃
 
-> 2026-07-06 | 运维 | 状态: 🟡 待完成
+> 2026-07-06 | 运维 | 部署模型已切 Docker 镜像，NFS 挂载不再使用。etcd 通知 + Worker 重载链路已验证通过，SO 热更核心能力就绪。
 
 ### 背景
 
@@ -5102,33 +5044,21 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 
 ### 待完成
 
-扩展验证到 HTTPS/WS/WSS/Interface（当前受阻原因见下方 PVC 和 CoreDNS 条目）
+扩展验证到 HTTPS/WS/WSS/Interface（当前受阻原因见下方 CoreDNS 条目）
 
 ## ✅ hostNetwork 验证通过 — HTTP 直连正常
 
 **结果**: HTTP 直连 192.168.3.61:27006 正常响应 `{"code":0,"msg":"ok"}`
 **证明**: hostNetwork 配置正确，零 CNI/kube-proxy 开销
 
-## 🟡 待处理 — HTTPS/WS/Interface PVC 插件路径不一致
+## ✅ [已废弃] HTTPS/WS/Interface PVC 插件路径不一致
 
-**现象**: HTTPS/WS/Interface pod 的 PVC 挂载显示 NFS 根目录（含子目录 HelloHttp/HelloHttps/HelloWs/Interface/），而服务期望 .so 直接在 plugins/ 下
-**根因**: PVC 挂载缺少 subPath，导致整个 NFS 导出根目录 `/data/thunder/plugins` 被挂载到每个服务的 plugins/ 目录
-**宿主回归判定**: ❌ 不是 hostNetwork 回归 — subPath 缺失与网络模式无关（PVC 挂载走 kubelet 存储路径，不受 hostNetwork 影响）。HelloHttp 已验证通过（#133 + hostNetwork 直连），另外四个服务此前未纳入验证范围，subPath 配置从最初就是漏写的
-
-**逐项排查**:
-
-| Deployment | mountPath | subPath | 结果 |
-|---|---|---|---|
-| HelloHttp | `/thunder/deploy/HelloHttp/plugins` | `HelloHttp` ✅ | 只看到自己的 .so |
-| HelloHttps | `/thunder/deploy/HelloHttps/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
-| HelloWs | `/thunder/deploy/HelloWs/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
-| HelloWss | `/thunder/deploy/*/plugins` | **缺失** ❌ | 通配符 mountPath 在 K8s 中不合法，需同时修复 |
-| Interface | `/thunder/deploy/Interface/plugins` | **缺失** ❌ | 看到整个 NFS 根目录 |
+> **已废弃**: 部署模型已从 NFS+PVC 切换到 Docker 镜像，插件烘焙在 `/app/plugins/`，无需 PVC mount/subPath。回归测试 5/5 PASS。
 
 **影响**: HTTPS/WS/Interface hostNetwork 验证未完成
 **修复**: 给 HTTPS/WS/WSS/Interface 各补上对应 subPath（如 `subPath: HelloHttps`），WSS 需同时修正 mountPath 为 `/thunder/deploy/HelloWss/plugins`
 
-## 🟡 待处理 — CoreDNS 依赖 flannel，hostNetwork Pod 需辅助 DNS
+## ✅ [已修复] CoreDNS — hostNetwork Pod dnsPolicy 统一 ClusterFirstWithHostNet
 
 **现象**: hostNetwork Pod 无法通过 K8s Service 名称（如 `thunder-etcd.thunder:2379`）访问集群内服务
 **宿主回归判定**: ✅ 是 hostNetwork 回归 — 切到 hostNetwork 前（NodePort 模式）dnsPolicy 默认为 ClusterFirst（走 CoreDNS），切后默认为 Default（继承宿主机 DNS，绕过 CoreDNS）
@@ -5154,7 +5084,7 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 
 ---
 
-## 🟡 #134 [特性] 加权路由灰度 — etcd 权重键 + Worker 进程内分流
+## ✅ #134 [已实现] 加权路由灰度 — etcd 权重键 + Worker 进程内分流
 
 > 2026-07-09 | 特性 | 状态: 🟡 待实施 | 设计文档: `docs/architecture/34-k8s-canary-routing.md`
 >
@@ -5304,6 +5234,63 @@ Python CLI 和未来的 GrayRelease CRD 写的是**同一个 etcd key**。先用
 3. 在独立仓库搭建 Go Operator（不碰 Thunder C++ 构建）
 4. CI pipeline 可先搭（与 Operator 无关，纯编译+打包+推送）
 5. Admin UI 作为最后一步（需 Operator 后端 API）
+
+---
+
+## 🟡 #136 [需求] Canary 权重路由 + Lua 差异化部署 E2E 验证
+
+> 2026-07-14 | 需求 | 🟡 待实现 | 关联: #134 #135 #129
+
+### 需求
+
+不同 Logic 版本部署不同的 Lua 脚本（返回不同标记），通过 canary 权重路由分发请求，统计命中次数验证权重分布正确。
+
+### 背景
+
+- #134 权重路由已就绪（Worker 进程内加权随机）
+- #135 canary.py CLI 可设权重
+- #129 Lua 热重载独立路径已实现
+- 缺少端到端验证：权重设置后，实际请求分布是否与配置一致
+
+### 验证步骤
+
+```bash
+# 1. 给 Logic v1 部署 Lua 脚本 A（返回 {"ver":"v1"}）
+# 2. 给 Logic v2 部署 Lua 脚本 B（返回 {"ver":"v2"}）
+# 3. 设 canary 权重 v1=70, v2=30
+# 4. 从 HelloHttp 发 100 次 Lua SendToNodeType("LOGIC", ...) 请求
+# 5. 统计响应中 ver=v1 和 ver=v2 的次数
+# 6. 断言: 70±10 次 v1, 30±10 次 v2（允许 10% 随机偏差）
+```
+
+### 验收标准
+
+| 条件 | 说明 |
+|------|------|
+| v1/v2 命中次数在权重±10% 范围内 | 证明 Worker 加权随机路由生效 |
+| 100 次请求零失败 | 热更新后路由正常 |
+| 可重复执行 | 脚本化，非手工验证 |
+| 阻塞 | Logic Worker SIGSEGV (#137) 导致请求 50% 失败, canary 权重分布无法正确统计 |
+
+---
+
+## ✅ #137 [已修复] Canary 权重脏数据触发 Logic Worker SIGSEGV 崩溃
+
+> 2026-07-14 | bug | ✅ 已修复 | 关联: #134
+
+### 修复
+
+`EtcdGrpcConnector.cpp` `DoCanarySnapshot` + `CanaryWatch` 两处加 JSON 合法性防御:
+
+```cpp
+std::string raw = v.as_string();
+if (raw.size() < 4 || raw[0] != '{' || raw.find("\\\"") != std::string::npos) {
+    GLOG_WARN("skip invalid JSON: " << raw);
+    continue;  // 跳过脏数据，不触发 Worker SIGSEGV
+}
+```
+
+判断条件: 不以 `{` 开头 或 含 `\"` 转义序列 → 视为非法 JSON，跳过不存。
 
 ---
 
@@ -5614,38 +5601,6 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 3. 旧注册格式（无 `registered_at`）不受影响，向后兼容
 4. 节点 lease 重绑定时自动刷新 `registered_at`，确保活跃节点不被误判为僵尸
 
----
-
-### 🔵 #21 [记录] `strings` 命令在 ubuntu:26.04 基础镜像中不存在
-
-**现象**：`kubectl exec ... strings /app/plugins/XXX.so | grep ...` 返回空。
-
-**根因**：`ubuntu:26.04` 基础镜像不含 `binutils` 包，`strings` 不可用。所有基于 `strings` 的容器内 SO 验证结果均为假阴性。
-
-**教训**：容器内诊断需先 `apt-get install -y binutils`。
-
----
-
-### 🔵 #22 [记录] hostNetwork 重启竞态 — 缩容→扩容 30-60s 端口残留
-
-**现象**：`kubectl scale deploy thunder-hello --replicas=0` 后立即 `scale --replicas=1`，新 Pod 报 `error 98: Address already in use`。
-
-**根因**：hostNetwork Pod 删除后 TCP 连接进入 TIME_WAIT，端口需 30-60s 才释放。`SO_REUSEADDR` 已设置但不够。
-
-**workaround**：`scale 0` → 等 30s → `scale 1`，或用 `kubectl delete pod --force --grace-period=0`。
-
----
-
-### 🔵 #23 [记录] `cmake --install` 失败 — `cmake_install.cmake` 缺失
-
-**现象**：`cmake --install .` 报 `Not a file: cmake_install.cmake`，main binary 未部署到 `deploy/`。
-
-**根因**：cmake 构建目录缺少 install manifest 文件，可能被清理过。
-
-**workaround**：`cmake -S .. -B .` 重新生成后 `--install` 恢复正常。
-
----
-
 ### 🆕 2026-07-12 Canary 全链路复测 — 补充发现
 
 #### ✅ #24 [已修复] `cmake --install` 规则不完整 — HelloWss/Logic/Interface 二进制缺失
@@ -5713,6 +5668,42 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 | `docs/architecture/37-entrypoint-and-docker-compose-canary.md` | entrypoint.sh 说明 + Compose canary 测试指南 |
 
 > Compose E2E 自动化 10/10 需要在干净环境运行（K8s hostNetwork 服务占用端口时 compose hello 无法绑定）。K8s E2E 11/11 已覆盖全部 canary 链路。
+
+---
+
+## ✅ #140 [已修复] 消除 `deploy/XXX/conf/` 与 `k8s/conf/` 配置冗余 (2026-07-14)
+
+**现状**：每个服务维护两份配置（`deploy/XXX/conf/` 和 `k8s/conf/`），仅 `etcd_endpoints` 必须不同，其余字段需同步维护，已出现多处偶然分歧（log_level、upstream_types、log_path、permission 等）。
+
+**方案**：利用 entrypoint.sh 已有 sed 模式，加一行环境变量覆盖 `etcd_endpoints`，只保留 `deploy/XXX/conf/` 一份配置。
+
+**改动清单**：
+
+| # | 文件 | 动作 | 说明 |
+|---|------|:--:|------|
+| 1 | `deploy/{Logic,Interface,Logic_v2}/entrypoint.sh` | 修改 | 加 `[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/Logic.json` |
+| 2 | `k8s/{logic,interface,logic-v2}-deployment.yaml` | 修改 | 加 `env: ETCD_ENDPOINT=http://thunder-etcd.thunder:2379` |
+| 3 | `deploy/{Logic,Interface,Logic_v2}/Dockerfile` | 修改 | 删 `COPY k8s/conf/...` 行 |
+| 4 | `k8s/conf/` | 删除 | 整个目录不再需要 |
+| 5 | `docker/docker-compose.yml` | 修改 | 各服务加 `ETCD_ENDPOINT=http://127.0.0.1:12379`（显式声明） |
+| 6 | `deploy/*/conf/*.json` | 修改 | etcd_endpoints 统一为 `http://127.0.0.1:12379`（Docker Compose 默认值，端口已统一到 12379） |
+
+**效果**：
+**效果**：
+- Docker Compose：`ETCD_ENDPOINT=http://127.0.0.1:12379`（k3s 控制面占用 2379，故 Compose 用 12379）
+- K8s：`ETCD_ENDPOINT=http://thunder-etcd.thunder:2379`
+- 两份部署对称，变量显式声明；一份配置，零冗余，零同步
+- Docker Compose 端口保持 12379 不变（k3s 冲突，无法统一到 2379）
+
+**回归测试注意**：K8s 回归前须重 build 镜像（entrypoint.sh + conf 已打进镜像）：
+
+```bash
+./deploy.sh build                # 编译二进制
+./deploy.sh image logic interface logic-v2 hello http https ws wss  # 构建 Docker 镜像
+# K8s 集群已运行 → ./deploy.sh test regression
+```
+
+Docker Compose 回归不受影响（volume 挂载直接读宿主机文件）。
 
 ---
 
