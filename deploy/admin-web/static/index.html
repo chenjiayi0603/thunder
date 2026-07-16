@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thunder Admin</title>
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Thunder Admin</h1>
+  <nav class="nav-tabs" id="navTabs">
+    <button class="active" data-panel="overview">📊 概览</button>
+    <button data-panel="nodes">🖥 节点</button>
+    <button data-panel="canary">⚖ 灰度</button>
+    <button data-panel="config">⚙ 配置</button>
+    <button data-panel="lua">📜 Lua</button>
+    <button data-panel="plugins">📦 插件</button>
+    <button data-panel="audit">📋 审计</button>
+  </nav>
+
+  <button class="btn btn-ghost btn-sm" id="themeToggle" title="切换主题">🌙</button>
+</header>
+
+<main class="app-main">
+<section id="overview" class="panel active">
+  <div id="overviewHints"></div>
+  <div class="card"><div class="card-header">服务分布 <span class="text-sm text-muted" id="overviewRefresh"></span></div>
+    <div id="overviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--space)">
+      <div class="loading-block"><span class="spinner"></span></div>
+    </div>
+  </div>
+  <div style="text-align:right;margin-top:var(--space-sm)"><button class="btn btn-ghost btn-sm" id="overviewRefreshBtn">立即刷新</button></div>
+</section>
+<section id="nodes" class="panel">
+  <div class="toolbar">
+    <label>服务<select class="select" id="nodeTypeSelect"><option value="">全部</option><option>LOGIC</option><option>INTERFACE</option><option>HELLO_HTTP</option><option>HELLO_HTTPS</option></select></label>
+    <input class="input" id="nodeSearch" placeholder="搜索 IP 或 node_id...">
+    <button class="btn btn-ghost btn-sm" id="nodeSearchClear" style="display:none">清除</button>
+  </div>
+  <div id="nodesGrid" class="node-grid"><div class="loading-block"><span class="spinner"></span></div></div>
+</section>
+<section id="canary" class="panel">
+  <div class="toolbar">
+    <label>服务<select class="select" id="canaryServiceSelect"><option>LOGIC</option><option>INTERFACE</option></select></label>
+    <button class="btn btn-primary btn-sm" id="canaryLoadBtn">加载</button>
+  </div>
+  <div id="canaryStatus"></div>
+  <div class="card" id="canaryCard" style="display:none">
+    <div class="card-header">权重分配 <span class="text-sm text-muted" id="canaryTotal"></span></div>
+    <div id="canarySliders"></div>
+    <div class="flex gap-sm mt">
+      <button class="btn btn-primary btn-sm" id="canaryApply">应用</button>
+      <button class="btn btn-ghost btn-sm" id="canaryReset">重置</button>
+      <button class="btn btn-ghost btn-sm" id="canaryZeroAll">全部归零</button>
+    </div>
+  </div>
+  <div class="card" id="canaryDiffCard" style="display:none;margin-top:var(--space)">
+    <div class="card-header">变更预览</div>
+    <pre class="diff-view" id="canaryDiff" style="font-size:var(--text-sm);line-height:1.8"></pre>
+  </div>
+</section>
+<section id="lua" class="panel">
+  <div class="toolbar">
+    <label>服务<select class="select" id="luaNodeType"><option>HELLO_HTTP</option><option>HELLO_HTTPS</option></select></label>
+    <button class="btn btn-primary btn-sm" id="luaLoad">加载</button>
+  </div>
+  <div id="luaStatus"></div>
+  <div class="card" id="luaListCard" style="display:none">
+    <div class="card-header">Lua 脚本列表 <span class="text-sm text-muted" id="luaCount"></span></div>
+    <table class="table"><thead><tr><th>脚本名</th><th>URL</th><th>版本</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="luaTable"></tbody>
+    </table>
+  </div>
+  <div class="card" id="luaEditCard" style="display:none;margin-top:var(--space)">
+    <div class="card-header flex justify-between"><span>编辑: <b id="luaEditName"></b></span><span class="text-sm text-muted" id="luaEditMeta"></span></div>
+    <textarea id="luaEditor" class="textarea font-mono" style="min-height:300px;font-size:var(--text-xs);font-family:ui-monospace,monospace"></textarea>
+    <div class="flex gap-sm mt">
+      <button class="btn btn-primary btn-sm" id="luaSave">保存</button>
+      <button class="btn btn-ghost btn-sm" id="luaCancel">取消</button>
+    </div>
+  </div>
+</section>
+<section id="config" class="panel">
+  <div class="toolbar">
+    <label>模块<select class="select" id="cfgModule"><option>LOGIC</option><option>INTERFACE</option><option>HELLO_HTTP</option></select></label>
+    <label>类型<select class="select" id="cfgType"><option>Logic.json</option><option>config.json</option></select></label>
+    <button class="btn btn-primary btn-sm" id="cfgLoad">加载</button>
+  </div>
+  <div class="card" id="cfgCard" style="display:none">
+    <div class="card-header flex justify-between"><span>当前配置</span><span class="text-sm text-muted" id="cfgMeta"></span></div>
+    <pre id="cfgContent" style="background:var(--border-light);padding:var(--space);border-radius:var(--radius);font-size:var(--text-xs);overflow:auto;max-height:300px;font-family:ui-monospace,monospace;white-space:pre-wrap"></pre>
+    <textarea id="cfgEditor" class="textarea font-mono" style="display:none;min-height:200px;font-size:var(--text-xs)"></textarea>
+    <div class="flex gap-sm mt">
+      <button class="btn btn-primary btn-sm" id="cfgEdit">编辑</button>
+      <button class="btn btn-primary btn-sm" id="cfgSave" style="display:none">保存</button>
+      <button class="btn btn-ghost btn-sm" id="cfgCancel" style="display:none">取消</button>
+      <button class="btn btn-ghost btn-sm" id="cfgDownload">下载</button>
+    </div>
+  </div>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">历史版本</div>
+    <table class="table"><thead><tr><th>Revision</th><th>时间</th><th>内容</th><th>操作</th></tr></thead>
+      <tbody id="cfgHistory"><tr><td colspan="4" class="text-center text-muted">加载配置后显示</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section id="plugins" class="panel">
+  <div class="card"><div class="card-header">上传插件</div>
+    <div id="plugDrop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:var(--space-xl);text-align:center;color:var(--text-muted);cursor:pointer">
+      拖拽 .so 文件到此处 或 点击选择<br><span style="font-size:var(--text-xs)" id="plugFileName"></span>
+      <input type="file" id="plugFile" accept=".so" style="display:none">
+    </div>
+    <div class="flex gap-sm mt items-center"><label>类型<select class="select" id="plugType"><option>LOGIC</option><option>INTERFACE</option></select></label>
+      <label>版本<select class="select" id="plugVer"><option>v1</option><option>v2</option></select></label>
+      <button class="btn btn-primary btn-sm" id="plugUpload">上传并部署</button>
+    </div>
+  </div>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">已部署插件 <span class="text-sm text-muted" id="plugRefresh"></span></div>
+    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>版本</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="plugTable"><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section id="audit" class="panel">
+  <div class="toolbar">
+    <label>操作<select class="select" id="auditAction"><option value="">全部</option><option>weight_update</option><option>config_update</option><option>plugin_deploy</option></select></label>
+    <button class="btn btn-primary btn-sm" id="auditRefresh">刷新</button>
+  </div>
+  <div class="card">
+    <table class="table"><thead><tr><th>时间</th><th>操作</th><th>目标</th><th>IP</th><th>操作</th></tr></thead>
+      <tbody id="auditTable"></tbody>
+    </table>
+  </div>
+</section>
+</main>
+<script src="js/state.js"></script>
+<script src="js/components.js"></script>
+<script src="js/api.js"></script>
+<script>
+(function() {
+  /* ========== Mock Data ========== */
+  var MOCK = {
+    overview: {
+      etcd_connected:true, total_nodes:8, online_nodes:7,
+      services:[
+        {node_type:"LOGIC",count:3,online:3,versions:{v1:2,v2:1}},
+        {node_type:"INTERFACE",count:2,online:2,versions:{v1:2}},
+        {node_type:"HELLO_HTTP",count:2,online:1,versions:{v1:2}},
+        {node_type:"HELLO_HTTPS",count:1,online:1,versions:{v1:1}}
+      ]
+    },
+    nodes:{
+      nodes:[
+        {node_type:"LOGIC",ip:"10.0.0.1",port:16001,node_id:2,version:"v1",worker_num:4,online:true,active_time:new Date(Date.now()-30000).toISOString()},
+        {node_type:"LOGIC",ip:"10.0.0.2",port:16002,node_id:3,version:"v1",worker_num:4,online:true,active_time:new Date(Date.now()-120000).toISOString()},
+        {node_type:"LOGIC",ip:"10.0.0.3",port:16003,node_id:5,version:"v2",worker_num:4,online:true,active_time:new Date(Date.now()-300000).toISOString()},
+        {node_type:"INTERFACE",ip:"10.0.0.10",port:17001,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-60000).toISOString()},
+        {node_type:"INTERFACE",ip:"10.0.0.11",port:17002,node_id:2,version:"v1",worker_num:2,online:false,active_time:"-"},
+        {node_type:"HELLO_HTTP",ip:"10.0.0.20",port:8080,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-60000).toISOString()},
+        {node_type:"HELLO_HTTP",ip:"10.0.0.21",port:8081,node_id:2,version:"v1",worker_num:2,online:false,active_time:"-"},
+        {node_type:"HELLO_HTTPS",ip:"10.0.0.30",port:8443,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-45000).toISOString()}
+      ]
+    }
+  };
+  var USE_MOCK = false;
+
+  /* ========== Tab Navigation ========== */
+  document.getElementById("navTabs").addEventListener("click",function(ev){
+    var btn=ev.target.closest("button[data-panel]");if(!btn)return;
+    var id=btn.getAttribute("data-panel");STORE.tab=id;
+    document.querySelectorAll("#navTabs button").forEach(function(b){b.classList.toggle("active",b===btn)});
+    document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("active",p.id===id)});
+    if(id==="overview")loadOverview();
+    if(id==="nodes")loadNodes();
+    if(id==="canary")loadCanary();
+    if(id==="lua")loadLua();
+    if(id==="plugins")loadPlugins();
+    if(id==="audit")loadAudit();
+  });
+
+  /* ========== Overview ========== */
+  function loadOverview(){
+    var grid=document.getElementById("overviewGrid");
+    grid.innerHTML='<div class="loading-block"><span class="spinner"></span></div>';
+    var hints=document.getElementById("overviewHints");
+    function render(d){
+      hints.innerHTML='<div class="hint-bar hint-success">\u2705 etcd \u5DF2\u8FDE\u63A5 \xB7 \u8282\u70B9 '+d.total_nodes+' \xB7 \u5728\u7EBF '+d.online_nodes+' \xB7 \u79BB\u7EBF '+(d.total_nodes-d.online_nodes)+'</div>';
+      var h="";
+      (d.services||[]).forEach(function(s){
+        var pct=s.count>0?Math.round(s.online/s.count*100):0;
+        var bc=pct===100?"badge-success":(pct>0?"badge-warning":"badge-error");
+        h+='<div class="card-stat" style="border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-md);cursor:pointer" onclick="switchToNodes(\''+Components.escapeAttr(s.node_type)+'\')">';
+        h+='<div class="num">'+s.count+'</div>';
+        h+='<div class="label">'+Components.escapeHtml(s.node_type)+' <span class="badge '+bc+'">'+s.online+'/'+s.count+' \u5728\u7EBF</span></div>';
+        var vs=[];
+        for(var v in s.versions)vs.push(v+"\u00D7"+s.versions[v]);
+        h+='<div class="text-sm text-muted mt">'+vs.join(" ")+'</div>';
+        h+='<div style="margin-top:8px;height:4px;background:var(--border-light);border-radius:2px"><div style="height:100%;width:'+pct+'%;background:var(--primary);border-radius:2px;transition:width .5s"></div></div>';
+        h+='</div>';
+      });
+      grid.innerHTML=h||'<div class="empty-state">\u6682\u65E0\u6570\u636E</div>';
+      document.getElementById("overviewRefresh").textContent="\u66F4\u65B0: "+new Date().toLocaleTimeString();
+      STORE.overview.data=d;
+    }
+    API.overview().then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data)}else if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'}).catch(function(){if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'});
+  }
+
+  /* ========== Switch to Nodes ========== */
+  window.switchToNodes=function(nt){
+    document.getElementById("nodeTypeSelect").value=nt;
+    document.querySelector('#navTabs button[data-panel="nodes"]').click();
+  };
+
+  /* ========== Nodes ========== */
+  var _allNodes=[];
+  function loadNodes(){
+    var grid=document.getElementById("nodesGrid");
+    var nt=document.getElementById("nodeTypeSelect").value;
+    grid.innerHTML='<div class="loading-block"><span class="spinner"></span></div>';
+    function render(nodes){_allNodes=nodes;renderNodesGrid(nodes);}
+    API.getNodes(nt).then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data.nodes||[])}else if(USE_MOCK){var mn=MOCK.nodes.nodes;if(nt)mn=mn.filter(function(n){return n.node_type===nt});render(mn)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D</div>'}).catch(function(){if(USE_MOCK){render(MOCK.nodes.nodes)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D</div>'});
+  }
+
+  /* ========== Nodes Grid Render ========== */
+  function renderNodesGrid(nodes){
+    var grid=document.getElementById("nodesGrid");
+    var q=(document.getElementById("nodeSearch").value||"").trim().toLowerCase();
+    if(q){nodes=nodes.filter(function(n){return(n.ip||"").toLowerCase().indexOf(q)>=0||String(n.node_id).indexOf(q)>=0});}
+    document.getElementById("nodeSearchClear").style.display=q?"inline-flex":"none";
+    if(!nodes.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1">\u{1F50D} \u65E0\u5339\u914D\u8282\u70B9</div>';return;}
+    var bv={};
+    nodes.forEach(function(n){var v=n.version||"unknown";if(!bv[v])bv[v]=[];bv[v].push(n);});
+    var h="",vs=Object.keys(bv).sort();
+    vs.forEach(function(ver){
+      var gn=bv[ver],on=gn.filter(function(n){return n.online}).length;
+      h+='<div style="grid-column:1/-1;display:flex;align-items:center;gap:var(--space-sm);margin-top:var(--space-sm);padding-bottom:var(--space-xs);border-bottom:2px solid var(--primary-border)">';
+      h+='<span class="badge badge-info">'+Components.escapeHtml(ver)+'</span>';
+      h+='<span class="text-sm text-muted">'+gn.length+' \u5B9E\u4F8B \xB7 '+on+' \u5728\u7EBF</span></div>';
+      gn.forEach(function(n){
+        h+='<div class="node-card"><div class="node-card-header"><span class="badge badge-default">'+Components.escapeHtml(n.node_type)+'</span><span class="dot '+(n.online?"dot-online":"dot-offline")+'"></span></div>';
+        h+='<div class="node-card-body"><div><b>'+Components.escapeHtml(n.ip)+':'+n.port+'</b></div><div>node_id: '+n.node_id+'</div><div>Worker: '+n.worker_num+'</div><div class="text-muted">'+Components.timeAgo(n.active_time)+'</div></div>';
+        _nodeDetailCache = _nodeDetailCache || {};
+        var ndKey = 'nd_' + (n.ip||'') + '_' + (n.port||'');
+        _nodeDetailCache[ndKey] = n;
+        h+='<div class="node-card-footer"><button class="btn btn-ghost btn-xs" onclick="showNodeDetailCached(\'' + ndKey + '\')">\u8BE6\u60C5</button></div></div>';
+      });
+    });
+    grid.innerHTML=h;
+  }
+
+  /* ========== Node Detail Modal ========== */
+  window.showNodeDetailCached=function(key){
+    var n = (_nodeDetailCache||{})[key];
+    if(!n) return;
+    var b="<div>"+"<div style=\"display:grid;grid-template-columns:100px 1fr;gap:6px 12px;line-height:1.8\">"+"<b>node_type</b><div>"+Components.escapeHtml(n.node_type||"-")+"</div>"+"<b>node_id</b><div>"+(n.node_id||"-")+"</div>"+"<b>IP:Port</b><div>"+Components.escapeHtml(n.ip)+":"+n.port+"</div>"+"<b>\u7248\u672C</b><div><span class=\"badge badge-default\">"+Components.escapeHtml(n.version||"-")+"</span></div>"+"<b>Worker</b><div>"+(n.worker_num||"-")+"</div>"+"<b>\u72B6\u6001</b><div><span class=\"dot "+(n.online?"dot-online":"dot-offline")+"\"></span>"+(n.online?"\u5728\u7EBF":"\u79BB\u7EBF")+"</div>"+"<b>\u5FC3\u8DF3</b><div>"+Components.formatTime(n.active_time)+"</div>"+"</div>"+"<div style=\"margin-top:12px;padding-top:12px;border-top:1px solid var(--border-light)\"><b>\u5143\u6570\u636E</b></div>"+"<pre style=\"font-size:11px;max-height:200px;overflow:auto;background:var(--border-light);padding:8px;border-radius:4px;margin-top:6px\">"+JSON.stringify(n,null,2)+"</pre>"+"</div>";
+    Components.modal({title:"\u8282\u70B9\u8BE6\u60C5: "+Components.escapeHtml(n.node_type||"")+" / "+Components.escapeHtml(n.ip),body:b,confirmText:"\u5173\u95ED"});
+  };
+
+
+  /* ========== Canary ========== */
+  var _canaryData = null;
+  var _canaryDraft = {};
+
+  function loadCanary(){
+    var svc = document.getElementById("canaryServiceSelect").value;
+    var status = document.getElementById("canaryStatus");
+    status.innerHTML = '<div class="loading-block"><span class="spinner"></span></div>';
+    document.getElementById("canaryCard").style.display = "none";
+    document.getElementById("canaryDiffCard").style.display = "none";
+
+    API.getCanary(svc).then(function(r){
+      if(r.ok && r.data && r.data.active) { USE_MOCK = false; renderCanary(r.data); return; }
+      if(USE_MOCK) { renderCanary(_mockCanary(svc)); return; }
+      status.innerHTML = '<div class="hint-bar hint-warning">\u26A0 \u7070\u5EA6\u8DEF\u7531\u672A\u542F\u7528\u6216\u4F9D\u8D56 #134</div>';
+    }).catch(function(){
+      if(USE_MOCK) { renderCanary(_mockCanary(svc)); }
+      else status.innerHTML = '<div class="hint-bar hint-warning">\u26A0 \u65E0\u6CD5\u52A0\u8F7D</div>';
+    });
+  }
+
+  function _mockCanary(svc){
+    return {service:svc,active:true,weights:{"v1":80,"v2":20},total:100};
+  }
+
+  function renderCanary(d){
+    _canaryData = d;
+    _canaryDraft = {};
+    for(var k in d.weights) _canaryDraft[k] = d.weights[k];
+    document.getElementById("canaryStatus").innerHTML = "";
+    document.getElementById("canaryCard").style.display = "";
+    var keys = Object.keys(d.weights).sort();
+    var linked = keys.length === 2;
+    document.getElementById("canaryTotal").innerHTML = "\u603B\u8BA1: " + d.total + "%" + (linked ? ' <span style="color:var(--primary);font-size:12px">\u{1F517}\u8054\u52A8</span>' : '');
+
+    var sliders = document.getElementById("canarySliders");
+    var html = "";
+    var sum = 0;
+    keys.forEach(function(k) { sum += _canaryDraft[k]; });
+    keys.forEach(function(k){
+      var val = _canaryDraft[k];
+      html += '<div class="slider-group">';
+      html += '<label><span>' + Components.escapeHtml(k) + '</span><span class="font-bold" id="canaryVal_' + k + '" style="min-width:40px;text-align:right">' + val + '%</span></label>';
+      html += '<input type="range" value="' + val + '" min="0" max="100" data-key="' + k + '" oninput="canarySlide(this)">';
+      html += '</div>';
+    });
+    sliders.innerHTML = html;
+    _updateCanarySum();
+    _updateCanaryDiff();
+  }
+
+  /* slider input — 2 个权重时自动联动，总和恒为 100% */
+  window.canarySlide = function(el){
+    var k = el.getAttribute("data-key");
+    var newVal = parseInt(el.value);
+    _canaryDraft[k] = newVal;
+    document.getElementById("canaryVal_" + k).textContent = newVal + "%";
+
+    var keys = Object.keys(_canaryDraft);
+    if (keys.length === 2) {
+      var otherKey = keys[0] === k ? keys[1] : keys[0];
+      _canaryDraft[otherKey] = 100 - newVal;
+      var otherSlider = document.querySelector('input[data-key="' + otherKey + '"]');
+      if (otherSlider) otherSlider.value = _canaryDraft[otherKey];
+      document.getElementById("canaryVal_" + otherKey).textContent = _canaryDraft[otherKey] + "%";
+    }
+
+    _updateCanarySum();
+    _updateCanaryDiff();
+  };
+
+  function _updateCanarySum(){
+    var sum = 0;
+    for(var k in _canaryDraft) sum += _canaryDraft[k];
+    var el = document.getElementById("canaryTotal");
+    el.textContent = "\u603B\u8BA1: " + sum + "%";
+    el.style.color = sum === 100 ? "var(--success)" : "var(--error)";
+  }
+
+  function _updateCanaryDiff(){
+    if(!_canaryData) return;
+    var old = _canaryData.weights;
+    var diff = [];
+    var keys = Object.keys(_canaryDraft).sort();
+    var changed = false;
+    keys.forEach(function(k){
+      var o = old[k]||0, n = _canaryDraft[k];
+      if(o !== n){ changed = true;
+        var delta = n - o;
+        var arrow = delta > 0 ? "\u25B2" : (delta < 0 ? "\u25BC" : "");
+        diff.push('<div class="diff-del">- ' + k + ': ' + o + '%</div><div class="diff-add">+ ' + k + ': ' + n + '% (' + arrow + Math.abs(delta) + '%)</div>');
+      }
+    });
+    var diffCard = document.getElementById("canaryDiffCard");
+    var diffPre = document.getElementById("canaryDiff");
+    if(changed){ diffCard.style.display=""; diffPre.innerHTML = diff.join(""); }
+    else { diffCard.style.display="none"; }
+  }
+  /* canary buttons */
+  document.getElementById("canaryLoadBtn").addEventListener("click",loadCanary);
+  document.getElementById("canaryApply").addEventListener("click",function(){
+    var sum=0; for(var k in _canaryDraft)sum+=_canaryDraft[k];
+    if(sum!==100){Components.toast("\u6743\u91CD\u603B\u548C\u5FC5\u987B=100%","error");return;}
+    var svc=document.getElementById("canaryServiceSelect").value;
+    Components.modal({
+      title:"\u786E\u8BA4\u66F4\u65B0\u6743\u91CD",
+      body:document.getElementById("canaryDiff").innerHTML,
+      confirmText:"\u786E\u8BA4\u5E94\u7528",
+      onConfirm:function(){
+        API.setCanary(svc,_canaryDraft).then(function(r){
+          if(r.data)Components.toast("\u6743\u91CD\u5DF2\u66F4\u65B0","success");
+          else Components.toast("\u66F4\u65B0\u5931\u8D25: "+(r.error||""),"error");
+        }).catch(function(e){Components.toast(String(e),"error")});
+      }
+    });
+  });
+  document.getElementById("canaryReset").addEventListener("click",function(){
+    if(!_canaryData)return;
+    for(var k in _canaryData.weights)_canaryDraft[k]=_canaryData.weights[k];
+    renderCanary(_canaryData);
+    Components.toast("\u5DF2\u91CD\u7F6E","info");
+  });
+  document.getElementById("canaryZeroAll").addEventListener("click",function(){
+    for(var k in _canaryDraft)_canaryDraft[k]=0;
+    renderCanary(_canaryData);
+  });
+
+  /* ========== Lua ========== */
+  var _luaScripts = [];
+  var _luaCurrent = null;
+
+  function loadLua(){
+    var nt = document.getElementById("luaNodeType").value;
+    var status = document.getElementById("luaStatus");
+    status.innerHTML = '<div class="loading-block"><span class="spinner"></span></div>';
+    document.getElementById("luaListCard").style.display = "none";
+    document.getElementById("luaEditCard").style.display = "none";
+
+    API.request('/lua/' + encodeURIComponent(nt)).then(function(r){
+      if(r.data && r.data.scripts){
+        _luaScripts = r.data.scripts;
+        renderLuaList();
+      } else {
+        status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无数据</div>';
+      }
+    }).catch(function(){
+      status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无法加载</div>';
+    });
+  }
+
+  function renderLuaList(){
+    document.getElementById("luaStatus").innerHTML = "";
+    document.getElementById("luaListCard").style.display = "";
+    document.getElementById("luaEditCard").style.display = "none";
+    document.getElementById("luaCount").textContent = _luaScripts.length + " 个脚本";
+
+    var html = "";
+    _luaScripts.forEach(function(s){
+      var name = s.script_name || s.name || "-";
+      var url = s.url_path || "-";
+      var ver = s.version || 0;
+      var size = s.script_content ? s.script_content.length + "B" : "0B";
+      html += '<tr>';
+      html += '<td><b>' + Components.escapeHtml(name) + '</b></td>';
+      html += '<td><code class="text-sm">' + Components.escapeHtml(url) + '</code></td>';
+      html += '<td><span class="badge badge-info">v' + ver + '</span></td>';
+      html += '<td class="text-muted">' + size + '</td>';
+      var idx = _luaScripts.indexOf(s);
+      html += '<td><button class="btn btn-ghost btn-xs" onclick="editLuaScriptByIdx(' + idx + ')">编辑</button></td>';
+      html += '</tr>';
+    });
+    document.getElementById("luaTable").innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">暂无脚本</td></tr>';
+  }
+
+  window.editLuaScriptByIdx = function(idx){
+    var s = _luaScripts[idx];
+    if(!s) return;
+    _luaCurrent = s;
+    document.getElementById("luaListCard").style.display = "none";
+    document.getElementById("luaEditCard").style.display = "";
+    document.getElementById("luaEditName").textContent = s.script_name || s.name;
+    document.getElementById("luaEditMeta").textContent = "v" + (s.version||0) + "  " + (s.url_path||"");
+    document.getElementById("luaEditor").value = s.script_content || "";
+  };
+
+  document.getElementById("luaLoad").addEventListener("click", loadLua);
+  document.getElementById("luaCancel").addEventListener("click", renderLuaList);
+  document.getElementById("luaSave").addEventListener("click", function(){
+    if(!_luaCurrent) return;
+    var nt = document.getElementById("luaNodeType").value;
+    var name = _luaCurrent.script_name || _luaCurrent.name;
+    var content = document.getElementById("luaEditor").value;
+
+    var body = {
+      url_path: _luaCurrent.url_path || "",
+      script_content: content,
+    };
+
+    Components.modal({
+      title: "确认更新 Lua 脚本",
+      body: "将上传 <b>" + Components.escapeHtml(name) + "</b> 到 <b>" + nt + "</b><br><br><pre style=\"font-size:11px;max-height:120px;overflow:auto;background:var(--border-light);padding:8px\">" + Components.escapeHtml(content.substring(0,200)) + "…</pre>",
+      confirmText: "保存",
+      onConfirm: function(){
+        API.request('/lua/' + encodeURIComponent(nt), {
+          method: 'POST',
+          body: body
+        }).then(function(r){
+          if(r.data) Components.toast("脚本已保存 v" + r.data.version,"success");
+          else Components.toast("保存失败: "+(r.error||""),"error");
+          loadLua();
+        }).catch(function(e){ Components.toast(String(e),"error") });
+      }
+    });
+  });
+
+  /* ========== Config ========== */
+  var _cfgData = null;
+  function loadConfig(){
+    var mod = document.getElementById("cfgModule").value;
+    var typ = document.getElementById("cfgType").value;
+    var card = document.getElementById("cfgCard");
+    card.style.display = "";
+    document.getElementById("cfgContent").textContent = "\u52A0\u8F7D\u4E2D...";
+    document.getElementById("cfgMeta").textContent = "";
+    document.getElementById("cfgEditor").style.display = "none";
+    document.getElementById("cfgContent").style.display = "";
+    document.getElementById("cfgSave").style.display = "none";
+    document.getElementById("cfgCancel").style.display = "none";
+    document.getElementById("cfgEdit").style.display = "";
+
+    API.getConfig(mod, typ).then(function(r){
+      if(r.ok && r.data){ _cfgData = r.data;
+        document.getElementById("cfgContent").textContent = JSON.stringify(r.data.content,null,2);
+        document.getElementById("cfgMeta").textContent = "revision: " + (r.data.revision||"-") + " \xB7 " + new Date().toLocaleString();
+        _renderCfgHistory(r.data.content);
+      } else {
+        document.getElementById("cfgContent").textContent = "{}";
+        document.getElementById("cfgMeta").textContent = "\u65B0\u914D\u7F6E";
+        document.getElementById("cfgHistory").innerHTML = '<tr><td colspan="4" class="text-center text-muted">\u6682\u65E0\u5386\u53F2</td></tr>';
+      }
+    }).catch(function(){
+      document.getElementById("cfgContent").textContent = "\u52A0\u8F7D\u5931\u8D25";
+    });
+  }
+
+  function _renderCfgHistory(content){
+    var tbody = document.getElementById("cfgHistory");
+    // Mock: show current as revision 1
+    tbody.innerHTML = '<tr><td>1</td><td>' + new Date().toLocaleString() + '</td><td class="text-muted">' + JSON.stringify(content).substring(0,60) + '...</td><td><button class="btn btn-ghost btn-xs">\u67E5\u770B</button></td></tr>';
+    tbody.innerHTML += '<tr><td colspan="4" class="text-sm text-muted">\u5386\u53F2\u7248\u672C\u5F85 P1 Go \u540E\u7AEF SQLite \u5B9E\u73B0</td></tr>';
+  }
+
+
+  /* config events */
+  document.getElementById("cfgLoad").addEventListener("click",loadConfig);
+  document.getElementById("cfgEdit").addEventListener("click",function(){
+    var pre = document.getElementById("cfgContent");
+    var ta = document.getElementById("cfgEditor");
+    ta.value = pre.textContent;
+    pre.style.display = "none";
+    ta.style.display = "";
+    document.getElementById("cfgEdit").style.display = "none";
+    document.getElementById("cfgSave").style.display = "";
+    document.getElementById("cfgCancel").style.display = "";
+  });
+  document.getElementById("cfgCancel").addEventListener("click",function(){
+    document.getElementById("cfgContent").style.display = "";
+    document.getElementById("cfgEditor").style.display = "none";
+    document.getElementById("cfgEdit").style.display = "";
+    document.getElementById("cfgSave").style.display = "none";
+    document.getElementById("cfgCancel").style.display = "none";
+  });
+  document.getElementById("cfgSave").addEventListener("click",function(){
+    var newVal = document.getElementById("cfgEditor").value;
+    try { JSON.parse(newVal); } catch(e) { Components.toast("JSON \u683C\u5F0F\u9519\u8BEF: "+e.message,"error"); return; }
+    var oldVal = _cfgData ? JSON.stringify(_cfgData.content,null,2) : "{}";
+    var diff = "<div class=\"diff-del\">- " + Components.escapeHtml(oldVal.substring(0,80)) + "...</div><div class=\"diff-add\">+ " + Components.escapeHtml(newVal.substring(0,80)) + "...</div>";
+    Components.modal({
+      title:"\u786E\u8BA4\u4FDD\u5B58\u914D\u7F6E",body:diff,confirmText:"\u4FDD\u5B58",
+      onConfirm:function(){
+        var mod = document.getElementById("cfgModule").value;
+        var typ = document.getElementById("cfgType").value;
+        API.setConfig(mod, typ, JSON.parse(newVal)).then(function(r){
+          if(r.data){ Components.toast("\u914D\u7F6E\u5DF2\u4FDD\u5B58","success"); loadConfig(); }
+          else Components.toast("\u4FDD\u5B58\u5931\u8D25: "+(r.error||""),"error");
+        }).catch(function(e){ Components.toast(String(e),"error"); });
+      }
+    });
+  });
+  document.getElementById("cfgDownload").addEventListener("click",function(){
+    var text = document.getElementById("cfgContent").textContent;
+    var blob = new Blob([text],{type:"application/json"});
+    var a = document.createElement("a");a.href=URL.createObjectURL(blob);a.download="config.json";a.click();
+    Components.toast("\u5DF2\u4E0B\u8F7D","success");
+  });
+
+  /* ========== Plugins ========== */
+  function loadPlugins(){
+    var tbody = document.getElementById("plugTable");
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+    API.getPlugins().then(function(r){
+      var plugs = (r.ok && r.data && r.data.plugins) ? r.data.plugins : _mockPlugins();
+      if(!plugs.length){ tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">\u6682\u65E0\u63D2\u4EF6</td></tr>'; return; }
+      var h = "";
+      plugs.forEach(function(p){
+        h += "<tr><td>"+Components.escapeHtml(p.name)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(p.type)+"</span></td><td>"+Components.escapeHtml(p.version)+"</td><td>"+(p.size||"-")+"</td><td>"+Components.formatTime(p.created_at)+"</td><td><button class=\"btn btn-ghost btn-xs\" onclick=\"rollbackPlugin(\'"+Components.escapeAttr(p.name)+"\')\">\u56DE\u6EDA</button></td></tr>";
+      });
+      tbody.innerHTML = h;
+      document.getElementById("plugRefresh").textContent = "\u66F4\u65B0: "+new Date().toLocaleTimeString();
+    }).catch(function(){tbody.innerHTML='<tr><td colspan="6" class="text-center text-muted">\u52A0\u8F7D\u5931\u8D25</td></tr>'});
+  }
+
+  function _mockPlugins(){ return [{name:"hello.so",type:"Logic",version:"v1",size:"1.2M",created_at:new Date().toISOString()},{name:"world.so",type:"Interface",version:"v2",size:"0.8M",created_at:new Date(Date.now()-86400000).toISOString()}]; }
+  window.rollbackPlugin = function(name){
+    Components.modal({title:"\u786E\u8BA4\u56DE\u6EDA",body:"\u786E\u5B9A\u56DE\u6EDA\u63D2\u4EF6 <b>"+Components.escapeHtml(name)+"</b> \u5230\u4E0A\u4E00\u7248\u672C\uFF1F",danger:true,confirmText:"\u56DE\u6EDA",onConfirm:function(){Components.toast("\u56DE\u6EDA\u5F85 P4 Go \u540E\u7AEF\u5B9E\u73B0","warning")}});
+  };
+
+  /* plugins events */
+  document.getElementById("plugDrop").addEventListener("click",function(){document.getElementById("plugFile").click()});
+  document.getElementById("plugFile").addEventListener("change",function(){
+    var f = this.files[0];
+    if(f) document.getElementById("plugFileName").textContent = "\u5DF2\u9009\u62E9: " + f.name;
+  });
+  /* audit events */
+  document.getElementById("auditRefresh").addEventListener("click",loadAudit);
+  document.getElementById("auditAction").addEventListener("change",loadAudit);
+
+  /* dark theme toggle */
+  document.getElementById("themeToggle").addEventListener("click",function(){
+    var cur = document.documentElement.getAttribute("data-theme");
+    var next = cur === "dark" ? "" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    this.textContent = next === "dark" ? "\u2600" : "\u{1F319}";
+    Components.toast(next==="dark"?"\u6697\u8272\u4E3B\u9898":"\u4EAE\u8272\u4E3B\u9898","info");
+  });
+
+  document.getElementById("plugUpload").addEventListener("click",function(){
+    var f = document.getElementById("plugFile").files[0];
+    if(!f){Components.toast("\u8BF7\u9009\u62E9\u6587\u4EF6","warning");return;}
+    var typ = document.getElementById("plugType").value;
+    var ver = document.getElementById("plugVer").value;
+    Components.toast("\u4E0A\u4F20\u5F85 P4 Go \u540E\u7AEF\u5B9E\u73B0\u3002\u6587\u4EF6:"+f.name+" \u7C7B\u578B:"+typ+" \u7248\u672C:"+ver,"info");
+  });
+  loadPlugins();
+
+  /* ========== Audit ========== */
+  function loadAudit(){
+    var tbody = document.getElementById("auditTable");
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+    var filter = document.getElementById("auditAction").value;
+    // Use mock data until Go backend implements SQLite audit_log table
+    var entries = _mockAudit(filter);
+    if(!entries.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">\u6682\u65E0\u5BA1\u8BA1\u8BB0\u5F55</td></tr>'; return; }
+    var h = "";
+    entries.forEach(function(e){
+      var badge = e.action==="weight_update"?"badge-warning":(e.action==="config_update"?"badge-info":"badge-default");
+      h += "<tr><td>"+Components.formatTime(e.created_at)+"</td><td><span class=\"badge "+badge+"\">"+Components.escapeHtml(e.action)+"</span></td><td>"+Components.escapeHtml(e.target)+"</td><td>"+Components.escapeHtml(e.client_ip)+"</td><td><button class=\"btn btn-ghost btn-xs\" onclick=\"showAuditDetail(\'"+Components.escapeAttr(JSON.stringify(e))+"\')\">\u8BE6\u60C5</button></td></tr>";
+    });
+    tbody.innerHTML = h;
+  }
+
+  function _mockAudit(filter){
+    var entries = [
+      {action:"weight_update",target:"LOGIC",before_value:'{"v1":80,"v2":20}',after_value:'{"v1":70,"v2":30}',client_ip:"10.0.0.1",created_at:new Date(Date.now()-600000).toISOString()},
+      {action:"config_update",target:"Logic.json",before_value:'{"port":16000}',after_value:'{"port":16001}',client_ip:"10.0.0.2",created_at:new Date(Date.now()-3600000).toISOString()},
+      {action:"plugin_deploy",target:"hello.so",before_value:null,after_value:'{"type":"Logic","version":"v1"}',client_ip:"10.0.0.1",created_at:new Date(Date.now()-7200000).toISOString()},
+    ];
+    if(filter) entries = entries.filter(function(e){return e.action===filter});
+    return entries;
+  }
+
+  window.showAuditDetail = function(jsStr){
+    var e = JSON.parse(jsStr);
+    var diff = "";
+    if(e.before_value) diff += '<div class="diff-del">- ' + Components.escapeHtml(e.before_value.substring(0,100)) + '</div>';
+    if(e.after_value)  diff += '<div class="diff-add">+ ' + Components.escapeHtml(e.after_value.substring(0,100)) + '</div>';
+    var body = "<div><b>\u64CD\u4F5C:</b> "+Components.escapeHtml(e.action)+"</div><div><b>\u76EE\u6807:</b> "+Components.escapeHtml(e.target)+"</div><div><b>IP:</b> "+Components.escapeHtml(e.client_ip)+"</div><div><b>\u65F6\u95F4:</b> "+Components.formatTime(e.created_at)+"</div><div style=\"margin-top:8px\"><b>\u53D8\u66F4:</b></div>"+diff;
+    Components.modal({title:"\u5BA1\u8BA1\u8BE6\u60C5",body:body,confirmText:"\u5173\u95ED"});
+  };
+
+  /* ========== Event Listeners ========== */
+  document.getElementById("overviewRefreshBtn").addEventListener("click",loadOverview);
+  document.getElementById("nodeTypeSelect").addEventListener("change",loadNodes);
+  document.getElementById("nodeSearch").addEventListener("input",function(){renderNodesGrid(_allNodes);})
+  document.getElementById("nodeSearchClear").addEventListener("click",function(){
+    document.getElementById("nodeSearch").value="";renderNodesGrid(_allNodes);
+  });
+
+  /* ========== Init ========== */
+  loadOverview();
+  setInterval(function(){
+    if(STORE.tab==="overview")loadOverview();
+    if(STORE.tab==="nodes")loadNodes();
+  },10000);
+
+})();
+</script>
+</body>
+</html>

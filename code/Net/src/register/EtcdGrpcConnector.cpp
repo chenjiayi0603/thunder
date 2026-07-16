@@ -27,7 +27,8 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 
 static constexpr int      kLeaseTTL         = 30;   // seconds
 static constexpr int      kKeepAliveRefresh = 10;   // unary keepalive interval
-static constexpr int      kPollInterval     = 5;    // config poll interval
+static constexpr int      kPollInterval       = 5;    // config poll interval
+static constexpr int      kCanaryPollInterval = 30;   // canary fallback check interval
 static constexpr int      kZombieMaxAge     = 60;   // skip entries older than 2× lease TTL
 static constexpr uint32_t kMaxSlot          = 255;
 static constexpr const char* kRegistryPrefix = "/thunder/registry/";
@@ -244,6 +245,7 @@ void EtcdGrpcConnector::GrpcThreadMain()
 
     auto lastKeepalive   = Clock::now();
     auto lastPoll        = Clock::now();
+    auto lastCanaryPoll  = Clock::now();
     const auto kWaitTick = Seconds(1);
 
     while (true)
@@ -340,6 +342,23 @@ void EtcdGrpcConnector::GrpcThreadMain()
         {
             DoPollConfig(etcdClient);
             lastPoll = now;
+        }
+
+        // 30s 兜底：主动检查 canary 权重是否变更（Watch 可能丢事件）
+        if (m_registered.load() && now - lastCanaryPoll >= Seconds(kCanaryPollInterval))
+        {
+            auto cresp = etcdClient.ls(kCanaryPrefix);
+            if (cresp.error_code() == 0 && cresp.index() != m_canaryWatchRevision)
+            {
+                GLOG_INFO("GrpcThread: canary fallback — revision changed "
+                          << m_canaryWatchRevision << " -> " << cresp.index());
+                DoCanarySnapshot(etcdClient);
+                {
+                    std::lock_guard<std::mutex> lk(m_registryMutex);
+                    AssembleAndPushRouteUpdated();
+                }
+            }
+            lastCanaryPoll = now;
         }
     }
 
