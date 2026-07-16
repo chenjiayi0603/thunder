@@ -94,7 +94,7 @@ var Components = (function() {
 
   /* ---------- escapeAttr ---------- */
   function escapeAttr(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
   }
 
   /* ---------- formatTime ---------- */

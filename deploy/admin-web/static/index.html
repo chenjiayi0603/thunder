@@ -15,6 +15,7 @@
     <button data-panel="nodes">🖥 节点</button>
     <button data-panel="canary">⚖ 灰度</button>
     <button data-panel="config">⚙ 配置</button>
+    <button data-panel="lua">📜 Lua</button>
     <button data-panel="plugins">📦 插件</button>
     <button data-panel="audit">📋 审计</button>
   </nav>
@@ -58,6 +59,27 @@
   <div class="card" id="canaryDiffCard" style="display:none;margin-top:var(--space)">
     <div class="card-header">变更预览</div>
     <pre class="diff-view" id="canaryDiff" style="font-size:var(--text-sm);line-height:1.8"></pre>
+  </div>
+</section>
+<section id="lua" class="panel">
+  <div class="toolbar">
+    <label>服务<select class="select" id="luaNodeType"><option>HELLO_HTTP</option><option>HELLO_HTTPS</option></select></label>
+    <button class="btn btn-primary btn-sm" id="luaLoad">加载</button>
+  </div>
+  <div id="luaStatus"></div>
+  <div class="card" id="luaListCard" style="display:none">
+    <div class="card-header">Lua 脚本列表 <span class="text-sm text-muted" id="luaCount"></span></div>
+    <table class="table"><thead><tr><th>脚本名</th><th>URL</th><th>版本</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="luaTable"></tbody>
+    </table>
+  </div>
+  <div class="card" id="luaEditCard" style="display:none;margin-top:var(--space)">
+    <div class="card-header flex justify-between"><span>编辑: <b id="luaEditName"></b></span><span class="text-sm text-muted" id="luaEditMeta"></span></div>
+    <textarea id="luaEditor" class="textarea font-mono" style="min-height:300px;font-size:var(--text-xs);font-family:ui-monospace,monospace"></textarea>
+    <div class="flex gap-sm mt">
+      <button class="btn btn-primary btn-sm" id="luaSave">保存</button>
+      <button class="btn btn-ghost btn-sm" id="luaCancel">取消</button>
+    </div>
   </div>
 </section>
 <section id="config" class="panel">
@@ -134,11 +156,14 @@
         {node_type:"LOGIC",ip:"10.0.0.2",port:16002,node_id:3,version:"v1",worker_num:4,online:true,active_time:new Date(Date.now()-120000).toISOString()},
         {node_type:"LOGIC",ip:"10.0.0.3",port:16003,node_id:5,version:"v2",worker_num:4,online:true,active_time:new Date(Date.now()-300000).toISOString()},
         {node_type:"INTERFACE",ip:"10.0.0.10",port:17001,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-60000).toISOString()},
-        {node_type:"INTERFACE",ip:"10.0.0.11",port:17002,node_id:2,version:"v1",worker_num:2,online:false,active_time:"-"}
+        {node_type:"INTERFACE",ip:"10.0.0.11",port:17002,node_id:2,version:"v1",worker_num:2,online:false,active_time:"-"},
+        {node_type:"HELLO_HTTP",ip:"10.0.0.20",port:8080,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-60000).toISOString()},
+        {node_type:"HELLO_HTTP",ip:"10.0.0.21",port:8081,node_id:2,version:"v1",worker_num:2,online:false,active_time:"-"},
+        {node_type:"HELLO_HTTPS",ip:"10.0.0.30",port:8443,node_id:1,version:"v1",worker_num:2,online:true,active_time:new Date(Date.now()-45000).toISOString()}
       ]
     }
   };
-  var USE_MOCK = true;
+  var USE_MOCK = false;
 
   /* ========== Tab Navigation ========== */
   document.getElementById("navTabs").addEventListener("click",function(ev){
@@ -149,6 +174,7 @@
     if(id==="overview")loadOverview();
     if(id==="nodes")loadNodes();
     if(id==="canary")loadCanary();
+    if(id==="lua")loadLua();
     if(id==="plugins")loadPlugins();
     if(id==="audit")loadAudit();
   });
@@ -214,15 +240,19 @@
       gn.forEach(function(n){
         h+='<div class="node-card"><div class="node-card-header"><span class="badge badge-default">'+Components.escapeHtml(n.node_type)+'</span><span class="dot '+(n.online?"dot-online":"dot-offline")+'"></span></div>';
         h+='<div class="node-card-body"><div><b>'+Components.escapeHtml(n.ip)+':'+n.port+'</b></div><div>node_id: '+n.node_id+'</div><div>Worker: '+n.worker_num+'</div><div class="text-muted">'+Components.timeAgo(n.active_time)+'</div></div>';
-        h+='<div class="node-card-footer"><button class="btn btn-ghost btn-xs" onclick="showNodeDetail(\''+Components.escapeAttr(JSON.stringify(n))+'\')">\u8BE6\u60C5</button></div></div>';
+        _nodeDetailCache = _nodeDetailCache || {};
+        var ndKey = 'nd_' + (n.ip||'') + '_' + (n.port||'');
+        _nodeDetailCache[ndKey] = n;
+        h+='<div class="node-card-footer"><button class="btn btn-ghost btn-xs" onclick="showNodeDetailCached(\'' + ndKey + '\')">\u8BE6\u60C5</button></div></div>';
       });
     });
     grid.innerHTML=h;
   }
 
   /* ========== Node Detail Modal ========== */
-  window.showNodeDetail=function(jsStr){
-    var n=JSON.parse(jsStr);
+  window.showNodeDetailCached=function(key){
+    var n = (_nodeDetailCache||{})[key];
+    if(!n) return;
     var b="<div>"+"<div style=\"display:grid;grid-template-columns:100px 1fr;gap:6px 12px;line-height:1.8\">"+"<b>node_type</b><div>"+Components.escapeHtml(n.node_type||"-")+"</div>"+"<b>node_id</b><div>"+(n.node_id||"-")+"</div>"+"<b>IP:Port</b><div>"+Components.escapeHtml(n.ip)+":"+n.port+"</div>"+"<b>\u7248\u672C</b><div><span class=\"badge badge-default\">"+Components.escapeHtml(n.version||"-")+"</span></div>"+"<b>Worker</b><div>"+(n.worker_num||"-")+"</div>"+"<b>\u72B6\u6001</b><div><span class=\"dot "+(n.online?"dot-online":"dot-offline")+"\"></span>"+(n.online?"\u5728\u7EBF":"\u79BB\u7EBF")+"</div>"+"<b>\u5FC3\u8DF3</b><div>"+Components.formatTime(n.active_time)+"</div>"+"</div>"+"<div style=\"margin-top:12px;padding-top:12px;border-top:1px solid var(--border-light)\"><b>\u5143\u6570\u636E</b></div>"+"<pre style=\"font-size:11px;max-height:200px;overflow:auto;background:var(--border-light);padding:8px;border-radius:4px;margin-top:6px\">"+JSON.stringify(n,null,2)+"</pre>"+"</div>";
     Components.modal({title:"\u8282\u70B9\u8BE6\u60C5: "+Components.escapeHtml(n.node_type||"")+" / "+Components.escapeHtml(n.ip),body:b,confirmText:"\u5173\u95ED"});
   };
@@ -259,11 +289,12 @@
     for(var k in d.weights) _canaryDraft[k] = d.weights[k];
     document.getElementById("canaryStatus").innerHTML = "";
     document.getElementById("canaryCard").style.display = "";
-    document.getElementById("canaryTotal").textContent = "\u603B\u8BA1: " + d.total + "%";
+    var keys = Object.keys(d.weights).sort();
+    var linked = keys.length === 2;
+    document.getElementById("canaryTotal").innerHTML = "\u603B\u8BA1: " + d.total + "%" + (linked ? ' <span style="color:var(--primary);font-size:12px">\u{1F517}\u8054\u52A8</span>' : '');
 
     var sliders = document.getElementById("canarySliders");
     var html = "";
-    var keys = Object.keys(d.weights).sort();
     var sum = 0;
     keys.forEach(function(k) { sum += _canaryDraft[k]; });
     keys.forEach(function(k){
@@ -278,11 +309,22 @@
     _updateCanaryDiff();
   }
 
-  /* slider input */
+  /* slider input — 2 个权重时自动联动，总和恒为 100% */
   window.canarySlide = function(el){
     var k = el.getAttribute("data-key");
-    _canaryDraft[k] = parseInt(el.value);
-    document.getElementById("canaryVal_" + k).textContent = _canaryDraft[k] + "%";
+    var newVal = parseInt(el.value);
+    _canaryDraft[k] = newVal;
+    document.getElementById("canaryVal_" + k).textContent = newVal + "%";
+
+    var keys = Object.keys(_canaryDraft);
+    if (keys.length === 2) {
+      var otherKey = keys[0] === k ? keys[1] : keys[0];
+      _canaryDraft[otherKey] = 100 - newVal;
+      var otherSlider = document.querySelector('input[data-key="' + otherKey + '"]');
+      if (otherSlider) otherSlider.value = _canaryDraft[otherKey];
+      document.getElementById("canaryVal_" + otherKey).textContent = _canaryDraft[otherKey] + "%";
+    }
+
     _updateCanarySum();
     _updateCanaryDiff();
   };
@@ -326,8 +368,8 @@
       confirmText:"\u786E\u8BA4\u5E94\u7528",
       onConfirm:function(){
         API.setCanary(svc,_canaryDraft).then(function(r){
-          if(r.ok)Components.toast("\u6743\u91CD\u5DF2\u66F4\u65B0","success");
-          else Components.toast("\u66F4\u65B0\u5931\u8D25: "+(r.data&&r.data.error||""),"error");
+          if(r.data)Components.toast("\u6743\u91CD\u5DF2\u66F4\u65B0","success");
+          else Components.toast("\u66F4\u65B0\u5931\u8D25: "+(r.error||""),"error");
         }).catch(function(e){Components.toast(String(e),"error")});
       }
     });
@@ -341,6 +383,94 @@
   document.getElementById("canaryZeroAll").addEventListener("click",function(){
     for(var k in _canaryDraft)_canaryDraft[k]=0;
     renderCanary(_canaryData);
+  });
+
+  /* ========== Lua ========== */
+  var _luaScripts = [];
+  var _luaCurrent = null;
+
+  function loadLua(){
+    var nt = document.getElementById("luaNodeType").value;
+    var status = document.getElementById("luaStatus");
+    status.innerHTML = '<div class="loading-block"><span class="spinner"></span></div>';
+    document.getElementById("luaListCard").style.display = "none";
+    document.getElementById("luaEditCard").style.display = "none";
+
+    API.request('/lua/' + encodeURIComponent(nt)).then(function(r){
+      if(r.data && r.data.scripts){
+        _luaScripts = r.data.scripts;
+        renderLuaList();
+      } else {
+        status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无数据</div>';
+      }
+    }).catch(function(){
+      status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无法加载</div>';
+    });
+  }
+
+  function renderLuaList(){
+    document.getElementById("luaStatus").innerHTML = "";
+    document.getElementById("luaListCard").style.display = "";
+    document.getElementById("luaEditCard").style.display = "none";
+    document.getElementById("luaCount").textContent = _luaScripts.length + " 个脚本";
+
+    var html = "";
+    _luaScripts.forEach(function(s){
+      var name = s.script_name || s.name || "-";
+      var url = s.url_path || "-";
+      var ver = s.version || 0;
+      var size = s.script_content ? s.script_content.length + "B" : "0B";
+      html += '<tr>';
+      html += '<td><b>' + Components.escapeHtml(name) + '</b></td>';
+      html += '<td><code class="text-sm">' + Components.escapeHtml(url) + '</code></td>';
+      html += '<td><span class="badge badge-info">v' + ver + '</span></td>';
+      html += '<td class="text-muted">' + size + '</td>';
+      var idx = _luaScripts.indexOf(s);
+      html += '<td><button class="btn btn-ghost btn-xs" onclick="editLuaScriptByIdx(' + idx + ')">编辑</button></td>';
+      html += '</tr>';
+    });
+    document.getElementById("luaTable").innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">暂无脚本</td></tr>';
+  }
+
+  window.editLuaScriptByIdx = function(idx){
+    var s = _luaScripts[idx];
+    if(!s) return;
+    _luaCurrent = s;
+    document.getElementById("luaListCard").style.display = "none";
+    document.getElementById("luaEditCard").style.display = "";
+    document.getElementById("luaEditName").textContent = s.script_name || s.name;
+    document.getElementById("luaEditMeta").textContent = "v" + (s.version||0) + "  " + (s.url_path||"");
+    document.getElementById("luaEditor").value = s.script_content || "";
+  };
+
+  document.getElementById("luaLoad").addEventListener("click", loadLua);
+  document.getElementById("luaCancel").addEventListener("click", renderLuaList);
+  document.getElementById("luaSave").addEventListener("click", function(){
+    if(!_luaCurrent) return;
+    var nt = document.getElementById("luaNodeType").value;
+    var name = _luaCurrent.script_name || _luaCurrent.name;
+    var content = document.getElementById("luaEditor").value;
+
+    var body = {
+      url_path: _luaCurrent.url_path || "",
+      script_content: content,
+    };
+
+    Components.modal({
+      title: "确认更新 Lua 脚本",
+      body: "将上传 <b>" + Components.escapeHtml(name) + "</b> 到 <b>" + nt + "</b><br><br><pre style=\"font-size:11px;max-height:120px;overflow:auto;background:var(--border-light);padding:8px\">" + Components.escapeHtml(content.substring(0,200)) + "…</pre>",
+      confirmText: "保存",
+      onConfirm: function(){
+        API.request('/lua/' + encodeURIComponent(nt), {
+          method: 'POST',
+          body: body
+        }).then(function(r){
+          if(r.data) Components.toast("脚本已保存 v" + r.data.version,"success");
+          else Components.toast("保存失败: "+(r.error||""),"error");
+          loadLua();
+        }).catch(function(e){ Components.toast(String(e),"error") });
+      }
+    });
   });
 
   /* ========== Config ========== */
@@ -358,7 +488,7 @@
     document.getElementById("cfgCancel").style.display = "none";
     document.getElementById("cfgEdit").style.display = "";
 
-    API.getConfig(mod + "/" + typ).then(function(r){
+    API.getConfig(mod, typ).then(function(r){
       if(r.ok && r.data){ _cfgData = r.data;
         document.getElementById("cfgContent").textContent = JSON.stringify(r.data.content,null,2);
         document.getElementById("cfgMeta").textContent = "revision: " + (r.data.revision||"-") + " \xB7 " + new Date().toLocaleString();
@@ -410,9 +540,9 @@
       onConfirm:function(){
         var mod = document.getElementById("cfgModule").value;
         var typ = document.getElementById("cfgType").value;
-        API.setConfig(mod+"/"+typ,JSON.parse(newVal)).then(function(r){
-          if(r.ok){ Components.toast("\u914D\u7F6E\u5DF2\u4FDD\u5B58","success"); loadConfig(); }
-          else Components.toast("\u4FDD\u5B58\u5931\u8D25","error");
+        API.setConfig(mod, typ, JSON.parse(newVal)).then(function(r){
+          if(r.data){ Components.toast("\u914D\u7F6E\u5DF2\u4FDD\u5B58","success"); loadConfig(); }
+          else Components.toast("\u4FDD\u5B58\u5931\u8D25: "+(r.error||""),"error");
         }).catch(function(e){ Components.toast(String(e),"error"); });
       }
     });

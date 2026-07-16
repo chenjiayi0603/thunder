@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -33,6 +32,7 @@ func main() {
 	mux.HandleFunc("/api/nodes", h.Nodes)
 	mux.HandleFunc("/api/canary/", h.Canary)
 	mux.HandleFunc("/api/config/", h.Config)
+	mux.HandleFunc("/api/lua/", h.Lua)
 	mux.HandleFunc("/api/plugins", h.Plugins)
 	mux.HandleFunc("/api/audit", h.Audit)
 

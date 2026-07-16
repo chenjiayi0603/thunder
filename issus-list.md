@@ -5719,3 +5719,30 @@ Docker Compose 回归不受影响（volume 挂载直接读宿主机文件）。
 | Interface → Logic GenKey | ✅ |
 | Hello → Logic Lua Route | ✅ |
 
+## 🆕 #141 [待实施] 构建-部署链路自动化 — 代码变更后自动重建镜像+滚动更新 (2026-07-15)
+
+**现状**：`deploy.sh release k8s` 可一键构建部署，但日常开发时 `git checkout` + 改代码后需手动执行 `make && docker build && kubectl rollout restart`，缺少自动化机制。
+
+**问题**：
+- admin-web 改完代码后 LOGIC pod 仍跑旧镜像（本次 CanaryWatch 30s 兜底修复时发现）
+- 开发者容易忘记重建镜像直接测试，看到旧行为误判为 bug
+- Interface/HelloHttp 等上游网关同理
+
+**方案**：
+
+| 优先级 | 方案 | 说明 |
+|:---:|---|---|
+| **P0** | `deploy.sh dev-reload <service>` | 一键：检测代码变更 → cmake build → docker build → kubectl rollout restart |
+| **P1** | file watcher (`inotify`/`watchman`) | 监听 `code/` 目录，自动触发 dev-reload |
+| **P2** | Git hook (`post-checkout`) | 切换分支后自动重建受影响的镜像 |
+| **P2** | CI/CD pipeline | GitHub Actions: push → build → test → docker push → deploy |
+
+**代码改动预估**：
+
+| 改动 | 行数 |
+|---|---|
+| `deploy.sh` 加 `dev-reload` 子命令 | +30 |
+| (可选) `scripts/file-watcher.sh` | +20 |
+
+> 本次 `EtcdGrpcConnector.cpp` 加 30s canary 兜底 + admin-web `USE_MOCK=false` 已通过手动 `make && docker build && kubectl rollout restart` 验证部署生效。
+

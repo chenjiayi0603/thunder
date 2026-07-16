@@ -12,8 +12,18 @@ var API = (function() {
       headers: Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {}),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     }).then(function(r) {
-      return r.json().then(function(data) {
-        return { ok: r.ok, status: r.status, data: data };
+      return r.json().then(function(raw) {
+        // Unwrap Go backend {ok, data} / {ok, error} envelope
+        var data = raw, error = null;
+        if (raw && typeof raw === 'object' && 'ok' in raw) {
+          if (raw.ok) {
+            data = raw.data !== undefined ? raw.data : raw;
+          } else {
+            error = raw.error || 'unknown error';
+            data = null;
+          }
+        }
+        return { ok: r.ok, status: r.status, data: data, error: error };
       }).catch(function() {
         return { ok: r.ok, status: r.status, data: null, error: 'Invalid JSON response' };
       });
@@ -29,8 +39,8 @@ var API = (function() {
   function getNodes(type)      { return get('/nodes?node_type=' + encodeURIComponent(type || '')); }
   function getCanary(service)  { return get('/canary/' + encodeURIComponent(service) + '/weights'); }
   function setCanary(svc, w)   { return post('/canary/' + encodeURIComponent(svc) + '/weights', { weights: w }); }
-  function getConfig(type)     { return get('/config/' + encodeURIComponent(type)); }
-  function setConfig(type, c)  { return put('/config/' + encodeURIComponent(type), { content: c }); }
+  function getConfig(module, cfgType) { return get('/config/' + encodeURIComponent(module) + '?type=' + encodeURIComponent(cfgType)); }
+  function setConfig(module, cfgType, c) { return put('/config/' + encodeURIComponent(module), { type: cfgType, content: c }); }
   function getPlugins()        { return get('/plugins'); }
 
   return {
