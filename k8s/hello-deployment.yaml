@@ -15,6 +15,10 @@ spec:
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      volumes:
+      - name: nfs-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
       containers:
       - name: app
         image: thunder-hello-http:latest
@@ -31,3 +35,7 @@ spec:
         ports:
         - containerPort: 27006
         - containerPort: 27007
+        volumeMounts:
+        - name: nfs-plugins
+          mountPath: /app/plugins
+          subPath: HelloHttp

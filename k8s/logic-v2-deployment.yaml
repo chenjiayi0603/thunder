@@ -15,6 +15,10 @@ spec:
         app: thunder-logic
         version: v2
     spec:
+      volumes:
+      - name: nfs-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
       containers:
       - name: app
         image: thunder-logic-v2:latest
@@ -32,3 +36,7 @@ spec:
           value: "http://thunder-etcd.thunder:2379"
         ports:
         - containerPort: 16069
+        volumeMounts:
+        - name: nfs-plugins
+          mountPath: /app/plugins
+          subPath: Logic

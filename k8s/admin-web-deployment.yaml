@@ -27,9 +27,8 @@ spec:
           mountPath: /data/thunder/plugins
       volumes:
       - name: nfs-plugins
-        nfs:
-          server: 127.0.0.1
-          path: /data/thunder/plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
 ---
 apiVersion: v1
 kind: Service

@@ -171,6 +171,66 @@ else
   fi
 fi
 
+# ============== 6. SO 热更新 — NFS mount + 文件读写 ==============
+echo ""
+echo "--- 6. SO 热更新 (NFS mount) ---"
+
+declare -A NFS_SUBPATH
+NFS_SUBPATH[thunder-hello]="HelloHttp"
+NFS_SUBPATH[thunder-hello-https]="HelloHttps"
+NFS_SUBPATH[thunder-hello-ws]="HelloWs"
+NFS_SUBPATH[thunder-hello-wss]="HelloWss"
+NFS_SUBPATH[thunder-interface]="Interface"
+NFS_SUBPATH[thunder-logic]="Logic"
+NFS_SUBPATH[thunder-logic-v2]="Logic"
+# logic-v2 uses label app=thunder-logic,version=v2 — special handling in the loop
+declare -A DEP_LABEL
+DEP_LABEL[thunder-logic-v2]="app=thunder-logic,version=v2"
+
+for dep in "${!NFS_SUBPATH[@]}"; do
+  LABEL="${DEP_LABEL[$dep]:-app=$dep}"
+  POD=$(kubectl get pods -n $NS -l "$LABEL" --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  if [ -z "$POD" ]; then
+    check "$dep NFS mount" "FAIL" "no running pod"
+    continue
+  fi
+
+  # 1. 验证 NFS mount 存在
+  NFS_MOUNT=$(kubectl exec -n $NS "$POD" -- mount 2>/dev/null | grep "/app/plugins" | grep -c "nfs4" || echo "0")
+  if [ "$NFS_MOUNT" -ge 1 ]; then
+    check "$dep NFS mount (nfs4 → /app/plugins)" "PASS"
+  else
+    check "$dep NFS mount" "FAIL" "no nfs4 mount at /app/plugins"
+    continue
+  fi
+
+  # 2. 验证至少有一个 .so 文件可从 NFS 读取
+  SO_COUNT=$(kubectl exec -n $NS "$POD" -- sh -c 'ls /app/plugins/*.so 2>/dev/null | wc -l' 2>/dev/null || echo "0")
+  SO_COUNT=$(echo "$SO_COUNT" | tr -d ' ')
+  if [ "${SO_COUNT:-0}" -ge 1 ]; then
+    check "$dep SO 文件可见 ($SO_COUNT 个 .so)" "PASS"
+  else
+    check "$dep SO 文件" "FAIL" "NFS mount 下无 .so 文件"
+  fi
+done
+
+# 3. 验证 admWeb 写 → Gateway 读 (NFS 共享)
+ADMIN_POD=$(kubectl get pods -n $NS -l app=thunder-admin-web --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+HELLO_POD=$(kubectl get pods -n $NS -l app=thunder-hello --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [ -n "$ADMIN_POD" ] && [ -n "$HELLO_POD" ]; then
+  TOKEN="NFS_SO_TEST_$(date +%s)"
+  kubectl exec -n $NS "$ADMIN_POD" -- sh -c "echo '$TOKEN' > /data/thunder/plugins/HelloHttp/_regression_test.so" 2>/dev/null
+  HELLO_CONTENT=$(kubectl exec -n $NS "$HELLO_POD" -- cat /app/plugins/_regression_test.so 2>/dev/null || echo "__MISSING__")
+  if echo "$HELLO_CONTENT" | grep -q "$TOKEN"; then
+    check "NFS 共享 — admin-web 写 → hello 读" "PASS"
+  else
+    check "NFS 共享" "FAIL" "admin-web 写入后 hello 读不到"
+  fi
+  rm -f /tmp/_nfs_test.so
+else
+  check "NFS 共享" "SKIP" "admin-web 或 hello Pod 未运行"
+fi
+
 # ============== 汇总 ==============
 echo ""
 echo "============================================================"

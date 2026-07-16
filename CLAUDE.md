@@ -661,13 +661,20 @@ kubectl -n thunder rollout restart deployment thunder-admin-web
 - 看到不相关的问题提一嘴就行，别动手改
 - 每一行改动都能追溯到用户的原始请求
 
-### 4. 禁止擅自提交（No Unauthorized Commits）
+### 4. 禁止升级第三方库（No Submodule Upgrades）
+- **禁止 `git submodule update --remote`** — 会拉取第三方库最新版本，导致 submodule commit hash 变更
+- **禁止 `git pull --recurse-submodules`** — 同样会意外升级子模块
+- **禁止 IDE/编辑器自动拉取子模块** — 检查 VS Code/CLion 的 git 设置，关闭子模块自动更新
+- 第三方库（`code/3party/` 下所有子模块）的版本必须保持锁定，除非用户明确要求升级
+- 如需升级某个库：单独开 feat 分支 + 完整回归测试（C++ gtest + Python pytest + K8s 回归）→ 独立 PR
+
+### 5. 禁止擅自提交（No Unauthorized Commits）
 - **除非用户明确说"提交"、"commit"、"push"、"推"，否则绝不执行 git commit / git push**
 - 改完代码 → 测试 → 汇报结果 → **停**，等用户指示
 - 即使改了一堆文件、测试全绿，也不能自己决定提交
 - 这条优先级高于其他所有行为准则
 
-### 5. 目标驱动执行（Goal-Driven Execution）
+### 6. 目标驱动执行（Goal-Driven Execution）
 - "修 Bug" → 先写能复现 Bug 的测试，再让测试通过
 - "加校验" → 先写非法输入测试，再让它通过
 - "重构 X" → 确保改前改后测试都通过
