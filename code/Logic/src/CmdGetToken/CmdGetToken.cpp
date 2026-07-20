@@ -56,21 +56,34 @@ bool CmdGetToken::AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& 
         Response(stMsgShell, oInMsgHead, 1);
         return false;
     }
-    std::string veriftkey = oJson("veriftkey");
+    // genkey=1 → 存储 token（Interface/HelloHttp GenKey 全链路）
     if (oJson("genkey") == "1")
     {
-        LOG4_TRACE("%s() veriftkey", __FUNCTION__);
+        LOG4_TRACE("%s() genkey store token (strToken:%s,strKey:%s)", __FUNCTION__,
+                   strToken.c_str(), strKey.c_str());
+        pSession->GenToken(strToken, strKey);
+        Response(stMsgShell, oInMsgHead, 0);
+        return true;
+    }
+    // verifykey=1 → 验证 token key 排列（Interface/HelloHttp VerifyKey）
+    else if (oJson("verifykey") == "1")
+    {
+        LOG4_TRACE("%s() verifykey check (strToken:%s,strKey:%s)", __FUNCTION__,
+                   strToken.c_str(), strKey.c_str());
         bool ret = pSession->VerifyTokenPermutation(strToken, strKey);
-        LOG4_INFO("%s() veriftkey (strToken:%s,strKey:%s) ret(%d)", __FUNCTION__, strToken.c_str(), strKey.c_str(),ret);
+        LOG4_INFO("%s() VerifyTokenPermutation(%s,%s) ret(%d)", __FUNCTION__,
+                  strToken.c_str(), strKey.c_str(), ret);
         if (!ret)
         {
-            LOG4_INFO("%s() VerifyTokenPermutation(%s,%s) failed", __FUNCTION__, strToken.c_str(), strKey.c_str());
+            LOG4_INFO("%s() VerifyTokenPermutation(%s,%s) failed", __FUNCTION__,
+                      strToken.c_str(), strKey.c_str());
         }
         Response(stMsgShell, oInMsgHead, ret ? 0 : 1);
+        return true;
     }
     else
     {
-        LOG4_ERROR("%s() error param", __FUNCTION__);
+        LOG4_ERROR("%s() error param (need genkey=1 or verifykey=1)", __FUNCTION__);
         Response(stMsgShell, oInMsgHead, 1);
         return false;
     }
