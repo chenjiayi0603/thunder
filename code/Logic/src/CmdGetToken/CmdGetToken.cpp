@@ -59,18 +59,6 @@ bool CmdGetToken::AnyMessage(const net::tagMsgShell& stMsgShell, const MsgHead& 
     std::string veriftkey = oJson("veriftkey");
     if (oJson("genkey") == "1")
     {
-        LOG4_TRACE("%s() genkey", __FUNCTION__);
-        pSession->GenToken(strToken, strKey);
-        LOG4_INFO("%s() GenToken (strToken:%s,strKey:%s)", __FUNCTION__, strToken.c_str(), strKey.c_str());
-        // Response(stMsgShell, oInMsgHead, 0);
-        util::CJsonObject oRsp;
-        oRsp.Add("code", 0);
-        oRsp.Add("token", strToken);
-        oRsp.Add("key", strKey);
-        GetLabor()->SendToClient(stMsgShell, oInMsgHead, oRsp.ToString());
-    }
-    else if (oJson("verifykey") == "1")
-    {
         LOG4_TRACE("%s() veriftkey", __FUNCTION__);
         bool ret = pSession->VerifyTokenPermutation(strToken, strKey);
         LOG4_INFO("%s() veriftkey (strToken:%s,strKey:%s) ret(%d)", __FUNCTION__, strToken.c_str(), strKey.c_str(),ret);

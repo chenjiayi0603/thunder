@@ -41,7 +41,7 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
 
     if (opt == "GenKey")
     {
-        const std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
+        std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
         util::CJsonObject oJson;
         oJson.Add("token",
                   std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),

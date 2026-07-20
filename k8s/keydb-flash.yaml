@@ -1,0 +1,115 @@
+# KeyDB-Flash — RocksDB 后端, 兼容 Redis 协议, 支持 flash/SSD 存储
+#
+# 重要: 官方 Docker 镜像 (eqalpha/keydb) 未编译 RocksDB!
+#       必须从 pkg-flash 分支源码编译: ENABLE_FLASH=yes make
+#       使用下方 Dockerfile 构建自定义镜像后部署:
+#         docker build -f deploy/keydb-flash/Dockerfile -t thunder-keydb-flash:latest .
+#
+# 端口: 6380 (避免与 redis:6379 冲突, 如需替代 redis 可改回 6379)
+#
+# 存储模型:
+#   内存 (maxmemory 8gb) ← LRU hot cache
+#   RocksDB on flash (50Gi PVC) ← 冷数据自动落盘
+#   重启后从 flash 自动恢复, 无需 AOF/RDB
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-keydb
+  namespace: thunder
+  labels:
+    app: thunder-keydb
+spec:
+  ports:
+  - port: 6380
+    targetPort: 6380
+    name: keydb
+  selector:
+    app: thunder-keydb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thunder-keydb
+  namespace: thunder
+spec:
+  serviceName: thunder-keydb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-keydb
+  template:
+    metadata:
+      labels:
+        app: thunder-keydb
+    spec:
+      containers:
+      - name: keydb
+        # 自定义镜像: 从 pkg-flash 分支 + ENABLE_FLASH=yes 编译
+        image: thunder-keydb-flash:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - keydb-server
+        - /etc/keydb/keydb.conf
+        # ----- 以下覆盖 keydb.conf 默认值 -----
+        - --port
+        - "6380"
+        - --bind
+        - "0.0.0.0"
+        - --protected-mode
+        - "no"
+        # 多线程
+        - --threads
+        - "4"
+        # 内存缓存
+        - --maxmemory
+        - "8gb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        # Flash/RocksDB (编译时 ENABLE_FLASH=yes 后才生效)
+        - --storage-provider
+        - "flash:/data/flash"
+        - --dbname
+        - "thunder"
+        # RocksDB 调优
+        - --bloom-bits
+        - "10"
+        - --compression
+        - "snappy"
+        # 持久化由 RocksDB 负责, 关闭 Redis 原生 AOF/RDB
+        - --appendonly
+        - "no"
+        - --save
+        - ""
+        ports:
+        - containerPort: 6380
+          name: keydb
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "10Gi"
+            cpu: "4"
+        volumeMounts:
+        - name: flash-data
+          mountPath: /data/flash
+        livenessProbe:
+          tcpSocket:
+            port: 6380
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 6380
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: flash-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi

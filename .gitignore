@@ -50,6 +50,7 @@ claude-cli/
 code/3party/
 !code/3party/etcd-cpp-apiv3
 !code/3party/grpc
+!code/3party/keydb
 !code/3party/liburing
 code/3party/lib
 deploy/Center/plugins
@@ -127,3 +128,7 @@ deploy/HelloHttps/log/.gitkeep
 deploy/HelloWs/log/.gitkeep
 deploy/HelloWss/log/.gitkeep
 *.wasm
+deploy/admin-web/admin-web
+deploy/admin-web/admin.db
+# 内部对比文档，不提交
+k8s/comparison-openim.md

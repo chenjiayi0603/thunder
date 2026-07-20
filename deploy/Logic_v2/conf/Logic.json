@@ -37,5 +37,5 @@
         }
     ],
     "module": [],
-    "io_backend": "ev"
+    "io_backend": "asio_uring"
 }

@@ -34,6 +34,17 @@ spec:
               fieldPath: status.podIP
         - name: ETCD_ENDPOINT
           value: "http://thunder-etcd.thunder:2379"
+        # --- io_uring 需要 memlock (#154) ---
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        # --- Burstable QoS — 内存不封顶, CPU 保证 ---
+        resources:
+          requests:
+            cpu: "2"
+            memory: "128Mi"
+          limits:
+            cpu: "2"
         ports:
         - containerPort: 16069
         volumeMounts:

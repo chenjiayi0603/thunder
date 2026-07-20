@@ -3,9 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -84,6 +86,7 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]ServiceStat, 0, len(services))
 	for _, s := range services { result = append(result, *s) }
+	sort.Slice(result, func(i, j int) bool { return result[i].NodeType < result[j].NodeType })
 
 	writeOK(w, map[string]interface{}{
 		"etcd_connected": true,
@@ -294,9 +297,127 @@ func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
 	writeErr(w, "method not allowed")
 }
 
-// Plugins stub — P4
+// SO plugin management — upload to local artifact store, list from NFS (deployed)
+// Artifact store (upload goes here): /app/data/artifacts/{Type}/
+// NFS runtime dir (deploy goes here):  /data/thunder/plugins/{Type}/
+// GET  /api/plugins/{Type}      → list files in artifact store
+// PUT  /api/plugins/{Type}/{file} → upload .so to artifact store
 func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
-	writeOK(w, map[string]interface{}{"plugins": []interface{}{}})
+	path := strings.TrimPrefix(r.URL.Path, "/api/plugins")
+	path = strings.TrimPrefix(path, "/")
+	path = strings.TrimSuffix(path, "/")
+
+	// POST deploy: /api/plugins/{Type}/deploy
+	if r.Method == "POST" && strings.HasSuffix(path, "/deploy") {
+		h.deploySO(w, r, strings.TrimSuffix(path, "/deploy"))
+		return
+	}
+	// GET deployed: /api/plugins/{Type}/deployed
+	if r.Method == "GET" && strings.HasSuffix(path, "/deployed") {
+		h.listDeployed(w, r, strings.TrimSuffix(path, "/deployed"))
+		return
+	}
+
+	// PUT: upload to local artifact store (NOT NFS — deploy is a separate step)
+	if r.Method == "PUT" {
+		idx := strings.Index(path, "/")
+		if idx < 0 {
+			writeErr(w, "path required: /api/plugins/{Type}/{filename}")
+			return
+		}
+		typeDir := path[:idx]
+		filename := path[idx+1:]
+		if typeDir == "" || filename == "" {
+			writeErr(w, "type and filename required")
+			return
+		}
+		if !strings.HasSuffix(filename, ".so") {
+			writeErr(w, "only .so files allowed")
+			return
+		}
+		artifactDir := filepath.Join("/app/data/artifacts", typeDir)
+		if err := os.MkdirAll(artifactDir, 0755); err != nil {
+			writeErr(w, "mkdir: "+err.Error())
+			return
+		}
+		fpath := filepath.Join(artifactDir, filename)
+		f, err := os.Create(fpath)
+		if err != nil {
+			writeErr(w, "create file: "+err.Error())
+			return
+		}
+		defer f.Close()
+		written, err := io.Copy(f, r.Body)
+		if err != nil {
+			writeErr(w, "write: "+err.Error())
+			return
+		}
+		writeOK(w, map[string]interface{}{
+			"type": typeDir, "filename": filename, "path": fpath, "size": written,
+		})
+		return
+	}
+
+	// GET: list files from artifact store
+	if r.Method == "GET" {
+		typeDir := path
+		baseDir := "/app/data/artifacts"
+		if typeDir == "" {
+			entries, err := os.ReadDir(baseDir)
+			if err != nil {
+				writeErr(w, "readdir: "+err.Error())
+				return
+			}
+			var types []map[string]interface{}
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					soCount := countSoFiles(filepath.Join(baseDir, e.Name()))
+					types = append(types, map[string]interface{}{
+						"type": e.Name(), "so_count": soCount,
+					})
+				}
+			}
+			writeOK(w, map[string]interface{}{"types": types})
+			return
+		}
+		dir := filepath.Join(baseDir, typeDir)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			writeErr(w, "readdir: "+err.Error())
+			return
+		}
+		type FileInfo struct {
+			Name string `json:"filename"`
+			Size int64  `json:"size"`
+			Mtime string `json:"mod_time"`
+		}
+		var files []FileInfo
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".so") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil { continue }
+			files = append(files, FileInfo{
+				Name: e.Name(), Size: info.Size(), Mtime: info.ModTime().Format(time.RFC3339),
+			})
+		}
+		sort.Slice(files, func(i, j int) bool { return files[i].Mtime > files[j].Mtime })
+		writeOK(w, map[string]interface{}{"type": typeDir, "files": files})
+		return
+	}
+
+	writeErr(w, "method not allowed, use GET or PUT")
+}
+
+func countSoFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil { return 0 }
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".so") { n++ }
+	}
+	return n
 }
 
 // Lua script management — reads/writes /thunder/config/module/{node_type}
@@ -357,6 +478,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		var scripts []ScriptInfo
 		for _, m := range modules {
 			urlPath, _ := m["url_path"].(string)
+			if _, ok := m["script_content"]; !ok { continue } // skip non-Lua entries
 			name := urlPath
 			if idx := strings.LastIndex(urlPath, "/"); idx >= 0 {
 				name = urlPath[idx+1:] + ".lua"
@@ -440,9 +562,9 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 				body.Version = 1
 			}
 			modules = append(modules, map[string]interface{}{
-				"url_path":       body.URLPath,
-				"script_content": body.ScriptContent,
-				"version":        body.Version,
+				"url_path":         body.URLPath,
+				"script_content":   body.ScriptContent,
+				"version":          body.Version,
 			})
 		}
 
@@ -474,7 +596,98 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 	writeErr(w, "method not allowed")
 }
 
-// Audit stub — P5
+// deploySO: copy artifact → NFS, bump etcd version, write audit
+func (h *Handler) deploySO(w http.ResponseWriter, r *http.Request, typeDir string) {
+	var body struct{ Filename string `json:"filename"` }
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Filename == "" {
+		writeErr(w, "filename required"); return
+	}
+	src := filepath.Join("/app/data/artifacts", typeDir, body.Filename)
+	dst := filepath.Join("/data/thunder/plugins", typeDir, body.Filename)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil { writeErr(w, "mkdir NFS: "+err.Error()); return }
+	srcF, err := os.Open(src)
+	if err != nil { writeErr(w, "artifact not found: "+err.Error()); return }
+	defer srcF.Close()
+	dstF, err := os.Create(dst)
+	if err != nil { writeErr(w, "create NFS: "+err.Error()); return }
+	defer dstF.Close()
+	written, err := io.Copy(dstF, srcF)
+	if err != nil { writeErr(w, "copy: "+err.Error()); return }
+
+	nodeType := resolveNodeType(h, typeDir)
+	etcdKey := "/thunder/config/module/" + nodeType
+	raw, _ := h.s.EtcdGet(etcdKey)
+	modules := []map[string]interface{}{}
+	if raw != "" {
+		var cfg struct{ Module []map[string]interface{} `json:"module"` }
+		if json.Unmarshal([]byte(raw), &cfg) == nil { modules = cfg.Module }
+	}
+	soPath := "plugins/" + body.Filename
+	found := false
+	for i, m := range modules {
+		if sp, _ := m["so_path"].(string); sp == soPath {
+			ver := 0.0
+			if v, ok := m["version"].(float64); ok { ver = v }
+			modules[i]["version"] = ver + 1
+			found = true; break
+		}
+	}
+	if !found {
+		modules = append(modules, map[string]interface{}{"so_path": soPath, "version": 1.0, "load": true})
+	}
+	newRaw, _ := json.Marshal(map[string]interface{}{"module": modules})
+	h.s.EtcdPut(etcdKey, string(newRaw))
+
+	h.s.AuditLog("deploy", typeDir+"/"+body.Filename, "", fmt.Sprintf("size=%d", written), r.RemoteAddr)
+	writeOK(w, map[string]interface{}{"type": typeDir, "filename": body.Filename, "size": written, "deployed": true})
+}
+
+// listDeployed: list .so files on NFS for a type
+func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir string) {
+	dir := filepath.Join("/data/thunder/plugins", typeDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil { writeErr(w, "readdir: "+err.Error()); return }
+	type FileInfo struct{ Name string `json:"filename"`; Size int64 `json:"size"`; Mtime string `json:"mod_time"` }
+	var files []FileInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".so") { continue }
+		info, _ := e.Info()
+		if info == nil { continue }
+		files = append(files, FileInfo{Name: e.Name(), Size: info.Size(), Mtime: info.ModTime().Format(time.RFC3339)})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Mtime > files[j].Mtime })
+	writeOK(w, map[string]interface{}{"type": typeDir, "files": files})
+}
+
+// Audit: returns SQLite audit log — GET /api/audit?type=HelloHttp
 func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
-	writeOK(w, map[string]interface{}{"entries": []interface{}{}, "message": "audit log coming in P5"})
+	if r.Method != "GET" { writeErr(w, "method not allowed"); return }
+	typeFilter := r.URL.Query().Get("type")
+	entries, err := h.s.AuditQuery(typeFilter)
+	if err != nil { writeErr(w, "audit query: "+err.Error()); return }
+	writeOK(w, map[string]interface{}{"entries": entries})
+}
+
+// resolveNodeType finds the C++ node_type for a frontend typeDir (e.g. "HelloHttp" → "HELLO_HTTP").
+// It scans etcd registry entries dynamically — no hardcoded service names.
+func resolveNodeType(h *Handler, typeDir string) string {
+	// Normalize typeDir: uppercase, no underscores
+	normalized := strings.ToUpper(strings.ReplaceAll(typeDir, "_", ""))
+
+	// Scan etcd registry for matching node_type
+	kvs, err := h.s.EtcdGetPrefix("/thunder/registry/")
+	if err == nil {
+		for key := range kvs {
+			parts := strings.Split(strings.TrimPrefix(key, "/thunder/registry/"), "/")
+			if len(parts) >= 1 {
+				nt := parts[0]
+				ntNorm := strings.ToUpper(strings.ReplaceAll(nt, "_", ""))
+				if ntNorm == normalized {
+					return nt
+				}
+			}
+		}
+	}
+	// Fallback: use typeDir as-is (backward compatible)
+	return strings.ToUpper(typeDir)
 }

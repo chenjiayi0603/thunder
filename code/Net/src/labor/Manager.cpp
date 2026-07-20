@@ -1949,6 +1949,7 @@ bool Manager::CheckWorker()
     {
         return(true);
     }
+    std::vector<int> deadWorkers;
     // 必须按引用遍历: 下方 drain 处理心跳会更新 map 内的 dBeatTime,
     // 按值拷贝会让超时判定读到 drain 之前的过期快照 (#70)
     for (auto& worker_iter:m_mapWorker)
@@ -1984,9 +1985,13 @@ bool Manager::CheckWorker()
         if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
         {
             LOG4_INFO( "worker_%d pid %d is unresponsive, terminate it.", worker_iter.second.iWorkerIndex, worker_iter.first);
-            kill(worker_iter.first, SIGKILL);
-//            RestartWorker(worker_iter->first);
+            deadWorkers.push_back(worker_iter.first);
         }
+    }
+    // 循环外重启, 避免迭代器失效 + 避免重复 kill 已消失的 PID
+    for (int pid : deadWorkers)
+    {
+        RestartWorker(pid);
     }
     return(true);
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thunder Admin</title>
+<title>Thunder Admin v14</title>
 <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
@@ -35,7 +35,7 @@
 </section>
 <section id="nodes" class="panel">
   <div class="toolbar">
-    <label>服务<select class="select" id="nodeTypeSelect"><option value="">全部</option><option>LOGIC</option><option>INTERFACE</option><option>HELLO_HTTP</option><option>HELLO_HTTPS</option></select></label>
+    <label>服务<select class="select" id="nodeTypeSelect"><option value="">全部</option></select></label>
     <input class="input" id="nodeSearch" placeholder="搜索 IP 或 node_id...">
     <button class="btn btn-ghost btn-sm" id="nodeSearchClear" style="display:none">清除</button>
   </div>
@@ -43,7 +43,7 @@
 </section>
 <section id="canary" class="panel">
   <div class="toolbar">
-    <label>服务<select class="select" id="canaryServiceSelect"><option>LOGIC</option><option>INTERFACE</option></select></label>
+    <label>服务<select class="select" id="canaryServiceSelect"><option value="">请选择</option></select></label>
     <button class="btn btn-primary btn-sm" id="canaryLoadBtn">加载</button>
   </div>
   <div id="canaryStatus"></div>
@@ -63,7 +63,7 @@
 </section>
 <section id="lua" class="panel">
   <div class="toolbar">
-    <label>服务<select class="select" id="luaNodeType"><option>HELLO_HTTP</option><option>HELLO_HTTPS</option></select></label>
+    <label>服务<select class="select" id="luaNodeType"><option value="">请选择</option></select></label>
     <button class="btn btn-primary btn-sm" id="luaLoad">加载</button>
   </div>
   <div id="luaStatus"></div>
@@ -84,7 +84,7 @@
 </section>
 <section id="config" class="panel">
   <div class="toolbar">
-    <label>模块<select class="select" id="cfgModule"><option>LOGIC</option><option>INTERFACE</option><option>HELLO_HTTP</option></select></label>
+    <label>模块<select class="select" id="cfgModule"><option value="">请选择</option></select></label>
     <label>类型<select class="select" id="cfgType"><option>Logic.json</option><option>config.json</option></select></label>
     <button class="btn btn-primary btn-sm" id="cfgLoad">加载</button>
   </div>
@@ -111,14 +111,19 @@
       拖拽 .so 文件到此处 或 点击选择<br><span style="font-size:var(--text-xs)" id="plugFileName"></span>
       <input type="file" id="plugFile" accept=".so" style="display:none">
     </div>
-    <div class="flex gap-sm mt items-center"><label>类型<select class="select" id="plugType"><option>LOGIC</option><option>INTERFACE</option></select></label>
-      <label>版本<select class="select" id="plugVer"><option>v1</option><option>v2</option></select></label>
-      <button class="btn btn-primary btn-sm" id="plugUpload">上传并部署</button>
+    <div class="flex gap-sm mt items-center"><label>类型<select class="select" id="plugType"><option value="">请选择</option></select></label>
+      <!-- 版本在 etcd 里管理，不需要选择 -->
+      <button class="btn btn-primary btn-sm" id="plugUpload">上传</button>
     </div>
   </div>
-  <div class="card" style="margin-top:var(--space)"><div class="card-header">已部署插件 <span class="text-sm text-muted" id="plugRefresh"></span></div>
-    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>版本</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
-      <tbody id="plugTable"><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">制品库 <span class="text-sm text-muted" id="plugRefresh"></span></div>
+    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="plugTable"><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">已部署插件 <span class="text-sm text-muted" id="deployRefresh"></span></div>
+    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>大小</th><th>时间</th></tr></thead>
+      <tbody id="deployTable"><tr><td colspan="4" class="text-center text-muted">加载中...</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -175,7 +180,7 @@
     if(id==="nodes")loadNodes();
     if(id==="canary")loadCanary();
     if(id==="lua")loadLua();
-    if(id==="plugins")loadPlugins();
+    if(id==="plugins")loadPlugins(); loadDeployed();
     if(id==="audit")loadAudit();
   });
 
@@ -203,7 +208,30 @@
       document.getElementById("overviewRefresh").textContent="\u66F4\u65B0: "+new Date().toLocaleTimeString();
       STORE.overview.data=d;
     }
-    API.overview().then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data)}else if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'}).catch(function(){if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'});
+    API.overview().then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data);populateTypeDropdowns(r.data.services||[])}else if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'}).catch(function(){if(USE_MOCK)render(MOCK.overview);else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u8FDE\u63A5</div>'});
+  }
+
+  function populateTypeDropdowns(services){
+    var types=[];
+    services.forEach(function(s){if(s.node_type)types.push(s.node_type)});
+    types.sort();
+    ['nodeTypeSelect','luaNodeType','cfgModule','canaryServiceSelect'].forEach(function(id){
+      var sel=document.getElementById(id);if(!sel)return;
+      var cur=sel.value;
+      sel.innerHTML=(id==='nodeTypeSelect'?'<option value="">全部</option>':'<option value="">请选择</option>');
+      types.forEach(function(t){sel.innerHTML+='<option value="'+t+'">'+t+'</option>'});
+      sel.value=cur||'';
+    });
+    var ps=document.getElementById('plugType');if(ps){
+      ps.innerHTML='';
+      var plugTypes=[];
+      types.forEach(function(t){
+        var d=t.split('_').map(function(p){return p.charAt(0)+p.slice(1).toLowerCase()}).join('');
+        plugTypes.push(d);
+        ps.innerHTML+='<option value="'+d+'">'+d+'</option>';
+      });
+      if(plugTypes.length){ ps.value=plugTypes[0]; loadPlugins(plugTypes[0]); loadDeployed(plugTypes[0]); }
+    }
   }
 
   /* ========== Switch to Nodes ========== */
@@ -212,14 +240,31 @@
     document.querySelector('#navTabs button[data-panel="nodes"]').click();
   };
 
+  /* ========== Switch to Plugins for a node type ========== */
+  window.switchToPluginsForType=function(nodeType){
+    // nodeType like "HELLO_HTTP" → plugType like "HelloHttp"
+    var plugType = nodeType.split('_').map(function(p){return p.charAt(0)+p.slice(1).toLowerCase()}).join('');
+    var ps = document.getElementById('plugType');
+    if (ps) {
+      // ensure the option exists (populated from etcd types)
+      for (var i=0; i<ps.options.length; i++) {
+        if (ps.options[i].value === plugType) { ps.value = plugType; break; }
+      }
+    }
+    document.querySelector('#navTabs button[data-panel="plugins"]').click();
+    // trigger load after tab switch (the tab change might reset things)
+    setTimeout(function(){ loadPlugins(plugType); loadDeployed(plugType); }, 100);
+  };
+
   /* ========== Nodes ========== */
   var _allNodes=[];
+  var _nodeDetailCache={};
   function loadNodes(){
     var grid=document.getElementById("nodesGrid");
     var nt=document.getElementById("nodeTypeSelect").value;
     grid.innerHTML='<div class="loading-block"><span class="spinner"></span></div>';
     function render(nodes){_allNodes=nodes;renderNodesGrid(nodes);}
-    API.getNodes(nt).then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data.nodes||[])}else if(USE_MOCK){var mn=MOCK.nodes.nodes;if(nt)mn=mn.filter(function(n){return n.node_type===nt});render(mn)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D</div>'}).catch(function(){if(USE_MOCK){render(MOCK.nodes.nodes)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D</div>'});
+    API.getNodes(nt).then(function(r){if(r.ok&&r.data){USE_MOCK=false;render(r.data.nodes||[])}else if(USE_MOCK){var mn=MOCK.nodes.nodes;if(nt)mn=mn.filter(function(n){return n.node_type===nt});render(mn)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D ('+(r.error||r.status||'?')+')</div>'}).catch(function(e){if(USE_MOCK){render(MOCK.nodes.nodes)}else grid.innerHTML='<div class="empty-state">\u26A0 \u65E0\u6CD5\u52A0\u8F7D (net: '+(e.message||'?')+')</div>'});
   }
 
   /* ========== Nodes Grid Render ========== */
@@ -243,7 +288,7 @@
         _nodeDetailCache = _nodeDetailCache || {};
         var ndKey = 'nd_' + (n.ip||'') + '_' + (n.port||'');
         _nodeDetailCache[ndKey] = n;
-        h+='<div class="node-card-footer"><button class="btn btn-ghost btn-xs" onclick="showNodeDetailCached(\'' + ndKey + '\')">\u8BE6\u60C5</button></div></div>';
+        h+='<div class="node-card-footer"><button class="btn btn-ghost btn-xs" onclick="switchToPluginsForType(\''+Components.escapeAttr(n.node_type)+'\')">\u2699 \u6A21\u5757</button><button class="btn btn-ghost btn-xs" onclick="showNodeDetailCached(\'' + ndKey + '\')">\u8BE6\u60C5</button></div></div>';
       });
     });
     grid.innerHTML=h;
@@ -555,24 +600,28 @@
   });
 
   /* ========== Plugins ========== */
-  function loadPlugins(){
+  function loadPlugins(type){
     var tbody = document.getElementById("plugTable");
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner"></span></td></tr>';
-    API.getPlugins().then(function(r){
-      var plugs = (r.ok && r.data && r.data.plugins) ? r.data.plugins : _mockPlugins();
-      if(!plugs.length){ tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">\u6682\u65E0\u63D2\u4EF6</td></tr>'; return; }
+    if (!tbody) return;
+    type = type || document.getElementById("plugType").value || "";
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+    API.soList(type).then(function(r){
+      var files = (r.ok && r.data && r.data.files) || [];
+      if(!files.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">\u6682\u65E0\u63D2\u4EF6</td></tr>'; return; }
       var h = "";
-      plugs.forEach(function(p){
-        h += "<tr><td>"+Components.escapeHtml(p.name)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(p.type)+"</span></td><td>"+Components.escapeHtml(p.version)+"</td><td>"+(p.size||"-")+"</td><td>"+Components.formatTime(p.created_at)+"</td><td><button class=\"btn btn-ghost btn-xs\" onclick=\"rollbackPlugin(\'"+Components.escapeAttr(p.name)+"\')\">\u56DE\u6EDA</button></td></tr>";
+      files.forEach(function(f){
+        var sz = f.size < 1024 ? f.size + 'B' : f.size < 1048576 ? (f.size/1024).toFixed(1)+'KB' : (f.size/1048576).toFixed(1)+'MB';
+        h += "<tr><td>"+Components.escapeHtml(f.filename)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(type)+"</span></td><td>"+sz+"</td><td>"+Components.formatTime(f.mod_time)+"</td><td><button class=\"btn btn-ghost btn-xs\" onclick=\"deployPlugin(\'"+Components.escapeAttr(type)+"\',\'"+Components.escapeAttr(f.filename)+"\')\">\u4E0B\u53D1</button></td></tr>";
       });
       tbody.innerHTML = h;
       document.getElementById("plugRefresh").textContent = "\u66F4\u65B0: "+new Date().toLocaleTimeString();
-    }).catch(function(){tbody.innerHTML='<tr><td colspan="6" class="text-center text-muted">\u52A0\u8F7D\u5931\u8D25</td></tr>'});
+    }).catch(function(){tbody.innerHTML='<tr><td colspan="5" class="text-center text-muted">\u52A0\u8F7D\u5931\u8D25</td></tr>'});
   }
 
-  function _mockPlugins(){ return [{name:"hello.so",type:"Logic",version:"v1",size:"1.2M",created_at:new Date().toISOString()},{name:"world.so",type:"Interface",version:"v2",size:"0.8M",created_at:new Date(Date.now()-86400000).toISOString()}]; }
-  window.rollbackPlugin = function(name){
-    Components.modal({title:"\u786E\u8BA4\u56DE\u6EDA",body:"\u786E\u5B9A\u56DE\u6EDA\u63D2\u4EF6 <b>"+Components.escapeHtml(name)+"</b> \u5230\u4E0A\u4E00\u7248\u672C\uFF1F",danger:true,confirmText:"\u56DE\u6EDA",onConfirm:function(){Components.toast("\u56DE\u6EDA\u5F85 P4 Go \u540E\u7AEF\u5B9E\u73B0","warning")}});
+  window.deployPlugin = function(type, filename){
+    Components.modal({title:"\u786E\u8BA4\u4E0B\u53D1",body:"\u786E\u5B9A\u5C06 <b>"+Components.escapeHtml(filename)+"</b> \u4E0B\u53D1\u5230 <b>"+Components.escapeHtml(type)+"</b> \uFF1F<br><br><span class=\"text-muted\">\u5C06\u5199\u5165 NFS + etcd \u7248\u672C\u66F4\u65B0\uFF0C\u89E6\u53D1 Gateway \u70ED\u91CD\u8F7D\u3002</span>",danger:false,confirmText:"\u4E0B\u53D1",onConfirm:function(){
+      API.request('/plugins/'+type+'/deploy',{method:'POST',body:{filename:filename}}).then(function(r){if(r.ok){Components.toast("\u2705 "+filename+" \u5DF2\u4E0B\u53D1","success");loadDeployed(type)}else Components.toast("\u274C \u4E0B\u53D1\u5931\u8D25: "+(r.error||r.status),"error")}).catch(function(e){Components.toast("\u274C \u7F51\u7EDC\u9519\u8BEF: "+e.message,"error")});
+    }});
   };
 
   /* plugins events */
@@ -581,6 +630,8 @@
     var f = this.files[0];
     if(f) document.getElementById("plugFileName").textContent = "\u5DF2\u9009\u62E9: " + f.name;
   });
+  var _plugTypeEl = document.getElementById("plugType");
+if (_plugTypeEl) _plugTypeEl.addEventListener("change",function(){ loadPlugins(this.value); loadDeployed(this.value); });
   /* audit events */
   document.getElementById("auditRefresh").addEventListener("click",loadAudit);
   document.getElementById("auditAction").addEventListener("change",loadAudit);
@@ -598,35 +649,51 @@
     var f = document.getElementById("plugFile").files[0];
     if(!f){Components.toast("\u8BF7\u9009\u62E9\u6587\u4EF6","warning");return;}
     var typ = document.getElementById("plugType").value;
-    var ver = document.getElementById("plugVer").value;
-    Components.toast("\u4E0A\u4F20\u5F85 P4 Go \u540E\u7AEF\u5B9E\u73B0\u3002\u6587\u4EF6:"+f.name+" \u7C7B\u578B:"+typ+" \u7248\u672C:"+ver,"info");
+    Components.toast("\u4E0A\u4F20\u4E2D...","info");
+    API.soUpload(typ, f).then(function(r){
+      if(r.ok){ Components.toast("\u2705 "+f.name+" \u5DF2\u4E0A\u4F20","success"); loadPlugins(typ); }
+      else { Components.toast("\u274C "+(r.error||"\u4E0A\u4F20\u5931\u8D25"),"error"); }
+    }).catch(function(e){ Components.toast("\u274C "+(e.message||"\u4E0A\u4F20\u5931\u8D25"),"error"); });
   });
-  loadPlugins();
+  loadPlugins(); loadDeployed();
 
-  /* ========== Audit ========== */
+function loadDeployed(type){
+  var tbody = document.getElementById("deployTable");
+  if (!tbody) return;
+  type = type || document.getElementById("plugType").value || "";
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+  API.request('/plugins/'+type+'/deployed').then(function(r){
+    var files = (r.ok && r.data && r.data.files) || [];
+    if(!files.length){ tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无已部署插件</td></tr>'; return; }
+    var h = "";
+    files.forEach(function(f){
+      var sz = f.size < 1024 ? f.size + 'B' : f.size < 1048576 ? (f.size/1024).toFixed(1)+'KB' : (f.size/1048576).toFixed(1)+'MB';
+      h += "<tr><td>"+Components.escapeHtml(f.filename)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(type)+"</span></td><td>"+sz+"</td><td>"+Components.formatTime(f.mod_time)+"</td></tr>";
+    });
+    tbody.innerHTML = h;
+    document.getElementById("deployRefresh").textContent = "更新: "+new Date().toLocaleTimeString();
+  }).catch(function(){tbody.innerHTML='<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>'});
+}
+
+/* ========== Audit ========== */
   function loadAudit(){
     var tbody = document.getElementById("auditTable");
     tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
     var filter = document.getElementById("auditAction").value;
-    // Use mock data until Go backend implements SQLite audit_log table
-    var entries = _mockAudit(filter);
+    API.request('/audit').then(function(r){
+      if(!r.ok){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">load failed</td></tr>'; return; }
+      var entries = (r.data && r.data.entries) || [];
+      if(filter) entries = entries.filter(function(e){ return e.action === filter; });
     if(!entries.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">\u6682\u65E0\u5BA1\u8BA1\u8BB0\u5F55</td></tr>'; return; }
     var h = "";
     entries.forEach(function(e){
       var badge = e.action==="weight_update"?"badge-warning":(e.action==="config_update"?"badge-info":"badge-default");
       h += "<tr><td>"+Components.formatTime(e.created_at)+"</td><td><span class=\"badge "+badge+"\">"+Components.escapeHtml(e.action)+"</span></td><td>"+Components.escapeHtml(e.target)+"</td><td>"+Components.escapeHtml(e.client_ip)+"</td><td><button class=\"btn btn-ghost btn-xs\" onclick=\"showAuditDetail(\'"+Components.escapeAttr(JSON.stringify(e))+"\')\">\u8BE6\u60C5</button></td></tr>";
     });
-    tbody.innerHTML = h;
-  }
-
-  function _mockAudit(filter){
-    var entries = [
-      {action:"weight_update",target:"LOGIC",before_value:'{"v1":80,"v2":20}',after_value:'{"v1":70,"v2":30}',client_ip:"10.0.0.1",created_at:new Date(Date.now()-600000).toISOString()},
-      {action:"config_update",target:"Logic.json",before_value:'{"port":16000}',after_value:'{"port":16001}',client_ip:"10.0.0.2",created_at:new Date(Date.now()-3600000).toISOString()},
-      {action:"plugin_deploy",target:"hello.so",before_value:null,after_value:'{"type":"Logic","version":"v1"}',client_ip:"10.0.0.1",created_at:new Date(Date.now()-7200000).toISOString()},
-    ];
-    if(filter) entries = entries.filter(function(e){return e.action===filter});
-    return entries;
+      tbody.innerHTML = h;
+    }).catch(function(err){
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">net error</td></tr>';
+    });
   }
 
   window.showAuditDetail = function(jsStr){

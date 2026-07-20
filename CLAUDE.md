@@ -22,23 +22,85 @@
 
 ## k8s regression — K8s 回归测试流程
 
-### 原则
-- 所有 K8s 测试通过 `./deploy.sh deploy` 一键完成，不手动操作
-- 环境问题修根因，不靠每次重启 kubelet/清理磁盘应付
-- 测试结果以 `tests/e2e/test_canary_k8s.py` 全绿为准
+### 🚨 铁律：回归测试发现的非本次更新引入的问题也要修复
+
+**`./deploy.sh test k8s` 跑出的任何 FAIL，无论是否与本次改动相关，都必须修复。**
+
+| 禁止 | 正确做法 |
+|------|---------|
+| ❌ "这是预存问题，不管" | 排查根因 → 修复 → 回归通过 |
+| ❌ "只修 #154 范围的问题" | 全量 36/36 必须通过 |
+| ❌ 手动 curl 测一下就说通过 | 必须 `regression-test.sh` 全绿 |
+| ❌ 用旧 Pod 的旧镜像掩盖问题 | BUILD 阶段全新构建确保无灰生产 |
+| ❌ 把失败归为"测试脚本 bug" | 修复测试脚本，不是忽略失败 |
+
+**教训**：Interface Worker 崩溃是 7/18 `process_num` 类型不匹配 + Recreate 端口竞争导致——不是 #154 引入，但在回归中被发现，必须修。
+
+## 🚨 铁律：回归测试必须用 `./deploy.sh test k8s`，严禁直接跑 `bash k8s/regression-test.sh`
+
+| 禁止 | 原因 |
+|------|------|
+| ❌ `bash k8s/regression-test.sh` 单独跑 | 跳过 PRE-CHECK(残留没清)、BUILD(用旧镜像)、CLEAN(污染积累) |
+| ❌ 改完 YAML 直接 `kubectl apply` 就当测试 | 没有重建镜像，测的是旧二进制 |
+| ❌ `curl` 手动测一下就说通过 | 没有全量 36 项回归覆盖 |
+
+**只用这个命令：**
+```bash
+./deploy.sh test k8s
+```
+
+### 标准化测试流程（#146）
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│0.PRE-CHK │ → │ 1. BUILD │ → │ 2.DEPLOY │ → │ 3. TEST  │ → │ 4.CLEAN  │
+│ 检查端口  │    │ C++/Go   │    │ 清 etcd  │    │regression│    │ 删残留   │
+│ 清僵尸Pod │    │ 构建8镜像 │    │ 导入部署  │    │ -test.sh │    │ 删测试文件│
+│ 清etcd残留│    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+└──────────┘
+```
+
+| 阶段 | 做什么 | 为什么必须 |
+|------|--------|-----------|
+| 0. PRE-CHK | 端口检查、僵尸 Pod/残留容器清理、资源余量、etcd 测试残留清理 | **进程卫生**：清理死进程释放端口/资源；只删已知测试脏 key，不删运营数据 |
+| 1. BUILD | cmake C++ + Go admin-web + 8 个 Docker 镜像 | 确保测试的是最新代码 |
+| 2. DEPLOY | 导入 containerd → 滚动更新 → 等 Ready | 所有 Pod 用新镜像 |
+| 3. TEST | `bash k8s/regression-test.sh` 36 项 | 全量回归 |
+| 4. CLEAN | 删 artifacts/NFS 测试文件/etcd `_regression_*` 条目/审计记录 | 不污染下次测试，但保留运营数据 |
+
+### 验证标准
+
+除 36 项全通过外，还需确认：
+1. `docker image inspect` 的 Created 时间 = 刚构建的时间
+2. Pod 内二进制 md5 ≠ 部署前
+3. 清理后 etcd 不残留 `_regression_*` 条目 (registry/canary 等运营数据保留)
+4. 清理后 NFS 不残留 `_regression_*` 文件
 
 ### 命令
 
 ```bash
-# 一键部署 + 等待 Running
+# 唯一回归测试入口 — 5 阶段全流程 (#146)
+./deploy.sh test k8s
+
+# 日常部署 (不含测试)
 ./deploy.sh deploy && kubectl wait --for=condition=Ready pods --all -n thunder --timeout=120s
-
-# 运行 K8s canary E2E
-PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 tests/e2e/test_canary_k8s.py
-
-# 验证 canary 权重分流（需要 2 个 Logic 节点注册成功）
-python3 tools/canary.py LOGIC canary v2 30
 ```
+
+## 🚨 铁律：禁止重启绕过 Bug
+
+**遇到任何服务异常，禁止用重启/重部署/缩容扩容作为修复手段。**
+
+| 禁止 | 正确做法 |
+|------|---------|
+| ❌ `kubectl delete pod` 绕过问题 | 查日志 → 定位根因 → 修代码 |
+| ❌ `kubectl scale 0→1` 绕过问题 | 同上 |
+| ❌ `kubectl rollout restart` 绕过问题 | 同上 |
+| ❌ "重启就好了" 作为结论 | 必须找到并修复根因 |
+
+**CPU 高诊断流程**：
+1. 火焰图：`perf record -F 99 -p <pid> -g -- sleep 30 && perf script | FlameGraph/stackcollapse-perf.pl | FlameGraph/flamegraph.pl > flame.svg`
+2. strace：`strace -c -p <pid>` 看系统调用分布，定位忙等待
+3. 不许用重启/缩容绕过 CPU 高的问题
 
 ### 根因修复（已固化，不需要每次测试前手动执行）
 
@@ -506,7 +568,7 @@ foo(nullptr);   // 调用 foo(char*) —— 正确
 
 ### 触发词：designdoc / 设计文档 / 写设计
 
-用于撰写或重构架构/组件设计文档。以下规则来自 `docs/architecture/23-work-stealing-threadpool.md` 的多次迭代经验。
+用于撰写或重构架构/组件设计文档。以下规则来自 `docs/architecture/12-work-stealing-threadpool.md` 的多次迭代经验。
 
 **铁律：对比 > 描述。简易聚在一起的对比表，远好于长篇细节描述。**
 
@@ -661,14 +723,48 @@ kubectl -n thunder rollout restart deployment thunder-admin-web
 - 看到不相关的问题提一嘴就行，别动手改
 - 每一行改动都能追溯到用户的原始请求
 
-### 4. 禁止升级第三方库（No Submodule Upgrades）
+### 4. 部署规则：只能动目标组件，不能碰其他 Pod
+
+**🚫 禁止：**
+- `kubectl delete pod --all` — 会误删 etcd/mysql/redis，导致集群不可用
+- `kubectl scale deploy --all --replicas=0` — 会导致所有网关 etcd 注册过期
+
+**✅ admin-web 部署（唯一安全方式）：**
+```bash
+# 改完代码后
+docker build --no-cache -t thunder-admin-web:latest .
+docker save thunder-admin-web:latest -o /tmp/admin.tar
+sudo ctr -n k8s.io images import /tmp/admin.tar
+sudo ctr -n k8s.io images tag --force docker.io/library/thunder-admin-web:latest thunder-admin-web:latest
+sudo ctr -n k8s.io images tag thunder-admin-web:latest docker.io/library/thunder-admin-web:latest
+kubectl -n thunder rollout restart deployment/thunder-admin-web
+```
+
+**自测清单（改完代码后必跑）：**
+```bash
+# 1. 编译
+go build -o admin-web .
+
+# 2. API 回归（确认旧功能未破坏）
+curl -s http://192.168.3.61:30090/api/overview | python3 -c "import sys,json;d=json.load(sys.stdin);assert d['ok']"
+curl -s http://192.168.3.61:30090/api/nodes    | python3 -c "import sys,json;d=json.load(sys.stdin);assert d['ok']"
+
+# 3. 新功能测试（如有）
+
+# 4. 部署 + 回归全量
+kubectl -n thunder rollout restart deployment/thunder-admin-web
+sleep 5
+bash k8s/regression-test.sh
+```
+
+### 5. 禁止升级第三方库（No Submodule Upgrades）
 - **禁止 `git submodule update --remote`** — 会拉取第三方库最新版本，导致 submodule commit hash 变更
 - **禁止 `git pull --recurse-submodules`** — 同样会意外升级子模块
 - **禁止 IDE/编辑器自动拉取子模块** — 检查 VS Code/CLion 的 git 设置，关闭子模块自动更新
 - 第三方库（`code/3party/` 下所有子模块）的版本必须保持锁定，除非用户明确要求升级
 - 如需升级某个库：单独开 feat 分支 + 完整回归测试（C++ gtest + Python pytest + K8s 回归）→ 独立 PR
 
-### 5. 禁止擅自提交（No Unauthorized Commits）
+### 6. 禁止擅自提交（No Unauthorized Commits）
 - **除非用户明确说"提交"、"commit"、"push"、"推"，否则绝不执行 git commit / git push**
 - 改完代码 → 测试 → 汇报结果 → **停**，等用户指示
 - 即使改了一堆文件、测试全绿，也不能自己决定提交

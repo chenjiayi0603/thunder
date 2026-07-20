@@ -586,7 +586,7 @@ k8s pod 重启换 IP 后, `DoWatchSnapshot` 的 range query 不清空 `m_nodeReg
 - key 格式: `/thunder/registry/{IP}:{PORT}` → `/thunder/registry/{TYPE}/{IP}:{PORT}`
 - `OnWatchAsync`: 从 key 路径提取 type, 在 entry 处过滤 (无需解析 JSON value)
 - 旧格式 key 兼容 (缺省 `upstream_types` 时行为不变)
-- 详见 `docs/architecture/13-upstream-route-filter.md`
+- 详见 `docs/architecture/07-upstream-route-filter.md`
 
 ### 验证
 k8s 冒烟 Hello 6/6 + Interface→Logic 5/5 + etcd 1/1 = 12/12, 路由表仅含 LOGIC 条目。
@@ -940,7 +940,7 @@ Thunder 使用 etcd 作为注册中心和服务配置下发通道（config watch
 
 ## ✅ #45 SO 模块版本管理 via etcd
 
-> 2026-06-09 | 设计 | 状态: ✅ 已实现 | 设计文档: `docs/architecture/15-so-module-hot-reload-via-etcd.md`
+> 2026-06-09 | 设计 | ✅ 已实现 + 2026-07-16 修复回归 | 设计文档: `docs/architecture/08-so-module-hot-reload-via-etcd.md` + `20-plugin-lua-nfs-storage.md`
 
 ### 问题
 SO 模块当前仅在启动时从 `conf/*.json` 读取，更新需手动替换文件 + 发信号，无版本管理、无回滚、无法通过 etcd 统一管控。
@@ -961,13 +961,17 @@ SO 模块当前仅在启动时从 `conf/*.json` 读取，更新需手动替换�
 
 **SO 文件存储** (NFS 共享, 所有节点挂载同一份):
 ```
-NFS: /data/thunder/plugins/
+nfs-server Pod (K8s hostNetwork) → export 宿主机 /data/thunder/plugins/
 ├── HelloHttp/ModuleHello_v1.so, ModuleHello_v2.so
-├── Logic/CmdGetToken_v2.so, CmdGetToken_v3.so
-└── Interface/ModuleInterface_v1.so
+├── HelloHttps/ModuleHello.so, ModuleRaw.so
+├── HelloWs/CmdHello.so, ModuleShake.so
+├── HelloWss/CmdHello.so, ModuleShake.so
+├── Interface/ModuleInterface.so
+└── Logic/CmdGetToken.so, ModuleLua.so
 
-k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
-裸机: mount -t nfs 或 symlink
+PV (NFSv4, path=/) + PVC (ReadWriteMany)
+  ├── Gateway ×7: PVC subPath → /app/plugins (只读)
+  └── admin-web: PVC → /data/thunder/plugins (读写)
 ```
 
 **更新流程**:
@@ -999,17 +1003,20 @@ k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
 | 6 | HTTP URL 下载 SO 工具函数 `DownloadSoFile` | `Manager.cpp:2861-2921` | ✅ |
 | 7 | k8s NFS PV/PVC 配置模板 | `k8s/plugins-pv.yaml` | ✅ |
 | 8 | SO 下载单元测试 (2 个) | `test_etcd_http_conn.cpp:225-240` | ✅ |
-| 9 | 设计文档 | `docs/architecture/15-so-module-hot-reload-via-etcd.md` | ✅ |
+| 9 | 设计文档 | `docs/architecture/08-so-module-hot-reload-via-etcd.md` | ✅ |
 
-### NFS 部署方案 ✅ 已完成 (2026-06-09)
+### NFS 部署方案 ✅ 已修复 (2026-07-16)
 
 | 组件 | 状态 | 说明 |
 |------|:---:|------|
-| `k8s/plugins-pv.yaml` (PV + PVC) | ✅ | NFS ReadOnlyMany, server=`192.168.3.100`, path=`/data/thunder/plugins` |
-| 5 个 Deployment YAML 挂载 PVC | ✅ | `hello/interface/logic/hello-ws/hello-https` 均已添加 `volumeMount: thunder-plugins → /data/thunder/plugins` (readOnly) |
-| NFS 服务器 | ✅ | `nfs-kernel-server` 已安装并启动, `/data/thunder/plugins *(ro,...)` 已 export |
-| SO 文件部署到 NFS | ✅ | HelloHttp/HelloWs/HelloHttps/Logic/Interface 的 `.so` 均已复制到 NFS 目录 |
-| `DownloadSoFile` 集成到 config watch | ✅ | `Manager::OnCenterEvent ConfigUpdated` handler 中: so_url 存在时先下载再 GracefulRestartWorker (行 2775-2797) |
+| nfs-server Pod | ✅ | K8s Pod (hostNetwork), 替代 apt nfs-kernel-server |
+| PV | ✅ | NFSv4, server=`192.168.3.61`, path=`/`, mountOptions=`[nfsvers=4]` |
+| PVC | ✅ | ReadWriteMany, bound to PV |
+| 7 Gateway PVC subPath mount | ✅ | HelloHttp/HelloHttps/HelloWs/HelloWss/Interface/Logic/Logic-v2 → `/app/plugins` |
+| admin-web PVC mount | ✅ | → `/data/thunder/plugins` |
+| SO 文件 | ✅ | 所有 Gateway .so 已在 NFS 目录 |
+
+> 2026-07-16 修复: Docker 镜像迁移 (commit 4936de1) 误删 Gateway PVC mount，SO 热更新链路断裂。已恢复并改用 K8s 原生 nfs-server Pod + NFSv4 PV/PVC。K8s 回归 34/34 PASS。
 
 ---
 
@@ -1028,22 +1035,18 @@ k8s: PV(ReadOnlyMany) + PVC → Pod mountPath
 | Admin Web "⚙ 配置" 功能 | 代码审查 | ✅ | 节点行有 "⚙ 配置" 按钮, Modal 支持编辑/保存/版本历史/回滚 |
 | Admin Web 独立部署 | 代码审查 | ✅ | 从 `deploy/Interface/confweb/` 移至 `deploy/admin-web/`, 浏览器直连 etcd |
 | k8s NFS PV/PVC | 代码审查 | ✅ | `k8s/plugins-pv.yaml` 定义 NFS PV (ReadOnlyMany, 10Gi) + PVC |
-| 设计文档完整性 | 文档审查 | ✅ | `15-so-module-hot-reload-via-etcd.md` 含 NFS/URL/镜像三种 SO 分发方案对比 |
+| 设计文档完整性 | 文档审查 | ✅ | `08-so-module-hot-reload-via-etcd.md` 含 NFS/URL/镜像三种 SO 分发方案对比 |
 
 ### 回归测试 (2026-06-09)
 
 | 测试项 | 范围 | 结果 | 说明 |
 |--------|------|:---:|------|
 | 全量构建 | 所有模块 | ✅ 0 error 0 warning | 无回归 |
-| C++ gtest | 328 项 | ✅ 328/328, 9 skipped | ShmRingQueue 预存 bug 已修复, 零失败 |
-| Python pytest | 122 项 | ✅ 122/122 | etcd registry/slot/node_id/config/conhash/token/websocket/iobackend 全部通过 |
-| EtcdMultiEndpoint (多端点) | 4 项 (#40 功能) | ✅ 4/4 | 验证 #45 变更未破坏多端点解析 |
-| Manager OnCenterEvent 路由 | `RouteUpdated` + `ConfigUpdated` handler | ✅ | 路由下发 + 配置热更新逻辑无回归 |
-| SO 模块热更新链路 | `ConfigUpdated → 比对 → DownloadSoFile → GracefulRestartWorker` | ✅ | #2 drain 机制复用正常; URL SO 下载已接线 |
-| Admin 配置版本历史 | 节点配置 + 模块配置 双路径 | ✅ | 版本备份/回滚逻辑独立, 互不干扰 |
-| NFS 部署集成 | PV/PVC + Deployment volumeMount | ✅ | 5 个 Deployment 均已挂载 NFS PVC |
+| C++ gtest | 328 项 | ✅ 328/328, 9 skipped | 零失败 |
+| Python pytest | 122 项 | ✅ 122/122 | 全部通过 |
+| K8s 回归 | 34 项 | ✅ 34/34 PASS | 含新增 SO 热更新 NFS mount + NFS 共享测试 |
 
-> **结论**: #45 SO 模块版本管理 via etcd 全部功能已实现并接线, 构建和单元测试零回归。NFS 部署方案从 PV/PVC 到 Deployment 挂载到 NFS 服务器搭建已全部完成。SO 文件通过 NFS 共享 + etcd 版本管理 + GracefulRestartWorker 的完整零中断热更新链路已就绪。
+> **当前状态**: SO 热更新全链路就绪。K8s nfs-server Pod (hostNetwork) → NFSv4 PV/PVC → 7 Gateway PVC subPath mount → etcd 版本管理 → GracefulRestartWorker。K8s 回归 34/34 PASS。
 
 ---
 
@@ -1508,7 +1511,7 @@ WASM 轻量沙箱**可以实现不重启进程**的热更新 (实例级替换)�
 
 ## ✅ #62 [已实现] ModuleLua — LuaJIT 模块支持
 
-> 2026-06-10 | 实现 | 状态: ✅ 已实现 | 设计: `docs/architecture/17-luajit-module-support.md`
+> 2026-06-10 | 实现 | 状态: ✅ 已实现 | 设计: `docs/architecture/09-luajit-module-support.md`
 
 ### 目标
 Thunder 模块系统支持 Lua 脚本，实现不重启进程的热加载。
@@ -1532,7 +1535,7 @@ Thunder 模块系统支持 Lua 脚本，实现不重启进程的热加载。
 Lua 只做 gatekeeper，不碰 IO 和业务计算。
 
 ### 参考设计
-`docs/architecture/17-luajit-module-support.md`
+`docs/architecture/09-luajit-module-support.md`
 
 ### 实施状态
 
@@ -2965,7 +2968,7 @@ void resize(unsigned short n);
 
 ## ✅ #94 [已修复] ThreadPool `std::queue + mutex` 全局锁，高并发 offload 入队串行
 
-> 2026-06-14 | 优化 | 状态: ✅ **已修复**（性能基准 + 实施 + 验证） | 详细分析: `docs/performance/03-threadpool-queue-bench.md`
+> 2026-06-14 | 优化 | 状态: ✅ **已修复**（性能基准 + 实施 + 验证） | 详细分析: `docs/architecture/12-work-stealing-threadpool.md#附录-athreadpool-队列方案性能基准`
 
 ### 现象
 
@@ -4525,7 +4528,7 @@ ThreadPool 支持 Work Stealing 调度：空闲线程主动从其他线程的任
 
 ### 性能结论
 
-单生产者场景 WS 比 LF 快 **2.17x～3.59x**（详见 `docs/performance/04-work-stealing-bench.md`）
+单生产者场景 WS 比 LF 快 **2.17x～3.59x**（详见 `docs/architecture/12-work-stealing-threadpool.md#附录-bwork-stealing-性能基准`）
 
 ### 接入任务（Phase C）
 
@@ -4844,34 +4847,6 @@ succeed in unloading HelloHttp_ModuleLua.so
 
 ---
 
-## 🟡 #132 [设计] SO 模块部署：废弃 Docker 镜像提取，用直接上传
-
-> 2026-07-04 | 设计 | 🟡 待重新评估 — 部署模型已切 Docker 镜像烘焙 .so，上传方案需适配
-
-### 背景
-
-admin-web 有两条 SO 部署路径：
-
-| 路径 | API | 流程 |
-|------|-----|------|
-| Docker 镜像提取 | `POST /api/so-extract` | cmake → docker build → pull image → create container → extract .so → delete container → write disk |
-| 直接上传 | `PUT /plugins/{Type}/{file}` | cmake → curl PUT .so → write disk |
-
-### 问题
-
-Docker 镜像路径不合理：
-
-1. **过度包装**：3MB alpine + 1MB .so 镜像，拉取后只提取 .so 丢掉镜像
-2. **安全风险**：admin-web 需挂载 `/var/run/docker.sock`（root 权限）
-3. **无意义绕圈**：cmake 已产出 .so，Docker 包一层再解包，纯浪费
-4. **docker compose 不兼容**：开发环境没有 registry，每次 build-so + extract 比直接 upload 慢 10 倍
-
-### 决策
-
-**保留直接上传**（`PUT /plugins/{Type}/{file}`），**废弃 Docker 镜像提取**（`POST /api/so-extract`）。
-
-理由：.so 文件就是最终产物，不需要镜像包装。K8s 环境通过 PV 共享存储，直接上传的 .so 对所有 Pod 可见，跟镜像提取效果相同。
-
 ### 改动
 
 | 文件 | 操作 |
@@ -5000,52 +4975,6 @@ URL 解析 → 判断 https://  → 端口默认 443 → TCP 连接 → OpenSSL 
 
 ---
 
-## ✅ #133 [已完成] SO 热更新 etcd+Worker 链路已验证 — NFS 部分废弃
-
-> 2026-07-06 | 运维 | 部署模型已切 Docker 镜像，NFS 挂载不再使用。etcd 通知 + Worker 重载链路已验证通过，SO 热更核心能力就绪。
-
-### 背景
-
-Docker Compose 上 SO 热更新全链路已通过（Unit 153 + Smoke 18/18 + Lua E2E 4/4 + md5 4/4）。
-当前缺少标准 K8s 集群（kubeadm/GKE/AKS）上的端到端验证。kind（Docker-in-Docker K8s）上 hostPath 替代验证通过，但 NFS 挂载受限。
-
-### 需验证
-
-| 步骤 | 内容 |
-|------|------|
-| 部署 | `kubectl apply -f k8s/`（含 nfs-server.yaml） |
-| NFS | hello Pod 挂载 NFS volume，Worker dlopen 读到 NFS 上的新 .so |
-| etcd | admin PUT → etcd 版本变更 → Manager Watch |
-| 重载 | GracefulRestartWorker → dlopen 新 .so → 服务正常 |
-| md5 | PUT 前后 md5 对比：source = NFS = Worker path |
-
-### 前置条件
-
-- 标准 K8s 集群（kubeadm/GKE/AKS，非 kind/K3s）
-- Docker Hub 可达（或 NFS 镜像已预拉取）
-- 节点支持 NFS 客户端（`nfs-common`）
-
-### 验证标准
-
-```
-PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlopen
-  → md5(source) == md5(NFS) == md5(Worker) → hello + lua_echo 响应正常
-```
-
-### 已完成
-
-| 服务 | 已测？ | 测试项 | 结果 |
-|---|---|---|---|
-| HelloHttp | ✅ 2026-07-06 | NFS 四端 md5, Lua 热更新, etcd 通知, Worker 重载 | 全部通过（TEST_STATUS.md §NFS SO共享验证） |
-| Interface | ⚠️ Pod Running 但未测 | 无功能验证 | 未验证 |
-| HelloHttps | ❌ 未部署 | — | 未部署（不在 10/10 Running 列表） |
-| HelloWs | ❌ 未部署 | — | 未部署 |
-| HelloWss | ❌ 未部署 | — | 未部署 |
-
-### 待完成
-
-扩展验证到 HTTPS/WS/WSS/Interface（当前受阻原因见下方 CoreDNS 条目）
-
 ## ✅ hostNetwork 验证通过 — HTTP 直连正常
 
 **结果**: HTTP 直连 192.168.3.61:27006 正常响应 `{"code":0,"msg":"ok"}`
@@ -5086,7 +5015,7 @@ PUT .so → etcd version++ → Manager Watch → GracefulRestart → Worker dlop
 
 ## ✅ #134 [已实现] 加权路由灰度 — etcd 权重键 + Worker 进程内分流
 
-> 2026-07-09 | 特性 | 状态: 🟡 待实施 | 设计文档: `docs/architecture/34-k8s-canary-routing.md`
+> 2026-07-09 | 特性 | 状态: 🟡 待实施 | 设计文档: `docs/architecture/17-k8s-canary-routing.md`
 >
 > **~75 行 C++，纯 etcd，零 K8s 耦合，零额外组件。** 人工控制灰度百分比/回滚。工具：Python CLI → #135，CI → #136（延后），CRD + Operator → #137（延后）。
 
@@ -5144,7 +5073,7 @@ Thunder 已有的基础设施天生适合加权路由：etcd 服务注册/发现
 
 ## ✅ #135 [已实现] 灰度权重管理 Python CLI（防误操作封装）
 
-> 2026-07-09 | 工具 | 状态: ✅ 已实现 | 实现文件: `tools/canary.py` (196 行) | 设计文档: `docs/architecture/34-k8s-canary-routing.md` §4.2
+> 2026-07-09 | 工具 | 状态: ✅ 已实现 | 实现文件: `tools/canary.py` (196 行) | 设计文档: `docs/architecture/17-k8s-canary-routing.md` §4.2
 >
 > etcdctl 拼 JSON 容易出错（引号转义、权重和不等于 100），提供轻量 Python 客户端。底层写的是 #134 同一个 etcd key。
 >
@@ -5196,7 +5125,7 @@ Python CLI 和未来的 GrayRelease CRD 写的是**同一个 etcd key**。先用
 
 ## ⏸️ #137 [运维] GrayRelease CRD + Operator（延后）
 
-> 2026-07-09 | 运维 | 状态: ⏸️ 延后实施 | 设计文档: `docs/architecture/34-k8s-canary-routing.md` 附录 B、`docs/architecture/35-k8s-canary-operator.md`
+> 2026-07-09 | 运维 | 状态: ⏸️ 延后实施 | 设计文档: `docs/architecture/17-k8s-canary-routing.md` 附录 B、`docs/architecture/35-k8s-canary-operator.md`
 >
 > 用 K8s CRD + Go Operator 实现声明式灰度发布。**不阻塞核心路由功能**——Python CLI（#135）已满足当前阶段的调权重需求。
 
@@ -5482,17 +5411,17 @@ P0 完成后应有:
 
 ### 对应设计文档
 
-`docs/architecture/37-admin-web-redesign.md` — 架构 + 页面布局已完成。P0 细化交互细节和视觉规范后进入开发。
+`docs/architecture/18-admin-web-redesign.md` — 架构 + 页面布局已完成。P0 细化交互细节和视觉规范后进入开发。
 
 ### 设计文档
 
-待出 `docs/architecture/37-admin-web-redesign.md`，包含完整页面线框图、交互流程、API 约定。
+待出 `docs/architecture/18-admin-web-redesign.md`，包含完整页面线框图、交互流程、API 约定。
 
 ---
 
 ## 🆕 2026-07-11 Canary 灰度路由 K8s 全链路测试 — 发现的问题
 
-> **测试结果 (2026-07-12)**：K8s Canary E2E **11/11 全部通过** ✅。Docker Compose Canary 手动验证通过 ✅。详见 `docs/architecture/34-k8s-canary-routing.md` §4.1 Worker 日志示例。
+> **测试结果 (2026-07-12)**：K8s Canary E2E **11/11 全部通过** ✅。Docker Compose Canary 手动验证通过 ✅。详见 `docs/architecture/17-k8s-canary-routing.md` §4.1 Worker 日志示例。
 
 ### ✅ #14 [已修复] 7 个服务 entrypoint 使用 `exec` 导致容器 CrashLoopBackOff
 
@@ -5665,7 +5594,7 @@ bool CBsonObject::GetKeys(std::vector<std::string> &keys)const {
 | 文件 | 说明 |
 |------|------|
 | `tests/e2e/test_canary_compose.py` | 9 个用例（etcd CRUD + Worker Watch + 权重分发），对标 K8s 版 |
-| `docs/architecture/37-entrypoint-and-docker-compose-canary.md` | entrypoint.sh 说明 + Compose canary 测试指南 |
+| `docs/architecture/19-entrypoint-and-docker-compose-canary.md` | entrypoint.sh 说明 + Compose canary 测试指南 |
 
 > Compose E2E 自动化 10/10 需要在干净环境运行（K8s hostNetwork 服务占用端口时 compose hello 无法绑定）。K8s E2E 11/11 已覆盖全部 canary 链路。
 
@@ -5746,3 +5675,991 @@ Docker Compose 回归不受影响（volume 挂载直接读宿主机文件）。
 
 > 本次 `EtcdGrpcConnector.cpp` 加 30s canary 兜底 + admin-web `USE_MOCK=false` 已通过手动 `make && docker build && kubectl rollout restart` 验证部署生效。
 
+## ✅ #142 [已实现] SO 热更新完整链路：上传 → 版本管理 → 下发 → 审计
+
+> 2026-07-16 | 需求 → 2026-07-17 完成 | 依赖: #45 (已修复), #139 (admin-web Go 重写)
+
+### 核心原则：上传 ≠ 下发
+
+```
+上传制品           版本管理              下  发               审  计
+────────           ──────              ──────             ──────
+PUT .so →   admin 本地制品库   →  选版本 → 写 NFS        → 谁、什么文件
+            /app/artifacts/       确认下发 → etcd version++    什么时间、目标节点
+            {Type}/v{N}.so                  → 审计记录        → 可追溯
+                                               ↓
+                                          Gateway 热重载
+                                               ↓
+                                          🤍回滚到历史版本
+```
+
+### 当前状态 (2026-07-16 23:36)
+
+| 组件 | 状态 | 说明 |
+|------|:---:|------|
+| 制品库上传 API `PUT /api/plugins/{Type}/{file}` | ✅ | 写入 `/app/data/artifacts/{Type}/`（PVC subPath `.admin-web` 持久化） |
+| 制品库列表 API `GET /api/plugins/{Type}` | ✅ | 列制品库文件，按时间倒序 |
+| 下发 API `POST /api/plugins/{Type}/deploy` | ✅ | 制品库→NFS + etcd version++ + audit log |
+| 已部署列表 API `GET /api/plugins/{Type}/deployed` | ✅ | 列 NFS 上已下发 .so 文件 |
+| 审计 API `GET /api/audit` | ✅ | SQLite audit_log 表查询，支持 ?type= 过滤 |
+| 前端 UI：上传→制品库→下发 三段分离 | ✅ | 制品卡片 + 已部署卡片，确认下发按钮对接到 API |
+| 前端 UI：类型选择器修复 | ✅ | 补全 HelloHttp/Https/Ws/Wss/Logic/Interface |
+| NFS 共享存储 | ✅ | #45 已修复，34/34 PASS |
+| admin.db 持久化 | ✅ | `/app/data/admin.db` 存 PVC subPath，Pod 重启不丢 |
+| etcd 版本管理 + GracefulRestart | ✅ | Manager 逻辑在 |
+
+### 待完成步骤
+
+**A. 后端 API（handler/handler.go）** ✅ 全部已实现 (2026-07-17 确认)
+
+| # | 接口 | 状态 |
+|---|------|:---:|
+| A1 | `POST /api/plugins/{Type}/deploy` | ✅ handler.go:311-312, deploySO() L599-642 |
+| A2 | `GET /api/plugins/{Type}/deployed` | ✅ handler.go:316-317, listDeployed() L645-660 |
+| A3 | `GET /api/audit` | ✅ handler.go:662-668, Audit() |
+| A4 | 审计表初始化 | ✅ sqlite.go:18-23, CREATE TABLE audit_log |
+
+**B. 前端 UI（static/index.html）** ✅ 全部已实现 (2026-07-17 确认)
+
+| # | 位置 | 改什么 | 状态 |
+|---|------|--------|:---:|
+| B1 | `plugType` 选项 | etcd registry 动态填充 → HelloHttp/Https/Ws/Wss/Logic/Interface | ✅ L220-228 |
+| B2 | `plugVer` | 删除版本选择器 | ✅ L115 注释 |
+| B3 | 按钮文字 | "上传" | ✅ L116 |
+| B4 | "已部署插件"卡片 | 新增 deployTable，调 A2 API | ✅ L119-122 (2026-07-17 修复表格分离) |
+| B5 | "制品库"卡片 | 现有卡片改名 + 调 API.soList | ✅ L119 (2026-07-17 修复) |
+| B6 | `deployPlugin()` | 调 A1，含 loading/success/error | ✅ L600-604 |
+| B7 | 节点 tab | ⚙ 模块按钮 (跳转到插件页+自动选类型) | ✅ L271 (2026-07-17 实现 switchToPluginsForType) |
+
+**C. 回归测试** ✅ 已实现 (k8s/regression-test.sh §7, L234-270)
+
+| # | 测试项 | 状态 |
+|---|--------|:---:|
+| C1 | deploy → NFS → hello Pod 可见 | ✅ L246-261 |
+| C2 | audit 查询 | ✅ L263-270 |
+
+**D. 客户端 CLI** ⏸ 延后
+
+| # | 命令 | 状态 |
+|---|------|:---:|
+| D1 | `./deploy.sh so-upload` | ⏸ curl 直接调 API 即可 |
+
+---
+
+## ✅ #144 [已修复] Interface EtcdGrpcConnector Watch 断流后未自动重建
+
+> 2026-07-17 | 发现 → 已修复
+
+### 现象
+- Interface 运行 86 分钟后 etcd Watch 流断开，后续所有 canary 权重变更、新节点注册均不可见
+- 日志停在 `16:46:14`（Watch 断开时间），之后无任何 `OnWatchEvent` / `CanaryParsed` 输出
+- 重启 Interface 后恢复正常
+
+### 根因
+两层问题：
+
+**1. Watch 静默 Hang 无人检测**（主因）
+gRPC Watch stream 因 etcd Pod 重启/网络抖动后，`cq_.Next()` 可能 hang 在损坏的 TCP 连接上（Linux 默认 TCP keepalive 需 2 小时才检测断开）。`OnWatchEnded` 回调永不触发 → `m_watchEnded` 永远为 false → Watch 重建逻辑永不执行。
+
+**2. 重建失败时 gRPC 线程直接死亡**（次因）
+即使 `OnWatchEnded` 触发，若 `DoInitialSnapshot()` 的 `client.ls()` 抛异常，会直接跳到 `GrpcThreadMain` 的外层 catch → 退出线程 → keepalive 停止 → 节点失联。没有重试机制。
+
+### 修复 (EtcdGrpcConnector.cpp/hpp)
+| # | 修复 | 说明 |
+|---|------|------|
+| 1 | **Watch 健康检查** | 新增 `m_lastWatchEventSec` 原子时间戳，在 `OnWatchEvent` 中更新。每 1s tick 检查：若无事件超过 `kWatchHealthTimeout`(45s)，触发重建 |
+| 2 | **try-catch 保护** | Watch 重建代码块包在 try-catch 内，异常不杀死 gRPC 线程 |
+| 3 | **防抖机制** | `kWatchRebuildBackoff`=5s，避免重建失败时忙循环 |
+| 4 | **Hung Watcher 清理** | 健康检查路径用 `release()` 分离旧 Watcher（旧线程可能 hung，`reset()`→`task_.join()` 会死锁）；`OnWatchEnded` 路径用 `reset()`（线程已退出，安全） |
+| 5 | **Canary/Registry 独立回调** | 新增 `OnCanaryWatchEnded()`，canary watcher 断开不再绑定 registry watcher 的回调 |
+
+### 复现
+- etcd 连接中断（etcd Pod 重启、网络抖动）
+- **修复后**：Watch 静默最长 45s 后自动触发健康检查重建，gRPC 线程不死亡
+
+---
+
+## ✅ #145 [已修复] 节点页面 _nodeDetailCache 未声明导致加载失败
+
+> 2026-07-17 | 发现 → 已修复
+
+### 现象
+节点页面切换 LOGIC 等服务时报 `⚠ 无法加载 (net: _nodeDetailCache is not defined)`
+
+### 根因
+`index.html:243` 使用了 `_nodeDetailCache = _nodeDetailCache || {}` 但未声明变量，strict mode 下抛 ReferenceError 导致 fetch promise reject。
+
+### 修复
+`index.html:216` 加 `var _nodeDetailCache = {};`
+
+---
+
+## ✅ #146 [已实现] K8s 回归测试环境隔离 — 构建→部署→测试→清理 全流程
+
+> 2026-07-17 | 需求 → 已实现 | `./deploy.sh test k8s` 一键执行 5 阶段
+
+### 问题
+
+当前 `k8s/regression-test.sh` 直接在现有 Deployment 上跑测试，存在以下环境问题：
+
+| 问题 | 影响 |
+|------|------|
+| 用老代码跑测试 | C++/Go/前端改完没 rebuild + rollout，测的是旧二进制 |
+| Pod 残留缓存 | 上次测试的日志/数据/etcd 状态残留，干扰本次结果 |
+| 测试完不清理 | 临时文件、测试数据、审计记录一直堆积 |
+| 前次实例影响 | etcd 中残存旧 slot/lease/registry，新节点注册被拒 |
+| 无构建产物校验 | 不确定 Docker 镜像是否包含了最新代码 |
+
+### 标准化测试流程
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│0.PRE-CHK │ → │ 1. BUILD │ → │ 2.DEPLOY │ → │ 3. TEST  │ → │ 4.CLEAN  │
+│ 检查端口  │    │ 全新构建  │    │ 滚动更新  │    │ 回归测试  │    │ 清理残骸  │
+│ 清理僵尸  │    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+└──────────┘
+```
+
+### 阶段 0: PRE-CHECK（构建前检查 + 清理老实例）
+
+> 构建前必须先确认没有老实例占用资源——hostNetwork 的 Pod 会抢占宿主机端口，僵尸容器/Pod 消耗 CPU/内存，残留进程可能锁住文件。
+
+| 步骤 | 命令 | 检查 |
+|------|------|------|
+| 0.1 端口冲突检查 | `ss -tlnp \| grep -E ':(27006\|27008\|27010\|27012\|27443\|30090)\b'` | 期望输出为空（无老进程占用） |
+| 0.2 僵尸 Pod 清理 | `kubectl delete pod -n thunder --field-selector=status.phase!=Running --force --grace-period=0` | 清掉 Pending/Failed/Evicted Pod |
+| 0.3 Pending Pod 原因定位 | `kubectl describe pod -n thunder \| grep -A5 "Events:" \| head -30` | 看是否有端口冲突/资源不足 |
+| 0.4 宿主机端口进程 | `lsof -i :27006` 等 | 如果是无关老进程 → kill |
+| 0.5 宿主机残留容器 | `docker ps -a --filter "status=exited" \| grep thunder` | 时间久的 → `docker rm` |
+| 0.6 CPU/内存余量 | `free -h && nproc` 确认 ≥4 核空闲、≥8GB 可用 | 资源不足 → 先缩容或清理 |
+| 0.7 磁盘余量 | `df -h /var/lib/docker /` 确认 ≥10GB 可用 | 磁盘满 → docker 构建失败 |
+| 0.8 Docker 缓存检查 | `docker system df` 看 Build Cache 大小 | 超 5GB → `docker builder prune -f` |
+
+**清理策略**：
+```
+0.x 如果发现老实例 → 强制清理后再进入 BUILD
+     kubectl delete pod -n thunder --all --force --grace-period=0  # 最彻底
+     docker rm -f $(docker ps -aq --filter "name=thunder")          # 残留容器
+     等待 5s → 再次检查端口冲突 → 确认清干净后才 make
+```
+
+### 阶段 1: BUILD（构建）
+
+| 步骤 | 命令 | 检查 |
+|------|------|------|
+| 1.1 C++ 全量编译 | `cd build && make -j$(nproc)` | 0 error |
+| 1.2 构建 Interface 镜像 | `docker build -f deploy/Interface/Dockerfile -t thunder-interface:test .` | SHA256 含新代码 |
+| 1.3 构建 Hello 镜像 | `docker build -f deploy/HelloHttp/Dockerfile -t thunder-hello:test .` | 同上 |
+| 1.4 构建 admin-web 镜像 | `docker build -f deploy/admin-web/Dockerfile -t thunder-admin-web:test deploy/admin-web/` | 同上 |
+| 1.5 校验 SO 文件无变化 | `./deploy.sh build-so all` 只重建变更的 | SHA256 增量 |
+
+### 阶段 2: DEPLOY（部署）
+
+| 步骤 | 命令 | 检查 |
+|------|------|------|
+| 2.1 清 etcd 残留 | `etcdctl del /thunder/ --prefix` | 确认 0 key |
+| 2.2 滚动更新 Interface | `kubectl set image deploy/thunder-interface hello=thunder-interface:test` | Pod Ready |
+| 2.3 滚动更新 Hello | `kubectl set image deploy/thunder-hello hello=thunder-hello:test` | Pod Ready |
+| 2.4 滚动更新 admin-web | `kubectl set image deploy/thunder-admin-web admin-web=thunder-admin-web:test` | Pod Ready |
+| 2.5 等待所有 Pod Ready | `kubectl wait --for=condition=Ready pods --all -n thunder --timeout=120s` | 0 pending |
+| 2.6 校验 etcd 重新注册 | 等待所有节点注册完成 | registry 条目 ≥ 7 |
+
+### 阶段 3: TEST（测试）
+
+| 步骤 | 命令 |
+|------|------|
+| 3.1 全量回归 | `bash k8s/regression-test.sh` |
+| 3.2 Watch 混沌测试（#144） | kill etcd Pod → 等待 Watch 重建 → 验证路由恢复 |
+| 3.3 SO 下发回归（#142） | 上传→制品库→下发→NFS→audit |
+
+### 阶段 4: CLEAN（清理）
+
+| 步骤 | 命令 | 说明 |
+|------|------|------|
+| 4.1 删测试 artifacts | `kubectl exec admin-web -- rm -f /app/data/artifacts/*/_regression_*` | 制品库测试文件 |
+| 4.2 删 NFS 测试文件 | `kubectl exec admin-web -- rm -f /data/thunder/plugins/*/_regression_*` | NFS 测试 .so |
+| 4.3 清 etcd 测试数据 | `etcdctl del /thunder/config/ --prefix` 只删测试键 | 保留 registry |
+| 4.4 清 SQLite 测试记录 | admin-web Pod 重启或 DELETE audit_log WHERE target LIKE '%_regression_%' | 审计残留 |
+| 4.5 回滚镜像标签（可选） | `kubectl rollout undo deploy/thunder-interface` 等 | 恢复稳定版 |
+
+### 防缓存措施
+
+| 措施 | 说明 |
+|------|------|
+| `docker build --no-cache` | 关键层不用缓存 |
+| `imagePullPolicy: Always` + 新 tag | 确保 Pod 拉最新镜像 |
+| `kubectl rollout restart` | 强制重建 Pod，不依赖 imagePullPolicy |
+| SHA256 diff | 构建后校验二进制/JS/HTML 的 SHA256 确认不同 |
+| `kubectl delete pod --force` 再重建 | 最彻底（但慢） |
+
+### 自动化脚本
+
+目标：一个脚本 `./deploy.sh test k8s` 执行全部 5 阶段，输出 36+/36 PASS 才算通过。
+
+```
+./deploy.sh test k8s
+  → PRE-CHK: 端口检查 + 清理僵尸Pod/容器 + 资源余量确认
+  → BUILD:   make -j + docker build (3 images + SO images)
+  → DEPLOY:  kubectl rollout restart + wait Ready + verify etcd
+  → TEST:    regression-test.sh
+  → CLEAN:   rm test artifacts + test audit + optional rollback
+  → RESULT:  36/36 PASS or FAIL with details
+```
+
+### 验证标准
+
+除 36 项全通过外，还需确认：
+1. `docker image inspect` 的 Layer SHA256 与 `git diff` 对应的文件变更一致
+2. Pod 内二进制 md5 ≠ 部署前（证明新代码已生效）
+3. 清理后 etcd `/thunder/config/` 不残留测试键
+4. 清理后 NFS 不残留测试 .so 文件
+
+---
+
+## 🔵 #147 [优化] docker-compose 拆分为 infra-only + 全量两份
+
+> 2026-07-18 | 优化建议 | 参考 OpenIM 部署策略 | 状态: 🔵 待实施
+
+### 背景
+
+当前 `docker/docker-compose.yml` 把所有业务服务（logic/logic-v2/hello/hello_ws/hello_https/interface/admin-web）和基础设施（redis/mysql/etcd×3）混在一个文件里。日常开发改一行代码就要重新 build 镜像，调试体验重。
+
+参考 OpenIM 的做法：docker-compose 只部署基础设施依赖（Mongo/Redis/Kafka/MinIO/Etcd），业务服务在宿主机裸跑 `go run` 调试。
+
+### 方案
+
+拆成两份 compose 文件：
+
+```
+docker/
+├── docker-compose.infra.yml    # 仅 redis/mysql/etcd，日常开发用
+└── docker-compose.yml           # 全量（含业务服务），CI/CD 集成测试用
+```
+
+**`docker-compose.infra.yml`**（开发环境）:
+- redis + mysql + etcd×3
+- 不做业务服务容器化
+- 开发者宿主机 `./deploy.sh build && cd deploy/Logic && ./node.sh start`
+- 改代码 → 重编译 → 重启进程，秒级反馈
+
+**`docker-compose.yml`**（CI 全量）:
+- 保持现状：infra + 所有业务服务
+- 用于 `./deploy.sh test e2e` 集成测试
+- 或加 `include` 指令引用 infra.yml（Compose v2.20+）避免重复定义
+
+### 附带改进
+
+| # | 改进 | 说明 |
+|---|------|------|
+| 1 | 镜像版本 pin 死 | `redis:7-alpine` → `redis:7.4-alpine`，`mariadb:11.2` → `mariadb:11.2.4`，防止浮动 tag 暗升导致 CI 断 |
+| 2 | 基础设施自举初始化脚本 | 参考 OpenIM 的 etcd 容器启动脚本（自动创建用户/角色/权限），抽取为独立脚本而非嵌在 yaml 里 |
+| 3 | `dev_up_logs.sh` 适配 | 支持 `./dev_up_logs.sh infra` 只启 infra，`./dev_up_logs.sh all` 启全量 |
+
+### 预期收益
+
+- 日常开发不用 `docker compose build`，改代码直接重编译运行
+- CI 全量集成测试不受影响
+- 镜像版本可复现，不会因依赖浮动导致"昨天还能跑今天挂了"
+
+### 参考
+
+- OpenIM `open-im-server/docker-compose.yml`：只部署 Mongo/Redis/Kafka/MinIO/Etcd + 前端，不含后端微服务
+- OpenIM `open-im-server/deployments/deploy/`：K8s 全量部署（11+ 微服务全部 K8s）
+
+---
+
+## 🔵 #148 [安全] K8s Secret 规范化 — 密码/敏感信息不应明文写在 conf/*.json
+
+> 2026-07-18 | 安全改进 | 参考 OpenIM Secret 设计 | 状态: 🔵 待实施
+
+### 问题
+
+当前 thunder 的敏感信息直接明文写在配置文件和环境变量中：
+
+| 位置 | 内容 | 风险 |
+|------|------|------|
+| `deploy/*/conf/*.json` | Redis 密码 (`"password":"thunder"`)、MySQL 密码 | 提交到 Git 即泄露 |
+| `k8s/*.yaml` Deployment env | etcd 端点、数据库连接串 | 任何人能 `kubectl describe` 看到 |
+| `docker-compose.yml` | `MARIADB_ROOT_PASSWORD: thunder` | 同上 |
+
+OpenIM 的做法是每种依赖一个独立 Secret，Pod 通过 `secretKeyRef` 注入环境变量：
+
+```yaml
+# OpenIM 模式
+env:
+  - name: IMENV_REDIS_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: openim-redis-secret
+        key: redis-password
+  - name: IMENV_MONGODB_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: openim-mongo-secret
+        key: mongo_openim_username
+```
+
+### 方案
+
+新增 `k8s/secrets/thunder-secrets.yaml`，按依赖拆分：
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thunder-redis-secret
+  namespace: thunder
+type: Opaque
+data:
+  redis-password: <base64>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thunder-mysql-secret
+  namespace: thunder
+type: Opaque
+data:
+  mysql-root-password: <base64>
+  mysql-database: <base64>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thunder-etcd-secret
+  namespace: thunder
+type: Opaque
+data:
+  etcd-endpoint: <base64>
+```
+
+然后修改所有 Deployment，把明文 env 替换为 `secretKeyRef`。
+
+### 改动清单
+
+| # | 文件 | 动作 |
+|---|------|:---:|
+| 1 | 新建 `k8s/secrets/thunder-secrets.yaml` | 创建 Redis/MySQL/Etcd Secret |
+| 2 | `k8s/hello-deployment.yaml` 等 7 个 Gateway Deployment | env 改为 secretKeyRef |
+| 3 | `docker-compose.yml` | 敏感值改为 `${VAR}` 引用 `.env` 文件，`.env` 加入 `.gitignore` |
+| 4 | `conf/*.json` | 密码字段改为占位符，运行时从环境变量注入 |
+| 5 | `.gitignore` | 加 `k8s/secrets/*-values.yaml`（含实际 base64 值的文件不入库） |
+
+### 注意事项
+
+- 实际 base64 值**不能**提交到 Git（Secret yaml 可以用占位符，部署前由 CI/运维替换）
+- `docker-compose.yml` 的 `.env` 文件同样不入库，提供 `.env.example` 作为模板
+- 机密信息轮转流程（改 Secret → `kubectl rollout restart`）需要文档化
+
+### 参考
+
+- OpenIM `deployments/deploy/redis-secret.yml`、`mongo-secret.yml`、`kafka-secret.yml`、`minio-secret.yml`
+
+---
+
+## 🔵 #149 [优化] K8s 统一副本基线 — 全场 replicas ≥ 2
+
+> 2026-07-18 | 高可用改进 | 参考 OpenIM 全场 2 副本策略 | 状态: 🔵 待实施
+
+### 背景
+
+OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来三个好处：
+
+1. **容量规划简单** — 不够就全加，不用逐个掂量哪个服务该几个副本
+2. **故障自愈一致** — 每个服务都有冗余，单 Pod 挂了自动漂移，不会出现"这个服务单副本挂了全站不可用"
+3. **滚动更新零中断** — 多副本才能 `maxUnavailable: 0`，更新时始终有 Pod 在跑
+
+### 当前 thunder 副本分布
+
+| 服务 | 当前 replicas | 问题 |
+|------|:---:|------|
+| thunder-hello | 1 | 单点 — Pod 挂了 HTTP 入口全断 |
+| thunder-hello-https | 1 | 单点 |
+| thunder-hello-ws | 1 | 单点 |
+| thunder-hello-wss | 1 | 单点 |
+| thunder-interface | 1 | 单点 — Pod 挂了客户端全断 |
+| thunder-logic | 1 | HPA 可扩，但基线只有 1 |
+| thunder-logic-v2 | 1 | 同上 |
+| thunder-admin-web | 1 | 可接受（管理后台，短时不碍事） |
+
+### 建议
+
+| 服务 | 建议 replicas | 理由 |
+|------|:---:|------|
+| hello / hello-https / hello-ws / hello-wss | **2** | 对外入口，不能单点 |
+| interface | **2** | 客户网关，TCP 长连接，挂了就全断 |
+| logic | **2** | 核心业务，HPA 基线从 1→2 |
+| logic-v2 | 1 | 灰度版本，可以单副本 |
+| admin-web | 1 | 管理后台，非关键路径 |
+
+### 前提条件
+
+先把 #148 Secret 做了再加副本，否则多副本都是带明文密码跑的。
+
+### 预期收益
+
+- 任一 Pod OOM/CrashLoopBackoff 时服务不中断
+- `kubectl rollout restart` 时 `maxUnavailable: 0` + `maxSurge: 1` → 零中断滚动更新
+- 容量不够时统一 scale（`kubectl scale deploy --all --replicas=3`）
+
+### 参考
+
+- OpenIM 全场 11 个 Deployment + 3 个 StatefulSet 全部 `replicas: 2`
+
+---
+
+## 补充说明：Ingress 统一入口 ⛔ 暂不实施
+
+**原因**：thunder 使用 `hostNetwork: true`，Pod 直接绑定宿主机端口，没有 K8s Service 层。且 Interface 是 TCP 私有协议，标准 HTTP Ingress 无法代理。即便引入 TCP Ingress Controller，收益不抵复杂度增量。**当前 NodePort/hostNetwork 方案对 thunder 的协议矩阵是合适的。**
+
+## 补充说明：ConfigMap 统一管理 ⛔ 暂不实施
+
+**原因**：thunder 已有的 **etcd config watch**（长连接 push、实时下发、版本历史+回滚）比 K8s ConfigMap 挂载更优。ConfigMap 有 kubelet sync interval 延迟（默认 ~1min），且不支持推送通知。**etcd 方案保留。**
+
+## 补充说明：K8s DNS 服务发现 ⛔ 暂不实施
+
+**原因**：etcd 注册中心已深度集成（灰度路由 NODE_VERSION、配置下发、SO 热更新、租约心跳故障转移），替换为 K8s DNS 需要重写全部路由/配置/模块管理逻辑，ROI 极低。OpenIM 之所以能用 K8s DNS，是因为它的服务发现需求很薄（仅寻址），而 thunder 的 etcd 承担了注册+配置+模块+灰度四合一。**etcd 方案保留。**
+
+---
+
+## 🔵 #150 [分析] IoT 协议支持可行性 — MQTT
+
+> 2026-07-18 | 分析 | 状态: 🔵 待评估
+
+### 背景
+
+当前 Thunder 支持的协议：
+
+| 协议 | Codec | 典型场景 |
+|------|:---:|------|
+| HTTP | HttpCodec (picohttpparser) | REST API |
+| HTTPS | HttpCodec + SSL | 加密 REST |
+| WebSocket | CodecWebSocketJson/Pb | 长连接双向通信 |
+| WSS | CodecWebSocket + SSL | 加密长连接 |
+| TCP 私有协议 | CodecThunder | 内部 S2S |
+
+**缺失**：MQTT — 物联网领域的事实标准协议。MQTT 是 IBM 发布的 OASIS 标准，广泛用于智能家居、车联网、工业 IoT 等场景。
+
+### MQTT 协议特点
+
+| 特性 | 说明 | 对 Thunder 的意义 |
+|------|------|------|
+| 发布/订阅模型 | Topic-based pub/sub，非请求-响应 | 需要新的路由模型（不是 SendToNext，是 Topic 匹配） |
+| QoS 0/1/2 | 最多一次 / 至少一次 / 恰好一次 | 需要消息确认 + 持久化 + 重传逻辑 |
+| 遗嘱消息 (Will) | 客户端断连后自动发布 | 需要连接状态跟踪 |
+| 持久会话 (Clean Session) | 断连重连后恢复订阅 | 需要 Session 存储（Redis/etcd） |
+| 极简协议头 | 最小 2 字节固定头 | 性能好，适合弱网/低带宽 |
+| 保持连接 (Keep Alive) | 心跳由客户端发起 | 与 Thunder 的 Worker 心跳模型兼容 |
+| 长连接 | TCP/TLS 持久连接 | 适合 Thunder 的 libev 事件模型 |
+
+### 协议开销对比
+
+| | HTTP/1.1 | WebSocket | MQTT |
+|------|:---:|:---:|:---:|
+| 最小帧头 | ~200 bytes | 2-14 bytes | **2 bytes** |
+| 连接模型 | 短连接（Keep-Alive 可选） | 长连接 | 长连接 |
+| 消息模型 | 请求-响应 | 双向帧 | 发布-订阅 + 双向 |
+| 弱网适应性 | 差（TCP 握手频繁） | 中 | **强**（QoS + 持久会话） |
+| 典型场景 | Web API | 实时推送 | 物联网设备 |
+
+### 实现路径
+
+```
+Thunder MQTT 支持（新增 codec）
+  │
+  ├── code/Net/src/codec/CodecMqtt.cpp        ← MQTT 3.1.1 / 5.0 编解码
+  ├── code/Hello/MqttBroker/                  ← MQTT Broker 节点
+  │     ├── ModuleMqttConnect.so              ← CONNECT/CONNACK 握手
+  │     ├── ModuleMqttSubscribe.so            ← SUBSCRIBE/SUBACK Topic 管理
+  │     ├── ModuleMqttPublish.so              ← PUBLISH/PUBACK QoS 路由
+  │     ├── ModuleMqttWill.so                 ← 遗嘱消息
+  │     └── ModuleMqttSession.so              ← 持久会话恢复
+  ├── deploy/MqttBroker/                      ← 部署配置
+  │     └── conf/MqttBroker.json
+  └── k8s/mqtt-broker-deployment.yaml         ← K8s 部署
+```
+
+### 与现有能力复用
+
+| 现有能力 | MQTT 如何复用 |
+|----------|-------------|
+| libev 事件循环 | MQTT 长连接直接复用 epoll |
+| Worker 模型 | 每个 Worker 管理若干 MQTT 连接 |
+| Codec 接口 | 新增 `CODEC_MQTT` 枚举 + CodecMqtt 实现 |
+| Module 接口 | 每个 MQTT 包类型对应一个 Module（CONNECT→ModuleMqttConnect） |
+| SendToClientFast | MQTT PUBLISH 回推复用 |
+| SendToNext / SendToConHash | MQTT 消息路由到后端处理 |
+| etcd 注册发现 | MQTT Broker 节点注册 + 路由 |
+| SO 热更新 | MQTT Module 热更新复用 #45 链路 |
+| hostNetwork | IoT 设备直连 Broker，低延迟 |
+
+### 需要新增的能力
+
+| 能力 | 说明 | 复杂度 |
+|------|------|:---:|
+| Topic 匹配引擎 | 通配符 `+`（单级）、`#`（多级）匹配 | 中 |
+| QoS 状态机 | PUBACK/PUBREC/PUBREL/PUBCOMP 四段握手 | 中 |
+| 持久会话存储 | Redis/etcd 存 clientId→订阅列表+未读消息 | 中 |
+| 遗嘱消息 | 连接状态追踪 + 断连触发发布 | 低 |
+| Retain 消息 | 每个 Topic 保留最后一 条消息，新订阅立即可得 | 低 |
+
+### 参考实现
+
+| 项目 | 语言 | 说明 |
+|------|------|------|
+| [EMQX](https://github.com/emqx/emqx) | Erlang | 最流行的开源 MQTT Broker，百万连接 |
+| [Mosquitto](https://github.com/eclipse/mosquitto) | C | Eclipse 基金会，轻量级 |
+| [NanoMQ](https://github.com/nanomq/nanomq) | C | EMQX 团队出品，基于 NNG，边缘轻量 |
+| [paho.mqtt.c](https://github.com/eclipse/paho.mqtt.c) | C | Eclipse MQTT C 客户端库（可参考协议解析） |
+
+### 场景分析
+
+| 场景 | MQTT 是否合适 | 说明 |
+|------|:---:|------|
+| 智能家居设备上报 | ✅ | 低带宽、QoS 1、持久会话 |
+| 车联网遥测 | ✅ | 弱网、QoS 0 高频上报 |
+| 工业传感器 | ✅ | 低功耗、Will 遗嘱告警 |
+| 消息推送（替代 WS） | ⚠️ | MQTT 可以做，但 WebSocket 对 Web/App 更友好 |
+| 内部 S2S | ❌ | MQTT 是设备协议，内部 RPC 用 TCP 私有协议更好 |
+
+### 建议
+
+**分两阶段评估**：
+
+| 阶段 | 内容 | 产出 |
+|:---:|------|------|
+| P0 | 调研 paho.mqtt.c 协议解析代码量 + 与 Thunder Codec 接口的适配难度 | 可行性报告 |
+| P1 | 实现最小 MQTT 3.1.1 Broker（CONNECT + SUBSCRIBE + PUBLISH QoS 0） | POC 可演示 |
+
+### 预期收益
+
+- Thunder 从"HTTP/WS 网关"扩展为**全协议接入层**
+- 物联网场景天然适合 Thunder 的高性能长连接模型
+- MQTT 2 字节最小帧头 + libev epoll → 单机可支撑百万级 IoT 设备连接
+- 与现有 SO 热更新、灰度路由、etcd 配置管理体系无缝集成
+
+---
+
+## 🔵 #151 [测试] 稳定性压测 — 持续 3 分钟，监控 CPU/内存，覆盖 ev + asio_uring
+
+> 2026-07-18 | 测试基础设施 | 状态: 🟡 部分完成 (HTTP+asio_uring 通过, HTTPS/WS/ev 待补)
+
+### 目标
+
+对 Thunder 各协议网关进行**持续压测**（≥3 分钟），同时监控进程 CPU 和内存，验证：
+1. **无崩溃** — 压测期间进程不宕、不 OOM、不 core dump
+2. **内存稳定** — 无持续上涨（泄漏），RSS 在合理范围波动
+3. **CPU 正常** — 无异常飙升，空载回落
+4. **双 IO 后端覆盖** — `ev` (epoll) 和 `asio_uring` 两套都测
+
+### 测试矩阵
+
+| 协议 | 端口 | ev (epoll) | asio_uring |
+|------|:---:|:---:|:---:|
+| HTTP 短连接 | 27006 | ✅ 测 | ✅ 测 |
+| HTTP Keep-Alive | 27006 | ✅ 测 | ✅ 测 |
+| HTTPS | 27443 | ✅ 测 | ✅ 测 |
+| WebSocket | 27010 | ✅ 测 | ✅ 测 |
+| WSS | 27012 | ⚠️ 如部署 | ⚠️ 如部署 |
+
+### IO 后端切换方式
+
+```json
+// deploy/HelloHttp/conf/Hello.json → "io_backend": "ev" 或 "asio_uring"
+// 改配置 → 重启服务 → 压测
+```
+
+```bash
+# 当前实现: Labor.cpp:459
+oJsonConf.Get("io_backend", strBackend);
+if (strBackend == "asio_uring") { ... }  // 失败自动 fallback 到 ev
+```
+
+### 压测工具
+
+| 工具 | 协议 | 适用 |
+|------|:---:|------|
+| [wrk2](https://github.com/giltene/wrk2) | HTTP/HTTPS | 恒定速率压测，避免协调遗漏 |
+| [h2load](https://nghttp2.org/documentation/h2load-howto.html) | HTTP/HTTPS | 多连接并发 |
+| [websocat](https://github.com/vi/websocat) | WS/WSS | WebSocket 压测 |
+| 自写 Python 脚本 | HTTP | 已有 `tests/e2e/test_stress.py`，但只有 30s、未监控资源 |
+
+### 监控方案
+
+```bash
+# 采样间隔 1s，持续写入文件
+while true; do
+  PID=$(pgrep -f "Hello_robot|Interface_robot" | head -1)
+  if [ -n "$PID" ]; then
+    CPU=$(ps -p $PID -o %cpu --no-headers)
+    RSS=$(awk '/VmRSS/{print $2}' /proc/$PID/status)
+    FD_COUNT=$(ls /proc/$PID/fd 2>/dev/null | wc -l)
+    echo "$(date +%H:%M:%S) cpu=${CPU}% rss=${RSS}kB fds=${FD_COUNT}"
+  fi
+  sleep 1
+done > /tmp/stability_monitor.log
+```
+
+### 测试脚本设计
+
+```bash
+#!/bin/bash
+# tests/stability_test.sh
+# 用法: ./stability_test.sh [--backend ev|asio_uring] [--duration 180]
+
+DURATION=${DURATION:-180}   # 3 分钟
+BACKEND=${BACKEND:-ev}
+
+# 1. 切换 IO 后端 → 重启服务
+# 2. 启动资源监控（后台）
+# 3. wrk2 打流（恒定速率）
+# 4. 等待 DURATION
+# 5. 停止监控 + 汇总结果
+
+# 判定标准:
+#   - 压测期间进程存活（pgrep 持续返回 PID）
+#   - wrk2 报告 0 socket errors / 0 timeout
+#   - RSS 增长率 < 10%（无内存泄漏）
+#   - CPU 压测后 10s 内回落到 <5%
+#   - fd 数量稳定（无泄漏）
+```
+
+### 判定标准
+
+| 指标 | 阈值 | 说明 |
+|------|:---:|------|
+| 进程存活 | **100%** | 压测期间不能宕 |
+| 请求成功率 | **≥ 99.9%** | wrk2 Non-2xx/errors = 0 |
+| Socket errors | **0** | connect timeout / read timeout / reset |
+| RSS 增长 | **< 10%** | 3 分钟内 RSS 增长不超过初始值的 10% |
+| fd 泄漏 | **±5%** | 文件描述符数量稳定 |
+| CPU 回落 | **10s 内 <5%** | 停止压测后 CPU 快速下降到空载水平 |
+| dmesg | **无新错误** | 无 OOM killer、无 segfault、无 kernel warn |
+
+### 与现有测试的关系
+
+| 现有测试 | 本次新增 | 区别 |
+|----------|------|------|
+| `test_stress.py::test_stress_sustained_30s` | 持续 180s | **6 倍时长** |
+| `test_stress.py::test_stress_concurrent_100` | 不同并发梯度 | 梯度压测 |
+| `test_wrk_smoke.py` | 全程资源监控 | 只看 RPS，不监控 CPU/RSS |
+| `run_bench.sh` | 多协议覆盖 | 只测 HTTP bench |
+| — | **HTTPS + WS 压测** | 新增 |
+| — | **asio_uring 稳定性** | 新增（bench 已有，稳定性无） |
+
+### 产出物
+
+| # | 文件 | 说明 |
+|---|------|------|
+| 1 | `tests/stability_test.sh` | 一键脚本：切换后端 → 压测 → 监控 → 汇总 |
+| 2 | `tests/stability_monitor.sh` | 资源监控子脚本（pidstat + /proc + dmesg） |
+| 3 | 压测报告 | 每次 CI 输出 `stability_report.md`，含 CPU/RSS/FD 时序图 |
+
+### 预期收益
+
+- 捕获长时间运行的内存泄漏（30s 看不出来，3min 可以看到趋势）
+- 验证 asio_uring 后端的稳定性（当前只有 bench 数据，无长时间测试）
+- CI 自动化——每次发版前跑一遍，不让性能/稳定性回归上云
+
+### 实测结果 (2026-07-19, K8s)
+
+| 指标 | ev (epoll) | asio_uring |
+|------|:---:|:---:|
+| Pod 存活 (180s) | ✅ | ✅ |
+| RPS | 148k | 295k |
+| 延迟 avg | 326μs | 207μs |
+| RSS 内存 | 24MB | 35MB |
+| kubectl top | 56MiB | 38MiB |
+| RSS 增长 | 0% | 0% |
+| fd 泄漏 | 无 | 无 |
+| CPU 回落 | <10% | <10% |
+| 错误数 | 0 | 0 |
+
+> asio_uring K8s 稳定性验证通过：3 分钟零崩溃、零泄漏、295k RPS / 207μs。脚本 `tests/stability_test_k8s.sh` 可用。
+>
+> ev 数据为同一次测试会话（rebuild asio_uring 前的旧二进制），非同一二进制下的对比，仅供参考。
+
+### 完成度
+
+| 协议 | ev | asio_uring | 备注 |
+|------|:---:|:---:|------|
+| HTTP | ✅ | ✅ | 3min 零崩溃零泄漏 |
+| HTTPS | ❌ | ❌ | K8s pod 端口未监听, 见 #155 |
+| WebSocket | ❌ | ❌ | 端点无响应, 见 #156 |
+
+> HTTPS/WS 为服务层面问题，非稳定性测试脚本缺陷。脚本 `tests/stability_test_k8s.sh` 本身支持 HTTPS（`wrk https://`），WS 暂不支持。
+
+---
+
+## 🔵 #155 [Bug] K8s HelloHttps rebuild 后端口 27443 不监听
+
+> 2026-07-19 | 发现 | 状态: 🔵 待排查
+
+### 现象
+
+rebuild asio_uring 后 K8s `thunder-hello-https` pod Running 但 27443/27444 端口均不监听。日志显示 Manager+Worker 启动、Worker `InitClientListener` 成功创建监听 socket，但进程随即退出（无 crash 日志）。本地裸机启动同一二进制正常。
+
+### 根因
+
+待排查。Manager+Worker 正常 init 后立即退出（exit code 0），疑似 shm/进程间通信失败。需 gdb/strace 定位。
+
+---
+
+## 🔵 #156 [Bug] K8s HelloWs `/hello/shake` 端点不响应，ws_bench 0 RPS
+
+> 2026-07-19 | 发现 | 状态: 🔵 待排查
+
+### 现象
+
+`tests/benchmark/ws_bench.py` 连接 `127.0.0.1:27010/hello/shake` 全部 errors，RPS=0。需排查 WebSocket 握手或 ModuleShake 加载。
+
+---
+
+## 🔵 #152 [文档] 文档结构优化 — 门面 + 索引 + 难度导航
+
+**当前状态: 🟡 进行中 (2026-07-18)** — 核心改动已完成，剩余可选优化。
+
+### 背景
+
+Thunder 的文档体系存在三个结构问题，导致新人入门门槛过高：
+
+1. **根 README 臃肿** (350 行)：把门面 + 性能数据 + 协程源码 + WorksStealing 内部实现全塞在一页
+2. **docs/README 贴 FAQ** (283 行)：文档索引页内嵌了 11 个 Q&A + C++20 coroutine 源码解读
+3. **架构文档无导航**：1365 行的 `01-architecture-design.md` 是阅读路径第一步，无难度分级
+
+### 已完成改动
+
+| # | 改动 | 之前 | 之后 |
+|:---:|:---|:---:|:---:|
+| 1 | 根 README 重写 | 350 行 | **196 行** — Badges + Quick Start + Why + 性能表 |
+| 2 | FAQ 独立抽取 | 内嵌 docs/README | `docs/FAQ.md` (196 行)，性能概览打头 |
+| 3 | docs/README 精简化 | 283 行 | **139 行** — 纯索引，不内嵌长篇 |
+| 4 | `docs/architecture/00-overview.md` | 无 | **169 行** — 新人第一站，数据流 + 设计决策速览 |
+| 5 | 难度标签 | 无 | 🟢🟡🔴 每篇标注，阅读路径从"看 01" 改为"看 00" |
+| 6 | `k8s/k8s-manual.md` 迁移 | `k8s/` | `k8s/k8s-manual.md` |
+| 7 | `k8s/comparison-openim.md` 迁移 | `k8s/` | `k8s/comparison-openim.md` |
+| 8 | 索引补全 | 缺失 6 篇 | 全部 22 篇 architecture + 8 篇 performance + 2 篇 operations |
+
+### 效果：新人阅读路径
+
+```
+GitHub 主页 → README.md (196 行, 门面: "235k RPS, 220μs")
+  → 3 条命令跑起来
+  → Why Thunder 设计决策表
+  → docs/architecture/00-overview.md 🟢 (169 行, 读完画数据流)
+  → docs/FAQ.md 🟢 (设计 Q&A)
+  → 按需看 🟡 🔴 深水区
+```
+
+### 后续完成 (2026-07-18)
+
+| # | 任务 | 状态 |
+|:---:|:---|:---:|
+| 9 | architecture 编号重排 | ✅ 00-20 连续无空洞 |
+| 10 | 新增 `CONTRIBUTING.md` | ✅ 209 行：开发环境 + Commit 规范 + Code Style + PR 流程 |
+| 11 | `01-architecture-design.md` 拆分 | ✅ 1366 行 → 三篇：01 核心架构 (475行) + 21 数据面 (364行) + 22 运维内幕 (560行) |
+
+### ✅ 全部完成
+
+所有 11 项改动已完成。文档体系从"吓跑新人"的密集归档，转变为开源标准的入门→进阶→专家三层导航。
+
+### 对比参考
+
+- **OpenIM**：78 文件 / 1.7MB / 55K 字，多为 50-200 行 contrib 指南，扁平无层级
+- **Thunder 新结构**：36 文件 / 目录分级清晰 / 入门→进阶→专家 三层导航
+- 结论：数量持平，结构对标开源标准，不再"吓跑新人"
+
+---
+
+## 🔵 #153 [工具] 一键性能优化脚本 — 绑核 + 绑 NUMA + Linux 系统配置优化
+
+**当前状态: 🔵 待开发**
+
+### 背景
+
+当前 Thunder 的性能相关系统优化（CPU governor、绑核、sysctl、hugepages）全部以命令行片段散落在 3 篇文档中（`INSTALL.md`、`docs/performance/10-vs-nginx-benchmark-20260610.md`、`docs/performance/11-io-backend-comparison.md`），缺乏统一的上线前检查与一键优化工具。绑 NUMA 的能力更是完全缺失。
+
+### 现状
+
+| 能力 | 状态 | 所在位置 |
+|------|:---:|------|
+| CPU governor 切换 (`performance`) | ⚠️ 有文档，无脚本 | `INSTALL.md` §性能调优 |
+| 进程绑核 (`taskset`) | ⚠️ 有文档，无脚本 | `INSTALL.md`、`docs/performance/10-*.md` |
+| 绑 NUMA (`numactl --cpunodebind` / `--membind`) | ❌ 完全没有 | — |
+| TCP buffer sysctl 调优 | ⚠️ 有文档，无脚本 | `docs/performance/11-*-comparison.md` |
+| DPDK hugepages 配置 | ⚠️ 仅 DPDK 测试脚本 | `tools/run_dpdk_afpacket_echo.sh` |
+| IRQ 亲和性 (`/proc/irq/*/smp_affinity`) | ❌ 完全没有 | — |
+| 透明大页 (`transparent_hugepage`) | ❌ 完全没有 | — |
+| K8s CPU Manager static policy / NUMA topology | ❌ 完全没有 | — |
+| 一键检查/诊断脚本 | ❌ 完全没有 | — |
+
+### 目标
+
+创建一个 `scripts/tune_performance.sh` 脚本，覆盖以下功能：
+
+#### 必做
+
+| # | 功能 | 说明 |
+|:---:|------|------|
+| 1 | **CPU governor 检查 + 设置** | 自动检测当前 governor，若非 `performance` 则提示/自动切换 |
+| 2 | **NUMA 拓扑检测** | 打印 `numactl --hardware`，标注 P-core / E-core / NUMA node 分布 |
+| 3 | **进程绑核** | 支持 `--pin <pid>` / `--pin-cmd <命令>` 自动绑到最优核心（避开 E-core） |
+| 4 | **绑 NUMA** | `numactl --cpunodebind=0 --membind=0` 内存就近访问，避免跨 NUMA 延迟 |
+| 5 | **TCP buffer sysctl 优化** | 写入 `tcp_rmem` / `tcp_wmem` 为高连接数优化值 |
+| 6 | **透明大页检查** | 检测 `/sys/kernel/mm/transparent_hugepage/enabled`，建议 `madvise` |
+| 7 | **系统信息汇总** | CPU 型号、核心拓扑、NUMA 节点、当前 governor、内核版本一键输出 |
+
+#### 可选
+
+| # | 功能 | 说明 |
+|:---:|------|------|
+| 8 | IRQ 亲和性 | 将网卡 IRQ 绑定到指定 CPU core |
+| 9 | DPDK hugepages | 自动分配 DPDK 所需 hugepages |
+| 10 | K8s 集成 | 生成 `guaranteed` QoS Pod spec（含 CPU Manager static policy 触发条件） |
+
+### 使用方式设计
+
+```bash
+# 查看当前系统性能配置状态（只读，不做修改）
+./scripts/tune_performance.sh --check
+
+# 一键优化（需 root）
+sudo ./scripts/tune_performance.sh --apply
+
+# 绑核启动 Thunder
+./scripts/tune_performance.sh --run "deploy/HelloHttp/node.sh start"
+
+# 仅显示 NUMA 拓扑
+./scripts/tune_performance.sh --numa-info
+```
+
+### 产出物
+
+| # | 文件 | 说明 |
+|---|------|------|
+| 1 | `scripts/tune_performance.sh` | 核心脚本 (~300 行)，纯 bash，零外部依赖（除 `numactl` 可选） |
+| 2 | `INSTALL.md` 更新 | §性能调优 增加对 `tune_performance.sh` 的引用 |
+
+### 判定标准
+
+- [ ] `--check` 模式在干净机器上能列出所有待优化项
+- [ ] `--apply` 能正确设置 governor / sysctl / hugepages
+- [ ] `--run` 模式能自动检测核心拓扑并绑到 P-core
+- [ ] 非 root 运行时给出清晰提示（哪些需要 sudo）
+- [ ] NUMA 信息输出人类可读（P-core 范围、E-core 范围、NUMA node 映射）
+
+### 预期收益
+
+- 新机器上线前的性能配置从「翻 3 篇文档手动敲命令」变为「一条命令」
+- 消除因忘记绑核/未切 governor 导致的性能回归（历史教训：−17% 吞吐因 E-core 调度，−9.7% 因 powersave）
+- 绑 NUMA 从 0 到 1，为多路服务器部署铺路
+
+---
+
+
+## 🔵 #154 [部署] K8s 部署内置性能优化 — CPU Manager / NUMA Topology / sysctl / hugepage / IRQ
+
+**状态: ✅ 已完成并部署验证 (2026-07-20)**
+
+---
+
+### 做了什么
+
+通过 DaemonSet (`k8s/node-tuner-daemonset.yaml`) 在每个 K8s 节点自动执行优化，替代手工 SSH + sudo。镜像使用 `alpine:3.20` (~7MB)。
+
+```
+┌────┬──────────────────────┬─────────────────────────────────────────┬──────────────────────────┐
+│  # │       优化项         │                做了什么                  │          验证            │
+├────┼──────────────────────┼─────────────────────────────────────────┼──────────────────────────┤
+│  1 │ CPU Governor         │ `ondemand` → `performance`              │ ✅ `performance`         │
+│  2 │ THP                  │ `always` → `madvise` (先检查再改)       │ ✅ `[madvise]`           │
+│  3 │ sysctl 7 项          │ keepalive=60s, somaxconn=32768,         │ ✅                       │
+│    │                      │ slow_start=0, tw_reuse=1 等              │                          │
+│  4 │ NIC Ring Buffer      │ 256 → 4096 (ethtool -G)                 │ ✅ RX=4096, TX=4096      │
+│  5 │ NIC IRQ Affinity     │ enp0s31f6 IRQ: CPU17 → CPU0 (housekeep) │ ✅ `smp_affinity_list=0` │
+│  6 │ kubelet CPU Manager  │ `none` → `static`                       │ ✅ 7 Pod 独占核心        │
+│  7 │ Topology Manager     │ `best-effort` (单 NUMA 自动跳过)        │ ✅                       │
+│  8 │ Marker 幂等          │ boot_id 校验 — 防 kubelet 重启误跳过    │ ✅                       │
+│  9 │ Watchdog             │ 300s 巡检 governor/THP/sysctl/kubelet   │ ✅                       │
+│ 10 │ 镜像                 │ `thunder-hello-http`(~100MB)            │ ✅ alpine ~7MB           │
+│    │                      │   → `alpine:3.20`(~7MB)                 │                          │
+│ 11 │ 部署集成             │ DEPLOY.md + deploy.sh + regression.sh   │ ✅ 38/40 PASS            │
+└────┴──────────────────────┴─────────────────────────────────────────┴──────────────────────────┘
+```
+
+---
+
+### 绑核实际生效 (7 网关)
+
+所有网关 Deployment 已配置 Guaranteed QoS (`requests == limits`, 整数 CPU)，kubelet CPU Manager static 已启用:
+
+```
+┌──────────────────────┬─────────────┬──────────┐
+│         Pod          │     QoS     │ 独占 CPU │
+├──────────────────────┼─────────────┼──────────┤
+│ thunder-hello        │ Guaranteed  │  CPU 18  │
+│ thunder-hello-https  │ Guaranteed  │  CPU 1   │
+│ thunder-hello-ws     │ Guaranteed  │  CPU 19  │
+│ thunder-hello-wss    │ Guaranteed  │  CPU 17  │
+│ thunder-interface    │ Guaranteed  │  CPU 2-3 │
+│ thunder-logic        │ Guaranteed  │ CPU 13-14│
+│ thunder-logic-v2     │ Guaranteed  │  CPU 4-5 │
+└──────────────────────┴─────────────┴──────────┘
+```
+
+```bash
+# 验证
+kubectl exec <tuner-pod> -- grep cpuManagerPolicy /host/var/lib/kubelet/config.yaml
+# → cpuManagerPolicy: static
+kubectl exec <tuner-pod> -- cat /host/var/lib/kubelet/cpu_manager_state
+# → {"policyName":"static","defaultCpuSet":"0-3,6-12,15-16","entries":{...7 pods...}}
+```
+
+---
+
+### 产出物
+
+```
+┌───────────────────────────────────────────┬──────────────────────────────────────────┐
+│                   文件                    │                   说明                   │
+├───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ `k8s/node-tuner-daemonset.yaml`           │ DaemonSet (Init Container + Watchdog)    │
+│ `k8s/*-deployment.yaml`                  │ 各网关 Guaranteed QoS 资源声明            │
+│ `deploy.sh`                              │ cmd_deploy / cmd_test_k8s 加入 node-tuner │
+│ `k8s/DEPLOY.md`                          │ 部署文档加入 apply 命令                   │
+│ `k8s/regression-test.sh`                 │ Section 8: governor/CPU Manager/marker    │
+│ `docs/performance/12-node-optimization.md`│ 完整优化文档 (原理/配置/验证/注意事项)    │
+└───────────────────────────────────────────┴──────────────────────────────────────────┘
+```
+
+---
+
+### 不做 / 做不了 (4 项)
+
+```
+┌──────────────────────────────┬──────────────────────────────────────────┬──────────────────────────────────┐
+│             项               │                  原因                    │              影响                │
+├──────────────────────────────┼──────────────────────────────────────────┼──────────────────────────────────┤
+│ CPU 隔离 (isolcpus)          │ 需改 GRUB + 重启节点                     │ CPU Manager 收益打折             │
+│                              │ DaemonSet 无法安全执行                   │ 系统进程仍可打断业务             │
+├──────────────────────────────┼──────────────────────────────────────────┼──────────────────────────────────┤
+│ TCP Fast Open 应用层         │ Thunder C++ 未用 TCP_FASTOPEN            │ 无                               │
+│                              │ 已从 sysctl 移除                         │ 等应用层支持后再加回             │
+├──────────────────────────────┼──────────────────────────────────────────┼──────────────────────────────────┤
+│ TCP Buffer 128KB             │ 需 profiling 确认最大消息大小            │ 如响应 >128KB 需调大             │
+├──────────────────────────────┼──────────────────────────────────────────┼──────────────────────────────────┤
+│ admin-web 非 Guaranteed QoS  │ 设计如此 (管理后台不绑核)                │ 无                               │
+└──────────────────────────────┴──────────────────────────────────────────┴──────────────────────────────────┘
+```
+
+---
+
+### 回归测试
+
+```
+k8s/regression-test.sh  Section 8:
+  [PASS] node-tuner DaemonSet Running
+  [PASS] CPU governor → performance
+  [PASS] kubelet CPU Manager → static
+  [PASS] node-tuner marker (boot_id 幂等)
+```

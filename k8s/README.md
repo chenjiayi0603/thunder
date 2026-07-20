@@ -290,7 +290,7 @@ kubectl apply -f k8s/plugins-pv.yaml
 | PV | NFS ReadOnlyMany, 10Gi, server 改实际 IP |
 | PVC | thunder namespace, 绑定 PV |
 
-详见 `docs/architecture/15-so-module-hot-reload-via-etcd.md`
+详见 `docs/architecture/08-so-module-hot-reload-via-etcd.md`
 
 ---
 

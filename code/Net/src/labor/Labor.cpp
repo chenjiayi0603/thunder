@@ -462,16 +462,30 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
     {
 #ifdef THUNDER_IO_ASIO_URING
         AsioUringIoBackend* pBackend = new AsioUringIoBackend();
-        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        bool bOk = false;
+        std::string errMsg;
+        try {
+            bOk = pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this));
+        } catch (const std::exception& e) {
+            errMsg = e.what();
+        } catch (...) {
+            errMsg = "unknown exception";
+        }
+        if (bOk)
         {
             m_pIoBackend = pBackend;
             LOG4_INFO("IoBackend: asio_uring initialized successfully");
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: asio_uring init failed, falling back to ev");
+        if (errMsg.empty()) errMsg = "init returned false";
+        LOG4_FATAL((std::string("IoBackend: asio_uring init FAILED — ") + errMsg).c_str());
+        std::cerr << "FATAL: asio_uring init failed: " << errMsg << std::endl;
+        exit(1);
 #else
-        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to ev");
+        LOG4_FATAL("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled");
+        std::cerr << "FATAL: asio_uring not compiled" << std::endl;
+        exit(1);
 #endif
     }
 
@@ -497,7 +511,34 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
         LOG4_WARN("IoBackend: \"uring\" backend has been removed, falling back to ev");
     }
 
-    // 默认使用 ev 后端
+    // 默认: asio_uring, 失败 FATAL 退出 (不 fallback)
+#ifdef THUNDER_IO_ASIO_URING
+    {
+        AsioUringIoBackend* pBackend = new AsioUringIoBackend();
+        bool bOk = false;
+        std::string errMsg;
+        try {
+            bOk = pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this));
+        } catch (const std::exception& e) {
+            errMsg = e.what();
+        } catch (...) {
+            errMsg = "unknown exception";
+        }
+        if (bOk)
+        {
+            m_pIoBackend = pBackend;
+            LOG4_INFO("IoBackend: asio_uring initialized successfully (default)");
+            return true;
+        }
+        delete pBackend;
+        if (errMsg.empty()) errMsg = "init returned false";
+        LOG4_FATAL((std::string("IoBackend: asio_uring init FAILED — ") + errMsg).c_str());
+        std::cerr << "FATAL: asio_uring init failed: " << errMsg << std::endl;
+        exit(1);
+    }
+#endif
+
+    // 不应到达 (asio_uring 未编译时)
     EvIoBackend* pBackend = new EvIoBackend();
     if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
     {

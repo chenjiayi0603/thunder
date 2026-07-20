@@ -1,0 +1,462 @@
+# =============================================================================
+# Thunder Node Tuner DaemonSet (#154)
+# =============================================================================
+# 在每个 K8s 节点上自动执行一次性能调优，替代手动 SSH + sudo.
+#
+# Init Container (一次性):
+#   1. CPU governor → performance
+#   2. Transparent Hugepage → madvise (仅当前不是 madvise 时修改)
+#   3. sysctl (TCP buffer / backlog / keepalive)
+#   4. NIC ring buffer → 增大 rx/tx ring buffer (ethtool)
+#   5. NIC IRQ affinity → 绑定到 housekeeping CPU 避免打断业务线程
+#   6. kubelet cpuManagerPolicy → static (修改 /var/lib/kubelet/config.yaml)
+#   7. kubelet topologyManagerPolicy → best-effort (仅 ≥2 NUMA nodes)
+#   8. 重启 kubelet 使 CPU Manager 生效
+#
+# Main Container (驻留, watchdog):
+#   9. 定期检查 governor / THP / sysctl / kubelet config 不被意外重置
+#
+# 原理:
+#   - hostPID + privileged + hostPath(/) → 容器内操作宿主机全部资源
+#   - nsenter -t 1 -a → 进入宿主机 namespace
+#   - 幂等: completion marker (/host/run/thunder-node-init.done) + boot_id 校验
+#     → 同一次 boot 已跑过则跳过; 节点重启后 boot_id 变化 → 重新初始化
+#   - 镜像: alpine:3.20 (~7MB) 替代 thunder-hello-http (~100MB)
+#
+# 应用:
+#   kubectl apply -f k8s/node-tuner-daemonset.yaml
+#   kubectl get pods -n thunder -l app=thunder-node-tuner
+#
+# 验证:
+#   kubectl exec -n thunder <pod> -- cat /host/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+#   kubectl exec -n thunder <pod> -- cat /host/var/lib/kubelet/config.yaml | grep cpuManagerPolicy
+#   kubectl exec -n thunder <pod> -- cat /host/run/thunder-node-init.done
+# =============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: thunder-node-tuner
+  namespace: thunder
+  labels:
+    app: thunder-node-tuner
+    thunder.io/component: node-init
+spec:
+  # 一次只调一个节点 (防止多节点同时重启 kubelet 导致全集群不可用)
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: thunder-node-tuner
+  template:
+    metadata:
+      labels:
+        app: thunder-node-tuner
+    spec:
+      # 允许调度到 control-plane 节点 (单节点集群必须)
+      tolerations:
+      - operator: Exists
+      hostPID: true
+      hostNetwork: true
+      # Init Container: 一次性调优 (镜像: alpine, ~7MB)
+      initContainers:
+      - name: node-tuner
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+
+          COMPLETION_MARKER="/host/run/thunder-node-init.done"
+          BOOT_ID=$(cat /host/proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown")
+          HOSTNAME=$(cat /host/etc/hostname 2>/dev/null || echo "unknown")
+
+          echo "=== Thunder Node Tuner for $HOSTNAME (boot_id: ${BOOT_ID:0:8}...) ==="
+
+          # ---- 幂等检查: marker + boot_id 双重校验 ----
+          # 修复: 之前只检查 marker 存在 → 若 kubelet 重启杀死 Pod，
+          #       marker 已写入但 kubelet 未完成重启 → 新 Pod 错误跳过
+          # 现在: marker 必须匹配当前 boot_id, 节点重启后自动重新初始化
+          if [ -f "$COMPLETION_MARKER" ]; then
+            RECORDED_BOOT=$(head -1 "$COMPLETION_MARKER" 2>/dev/null | awk '{print $NF}')
+            if [ "$RECORDED_BOOT" = "$BOOT_ID" ]; then
+              echo "✅ 节点已完成初始化 (marker: $COMPLETION_MARKER, same boot)"
+              echo "   跳过所有配置 (如需重新执行请删除该文件或重启节点)"
+              exit 0
+            else
+              echo "⚠️  节点已重启 (boot_id changed: $RECORDED_BOOT → ${BOOT_ID:0:8}...)"
+              echo "   重新执行初始化..."
+            fi
+          fi
+
+          # 安装必要工具 (ethtool 用于 NIC ring buffer)
+          # 若无网络: apk 失败 → 跳过 ring buffer, IRQ affinity 仍可工作
+          apk add --no-cache ethtool 2>/dev/null && HAS_ETHTOOL=1 || HAS_ETHTOOL=0
+
+          # ---- 1. CPU Governor → performance ----
+          echo ""
+          echo "--- 1. CPU Governor → performance ---"
+          GOV_CHANGED=0
+          for gov in /host/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+            if [ -f "$gov" ] && [ "$(cat "$gov" 2>/dev/null)" != "performance" ]; then
+              echo "performance" > "$gov" 2>/dev/null || true
+              GOV_CHANGED=1
+            fi
+          done
+          if [ $GOV_CHANGED -eq 0 ]; then
+            echo "   ✅ 所有 CPU 已是 performance"
+          else
+            echo "   ✅ 已将所有 CPU governor 设为 performance"
+          fi
+
+          # ---- 2. Transparent Hugepage → madvise (仅当前不是时修改) ----
+          echo ""
+          echo "--- 2. Transparent Hugepage → madvise ---"
+          THP_ENABLED="/host/sys/kernel/mm/transparent_hugepage/enabled"
+          THP_DEFRAG="/host/sys/kernel/mm/transparent_hugepage/defrag"
+          THP_CURRENT=$(cat "$THP_ENABLED" 2>/dev/null | sed -n 's/.*\[\([^]]*\)\].*/\1/p' || echo "unknown")
+          if [ "$THP_CURRENT" = "madvise" ]; then
+            echo "   ✅ THP enabled 已是 madvise (当前: $THP_CURRENT)"
+          else
+            echo "madvise" > "$THP_ENABLED" 2>/dev/null || true
+            echo "   已设置 enabled: $THP_CURRENT → madvise"
+          fi
+          THP_DEFRAG_CURRENT=$(cat "$THP_DEFRAG" 2>/dev/null | sed -n 's/.*\[\([^]]*\)\].*/\1/p' || echo "unknown")
+          if [ "$THP_DEFRAG_CURRENT" = "madvise" ]; then
+            echo "   ✅ THP defrag 已是 madvise (当前: $THP_DEFRAG_CURRENT)"
+          else
+            echo "madvise" > "$THP_DEFRAG" 2>/dev/null || true
+            echo "   已设置 defrag: $THP_DEFRAG_CURRENT → madvise"
+          fi
+
+          # ---- 3. sysctl (Node 级, 作为 hostNetwork Pod 的 TCP 回退) ----
+          echo ""
+          echo "--- 3. sysctl 优化 ---"
+          # 写入 /host/etc/sysctl.d/ 确保持久化
+          cat > /host/etc/sysctl.d/99-thunder-performance.conf <<SYSCTL
+          # Thunder K8s Node Tuner DaemonSet (#154)
+          # TCP Buffer: 低延迟优先, 最大化并发连接
+          net.ipv4.tcp_rmem = 4096 16384 131072
+          net.ipv4.tcp_wmem = 4096 16384 131072
+          # Accept/Backlog
+          net.core.somaxconn = 32768
+          net.ipv4.tcp_max_syn_backlog = 8192
+          net.core.netdev_max_backlog = 5000
+          # TIME_WAIT 复用
+          net.ipv4.tcp_tw_reuse = 1
+          # 长连接: 禁用空闲后慢启动
+          net.ipv4.tcp_slow_start_after_idle = 0
+          # KeepAlive: 更快检测死连接
+          net.ipv4.tcp_keepalive_time = 60
+          net.ipv4.tcp_keepalive_intvl = 10
+          net.ipv4.tcp_keepalive_probes = 6
+          SYSCTL
+          # 在宿主机 namespace 中应用
+          nsenter -t 1 -m -u -n -i -- sysctl -p /etc/sysctl.d/99-thunder-performance.conf 2>/dev/null || true
+          echo "   ✅ sysctl 已应用并持久化"
+
+          # ---- 4. NIC Ring Buffer → 增大 (减少高吞吐丢包) ----
+          echo ""
+          echo "--- 4. NIC Ring Buffer (ethtool -G) ---"
+          if [ "${HAS_ETHTOOL:-0}" = "0" ]; then
+            echo "   ⏭️  ethtool 不可用 (apk install 失败), 跳过 ring buffer 优化"
+          else
+            # 从 /sys/class/net 遍历所有非 lo 网卡
+            for iface in $(ls /host/sys/class/net/ 2>/dev/null | grep -v lo); do
+              # 只对物理网卡操作 (有 device 子目录)
+              if [ -d "/host/sys/class/net/$iface/device" ]; then
+                if nsenter -t 1 -n -- ethtool -g "$iface" 2>/dev/null | grep -q "RX:"; then
+                  # 读取最大值 (ethtool -g 输出中第一组 RX:/TX: 是 Pre-set maximums)
+                  RX_MAX=$(nsenter -t 1 -n -- ethtool -g "$iface" 2>/dev/null | grep "^RX:" | head -1 | grep -o '[0-9]\+' || echo "4096")
+                  TX_MAX=$(nsenter -t 1 -n -- ethtool -g "$iface" 2>/dev/null | grep "^TX:" | head -1 | grep -o '[0-9]\+' || echo "4096")
+                  # 读取当前值 (第二组 RX:/TX: 是 Current hardware settings)
+                  RX_CUR=$(nsenter -t 1 -n -- ethtool -g "$iface" 2>/dev/null | grep "^RX:" | tail -1 | grep -o '[0-9]\+' || echo "0")
+                  TX_CUR=$(nsenter -t 1 -n -- ethtool -g "$iface" 2>/dev/null | grep "^TX:" | tail -1 | grep -o '[0-9]\+' || echo "0")
+                  # 目标: min(4096, max)
+                  RX_NEW=4096; [ "$RX_MAX" -lt 4096 ] 2>/dev/null && RX_NEW=$RX_MAX
+                  TX_NEW=4096; [ "$TX_MAX" -lt 4096 ] 2>/dev/null && TX_NEW=$TX_MAX
+                  if [ "${RX_CUR:-0}" -lt "$RX_NEW" ] 2>/dev/null || [ "${TX_CUR:-0}" -lt "$TX_NEW" ] 2>/dev/null; then
+                    nsenter -t 1 -n -- ethtool -G "$iface" rx "$RX_NEW" tx "$TX_NEW" 2>/dev/null && \
+                      echo "   ✅ $iface: ring RX ${RX_CUR}→${RX_NEW}, TX ${TX_CUR}→${TX_NEW}" || \
+                      echo "   ⚠️  $iface: ethtool -G 失败"
+                  else
+                    echo "   ✅ $iface: ring buffer 已足够 (RX=$RX_CUR, TX=$TX_CUR)"
+                  fi
+                fi
+              fi
+            done
+          fi
+
+          # ---- 5. NIC IRQ Affinity → 绑定到 housekeeping CPU ----
+          echo ""
+          echo "--- 5. NIC IRQ Affinity ---"
+          CPU_COUNT=$(grep -c processor /host/proc/cpuinfo 2>/dev/null || echo 1)
+          # 策略: CPU 0 留给系统/IRQ, 业务用 CPU 1+
+          # smp_affinity 文件接受十六进制 mask (不含 0x 前缀):
+          #   CPU 0 → bit 0 → mask "1"
+          #   CPU 0+1 → bits 0,1 → mask "3"
+          if [ "$CPU_COUNT" -ge 4 ]; then
+            # >=4 核: IRQ 绑定到 CPU 0 (housekeeping), 业务用 1+
+            IRQ_AFFINITY="1"
+            IRQ_STRATEGY="CPU 0 (housekeeping)"
+          elif [ "$CPU_COUNT" -ge 2 ]; then
+            # 2-3 核: IRQ 绑定到 CPU 0-1 (分散)
+            IRQ_AFFINITY="3"
+            IRQ_STRATEGY="CPU 0-1"
+          else
+            IRQ_AFFINITY="1"
+            IRQ_STRATEGY="CPU 0 (单核)"
+          fi
+          echo "   策略: ${IRQ_STRATEGY}, CPU 总数: $CPU_COUNT, smp_affinity: $IRQ_AFFINITY"
+
+          IRQ_SET=0
+          # 找到活跃网卡的 IRQ (从 /sys/class/net 遍历)
+          for iface in $(ls /host/sys/class/net/ 2>/dev/null | grep -v lo); do
+            # 只处理物理网卡 (有 device 子目录)
+            [ -d "/host/sys/class/net/$iface/device" ] || continue
+            # 读取网卡的 IRQ 号 (TX/RX 队列, MSI-X)
+            for irq_file in /host/sys/class/net/${iface}/device/msi_irqs/*; do
+              [ -f "$irq_file" ] || continue
+              irq=$(cat "$irq_file" 2>/dev/null)
+              if [ -n "$irq" ] && [ "$irq" -gt 0 ] 2>/dev/null; then
+                echo "$IRQ_AFFINITY" > /host/proc/irq/${irq}/smp_affinity 2>/dev/null || true
+                IRQ_SET=$((IRQ_SET + 1))
+              fi
+            done
+          done
+          # 兼容旧版内核: 无 msi_irqs 时从 /proc/interrupts 读取
+          if [ $IRQ_SET -eq 0 ]; then
+            for iface in $(ls /host/sys/class/net/ 2>/dev/null | grep -v lo); do
+              [ -d "/host/sys/class/net/$iface/device" ] || continue
+              irq=$(grep -E " ${iface}(-|$)" /host/proc/interrupts 2>/dev/null | awk -F: '{print $1}' | tr -d ' ' | head -1)
+              if [ -n "$irq" ] && [ "$irq" -gt 0 ] 2>/dev/null; then
+                echo "$IRQ_AFFINITY" > /host/proc/irq/${irq}/smp_affinity 2>/dev/null && IRQ_SET=$((IRQ_SET + 1)) || true
+              fi
+            done
+          fi
+          if [ $IRQ_SET -gt 0 ]; then
+            echo "   ✅ 已设置 $IRQ_SET 个 NIC IRQ 的 smp_affinity"
+          else
+            echo "   ⏭️  未找到 NIC IRQ (可能无需绑定或驱动不支持)"
+          fi
+
+          # ---- 6. kubelet CPU Manager → static ----
+          echo ""
+          echo "--- 6. kubelet CPU Manager ---"
+          KUBELET_CONFIG="/host/var/lib/kubelet/config.yaml"
+
+          if [ ! -f "$KUBELET_CONFIG" ]; then
+            echo "   ⚠️  kubelet config 不存在 ($KUBELET_CONFIG), 跳过 CPU Manager 配置"
+          else
+            CURRENT=$(grep -E '^\s*cpuManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null | awk '{print $2}' || echo "none")
+            echo "   当前 cpuManagerPolicy: $CURRENT"
+
+            if [ "$CURRENT" = "static" ]; then
+              echo "   ✅ cpuManagerPolicy 已是 static"
+            else
+              echo "   修改 cpuManagerPolicy → static ..."
+              if grep -q 'cpuManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null; then
+                sed -i 's/^.*cpuManagerPolicy:.*/cpuManagerPolicy: static/' "$KUBELET_CONFIG"
+              else
+                echo "cpuManagerPolicy: static" >> "$KUBELET_CONFIG"
+              fi
+
+              # 加 kubeReserved 防系统进程饥饿
+              if ! grep -q '^kubeReserved:' "$KUBELET_CONFIG" 2>/dev/null; then
+                cat >> "$KUBELET_CONFIG" <<YAML
+          kubeReserved:
+            cpu: "500m"
+            memory: "512Mi"
+          YAML
+                echo "   已添加 kubeReserved"
+              fi
+              # ⚠️ 删除旧 checkpoint: policy none→static 切换时 kubelet 会拒绝启动
+              if [ -f /host/var/lib/kubelet/cpu_manager_state ]; then
+                rm -f /host/var/lib/kubelet/cpu_manager_state
+                echo "   已删除旧 cpu_manager_state (none → static 切换必须)"
+              fi
+              echo "   ✅ cpuManagerPolicy 已设为 static"
+              NEED_RESTART=1
+            fi
+          fi
+
+          # ---- 7. kubelet Topology Manager (仅多 NUMA) ----
+          echo ""
+          echo "--- 7. kubelet Topology Manager ---"
+          NUMA_NODES=$(cat /host/sys/devices/system/node/online 2>/dev/null | tr ',' '\n' | wc -l || echo "1")
+          echo "   NUMA 节点数: $NUMA_NODES"
+
+          if [ "$NUMA_NODES" -le 1 ]; then
+            echo "   ⏭️  单 NUMA, 跳过 Topology Manager 配置"
+          elif [ -f "$KUBELET_CONFIG" ]; then
+            # 使用 best-effort (非 single-numa-node):
+            #   single-numa-node 过于严格 → Pod 在资源碎片化时可能 Pending
+            #   best-effort: 尽力而为, 不阻塞调度, 多 NUMA 场景仍有收益
+            CURRENT_TM=$(grep -E '^\s*topologyManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null | awk '{print $2}' || echo "none")
+            if [ "$CURRENT_TM" = "best-effort" ]; then
+              echo "   ✅ topologyManagerPolicy 已是 best-effort"
+            elif [ "$CURRENT_TM" = "single-numa-node" ]; then
+              echo "   ✅ topologyManagerPolicy 已是 single-numa-node (更严格, 不降级)"
+            else
+              if grep -q 'topologyManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null; then
+                sed -i 's/^.*topologyManagerPolicy:.*/topologyManagerPolicy: best-effort/' "$KUBELET_CONFIG"
+              else
+                echo "topologyManagerPolicy: best-effort" >> "$KUBELET_CONFIG"
+              fi
+              echo "   ✅ topologyManagerPolicy 已设为 best-effort"
+              NEED_RESTART=1
+            fi
+          fi
+
+          # ---- 8. 重启 kubelet (仅配置变更时) ----
+          echo ""
+          if [ "${NEED_RESTART:-0}" = "1" ]; then
+            echo "--- 8. 重启 kubelet (使 CPU Manager 生效) ---"
+
+            # 修复 marker 时序 Bug:
+            #   之前: 先写 marker → 再重启 kubelet → Pod 被杀 → 新 Pod 看到 marker → 跳过 (bug!)
+            #   现在: marker 包含 boot_id → 节点重启后 boot_id 变化 → 自动重跑
+            #   但仍需处理 kubelet restart 杀 Pod 但节点未重启的场景:
+            #   → 先写 boot_id 到 marker (标记"本次 boot 已尝试初始化")
+            #   → 重启 kubelet
+            #   → 如果 Pod 存活 → 追加写入完成时间 (双重确认)
+            mkdir -p "$(dirname "$COMPLETION_MARKER")" 2>/dev/null || true
+            echo "boot_id=$BOOT_ID" > "$COMPLETION_MARKER" 2>/dev/null || true
+
+            echo "   kubelet 配置已变更, 正在重启 (本轮 boot_id: ${BOOT_ID:0:8}...)"
+            if nsenter -t 1 -m -u -n -i -p -- systemctl restart kubelet 2>&1; then
+              sleep 5
+              if nsenter -t 1 -m -- systemctl is-active --quiet kubelet 2>/dev/null; then
+                echo "   ✅ kubelet 重启成功"
+                date -u +"%Y-%m-%dT%H:%M:%SZ boot_id=$BOOT_ID" > "$COMPLETION_MARKER" 2>/dev/null || true
+              else
+                echo "   ⚠️  kubelet 可能尚未就绪 (Pod 将被重建, boot_id 不变故 marker 存在)"
+              fi
+            else
+              echo "   ⚠️  kubelet restart 命令失败 (检查 systemctl)"
+              # 即使重启失败, 标记仍然写入 — 避免无限重试
+              # 管理员需手动检查
+            fi
+          else
+            echo "--- 8. 重启 kubelet ---"
+            echo "   ⏭️  配置未变更, 跳过重启"
+
+            # 无变更时写 marker (governor/sysctl/NIC/IRQ 部分已完成)
+            mkdir -p "$(dirname "$COMPLETION_MARKER")" 2>/dev/null || true
+            date -u +"%Y-%m-%dT%H:%M:%SZ boot_id=$BOOT_ID" > "$COMPLETION_MARKER" 2>/dev/null || true
+          fi
+
+          echo ""
+          echo "============================================"
+          echo "  ✅ 节点初始化完成: $HOSTNAME"
+          echo "  boot_id: ${BOOT_ID:0:8}..."
+          echo "  标记文件: $COMPLETION_MARKER"
+          echo "============================================"
+
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+          readOnly: false
+
+      # Main Container: 驻留 watchdog, 定期检查配置不被意外重置
+      containers:
+      - name: watchdog
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Thunder Node Tuner watchdog started"
+          echo "Checking every 300s for governor / THP / sysctl / kubelet drift..."
+          CHECK_INTERVAL=300
+          while true; do
+            sleep $CHECK_INTERVAL
+            DRIFT=0
+
+            # --- 检查 CPU governor ---
+            for gov in /host/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; do
+              if [ -f "$gov" ]; then
+                GOV=$(cat "$gov" 2>/dev/null)
+                if [ "$GOV" != "performance" ]; then
+                  echo "[$(date)] ⚠️  governor drifted to $GOV, resetting to performance"
+                  for f in /host/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+                    echo performance > "$f" 2>/dev/null || true
+                  done
+                  DRIFT=1
+                fi
+              fi
+            done
+
+            # --- 检查 THP ---
+            THP=$(cat /host/sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null | sed -n 's/.*\[\([^]]*\)\].*/\1/p' || echo "?")
+            if [ "$THP" != "madvise" ]; then
+              echo "[$(date)] ⚠️  THP drifted to $THP, resetting to madvise"
+              echo madvise > /host/sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
+              echo madvise > /host/sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
+              DRIFT=1
+            fi
+
+            # --- 检查 sysctl 关键项 ---
+            SYSCTL_DRIFT=0
+            check_sysctl() {
+              local key="$1" expect="$2"
+              local actual
+              actual=$(nsenter -t 1 -n -- sysctl -n "$key" 2>/dev/null || echo "?")
+              if [ "$actual" != "$expect" ] && [ "$actual" != "?" ]; then
+                echo "[$(date)] ⚠️  sysctl $key drifted: $actual (expected $expect)"
+                SYSCTL_DRIFT=1
+              fi
+            }
+            check_sysctl net.core.somaxconn 32768
+            check_sysctl net.ipv4.tcp_slow_start_after_idle 0
+            check_sysctl net.ipv4.tcp_keepalive_time 60
+            check_sysctl net.ipv4.tcp_tw_reuse 1
+            if [ $SYSCTL_DRIFT -eq 1 ]; then
+              echo "[$(date)] ⚠️  重新应用 sysctl..."
+              nsenter -t 1 -m -u -n -i -- sysctl -p /etc/sysctl.d/99-thunder-performance.conf 2>/dev/null || true
+              DRIFT=1
+            fi
+
+            # --- 检查 kubelet CPU Manager ---
+            KUBELET_CONFIG="/host/var/lib/kubelet/config.yaml"
+            if [ -f "$KUBELET_CONFIG" ]; then
+              CPUMGR=$(grep -E '^\s*cpuManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null | awk '{print $2}' || echo "none")
+              if [ "$CPUMGR" != "static" ] && [ "$CPUMGR" != "none" ]; then
+                echo "[$(date)] ⚠️  cpuManagerPolicy drifted to $CPUMGR (expected static)"
+              fi
+              TOPOMGR=$(grep -E '^\s*topologyManagerPolicy:' "$KUBELET_CONFIG" 2>/dev/null | awk '{print $2}' || echo "none")
+              if [ "$TOPOMGR" = "none" ] || [ -z "$TOPOMGR" ]; then
+                : # none is acceptable (single NUMA)
+              fi
+            fi
+
+            if [ $DRIFT -eq 0 ]; then
+              echo "[$(date)] ✅ all checks passed"
+            fi
+          done
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "50m"
+            memory: "32Mi"
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+          readOnly: false
+
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+          type: Directory
+
+      # DaemonSet Pod 不抢占业务 Pod 的调度
+      priorityClassName: system-node-critical
