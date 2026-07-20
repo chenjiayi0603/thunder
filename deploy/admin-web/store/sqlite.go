@@ -65,6 +65,27 @@ type ConfigHistoryEntry struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// AuditQuery returns audit entries filtered by target (type prefix match)
+func (s *Store) AuditQuery(targetFilter string) ([]AuditEntry, error) {
+	query := "SELECT id, action, target, before_value, after_value, client_ip, created_at FROM audit_log"
+	var args []interface{}
+	if targetFilter != "" {
+		query += " WHERE target LIKE ?"
+		args = append(args, targetFilter+"%")
+	}
+	query += " ORDER BY id DESC LIMIT 100"
+	rows, err := s.db.Query(query, args...)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var result []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(&e.ID, &e.Action, &e.Target, &e.Before, &e.After, &e.ClientIP, &e.CreatedAt); err != nil { continue }
+		result = append(result, e)
+	}
+	return result, nil
+}
+
 // AuditLog writes an audit entry
 func (s *Store) AuditLog(action, target, before, after, ip string) error {
 	_, err := s.db.Exec(

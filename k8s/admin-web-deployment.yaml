@@ -19,17 +19,29 @@ spec:
       - name: app
         image: thunder-admin-web:latest
         imagePullPolicy: IfNotPresent
+        # --- 资源请求/限制 (非 Guaranteed QoS, admin 不绑核) ---
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
         workingDir: /app
+        env:
+        - name: ETCD_ENDPOINTS
+          value: "http://thunder-etcd-0.thunder-etcd.thunder:2379,http://thunder-etcd-1.thunder-etcd.thunder:2379,http://thunder-etcd-2.thunder-etcd.thunder:2379"
         ports:
         - containerPort: 8090
         volumeMounts:
         - name: nfs-plugins
           mountPath: /data/thunder/plugins
+        - name: nfs-plugins
+          mountPath: /app/data
+          subPath: .admin-web
       volumes:
       - name: nfs-plugins
-        nfs:
-          server: 127.0.0.1
-          path: /data/thunder/plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
 ---
 apiVersion: v1
 kind: Service

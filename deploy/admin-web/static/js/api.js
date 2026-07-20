@@ -42,6 +42,16 @@ var API = (function() {
   function getConfig(module, cfgType) { return get('/config/' + encodeURIComponent(module) + '?type=' + encodeURIComponent(cfgType)); }
   function setConfig(module, cfgType, c) { return put('/config/' + encodeURIComponent(module), { type: cfgType, content: c }); }
   function getPlugins()        { return get('/plugins'); }
+  function soList(type)         { return get('/plugins/' + encodeURIComponent(type)); }
+  function soUpload(type, file) {
+    return new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', BASE + '/plugins/' + encodeURIComponent(type) + '/' + encodeURIComponent(file.name));
+      xhr.onload = function() { try { var r = JSON.parse(xhr.responseText); resolve({ ok: r.ok, data: r.data, error: r.error }); } catch(e) { reject(e); } };
+      xhr.onerror = function() { reject(new Error('upload failed')); };
+      xhr.send(file);
+    });
+  }
 
   return {
     overview: overview,
@@ -51,6 +61,8 @@ var API = (function() {
     getConfig: getConfig,
     setConfig: setConfig,
     getPlugins: getPlugins,
+    soList: soList,
+    soUpload: soUpload,
     request: request,
   };
 })();

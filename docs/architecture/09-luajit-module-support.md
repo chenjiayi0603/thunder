@@ -393,7 +393,7 @@ Lua 做 **gatekeeper**，不做业务处理。业务逻辑和数据操作仍在 
 
 ## 扩展阅读
 
-- [21-lua-send-to-node-type.md](21-lua-send-to-node-type.md) — Lua 通用跨节点类型发送（`SendToNodeType`），替代硬编码的 `SendToLogic`
+- [11-lua-send-to-node-type.md](11-lua-send-to-node-type.md) — Lua 通用跨节点类型发送（`SendToNodeType`），替代硬编码的 `SendToLogic`
 
 ## 参考
 

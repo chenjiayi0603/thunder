@@ -5,6 +5,9 @@ metadata:
   namespace: thunder
 spec:
   replicas: 1
+  # --- Recreate: hostNetwork pod 无法滚动更新 (端口冲突) (#154) ---
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: thunder-hello-https
@@ -15,6 +18,12 @@ spec:
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      # sysctls 不能与 hostNetwork 同时使用 (K8s 限制)
+      # TCP buffer 优化由 Node 级 sysctl (scripts/init-k8s-node.sh) 统一管理
+      volumes:
+      - name: nfs-plugins
+        persistentVolumeClaim:
+          claimName: thunder-plugins
       containers:
       - name: app
         image: thunder-hello-https:latest
@@ -28,6 +37,21 @@ spec:
               fieldPath: status.hostIP
         - name: ETCD_ENDPOINT
           value: "http://thunder-etcd.thunder:2379"
+        # --- io_uring 需要 memlock (#154) ---
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        # --- Burstable QoS — 内存不封顶, CPU 保证 ---
+        resources:
+          requests:
+            cpu: "1"
+            memory: "128Mi"
+          limits:
+            cpu: "1"
         ports:
         - containerPort: 27443
         - containerPort: 27444
+        volumeMounts:
+        - name: nfs-plugins
+          mountPath: /app/plugins
+          subPath: HelloHttps

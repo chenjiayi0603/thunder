@@ -153,6 +153,15 @@ kubectl logs -n thunder deploy/thunder-hello --tail=5
 
 ### 部署模型
 
+**镜像流转：**
+
+```
+构建机                   镜像仓库                      客户 K8s 集群
+docker build     push   harbor.customer.com/    imagePullPolicy:
+thunder-hello ────────► thunder/hello-http ──── IfNotPresent
+                        (私有 Harbor / 公开 Docker Hub)   kubectl apply -f k8s/
+```
+
 | 服务 | 网络 | 镜像 | 插件 |
 |------|:--:|------|------|
 | 网关 (hello/interface) | hostNetwork | Docker (`/app/`) | 烘焙 (`/app/plugins/`) |
@@ -291,6 +300,7 @@ EOF
 
 # 或手动分步：
 kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/etcd-pv.yaml
 kubectl apply -f k8s/etcd-statefulset.yaml
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/mysql.yaml
@@ -301,29 +311,10 @@ kubectl apply -f k8s/hello-deployment.yaml
 kubectl apply -f k8s/hello-https-deployment.yaml
 kubectl apply -f k8s/hello-ws-deployment.yaml
 kubectl apply -f k8s/hello-wss-deployment.yaml
+kubectl apply -f k8s/node-tuner-daemonset.yaml   # 节点性能优化 (#154)
 ```
 
-### 6. etcd StatefulSet PV
-
-```bash
-for i in 0 1 2; do
-  sudo mkdir -p /data/thunder/etcd$i
-  kubectl apply -f - <<EOF
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: pv-thunder-etcd-$i
-spec:
-  accessModes: [ReadWriteOnce]
-  capacity: {storage: 1Gi}
-  hostPath:
-    path: /data/thunder/etcd$i
-  persistentVolumeReclaimPolicy: Retain
-EOF
-done
-```
-
-### 7. 构建并导入 admin-web 镜像
+### 6. 构建并导入 admin-web 镜像
 
 ```bash
 docker build -t thunder-admin-web:latest -f deploy/admin-web/Dockerfile deploy/admin-web/
@@ -448,6 +439,15 @@ curl -s -X POST "http://${HELLO_IP}:27006/hello/hello" \
 
 ---
 
+
+## 4. 稳定性压测
+
+```bash
+bash tests/stability_test_k8s.sh --node-ip <节点IP> --duration 180
+```
+
+---
+
 ## 六、更新升级
 
 ### admin-web 代码
@@ -477,7 +477,6 @@ curl -s -X PUT "http://192.168.3.61:30090/plugins/HelloHttp/xxx.so" \
 | flannel CrashLoop | initContainer command 错误 | 用官方 YAML，command 为 `cp` |
 | 所有 ClusterIP Pod `FailedCreatePodSandBox` | flannel 不可用 → `/run/flannel/subnet.env` 缺失 | 先修 flannel→kubelet 重建 sandbox |
 | CoreDNS CrashLoop | CNI 未就绪 | flannel Running 后自动恢复 |
-| etcd-x Pending | PVC 无对应 PV | 创建 PV |
 | Worker 未启动 | 缺 libjemalloc、libluajit | `apt install -y libjemalloc2 libluajit-5.1-2` |
 | Worker 空载 CPU 500m | WorkStealingPool `yield()` 忙等 | 已修复：`yield()` → `cv.wait_for()`，`code/Util/src/thread/work_stealing_pool.h` |
 | 外部下载失败 | 没走代理 | `export https_proxy=http://127.0.0.1:7897` |
@@ -485,6 +484,8 @@ curl -s -X PUT "http://192.168.3.61:30090/plugins/HelloHttp/xxx.so" \
 | SO dlopen 失败 | 不是真 .so | `file xxx.so` 确认是 ELF |
 | NFS mount 失败 | 缺 nfs-common | `sudo apt install nfs-common -y` |
 | 节点 DiskPressure | 磁盘 >85% | `sudo journalctl --vacuum-size=200M`；`docker system prune -af` |
+| NFS mount 失败 | `sudo apt install nfs-common -y` |
+| Worker 未启动 | `apt install -y libjemalloc2 libluajit-5.1-2` |
 
 ---
 

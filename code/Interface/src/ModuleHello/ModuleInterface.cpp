@@ -38,18 +38,20 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
 
     std::string strPassthrough;
     bool forwardRawLogicBody = false;
+    std::string strGenToken;  // GenKey 返回给客户端的 token
+    std::string strGenKey;    // GenKey 返回给客户端的 key
 
     if (opt == "GenKey")
     {
-        const std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
+        std::string address = GetLabor()->GetClientAddr(step.GetReqMsgShell());
+        strGenToken = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
+                                                       GetLabor()->GetWorkerIndex()));
+        strGenKey   = std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
+                                                       GetLabor()->GetWorkerIndex()));
         util::CJsonObject oJson;
-        oJson.Add("token",
-                  std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
-                                                 GetLabor()->GetWorkerIndex())));
-        oJson.Add("key",
-                  std::to_string(util::GetUniqueId(GetLabor()->GetNodeId(),
-                                                     GetLabor()->GetWorkerIndex())));
-        oJson.Add("genkey", "1");
+        oJson.Add("token",   strGenToken);
+        oJson.Add("key",     strGenKey);
+        oJson.Add("genkey",  "1");
         oJson.Add("address", address);
         strPassthrough = oJson.ToString();
         forwardRawLogicBody = true;
@@ -120,6 +122,12 @@ net::AsyncTask GenKeyVerifyKeyStepCo20(net::StepCo20& step)
                 if (!oJson.Get("msg", msg) || msg.empty())
                 {
                     oJson.Add("msg", "success");
+                }
+                // GenKey：将 token+key 注入响应，客户端可直接用于 VerifyKey
+                if (!strGenToken.empty())
+                {
+                    oJson.Add("token", strGenToken);
+                    oJson.Add("key", strGenKey);
                 }
             }
             // 统一返回 200，业务错误码在 JSON body 中表达（VerifyKey 错误 token 等）

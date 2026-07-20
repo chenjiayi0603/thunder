@@ -344,7 +344,6 @@ cmd_test_e2e() {
     #     只清 etcd: mariadb 清了要重新初始化(慢), redis 是缓存无需清。
     log "清理 etcd bind-mount (hermetic)..."
     rm -rf "${DOCKER_DIR}/data/etcd"/* 2>/dev/null || true
-    rm -rf "${DOCKER_DIR}/data/etcd1" "${DOCKER_DIR}/data/etcd2" "${DOCKER_DIR}/data/etcd3" 2>/dev/null || true
 
     # 1c. 端口冲突预检 — 检查 Thunder 关键内部端口是否被 k8s/k3s 进程占用
     #     使用 ss 而非 lsof，因为 lsof 无法看到 root 进程的 fd（非 root 用户）
@@ -452,6 +451,390 @@ cmd_test_regression() {
         warn "全量回归: 有失败项"
         return 1
     fi
+}
+
+# ─── K8s 回归测试 (5 阶段: 预检→构建→部署→测试→清理) ───
+# 用法: ./deploy.sh test k8s
+#
+# 阶段 0: PRE-CHECK  — 检查端口/僵尸Pod/资源余量，清理老实例
+# 阶段 1: BUILD     — C++ cmake + 3 docker 镜像 (Interface/Hello/admin-web)
+# 阶段 2: DEPLOY    — 清 etcd → 导入 containerd → rollout restart → 等 Ready
+# 阶段 3: TEST      — regression-test.sh 36 项全量
+# 阶段 4: CLEAN     — 删测试 artifacts/NFS残留/etcd测试键/审计记录
+cmd_test_k8s() {
+    local ns="${K8S_NAMESPACE:-thunder}"
+    local host_ip="${K8S_HOST_IP:-192.168.3.61}"
+    local tag="test"
+    local pass=0 fail=0
+
+    echo ""
+    echo -e "${BOLD}============================================${NC}"
+    echo -e "${BOLD}  K8s 回归测试 — 5 阶段全流程${NC}"
+    echo -e "${BOLD}  ns=${ns}  tag=${tag}${NC}"
+    echo -e "${BOLD}============================================${NC}"
+
+    # ============================================================
+    # 阶段 0: PRE-CHECK — 检查端口/僵尸/资源
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}--- [0/4] PRE-CHECK (构建前检查+清理) ---${NC}"
+
+    # 0.1 端口冲突检查
+    log "0.1 检查 hostPort 冲突..."
+    # 0.1 端口冲突检查 (只报告, 不杀进程 — 端口可能属于正常运行的 K8s Pod)
+    local port_conflicts=$(ss -tlnp 2>/dev/null | grep -E ':(27006|27008|27010|27012|27443|30090)\s' || echo "")
+    if [[ -n "$port_conflicts" ]]; then
+        warn "  发现端口占用 (可能是正常 Pod):"
+        echo "$port_conflicts" | head -5 | sed 's/^/    /'
+        # 只尝试清理非 K8s 进程 (通过检查 cgroup 判断)
+        for port in 27006 27008 27010 27012 27443 30090; do
+            local pid=$(lsof -ti :$port 2>/dev/null || echo "")
+            if [[ -n "$pid" ]]; then
+                # 检查是否在容器 cgroup 中 (K8s Pod 进程)
+                if cat /proc/$pid/cgroup 2>/dev/null | grep -q "kubepods"; then
+                    log "  :$port → K8s Pod (不杀)"
+                else
+                    warn "  :$port → 非容器进程 PID=$pid, 尝试 kill..."
+                    kill -9 $pid 2>/dev/null || {
+                        warn "    kill 失败 (需要 sudo? 手动: sudo kill -9 $pid)"
+                    }
+                fi
+            fi
+        done
+        sleep 1
+        port_conflicts=$(ss -tlnp 2>/dev/null | grep -E ':(27006|27008|27010|27012|27443|30090)\s' || echo "")
+        if [[ -n "$port_conflicts" ]]; then
+            warn "  ← 仍有端口占用, DEPLOY 阶段会通过 Recreate 自动释放"
+        else
+            ok "  ← 端口已释放"
+        fi
+    else
+        ok "  无端口冲突"
+    fi
+
+    # 0.2 杀 hostPID 僵尸 + 清理非 Running Pod
+    log "0.2 清理残留..."
+    sudo killall -9 Hello_robot Interface_robot 2>/dev/null || true
+    sleep 1
+    local zombie_count=$(kubectl get pods -n "$ns" --field-selector=status.phase!=Running 2>/dev/null | grep -c -v "NAME" || echo "0")
+    if [[ "$zombie_count" -gt 0 ]]; then
+        kubectl delete pod -n "$ns" --field-selector=status.phase!=Running 2>/dev/null || true
+    fi
+    ok "  残留已清理"
+
+    # 0.3 资源余量
+    log "0.3 宿主机资源..."
+    local mem_avail=$(free -m | awk '/^Mem:/{print $7}')
+    local disk_avail=$(df -BG /var/lib/docker 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+    echo "  可用内存: ${mem_avail}MB  磁盘: ${disk_avail}GB  CPU: $(nproc)核"
+    if [[ "$mem_avail" -lt 2048 ]]; then
+        warn "  ← 内存不足 2GB, make -j 可能 OOM"
+    fi
+    if [[ "${disk_avail:-0}" -lt 5 ]]; then
+        warn "  ← 磁盘不足 5GB, docker build 可能失败"
+    fi
+
+    # 0.4 清理残留容器
+    log "0.4 清理残留容器..."
+    local dead_containers=$(docker ps -aq --filter "status=exited" 2>/dev/null | wc -l)
+    if [[ "$dead_containers" -gt 10 ]]; then
+        docker container prune -f 2>/dev/null || true
+        ok "  已清理 ($dead_containers 个残留)"
+    else
+        ok "  无需清理 ($dead_containers 个)"
+    fi
+
+    # 0.5 清理 etcd 测试残留 (只删已知脏 key/entry, 保留 registry/canary 等运营数据)
+    log "0.5 清理 etcd 测试残留..."
+    local etcd_pod=$(kubectl get pods -n "$ns" -l app=thunder-etcd --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "$etcd_pod" ]]; then
+        # 删除 admin-web 历史遗留的变体 key (HELLOHTTP 无下划线)
+        if kubectl exec -n "$ns" "$etcd_pod" -- etcdctl get /thunder/config/module/ --prefix --keys-only 2>/dev/null | grep -q "HELLOHTTP$"; then
+            kubectl exec -n "$ns" "$etcd_pod" -- etcdctl del /thunder/config/module/HELLOHTTP 2>/dev/null || true
+            ok "  已删除 stale key: HELLOHTTP"
+        fi
+        # 清理 module config 中的 _regression_* 条目 (只删条目, 不删整个 key)
+        for key in HELLO_HTTP HELLO_HTTPS HELLO_WSS; do
+            local cfg=$(kubectl exec -n "$ns" "$etcd_pod" -- etcdctl get "/thunder/config/module/$key" --print-value-only 2>/dev/null || echo "")
+            if echo "$cfg" | grep -q "_regression"; then
+                kubectl exec -n "$ns" "$etcd_pod" -- etcdctl del "/thunder/config/module/$key" 2>/dev/null || true
+                ok "  已清理 ${key} 中的 _regression 残留 (重建后从本地 conf 恢复)"
+            fi
+        done
+        ok "  etcd 残留检查完成"
+    else
+        warn "  etcd 不可达, 跳过"
+    fi
+
+    echo -e "${GREEN}✔${NC} PRE-CHECK 完成"
+
+    # ============================================================
+    # 阶段 1: BUILD — C++ cmake + docker 镜像
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}--- [1/4] BUILD (全新构建) ---${NC}"
+
+    # 1.1 C++ cmake build + install (确保 deploy/ 下有最新二进制)
+    log "1.1 C++ cmake build + install..."
+    cd "${PROJECT_DIR}"
+    cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" || {
+        err "C++ 编译失败"
+        return 1
+    }
+    cmake --install "${BUILD_DIR}" || {
+        err "cmake install 失败"
+        return 1
+    }
+    ok "  C++ 构建完成"
+
+    # 1.2 Go admin-web 编译
+    log "1.2 编译 admin-web (Go)..."
+    cd "${PROJECT_DIR}/deploy/admin-web"
+    CGO_ENABLED=1 go build -o admin-web . 2>&1 || {
+        err "admin-web Go 编译失败"
+        return 1
+    }
+    ok "  admin-web 编译完成"
+    cd "${PROJECT_DIR}"
+
+    # 1.3 构建 Docker 镜像 (不用 --no-cache: C++/Go 已全新编译, COPY 自动失效缓存;
+    #     apt-get install 层缓存安全, 不会影响二进制正确性)
+    log "1.3 构建 Docker 镜像..."
+    local images_ok=true
+
+    # Interface (含 #144 Watch 修复)
+    docker build -f deploy/Interface/Dockerfile -t "thunder-interface:${tag}" . 2>&1 | tail -3 || { err "Interface 镜像构建失败"; images_ok=false; }
+
+    # Hello (所有 Hello* 共用一套二进制)
+    docker build -f deploy/HelloHttp/Dockerfile -t "thunder-hello:${tag}" . 2>&1 | tail -3 || { err "HelloHttp 镜像构建失败"; images_ok=false; }
+    docker build -f deploy/HelloHttps/Dockerfile -t "thunder-hello-https:${tag}" . 2>&1 | tail -3 || { err "HelloHttps 镜像构建失败"; images_ok=false; }
+    docker build -f deploy/HelloWs/Dockerfile -t "thunder-hello-ws:${tag}" . 2>&1 | tail -3 || { err "HelloWs 镜像构建失败"; images_ok=false; }
+    docker build -f deploy/HelloWss/Dockerfile -t "thunder-hello-wss:${tag}" . 2>&1 | tail -3 || { err "HelloWss 镜像构建失败"; images_ok=false; }
+    docker build -f deploy/Logic/Dockerfile -t "thunder-logic:${tag}" . 2>&1 | tail -3 || { err "Logic 镜像构建失败"; images_ok=false; }
+    docker build -f deploy/Logic_v2/Dockerfile -t "thunder-logic-v2:${tag}" . 2>&1 | tail -3 || { err "Logic-v2 镜像构建失败"; images_ok=false; }
+
+    # admin-web (含 #142 前端修复)
+    docker build -f deploy/admin-web/Dockerfile -t "thunder-admin-web:${tag}" deploy/admin-web/ 2>&1 | tail -3 || { err "admin-web 镜像构建失败"; images_ok=false; }
+
+    if [[ "$images_ok" != "true" ]]; then
+        err "部分镜像构建失败"
+        return 1
+    fi
+    ok "  Docker 镜像全部构建完成"
+
+    # 1.4 校验 — 确认二进制含新代码（用 Build 时间对比）
+    log "1.4 校验构建产物..."
+    local iface_ts=$(docker image inspect thunder-interface:test --format '{{.Created}}' 2>/dev/null)
+    local admin_ts=$(docker image inspect thunder-admin-web:test --format '{{.Created}}' 2>/dev/null)
+    echo "  Interface 镜像:  $iface_ts"
+    echo "  admin-web 镜像:  $admin_ts"
+
+    echo -e "${GREEN}✔${NC} BUILD 完成"
+
+    # ============================================================
+    # 阶段 2: DEPLOY — 导入 containerd → 滚动更新
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}--- [2/4] DEPLOY (滚动更新) ---${NC}"
+
+    # 2.1 导入镜像到 containerd (docker nsenter, 不需要 sudo)
+    log "2.2 导入镜像到 containerd..."
+    local ctr_ok=true
+    mkdir -p /tmp/thunder-images
+    for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
+               thunder-hello-wss thunder-logic thunder-logic-v2 thunder-admin-web; do
+        log "  导入 $img:${tag} ..."
+        docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
+            warn "  $img docker save 失败"; ctr_ok=false; continue
+        }
+    done
+    if $ctr_ok; then
+        # 一次性导入全部 (避免容器反复启动)
+        docker run --rm --privileged --pid=host --network=host \
+            -v /tmp/thunder-images:/tmp/thunder-images \
+            alpine:latest nsenter -t 1 -m -u -n -i -p -- sh -c '
+                for f in /tmp/thunder-images/*.tar; do
+                    ctr -n k8s.io image import "$f" 2>/dev/null
+                done
+            ' 2>/dev/null || true
+        ok "  镜像导入完成"
+    else
+        warn "  部分镜像未导入"
+    fi
+    rm -rf /tmp/thunder-images
+
+    # 2.3 滚动更新所有 Deployment
+    log "2.3 滚动更新所有 Gateway + admin-web..."
+    # 确保 replicas=1 (CLEAN 阶段可能已 scale 到 0)
+    for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
+               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
+        kubectl scale deploy -n "$ns" "$dep" --replicas=1 2>/dev/null || true
+    done
+    declare -A DEP_IMAGE=(
+        [thunder-interface]="thunder-interface:${tag}"
+        [thunder-hello]="thunder-hello:${tag}"
+        [thunder-hello-https]="thunder-hello-https:${tag}"
+        [thunder-hello-ws]="thunder-hello-ws:${tag}"
+        [thunder-hello-wss]="thunder-hello-wss:${tag}"
+        [thunder-logic]="thunder-logic:${tag}"
+        [thunder-logic-v2]="thunder-logic-v2:${tag}"
+        [thunder-admin-web]="thunder-admin-web:${tag}"
+    )
+    for dep in "${!DEP_IMAGE[@]}"; do
+        local img="${DEP_IMAGE[$dep]}"
+        kubectl -n "$ns" set image "deployment/${dep}" "*=${img}" 2>/dev/null || {
+            warn "  $dep 未部署，跳过"
+            continue
+        }
+        ok "  $dep → $img"
+    done
+
+	    # 2.3b 节点性能优化 DaemonSet (#154)
+	    log "2.3b 部署 node-tuner DaemonSet..."
+	    kubectl apply -f k8s/node-tuner-daemonset.yaml 2>/dev/null
+	    ok "  node-tuner deployed"
+
+    # 2.4 等待全部 Pod Ready
+    log "2.4 等待 Pod Ready (最长 180s)..."
+    kubectl wait --for=condition=Ready pods --all -n "$ns" --timeout=180s 2>/dev/null || {
+        warn "  部分 Pod 未在 180s 内 Ready"
+        kubectl get pods -n "$ns" 2>/dev/null | grep -v -E "Completed|Error|Evicted" | head -20
+    }
+
+    # 2.5 验证 etcd 注册 (等待节点重新注册)
+    log "2.5 等待 etcd 重新注册..."
+    local max_wait=60 waited=0
+    while [[ $waited -lt $max_wait ]]; do
+        local reg_count=$(kubectl exec -n "$ns" "$etcd_pod" -- etcdctl get /thunder/registry/ --prefix --keys-only 2>/dev/null | grep -c "/" || echo "0")
+        if [[ "$reg_count" -ge 5 ]]; then
+            ok "  已注册 $reg_count 个节点 (${waited}s)"
+            break
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+    if [[ $waited -ge $max_wait ]]; then
+        warn "  注册超时 (当前 $reg_count 个), 继续测试..."
+    fi
+
+    echo -e "${GREEN}✔${NC} DEPLOY 完成"
+
+    # 等待服务真正就绪 (pod Ready ≠ SO 热加载完成, 需 15-30s)
+    log "2.6 等待 SO 热加载完成 (最长 45s)..."
+    local deadline=$(($(date +%s) + 45))
+    local svc_ready=false
+    while [[ $(date +%s) -lt ${deadline} ]]; do
+        if curl -s -m 2 "http://127.0.0.1:27006/hello/hello" -X POST \
+             -H "Content-Type: application/json" -d '{"option":"Echo","size":2}' 2>/dev/null | grep -q '"code":0' && \
+           curl -s -m 2 "http://127.0.0.1:27008/Interface/gentoken" 2>/dev/null | grep -q .; then
+            svc_ready=true
+            break
+        fi
+        sleep 1
+    done
+    if $svc_ready; then
+        ok "  SO 热加载完成 ($((45 - $((${deadline} - $(date +%s)))))s)"
+    else
+        warn "  SO 热加载超时, 继续测试..."
+    fi
+
+    # ============================================================
+    # 阶段 3: TEST — 回归测试
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}--- [3/4] TEST (全量回归) ---${NC}"
+
+    local test_output
+    test_output=$(bash "${PROJECT_DIR}/k8s/regression-test.sh" 2>&1)
+    local test_ret=$?
+    echo "$test_output"
+    # 解析通过/失败/跳过/总计
+    local t_pass=$(echo "$test_output" | grep '通过:' | grep -o '[0-9]\+' | head -1 || echo "?")
+    local t_fail=$(echo "$test_output" | grep '失败:' | grep -o '[0-9]\+' | head -1 || echo "0")
+    local t_skip=$(echo "$test_output" | grep '跳过:' | grep -o '[0-9]\+' | head -1 || echo "0")
+    local t_total=$(echo "$test_output" | grep '总计:' | grep -o '[0-9]\+' | head -1 || echo "?")
+    if [[ $test_ret -eq 0 ]]; then
+        ok "回归测试: ${t_pass}/${t_total} PASS (${t_fail} FAIL, ${t_skip} SKIP)"
+    else
+        fail=$((fail + 1))
+        err "回归测试: ${t_fail}/${t_total} FAIL (${t_pass} PASS, ${t_skip} SKIP)"
+    fi
+
+    # ============================================================
+    # 阶段 4: CLEAN — 清理测试残留
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}--- [4/4] CLEAN (清理测试残留) ---${NC}"
+
+    # 4.1 删测试 artifacts
+    log "4.1 清理制品库测试文件..."
+    local admin_pod=$(kubectl get pods -n "$ns" -l app=thunder-admin-web --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "$admin_pod" ]]; then
+        kubectl exec -n "$ns" "$admin_pod" -- sh -c 'rm -f /app/data/artifacts/*/_regression_*' 2>/dev/null || true
+        ok "  制品库已清理"
+    fi
+
+    # 4.2 删 NFS 测试文件
+    log "4.2 清理 NFS 测试文件..."
+    if [[ -n "$admin_pod" ]]; then
+        kubectl exec -n "$ns" "$admin_pod" -- sh -c 'rm -f /data/thunder/plugins/*/_regression_*' 2>/dev/null || true
+        ok "  NFS 已清理"
+    fi
+
+    # 4.3 清理 etcd 测试残留 (只删 _regression_ 项, 保留 registry/canary 等运营数据)
+    log "4.3 清理 etcd 测试残留..."
+    local etcd_pod_clean=$(kubectl get pods -n "$ns" -l app=thunder-etcd --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "$etcd_pod_clean" ]]; then
+        # 只删 test tag 镜像的模块配置 (PRE-CHECK 已清过, 这里兜底)
+        for key in $(kubectl exec -n "$ns" "$etcd_pod_clean" -- etcdctl get /thunder/config/module/ --prefix --keys-only 2>/dev/null | grep -v "^$" | grep -v "/$"); do
+            if kubectl exec -n "$ns" "$etcd_pod_clean" -- etcdctl get "$key" --print-value-only 2>/dev/null | grep -q "_regression"; then
+                kubectl exec -n "$ns" "$etcd_pod_clean" -- etcdctl del "$key" 2>/dev/null || true
+                ok "  已删除 stale key: $key"
+            fi
+        done
+        ok "  etcd 清理完成"
+    fi
+
+    # 4.4 清 SQLite 审计残留
+    log "4.4 清理 SQLite 审计残留..."
+    if [[ -n "$admin_pod" ]]; then
+        kubectl exec -n "$ns" "$admin_pod" -- sh -c 'sqlite3 /app/data/admin.db "DELETE FROM audit_log WHERE target LIKE '\''%_regression_%'\'';"' 2>/dev/null || true
+        ok "  审计记录已清理"
+    fi
+
+    # 4.5 清理本地 docker 测试镜像
+    log "4.5 清理本地测试镜像..."
+    docker rmi "thunder-interface:${tag}" "thunder-hello:${tag}" "thunder-hello-https:${tag}" \
+               "thunder-hello-ws:${tag}" "thunder-hello-wss:${tag}" \
+               "thunder-logic:${tag}" "thunder-logic-v2:${tag}" \
+               "thunder-admin-web:${tag}" 2>/dev/null || true
+    ok "  本地镜像已清理"
+
+    # 4.6 关闭业务服务 (归还端口, 不影响下次测试)
+    log "4.6 关闭业务服务 (释放端口)..."
+    for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
+               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
+        kubectl scale deploy -n "$ns" "$dep" --replicas=0 2>/dev/null || true
+    done
+    sleep 3
+    # 杀残留孤儿进程
+    sudo killall -9 Hello_robot Interface_robot 2>/dev/null || true
+    ok "  服务已关闭, 端口已释放"
+
+    echo -e "${GREEN}✔${NC} CLEAN 完成"
+
+    # ============================================================
+    # 汇总
+    # ============================================================
+    echo ""
+    echo -e "${BOLD}============================================${NC}"
+    if [[ $fail -eq 0 ]]; then
+        echo -e "  ${GREEN}✔ K8s 回归测试: ${t_pass:-?}/${t_total:-?} PASS (${t_fail:-0} FAIL, ${t_skip:-0} SKIP)${NC}"
+    else
+        echo -e "  ${RED}✘ K8s 回归测试: ${t_fail:-?} FAIL (${t_pass:-?}/${t_total:-?})${NC}"
+    fi
+    echo -e "${BOLD}============================================${NC}"
+    return $fail
 }
 
 # ─── Bench ──────────────────────────────────────
@@ -587,10 +970,14 @@ cmd_deploy() {
     echo ""
     log "K8s 一键部署 (ns=${ns})"
 
-    # 1. 清理旧 Pod
-    kubectl delete pods -n "$ns" --all --force --grace-period=0 2>/dev/null
-    kubectl scale deploy -n "$ns" thunder-admin-web --replicas=1 2>/dev/null
-    sleep 3
+    # 1. 清理僵尸 + 非 Running Pod
+    sudo killall -9 Hello_robot Interface_robot 2>/dev/null || true
+    kubectl delete pod -n "$ns" --field-selector=status.phase!=Running 2>/dev/null || true
+    sleep 2
+    # 等端口释放
+    for port in 27006 27007 27008 27009 27010 27011 27012 27443 27444; do
+        while ss -tlnH 2>/dev/null | grep -q ":$port "; do sleep 1; done
+    done
 
     # 2. 构建镜像
     cmd_image || return 1
@@ -603,6 +990,7 @@ cmd_deploy() {
     done
 
     # 4. 部署基础设施
+    kubectl apply -f k8s/etcd-pv.yaml 2>/dev/null
     kubectl apply -f k8s/etcd-statefulset.yaml 2>/dev/null
     kubectl apply -f k8s/mysql.yaml 2>/dev/null
     kubectl apply -f k8s/redis.yaml 2>/dev/null
@@ -616,6 +1004,8 @@ cmd_deploy() {
         kubectl apply -f "$yaml" 2>/dev/null
     done
 
+	# 5b. 节点性能优化 (#154) — 在所有业务 Pod 之后部署
+	kubectl apply -f k8s/node-tuner-daemonset.yaml 2>/dev/null
     ok "deploy 完成，等待 Pod ..."
     kubectl wait --for=condition=Ready pods --all -n "$ns" --timeout=180s 2>/dev/null || true
     kubectl get pods -n "$ns" 2>/dev/null | grep -v -E "Completed|Error|Evicted" | head -20
@@ -664,13 +1054,12 @@ cmd_release() {
         cmd_deploy
         # 4a. K8s 回归
         log "K8s 回归测试..."
-        cmd_test_regression
+        bash "${PROJECT_DIR}/k8s/regression-test.sh"
     else
         # 3b. Docker Compose up
         log "启动 Docker Compose..."
         cd "${DOCKER_DIR}"
         docker compose down --remove-orphans 2>/dev/null || true
-        docker run --rm -v "${DOCKER_DIR}/data:/data" alpine:3.20 rm -rf /data/etcd1 /data/etcd2 /data/etcd3 2>/dev/null || true
         docker compose up -d || { err "compose up 失败"; return 1; }
 
         # 4b. 等待就绪
@@ -726,6 +1115,9 @@ case "${CMD}" in
                 ;;
             perf|bench)
                 cmd_bench
+                ;;
+            k8s)
+                cmd_test_k8s
                 ;;
             *)
                 # 全部: unit + e2e

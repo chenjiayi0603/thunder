@@ -1,0 +1,301 @@
+# ============================================================================
+# Pika (PikiwiDB) — RocksDB 持久化 KV 存储, 兼容 Redis 协议
+# ============================================================================
+#
+# 一、场景分析
+# ──────────
+# Redis 内存 >16GiB 时面临: 内存容量瓶颈、单线程阻塞、启动恢复慢、
+# 硬件成本高、主从切换代价大。Pika 不是替代 Redis，而是互补:
+#   - 热数据 → 内存缓存 (LRU/LFU)
+#   - 全量数据 → RocksDB 持久化到 SSD
+#   - 单实例可支撑百 GB 级数据, Redis 协议兼容
+#
+# 360 内部: 1万+ 实例, 单实例 1.8TB
+# 微博:      1万+ 实例
+# 喜马拉雅:  6000+ 实例, 120TB+
+# 个推:      300+ 实例, 30TB+
+#
+# 二、架构设计
+# ──────────
+#   ┌──────────────────────────────────────────────────┐
+#   │                  Pika Server                      │
+#   │                                                   │
+#   │  ┌──────────┐   ┌──────────┐   ┌──────────┐     │
+#   │  │ Thread 1 │   │ Thread 2 │   │ Thread N │     │  ← thread-num (网络线程)
+#   │  └────┬─────┘   └────┬─────┘   └────┬─────┘     │
+#   │       └───────────────┼──────────────┘           │
+#   │                       ▼                           │
+#   │  ┌──────────────────────────────────────────┐    │
+#   │  │         Thread Pool (12 threads)          │    │  ← thread-pool-size
+#   │  │   ┌─────┐  ┌─────┐      ┌─────┐         │    │
+#   │  │   │Fast │  │Fast │ ...  │Slow │         │    │  ← slow-cmd-pool 隔离
+#   │  │   └──┬──┘  └──┬──┘      └──┬──┘         │    │
+#   │  └──────┼────────┼────────────┼────────────┘    │
+#   │         ▼        ▼            ▼                   │
+#   │  ┌──────────────────────────────────────────┐    │
+#   │  │           内存缓存 (Hot Data)              │    │  ← cache-maxmemory 10GB
+#   │  │   LRU/LFU 淘汰 → 冷数据落 RocksDB         │    │
+#   │  └──────────────────┬───────────────────────┘    │
+#   │                     ▼                             │
+#   │  ┌──────────────────────────────────────────┐    │
+#   │  │           RocksDB (每种数据结构独立实例)    │    │
+#   │  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐    │    │
+#   │  │  │string│ │ hash │ │ list │ │ zset │    │    │
+#   │  │  └──────┘ └──────┘ └──────┘ └──────┘    │    │
+#   │  │   Snappy 压缩 | 256MB MemTable | SST 文件  │    │
+#   │  └──────────────────────────────────────────┘    │
+#   │                                                   │
+#   │  Binlog → 异步主从复制 (增量: port+1000)          │
+#   │  Rsync  → 全量同步 (port+10000)                   │
+#   └──────────────────────────────────────────────────┘
+#
+# 三、性能特点
+# ──────────
+# 读路径: Client → NetThread → ThreadPool → 内存缓存(命中则返回)
+#                                          → 未命中 → RocksDB → 返回 + 写缓存
+# 写路径: Client → NetThread → ThreadPool → RocksDB(MemTable → WAL → SST)
+#                                          → Binlog(主从同步)
+#
+# 关键调优参数:
+#   cache-maxmemory 10GB     ← 热数据内存缓存, 越大读性能越好
+#   write-buffer-size 256M   ← 单个 MemTable 大小, 大=高吞吐 小=低延迟
+#   max-write-buffer-size 10G← 所有 MemTable 总上限
+#   compression snappy       ← 官方预编译只链接 snappy (lz4/zstd 需源码编译)
+#   thread-pool-size 12      ← 工作线程数 (含快慢分离)
+#   thread-num 1             ← 网络线程, 不超过 CPU 核数
+#   rtc-cache-read yes       ← 网络线程直接读缓存, 大幅提升 QPS
+#
+# 四、集群特性
+# ──────────
+# 主从模式 (本文件默认为单机):
+#   slaveof: master-ip:9221          ← 从节点配置
+#   replication-num: 0~4             ← 主节点允许的从节点数
+#   consensus-level: 0~replication-num ← 写一致性级别 (0=异步)
+#
+# Codis 集群模式:
+#   多 Group 分片, 每 Group 一主多从, 弹性扩缩容
+#   需要额外部署 Codis-proxy + Codis-dashboard
+#
+# 端口规划 (Magic Offsets):
+#   9221        ← 客户端连接 (Redis 协议)
+#   9221+1000  = 10221  ← 增量复制 (Binlog)
+#   9221+10000 = 19221  ← 全量同步 (Rsync)
+#
+# 五、Redis 协议兼容
+# ──────────
+# 支持 String/Hash/List/Zset/Set/Geo/HyperLogLog/PubSub/Bitmap/Stream/ACL
+# 不支持: 部分阻塞命令 (BLPOP 等, 取决于版本), Redis Cluster 原生协议
+# 迁移工具: pika-port 可将 Redis RDB/AOF 直接导入 Pika
+#
+# ============================================================================
+---
+# ConfigMap: Pika 配置文件 (所有可调参数在这里改)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pika-config
+  namespace: thunder
+data:
+  pika.conf: |
+    # ===== 网络 =====
+    port : 9221
+    timeout : 60
+    maxclients : 20000
+    root-connection-num : 2
+    proto-max-bulk-len : 536870912
+
+    # ===== 多线程 =====
+    thread-num : 2                # 网络 IO 线程 (建议 ≤ CPU 核数)
+    thread-pool-size : 12          # 工作线程池
+    slow-cmd-pool : no             # yes=隔离慢命令到独立线程池
+    admin-thread-pool-size : 2     # 管理命令线程数
+    sync-thread-num : 6            # 从节点同步线程数
+    sync-binlog-thread-num : 1     # binlog 写线程数
+
+    # ===== 认证 =====
+    # requirepass :               # 管理员密码
+    # masterauth :                # 主从认证密码
+    # userpass :                  # 普通用户密码
+    # userblacklist : FLUSHALL,SHUTDOWN,KEYS,CONFIG
+
+    # ===== 存储路径 =====
+    db-path : /data/pika/db/
+    log-path : /data/pika/log/
+    dump-path : /data/pika/dump/
+    db-sync-path : /data/pika/dbsync/
+    pidfile : /data/pika/pika.pid
+
+    # ===== RocksDB 核心 =====
+    write-buffer-size : 256M          # 单个 MemTable 大小
+    max-write-buffer-size : 10737418240  # 所有 MemTable 总上限 (10GB)
+    max-write-buffer-num : 2          # MemTable 最大数量
+    target-file-size-base : 20M       # SST 文件大小
+    compression : snappy              # 官方镜像仅支持 snappy
+    max-background-jobs : 4           # RocksDB 后台线程 (compaction+flush)
+    max-cache-files : 5000
+    max-bytes-for-level-multiplier : 10
+    delayed-write-rate : 0            # 写限速, 0=自动
+    max-subcompactions : 2            # 子 compaction 线程数
+    disable_auto_compactions : false
+
+    # ===== 热数据缓存 =====
+    cache-model : 1                   # 1=读缓存
+    cache-num : 16                    # 缓存分片数
+    cache-type : string,set,zset,list,hash,bit
+    cache-maxmemory : 10737418240     # 10GB
+    cache-maxmemory-policy : 1        # 1=allkeys-lru
+    cache-maxmemory-samples : 5
+    cache-value-item-max-size : 1024
+    max-key-size-in-cache : 1048576
+    zset-cache-field-num-per-key : 512
+    rtc-cache-read : yes              # 网络线程直读缓存, 大幅提升 QPS
+
+    # ===== Binlog & 同步 =====
+    write-binlog : yes
+    binlog-file-size : 104857600      # 100MB
+    expire-logs-days : 7
+    expire-logs-nums : 10
+    sync-window-size : 9000
+    max-conn-rbuf-size : 268435456
+    throttle-bytes-per-second : 207200000  # Rsync 限速 200MB/s
+    rsync-timeout-ms : 1000
+    max-rsync-parallel-num : 4
+    db-sync-speed : -1                # 全量同步不限速
+
+    # ===== 主从 (单机模式下注释) =====
+    instance-mode : classic
+    databases : 1
+    replication-num : 0               # 0=单机模式
+    consensus-level : 0
+    # slaveof : master-ip:9221        # 作为从节点时取消注释
+
+    # ===== Compaction 策略 =====
+    # compact-cron : 3/02-04/60        # 每周三 2-4点自动全量 compact
+    # compact-interval : 6/60          # 每6小时 (与 compact-cron 二选一)
+    max-cache-statistic-keys : 0
+    small-compaction-threshold : 5000
+    small-compaction-duration-threshold : 10000
+
+    # ===== 日志 & 诊断 =====
+    log-retention-time : 7
+    slowlog-log-slower-than : 10000   # 10ms
+    slowlog-max-len : 128
+    slowlog-write-errorlog : no
+
+    # ===== 其他 =====
+    dump-prefix :
+    dump-expire : 0
+    slave-priority : 100
+    default-slot-num : 1024
+    slotmigrate : no
+
+---
+# Headless Service (StatefulSet Pod DNS 解析)
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-pika-headless
+  namespace: thunder
+  labels:
+    app: thunder-pika
+spec:
+  clusterIP: None
+  ports:
+  - port: 9221
+    targetPort: 9221
+    name: client
+  - port: 10221
+    targetPort: 10221
+    name: replication
+  - port: 19221
+    targetPort: 19221
+    name: rsync
+  selector:
+    app: thunder-pika
+---
+# ClusterIP Service (客户端连接入口)
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-pika
+  namespace: thunder
+  labels:
+    app: thunder-pika
+spec:
+  ports:
+  - port: 9221
+    targetPort: 9221
+    name: client
+  selector:
+    app: thunder-pika
+---
+# StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thunder-pika
+  namespace: thunder
+spec:
+  serviceName: thunder-pika-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-pika
+  template:
+    metadata:
+      labels:
+        app: thunder-pika
+    spec:
+      containers:
+      - name: pika
+        image: pikadb/pika:latest
+        imagePullPolicy: IfNotPresent
+        # 启动命令: 用自定义配置文件
+        command:
+        - /pika/bin/pika
+        args:
+        - -c
+        - /pika/conf/pika.conf
+        ports:
+        - containerPort: 9221
+          name: client
+        - containerPort: 10221
+          name: replication
+        - containerPort: 19221
+          name: rsync
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "16Gi"    # cache-maxmemory 10GB + RocksDB overhead
+            cpu: "4"
+        volumeMounts:
+        - name: pika-data
+          mountPath: /data/pika
+        - name: pika-config
+          mountPath: /pika/conf/pika.conf
+          subPath: pika.conf
+        livenessProbe:
+          tcpSocket:
+            port: 9221
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 9221
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: pika-config
+        configMap:
+          name: pika-config
+  volumeClaimTemplates:
+  - metadata:
+      name: pika-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi      # 按需调整

@@ -25,12 +25,14 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 #define GLOG_WARN(msg)  LOG4CPLUS_WARN(sLogger,  msg)
 #define GLOG_ERROR(msg) LOG4CPLUS_ERROR(sLogger, msg)
 
-static constexpr int      kLeaseTTL         = 30;   // seconds
-static constexpr int      kKeepAliveRefresh = 10;   // unary keepalive interval
-static constexpr int      kPollInterval       = 5;    // config poll interval
-static constexpr int      kCanaryPollInterval = 30;   // canary fallback check interval
-static constexpr int      kZombieMaxAge     = 60;   // skip entries older than 2× lease TTL
-static constexpr uint32_t kMaxSlot          = 255;
+static constexpr int      kLeaseTTL           = 30;   // seconds
+static constexpr int      kKeepAliveRefresh   = 10;   // unary keepalive interval
+static constexpr int      kPollInterval         = 5;    // config poll interval
+static constexpr int      kCanaryPollInterval   = 30;   // canary fallback check interval
+static constexpr int      kWatchHealthTimeout   = 45;   // 没有 Watch 事件的最大容忍时间
+static constexpr int64_t  kWatchRebuildBackoff  = 5;    // 两次重建之间的最小间隔（防抖）
+static constexpr int      kZombieMaxAge       = 60;   // skip entries older than 2× lease TTL
+static constexpr uint32_t kMaxSlot            = 255;
 static constexpr const char* kRegistryPrefix = "/thunder/registry/";
 static constexpr const char* kCanaryPrefix   = "/thunder/canary/";
 static constexpr const char* kConfigPrefix   = "/thunder/config/";
@@ -276,10 +278,16 @@ void EtcdGrpcConnector::GrpcThreadMain()
 
             if (cmd.type == CmdType::PutConfig)
             {
-                auto r = etcdClient.put(cmd.configKey, cmd.configValue, m_leaseId);
-                if (r.error_code() != 0)
-                    GLOG_WARN("GrpcThread: PutConfig failed key=" << cmd.configKey
-                              << " err=" << r.error_message());
+                // Write without lease — config is desired state, not tied to pod lifecycle.
+                // Only seed if key does NOT exist (create_revision == 0),
+                // so admin-deployed config is never overwritten.
+                etcdv3::Transaction txn;
+                txn.add_compare_create(cmd.configKey, etcdv3::CompareResult::EQUAL, 0);
+                txn.add_success_put(cmd.configKey, cmd.configValue);
+                txn.add_failure_range(cmd.configKey);
+                auto r = etcdClient.txn(txn);
+                if (r.error_code() != 0 || !r.is_ok())
+                    GLOG_INFO("PutConfig: key exists, skip seed (key=" << cmd.configKey << ")");
             }
             else if (cmd.type == CmdType::Register)
             {
@@ -319,17 +327,79 @@ void EtcdGrpcConnector::GrpcThreadMain()
 
         auto now = Clock::now();
 
-        // Watch 断流后重建：先 join 旧 Watcher，再快照，再启动新 Watcher
-        if (m_watchEnded.load() && m_registered.load())
+        // ---- Watch 重建（三种触发条件） ----
+        // 1. m_watchEnded==true（OnWatchEnded 回调触发）
+        // 2. 距上次 Watch 事件超过 kWatchHealthTimeout（静默 hang 检测）
+        if (m_registered.load())
         {
-            GLOG_WARN("GrpcThread: Watch ended, rebuilding snapshot + Watch");
-            m_watchEnded = false;
-            m_registryWatcher.reset();   // join task_，确保 OnWatchEvent 不再并发
-            m_canaryWatcher.reset();
-            DoInitialSnapshot(etcdClient);
-            DoStartWatch(etcdClient);
-            DoCanarySnapshot(etcdClient);
-            DoStartCanaryWatch(etcdClient);
+            int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+                now.time_since_epoch()).count();
+
+            bool needRebuild = false;
+            if (m_watchEnded.load())
+            {
+                needRebuild = true;
+                GLOG_WARN("GrpcThread: Watch ended callback received, rebuilding...");
+            }
+            else if (m_lastWatchEventSec.load() > 0 &&
+                     nowSec - m_lastWatchEventSec.load() > kWatchHealthTimeout)
+            {
+                needRebuild = true;
+                GLOG_WARN("GrpcThread: Watch silent too long ("
+                          << (nowSec - m_lastWatchEventSec.load())
+                          << "s > " << kWatchHealthTimeout
+                          << "s), health-check rebuild...");
+            }
+
+            if (needRebuild)
+            {
+                // 防抖：距上次重建至少间隔 kWatchRebuildBackoff 秒
+                if (m_lastWatchRebuildSec > 0 &&
+                    nowSec - m_lastWatchRebuildSec < kWatchRebuildBackoff)
+                {
+                    // 不重建，等下一个 tick
+                }
+                else
+                {
+                    m_lastWatchRebuildSec = nowSec;
+                    const bool fromHealthCheck = !m_watchEnded.load();
+
+                    // ---- 清理旧 Watcher ----
+                    //   OnWatchEnded 路径：线程已正常退出，reset() 安全 join
+                    //   健康检查路径：线程可能 hung 在 cq_.Next()，
+                    //     reset()→~Watcher()→Cancel()→task_.join() 会永久阻塞
+                    //     故用 release() 分离旧 Watcher，接受轻微内存泄漏
+                    if (fromHealthCheck)
+                    {
+                        m_registryWatcher.release();
+                        m_canaryWatcher.release();
+                    }
+                    else
+                    {
+                        m_registryWatcher.reset();
+                        m_canaryWatcher.reset();
+                    }
+                    m_watchEnded = false;
+
+                    try
+                    {
+                        DoInitialSnapshot(etcdClient);
+                        DoStartWatch(etcdClient);
+                        DoCanarySnapshot(etcdClient);
+                        DoStartCanaryWatch(etcdClient);
+                        // 重建成功后重置健康检查计时器
+                        m_lastWatchEventSec = nowSec;
+                        GLOG_INFO("GrpcThread: Watch rebuild complete");
+                    }
+                    catch (const std::exception& e)
+                    {
+                        GLOG_ERROR("GrpcThread: Watch rebuild failed: " << e.what()
+                                   << ", will retry next tick (backoff "
+                                   << kWatchRebuildBackoff << "s)");
+                        // 不重抛——保持 gRPC 线程存活，下次 tick 继续重试
+                    }
+                }
+            }
         }
 
         if (m_leaseId && now - lastKeepalive >= Seconds(kKeepAliveRefresh))
@@ -499,6 +569,10 @@ void EtcdGrpcConnector::DoStartWatch(etcd::SyncClient& client)
 
 void EtcdGrpcConnector::OnWatchEvent(etcd::Response resp)
 {
+    // 记录最后事件时间用于 Watch 健康检查
+    m_lastWatchEventSec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
     if (resp.error_code() != 0)
     {
         GLOG_WARN("OnWatchEvent: error " << resp.error_code()
@@ -553,6 +627,24 @@ void EtcdGrpcConnector::OnWatchEnded(bool cancelled)
     GLOG_WARN("OnWatchEnded: Watch stream ended unexpectedly, will rebuild");
     m_watchEnded = true;
     // 通过 m_cmdCv 唤醒 GrpcThreadMain（避免等满 1s tick）
+    m_cmdCv.notify_one();
+}
+
+// ============================================================
+// Canary Watch 结束回调（Watcher 内部线程）
+// 独立于 registry watcher，canary 断流不影响 registry watch
+// ============================================================
+
+void EtcdGrpcConnector::OnCanaryWatchEnded(bool cancelled)
+{
+    if (cancelled)
+    {
+        GLOG_INFO("OnCanaryWatchEnded: Canary Watch normally cancelled");
+        return;
+    }
+    GLOG_WARN("OnCanaryWatchEnded: Canary Watch stream ended unexpectedly");
+    // canary 断流：只标记需要全量重建（因为重建时两个 watcher 都会重建）
+    m_watchEnded = true;
     m_cmdCv.notify_one();
 }
 
@@ -718,7 +810,7 @@ void EtcdGrpcConnector::DoStartCanaryWatch(etcd::SyncClient& client)
                 AssembleAndPushRouteUpdated();
             }
         },
-        [this](bool cancelled) { OnWatchEnded(cancelled); },
+        [this](bool cancelled) { OnCanaryWatchEnded(cancelled); },
         true   // recursive
     );
     GLOG_INFO("DoStartCanaryWatch: watching " << kCanaryPrefix

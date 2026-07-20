@@ -172,8 +172,8 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
 | 端到端延迟 P50 | 1,586 ns | **1,227 ns** |
 | 64B 载荷优势 | — | **2.58 倍** |
 
-设计文档：[`docs/architecture/23-work-stealing-threadpool.md`](docs/architecture/23-work-stealing-threadpool.md)  
-基准测试：[`docs/performance/04-work-stealing-bench.md`](docs/performance/04-work-stealing-bench.md)
+设计文档：[`docs/architecture/12-work-stealing-threadpool.md`](docs/architecture/12-work-stealing-threadpool.md)  
+基准测试：[`docs/architecture/12-work-stealing-threadpool.md#附录-bwork-stealing-性能基准`](docs/architecture/12-work-stealing-threadpool.md#附录-bwork-stealing-性能基准)
 
 ### C++20 协程
 

@@ -17,7 +17,13 @@ func main() {
 	}
 
 	// Init stores
-	s, err := store.New(etcdEP, "admin.db")
+	// admin.db + artifacts 存 PVC subPath ".admin-web"
+	// Pod 重启不丢，包含审计数据
+	dataDir := "/app/data"
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("init data dir: %v", err)
+	}
+	s, err := store.New(etcdEP, filepath.Join(dataDir, "admin.db"))
 	if err != nil {
 		log.Fatalf("init store: %v", err)
 	}
@@ -33,12 +39,12 @@ func main() {
 	mux.HandleFunc("/api/canary/", h.Canary)
 	mux.HandleFunc("/api/config/", h.Config)
 	mux.HandleFunc("/api/lua/", h.Lua)
+	mux.HandleFunc("/api/plugins/", h.Plugins)
 	mux.HandleFunc("/api/plugins", h.Plugins)
 	mux.HandleFunc("/api/audit", h.Audit)
 
-	// Static files
-	staticDir := filepath.Join(".", "static")
-	fs := http.FileServer(http.Dir(staticDir))
+	// Static files — serve from static/ (Nacos-style SPA)
+	fs := http.FileServer(http.Dir("static"))
 	mux.Handle("/", fs)
 
 	port := os.Getenv("PORT")

@@ -127,6 +127,7 @@ private:
 
     void OnWatchEvent(etcd::Response resp);
     void OnWatchEnded(bool cancelled);
+    void OnCanaryWatchEnded(bool cancelled);
 
     // ---- 路由组装（调用方须持有 m_registryMutex 或确保无并发） ----
 
@@ -198,12 +199,14 @@ private:
     std::mutex                          m_registryMutex;
     std::map<std::string, std::string>  m_nodeRegistry;  ///< ip:port → JSON value
 
-    // ---- Watch 状态（GrpcThread 读写；m_watchEnded 由 Watcher 线程写） ----
+    // ---- Watch 状态（GrpcThread 读写；m_watchEnded / m_lastWatchEventSec 由 Watcher 线程写） ----
 
     std::unique_ptr<etcd::Watcher> m_registryWatcher;
     std::unique_ptr<etcd::Watcher> m_canaryWatcher;
     std::atomic<bool>              m_watchEnded{false};
-    int64_t                        m_watchRevision{0};  ///< ls 快照时拿到的 revision
+    std::atomic<int64_t>           m_lastWatchEventSec{0};   ///< 上次 Watch 事件时间（unix秒），用于健康检查
+    int64_t                        m_lastWatchRebuildSec{0}; ///< 上次重建时间（gRPC 线程独占）
+    int64_t                        m_watchRevision{0};       ///< ls 快照时拿到的 revision
     int64_t                        m_canaryWatchRevision{0};
 
     // ---- Canary 权重（m_canaryMutex 保护，GrpcThread 和 Watcher 线程均访问） ----

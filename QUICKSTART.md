@@ -266,9 +266,9 @@ kubectl delete ns thunder
 
 | 主题 | 文档 |
 |------|------|
-| Canary 灰度路由 | `docs/architecture/34-k8s-canary-routing.md` |
-| entrypoint + Compose | `docs/architecture/37-entrypoint-and-docker-compose-canary.md` |
-| K8s 运维 | `k8s/OPERATIONS.md` |
-| SO 热更新 via etcd | `docs/architecture/15-so-module-hot-reload-via-etcd.md` |
-| Lua 模块 | `docs/architecture/21-lua-send-to-node-type.md` |
-| Manager/Worker IPC | `docs/architecture/11-manager-worker-ipc.md` |
+| Canary 灰度路由 | `docs/architecture/17-k8s-canary-routing.md` |
+| entrypoint + Compose | `docs/architecture/19-entrypoint-and-docker-compose-canary.md` |
+| K8s 运维 | `k8s/k8s-manual.md` |
+| SO 热更新 via etcd | `docs/architecture/08-so-module-hot-reload-via-etcd.md` |
+| Lua 模块 | `docs/architecture/11-lua-send-to-node-type.md` |
+| Manager/Worker IPC | `docs/architecture/06-manager-worker-ipc.md` |
