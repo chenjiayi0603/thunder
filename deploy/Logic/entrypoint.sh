@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 PORT="${INNER_PORT:-16068}"
 [ -n "$INNER_PORT" ] && sed -i "s/\"inner_port\": [0-9]*/\"inner_port\": $INNER_PORT/" ./conf/Logic.json
 # hostNetwork Pod 需要真实 pod IP 才能被连接到 (0.0.0.0 会被解析到 127.0.0.1)

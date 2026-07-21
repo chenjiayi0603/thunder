@@ -15,10 +15,11 @@ spec:
       labels:
         app: thunder-admin-web
     spec:
+      serviceAccountName: thunder-admin-web
       containers:
       - name: app
-        image: thunder-admin-web:latest
-        imagePullPolicy: IfNotPresent
+        image: localhost:5000/thunder-admin-web:latest
+        imagePullPolicy: Always
         # --- 资源请求/限制 (非 Guaranteed QoS, admin 不绑核) ---
         resources:
           requests:
@@ -33,15 +34,12 @@ spec:
         ports:
         - containerPort: 8090
         volumeMounts:
-        - name: nfs-plugins
-          mountPath: /data/thunder/plugins
-        - name: nfs-plugins
+        - name: admin-data
           mountPath: /app/data
-          subPath: .admin-web
       volumes:
-      - name: nfs-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
+      - name: admin-data
+        emptyDir: {}
+        # TODO: Replace emptyDir with PVC for artifact+audit persistence across node reschedule
 ---
 apiVersion: v1
 kind: Service

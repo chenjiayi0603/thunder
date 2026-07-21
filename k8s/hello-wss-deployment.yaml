@@ -19,14 +19,10 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       # sysctls 不能与 hostNetwork 同时使用 (K8s 限制)
-      # TCP buffer 优化由 Node 级 sysctl (scripts/init-k8s-node.sh) 统一管理
-      volumes:
-      - name: nfs-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
+      # TCP buffer 优化由 Node 级 sysctl (k8s/init-k8s-node.sh) 统一管理
       containers:
       - name: app
-        image: thunder-hello-wss:latest
+        image: localhost:5000/thunder-hello-wss:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: NODE_VERSION
@@ -51,7 +47,3 @@ spec:
         ports:
         - containerPort: 27012
         - containerPort: 27013
-        volumeMounts:
-        - name: nfs-plugins
-          mountPath: /app/plugins
-          subPath: HelloWss

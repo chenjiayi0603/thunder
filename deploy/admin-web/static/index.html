@@ -112,7 +112,7 @@
       <input type="file" id="plugFile" accept=".so" style="display:none">
     </div>
     <div class="flex gap-sm mt items-center"><label>类型<select class="select" id="plugType"><option value="">请选择</option></select></label>
-      <!-- 版本在 etcd 里管理，不需要选择 -->
+      <label>版本<select class="select" id="plugVer"><option value="">全部</option></select></label>
       <button class="btn btn-primary btn-sm" id="plugUpload">上传</button>
     </div>
   </div>
@@ -122,8 +122,8 @@
     </table>
   </div>
   <div class="card" style="margin-top:var(--space)"><div class="card-header">已部署插件 <span class="text-sm text-muted" id="deployRefresh"></span></div>
-    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>大小</th><th>时间</th></tr></thead>
-      <tbody id="deployTable"><tr><td colspan="4" class="text-center text-muted">加载中...</td></tr></tbody>
+    <table class="table"><thead><tr><th>名称</th><th>类型</th><th>版本</th><th>大小</th><th>MD5</th></tr></thead>
+      <tbody id="deployTable"><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -180,7 +180,7 @@
     if(id==="nodes")loadNodes();
     if(id==="canary")loadCanary();
     if(id==="lua")loadLua();
-    if(id==="plugins")loadPlugins(); loadDeployed();
+    if(id==="plugins")initPlugins();
     if(id==="audit")loadAudit();
   });
 
@@ -213,7 +213,10 @@
 
   function populateTypeDropdowns(services){
     var types=[];
-    services.forEach(function(s){if(s.node_type)types.push(s.node_type)});
+    window._plugVersions={};  // node_type → versions map
+    services.forEach(function(s){
+      if(s.node_type) { types.push(s.node_type); window._plugVersions[s.node_type]=s.versions||{}; }
+    });
     types.sort();
     ['nodeTypeSelect','luaNodeType','cfgModule','canaryServiceSelect'].forEach(function(id){
       var sel=document.getElementById(id);if(!sel)return;
@@ -230,8 +233,39 @@
         plugTypes.push(d);
         ps.innerHTML+='<option value="'+d+'">'+d+'</option>';
       });
-      if(plugTypes.length){ ps.value=plugTypes[0]; loadPlugins(plugTypes[0]); loadDeployed(plugTypes[0]); }
+      if(plugTypes.length){ ps.value=plugTypes[0]; populatePlugVersions(ps); }
     }
+  }
+
+  /* Build the version dropdown for the selected plugType */
+  function populatePlugVersions(plugTypeEl){
+    var pv=document.getElementById('plugVer'); if(!pv) return;
+    var typeEl=plugTypeEl||document.getElementById('plugType');
+    var plugType=typeEl?typeEl.value:'';
+    // Reverse plugType → node_type: "HelloHttp" → "HELLO_HTTP"
+    var nt=plugType.replace(/([A-Z])/g,'_$1').toUpperCase().replace(/^_/,'');
+    var versions=window._plugVersions[nt]||{};
+    var cur=pv.value;
+    pv.innerHTML='<option value="">全部</option>';
+    Object.keys(versions).sort().forEach(function(v){
+      pv.innerHTML+='<option value="'+v+'">'+v+'</option>';
+    });
+    pv.value=cur&&versions[cur]?cur:'';
+  }
+
+  /* Build typeDir from plugType + version: "Logic" + "v2" → "Logic-v2", "Logic" + "v1" → "Logic" */
+  function plugTypeDir(){
+    var type=document.getElementById('plugType').value;
+    var ver=document.getElementById('plugVer').value;
+    if(!type) return '';
+    if(!ver||ver==='v1') return type;
+    return type+'-'+ver;
+  }
+
+  /* Called after populateTypeDropdowns or when plugType changes */
+  function initPlugins(){
+    var td=plugTypeDir(); if(!td) return;
+    loadPlugins(td); loadDeployed(td);
   }
 
   /* ========== Switch to Nodes ========== */
@@ -246,14 +280,13 @@
     var plugType = nodeType.split('_').map(function(p){return p.charAt(0)+p.slice(1).toLowerCase()}).join('');
     var ps = document.getElementById('plugType');
     if (ps) {
-      // ensure the option exists (populated from etcd types)
       for (var i=0; i<ps.options.length; i++) {
         if (ps.options[i].value === plugType) { ps.value = plugType; break; }
       }
+      populatePlugVersions(ps);
     }
     document.querySelector('#navTabs button[data-panel="plugins"]').click();
-    // trigger load after tab switch (the tab change might reset things)
-    setTimeout(function(){ loadPlugins(plugType); loadDeployed(plugType); }, 100);
+    setTimeout(function(){ initPlugins(); }, 100);
   };
 
   /* ========== Nodes ========== */
@@ -603,7 +636,7 @@
   function loadPlugins(type){
     var tbody = document.getElementById("plugTable");
     if (!tbody) return;
-    type = type || document.getElementById("plugType").value || "";
+    type = type || plugTypeDir() || "";
     tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
     API.soList(type).then(function(r){
       var files = (r.ok && r.data && r.data.files) || [];
@@ -619,7 +652,7 @@
   }
 
   window.deployPlugin = function(type, filename){
-    Components.modal({title:"\u786E\u8BA4\u4E0B\u53D1",body:"\u786E\u5B9A\u5C06 <b>"+Components.escapeHtml(filename)+"</b> \u4E0B\u53D1\u5230 <b>"+Components.escapeHtml(type)+"</b> \uFF1F<br><br><span class=\"text-muted\">\u5C06\u5199\u5165 NFS + etcd \u7248\u672C\u66F4\u65B0\uFF0C\u89E6\u53D1 Gateway \u70ED\u91CD\u8F7D\u3002</span>",danger:false,confirmText:"\u4E0B\u53D1",onConfirm:function(){
+    Components.modal({title:"\u786E\u8BA4\u4E0B\u53D1",body:"\u786E\u5B9A\u5C06 <b>"+Components.escapeHtml(filename)+"</b> \u4E0B\u53D1\u5230 <b>"+Components.escapeHtml(type)+"</b> \uFF1F<br><br><span class=\"text-muted\">\u5C06 SO \u63A8\u9001\u5230\u76EE\u6807 Pod \u7684 /app/plugins/\uFF0C\u66F4\u65B0 etcd \u7248\u672C\u89E6\u53D1\u70ED\u91CD\u8F7D\u3002</span>",danger:false,confirmText:"\u4E0B\u53D1",onConfirm:function(){
       API.request('/plugins/'+type+'/deploy',{method:'POST',body:{filename:filename}}).then(function(r){if(r.ok){Components.toast("\u2705 "+filename+" \u5DF2\u4E0B\u53D1","success");loadDeployed(type)}else Components.toast("\u274C \u4E0B\u53D1\u5931\u8D25: "+(r.error||r.status),"error")}).catch(function(e){Components.toast("\u274C \u7F51\u7EDC\u9519\u8BEF: "+e.message,"error")});
     }});
   };
@@ -631,7 +664,9 @@
     if(f) document.getElementById("plugFileName").textContent = "\u5DF2\u9009\u62E9: " + f.name;
   });
   var _plugTypeEl = document.getElementById("plugType");
-if (_plugTypeEl) _plugTypeEl.addEventListener("change",function(){ loadPlugins(this.value); loadDeployed(this.value); });
+if (_plugTypeEl) _plugTypeEl.addEventListener("change",function(){ populatePlugVersions(this); initPlugins(); });
+var _plugVerEl=document.getElementById('plugVer');
+if (_plugVerEl) _plugVerEl.addEventListener("change",function(){ initPlugins(); });
   /* audit events */
   document.getElementById("auditRefresh").addEventListener("click",loadAudit);
   document.getElementById("auditAction").addEventListener("change",loadAudit);
@@ -648,10 +683,11 @@ if (_plugTypeEl) _plugTypeEl.addEventListener("change",function(){ loadPlugins(t
   document.getElementById("plugUpload").addEventListener("click",function(){
     var f = document.getElementById("plugFile").files[0];
     if(!f){Components.toast("\u8BF7\u9009\u62E9\u6587\u4EF6","warning");return;}
-    var typ = document.getElementById("plugType").value;
+    var typ = plugTypeDir();
+    if(!typ){Components.toast("\u8BF7\u9009\u62E9\u7C7B\u578B","warning");return;}
     Components.toast("\u4E0A\u4F20\u4E2D...","info");
     API.soUpload(typ, f).then(function(r){
-      if(r.ok){ Components.toast("\u2705 "+f.name+" \u5DF2\u4E0A\u4F20","success"); loadPlugins(typ); }
+      if(r.ok){ Components.toast("\u2705 "+f.name+" \u5DF2\u4E0A\u4F20","success"); initPlugins(); }
       else { Components.toast("\u274C "+(r.error||"\u4E0A\u4F20\u5931\u8D25"),"error"); }
     }).catch(function(e){ Components.toast("\u274C "+(e.message||"\u4E0A\u4F20\u5931\u8D25"),"error"); });
   });
@@ -660,19 +696,21 @@ if (_plugTypeEl) _plugTypeEl.addEventListener("change",function(){ loadPlugins(t
 function loadDeployed(type){
   var tbody = document.getElementById("deployTable");
   if (!tbody) return;
-  type = type || document.getElementById("plugType").value || "";
-  tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+  type = type || plugTypeDir() || "";
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
   API.request('/plugins/'+type+'/deployed').then(function(r){
     var files = (r.ok && r.data && r.data.files) || [];
-    if(!files.length){ tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无已部署插件</td></tr>'; return; }
+    if(!files.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无已部署插件</td></tr>'; return; }
     var h = "";
     files.forEach(function(f){
-      var sz = f.size < 1024 ? f.size + 'B' : f.size < 1048576 ? (f.size/1024).toFixed(1)+'KB' : (f.size/1048576).toFixed(1)+'MB';
-      h += "<tr><td>"+Components.escapeHtml(f.filename)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(type)+"</span></td><td>"+sz+"</td><td>"+Components.formatTime(f.mod_time)+"</td></tr>";
+      var ver = (f.version != null) ? 'v'+f.version : '-';
+      var sz = f.size ? (f.size < 1024 ? f.size+'B' : f.size < 1048576 ? (f.size/1024).toFixed(1)+'KB' : (f.size/1048576).toFixed(1)+'MB') : '-';
+      var md5 = f.md5 ? '<span style="font-family:monospace;font-size:11px" title="'+Components.escapeAttr(f.md5)+'">'+Components.escapeHtml(f.md5.substring(0,8))+'</span>' : '-';
+      h += "<tr><td>"+Components.escapeHtml(f.filename)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(type)+"</span></td><td>"+ver+"</td><td>"+sz+"</td><td>"+md5+"</td></tr>";
     });
     tbody.innerHTML = h;
     document.getElementById("deployRefresh").textContent = "更新: "+new Date().toLocaleTimeString();
-  }).catch(function(){tbody.innerHTML='<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>'});
+  }).catch(function(){tbody.innerHTML='<tr><td colspan="5" class="text-center text-muted">加载失败</td></tr>'});
 }
 
 /* ========== Audit ========== */

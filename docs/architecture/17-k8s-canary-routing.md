@@ -841,3 +841,134 @@ kubectl patch gr LOGIC-v2 -p '{"spec":{"weight":0}}'   # 回滚
 | **学习成本** | `./canary.py LOGIC canary v2 10` | 需理解 CRD + Operator 模式 |
 
 **结论**：当前阶段 Python CLI 足够，GrayRelease CRD 是正确但不急的事。etcd 权重键是所有操作的统一接口——先用 Python CLI 写它，以后任何时候切到 CRD，Operator 写的也是同一个 key，零迁移成本。
+
+---
+
+## 附录 C：Thunder etcd 灰度 vs 标准 K8s 灰度部署 对比
+
+### C.1 标准 K8s 灰度（Istio / Linkerd 模式）
+
+K8s 自身不支持权重路由（Service 的 iptables/IPVS 是均匀分发），业界标准方案是引入 Service Mesh：
+
+```
+┌─ 用户 ──────────────────────────────────────────────────────┐
+│                                                             │
+│ kubectl apply -f logic-v2-deployment.yaml   ← 新 Deployment │
+│   镜像: thunder-logic:v2                                    │
+│   labels: version=v2                                        │
+│   replicas: 2                                               │
+│                                                             │
+│ kubectl apply -f virtualservice.yaml         ← 流量规则     │
+│   spec:                                                     │
+│     http:                                                   │
+│     - route:                                                │
+│       - destination:                                        │
+│           host: logic                                       │
+│           subset: v1                                        │
+│           weight: 90                                        │
+│       - destination:                                        │
+│           host: logic                                       │
+│           subset: v2                                        │
+│           weight: 10                                        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+┌─ Istio/Linkerd ──────┼──────────────────────────────────────┐
+│ sidecar (envoy/linkerd-proxy) 劫持所有出入流量               │
+│   → 读 VirtualService/DestinationRule                        │
+│   → 按 weight 分流到 v1 / v2 endpoint                        │
+│                                                             │
+│ 需要额外组件:                                                │
+│   - Istiod / Linkerd control plane                          │
+│   - 每个 Pod 注入 sidecar 容器                               │
+│   - CRD: VirtualService, DestinationRule, Gateway            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### C.2 Thunder etcd 灰度（进程内路由）
+
+```
+┌─ 用户 ──────────────────────────────────────────────────────┐
+│                                                             │
+│ kubectl apply -f logic-deployment.yaml       ← 同一镜像     │
+│   镜像: thunder-logic:latest (v1 和 v2 共用)                │
+│   labels: version=v2                                        │
+│   replicas: 2                                               │
+│                                                             │
+│ etcdctl put /thunder/canary/LOGIC/weights '{"v1":90,"v2":10}'│
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+┌─ Thunder Worker ─────┼──────────────────────────────────────┐
+│ 进程内:                                                      │
+│   Manager Watch etcd → 读权重 → 推共享内存                    │
+│   Worker: GetNodeIdentify("LOGIC")                          │
+│     ├─ canary 权重存在?                                     │
+│     │   ├─ 是 → 加权随机选 v1/v2 节点                        │
+│     │   └─ 否 → 一致性哈希 (不变)                            │
+│                                                             │
+│ 需要额外组件: 零                                             │
+│ etcd 本来就在用做服务发现                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### C.3 对比总表
+
+| 维度 | 标准 K8s 灰度 (Istio) | Thunder etcd 灰度 |
+|:---|:---|:---|
+| **权重分流** | VirtualService CRD | etcd 一个 key |
+| **额外组件** | Istiod + sidecar × N | **零** |
+| **sidecar 开销** | 每个 Pod 多一个容器, ~50MB 内存, ~1ms 延迟 | 无 |
+| **部署复杂度** | 先装 Service Mesh, 再配 CRD | 已有 etcd, ~75 行 C++ |
+| **灰度粒度** | L7 (HTTP header/path/weight) | L4/L7 (连接/请求级加权随机) |
+| **适用流量** | 入口流量（南北向） | **内网 RPC + 网关（东西向）** |
+| **回滚速度** | `kubectl apply` 改 weight → istiod 推送 → envoy 热加载 (秒级) | `etcdctl put` → Manager Watch → Worker 下一笔请求 (毫秒级) |
+| **回滚方式** | 改 VirtualService weight=0 | 改 etcd weight=0 或 del key |
+| **镜像管理** | v1/v2 各自独立镜像 | **v1/v2 可用同一镜像**（SO 热更新区分版本） |
+| **新版本上线** | 打镜像 → push → 建 Deployment → 配 VirtualService | 打镜像 → push → 建 Deployment → etcdctl put weight |
+| **运维工具** | `kubectl` + `istioctl` | `etcdctl` + `canary.py` |
+| **审计** | GitOps (VirtualService YAML 入 Git) | etcd 键变更（可扩展 audit log） |
+| **自动回滚** | Flagger/Argo Rollouts 读 Prometheus → 改 weight | Operator 读 Prometheus → 改 etcd (延后) |
+| **适用团队** | 有 K8s + Istio 运维经验 | 小团队，不想引入 Service Mesh |
+
+### C.4 什么时候用哪个
+
+```
+是否需要灰度内网 RPC (Interface→Logic)?
+  ├─ 是 → 必须用 Thunder etcd 灰度
+  │       (Istio 管不到 Thunder 自建 S2S 连接)
+  │
+  └─ 否 (只是 HTTP 入口灰度)?
+      ├─ 已有 Istio → 用 VirtualService (惯性)
+      └─ 没有 Istio → 用 Thunder etcd (零额外组件)
+```
+
+Thunder etcd 灰度的唯一局限是只能管 Thunder 进程内的路由（`GetNodeIdentify`）。但这对 Thunder 来说恰好覆盖了全部调用链路——Interface→Logic、Hello→Logic 等所有 RPC 都走这条路径。外部 HTTP 入口也走 Thunder 自己的 codec 分发，不需要 sidecar 劫持。
+
+### C.5 为什么不用新 Deployment 区分版本就够了
+
+标准 K8s 灰度的核心是 **"用不同 Deployment 区分版本"**——这和 Thunder 的做法完全一致：
+
+```
+# 标准 K8s 灰度
+kubectl apply -f logic-v1-deployment.yaml   # image: logic:v1, labels: version=v1
+kubectl apply -f logic-v2-deployment.yaml   # image: logic:v2, labels: version=v2
+# Istio VirtualService 按 version label 分流
+
+# Thunder etcd 灰度
+kubectl apply -f logic-deployment.yaml      # image: logic:latest, labels: version=v1
+kubectl apply -f logic-deployment.yaml      # image: logic:latest, labels: version=v2
+                                             # (同一 YAML, 不同 Deployment 名)
+# etcd weight key 按 NODE_VERSION 分流
+```
+
+**两者都用多 Deployment 区分版本**。区别只在分流机制：Istio 靠 sidecar 劫持 L7 流量读 VirtualService，Thunder 靠 Worker 进程内读 etcd 权重键。前者需要一整套 Service Mesh，后者只需要 ~75 行 C++。
+
+**注意区分两种更新场景**：
+
+| 场景 | 镜像 | 操作 |
+|:---|:---|:---|
+| **节点整体灰度**（新 bin + 新 SO + 新配置） | v1 / v2 **不同镜像** | 新 Deployment + etcd 权重分流 |
+| **SO 热更新**（只换插件，不动 bin, #155） | **同一镜像** | kubectl cp 新 SO → Pod → ReloadSo |
+
+节点灰度时两个 Deployment 必须用不同镜像（`thunder-logic:v1` vs `thunder-logic:v2`），否则两个版本跑完全相同的代码，灰度没有意义。SO 热更新才是同一镜像里的插件替换，那属于 Phase 2 的 per-Pod SO 推送。
+
+`deploy/Logic_v2/` 目录不必要是因为它只是 `deploy/Logic/` 的过时拷贝——构建时应该从同一份源码出两个镜像 tag（`:v1` / `:v2` / `:canary`），而不是维护两份源码目录。

@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,11 +18,12 @@ import (
 )
 
 type Handler struct {
-	s *store.Store
+	s   *store.Store
+	k8s K8sPodClient // nil if not running in K8s (local dev mode)
 }
 
-func New(s *store.Store) *Handler {
-	return &Handler{s: s}
+func New(s *store.Store, k8s K8sPodClient) *Handler {
+	return &Handler{s: s, k8s: k8s}
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {
@@ -335,6 +339,21 @@ func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, "only .so files allowed")
 			return
 		}
+		// #157: 校验 ELF magic — 拒绝非 .so 文件防止 CrashLoop
+		var buf bytes.Buffer
+		tee := io.TeeReader(r.Body, &buf)
+		magic := make([]byte, 4)
+		if _, err := io.ReadFull(tee, magic); err != nil {
+			writeErr(w, "read file: "+err.Error())
+			return
+		}
+		if !isELF(magic) {
+			writeErr(w, fmt.Sprintf("not a valid .so file (ELF magic: %x, expected 7f454c46)", magic))
+			return
+		}
+		// Reconstruct body: magic bytes + remaining stream
+		bodyReader := io.MultiReader(bytes.NewReader(magic), io.MultiReader(&buf, r.Body))
+
 		artifactDir := filepath.Join("/app/data/artifacts", typeDir)
 		if err := os.MkdirAll(artifactDir, 0755); err != nil {
 			writeErr(w, "mkdir: "+err.Error())
@@ -347,7 +366,7 @@ func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		written, err := io.Copy(f, r.Body)
+		written, err := io.Copy(f, bodyReader)
 		if err != nil {
 			writeErr(w, "write: "+err.Error())
 			return
@@ -596,17 +615,65 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 	writeErr(w, "method not allowed")
 }
 
-// deploySO: copy artifact → NFS, bump etcd version, write audit
+// deploySO: Phase 1 — kubectl cp SO to each Running pod, then bump global etcd version.
+// Falls back to NFS if K8s client is not available (local dev mode).
 func (h *Handler) deploySO(w http.ResponseWriter, r *http.Request, typeDir string) {
 	var body struct{ Filename string `json:"filename"` }
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Filename == "" {
 		writeErr(w, "filename required"); return
 	}
 	src := filepath.Join("/app/data/artifacts", typeDir, body.Filename)
-	dst := filepath.Join("/data/thunder/plugins", typeDir, body.Filename)
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil { writeErr(w, "mkdir NFS: "+err.Error()); return }
+
+	// Check artifact exists
+	if _, err := os.Stat(src); err != nil {
+		writeErr(w, "artifact not found: "+err.Error()); return
+	}
+
+	if h.k8s == nil {
+		// Fallback: local dev mode — write to local NFS path
+		h.deploySOFallbackNFS(w, r, typeDir, body.Filename)
+		return
+	}
+
+	// Phase 1: client-go exec+tar to each pod
+	result, err := h.deploySOToAllPods(typeDir, src, body.Filename)
+	if err != nil {
+		writeErr(w, "deploy: "+err.Error())
+		return
+	}
+
+	// Audit log per-pod results
+	for _, pr := range result.Pods {
+		status := "ok"
+		if !pr.Success {
+			status = "fail: " + pr.Error
+		}
+		h.s.AuditLog("deploy", typeDir+"/"+body.Filename, pr.PodName,
+			fmt.Sprintf("size=%d %s", pr.Size, status), r.RemoteAddr)
+	}
+
+	writeOK(w, map[string]interface{}{
+		"type":        result.TypeDir,
+		"filename":    result.Filename,
+		"node_type":   result.NodeType,
+		"total_pods":  result.TotalPods,
+		"succeeded":   result.Succeeded,
+		"failed":      result.Failed,
+		"pods":        result.Pods,
+		"etcd_bumped": result.EtcdBumped,
+		"deployed":    result.Failed == 0,
+	})
+}
+
+// deploySOFallbackNFS is the legacy NFS path for local dev without K8s.
+func (h *Handler) deploySOFallbackNFS(w http.ResponseWriter, r *http.Request, typeDir, filename string) {
+	src := filepath.Join("/app/data/artifacts", typeDir, filename)
+	dst := filepath.Join("/data/thunder/plugins", typeDir, filename)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		writeErr(w, "mkdir NFS: "+err.Error()); return
+	}
 	srcF, err := os.Open(src)
-	if err != nil { writeErr(w, "artifact not found: "+err.Error()); return }
+	if err != nil { writeErr(w, "open artifact: "+err.Error()); return }
 	defer srcF.Close()
 	dstF, err := os.Create(dst)
 	if err != nil { writeErr(w, "create NFS: "+err.Error()); return }
@@ -615,49 +682,138 @@ func (h *Handler) deploySO(w http.ResponseWriter, r *http.Request, typeDir strin
 	if err != nil { writeErr(w, "copy: "+err.Error()); return }
 
 	nodeType := resolveNodeType(h, typeDir)
-	etcdKey := "/thunder/config/module/" + nodeType
-	raw, _ := h.s.EtcdGet(etcdKey)
-	modules := []map[string]interface{}{}
-	if raw != "" {
-		var cfg struct{ Module []map[string]interface{} `json:"module"` }
-		if json.Unmarshal([]byte(raw), &cfg) == nil { modules = cfg.Module }
+
+	// Compute md5 for NFS fallback
+	srcData, _ := os.ReadFile(src)
+	srcMd5 := md5Sum(srcData)
+
+	if err := h.bumpEtcdModuleVersion(nodeType, filename, written, srcMd5); err != nil {
+		writeErr(w, "etcd bump: "+err.Error()); return
 	}
-	soPath := "plugins/" + body.Filename
-	found := false
-	for i, m := range modules {
-		if sp, _ := m["so_path"].(string); sp == soPath {
-			ver := 0.0
-			if v, ok := m["version"].(float64); ok { ver = v }
-			modules[i]["version"] = ver + 1
-			found = true; break
+
+	h.s.AuditLog("deploy", typeDir+"/"+filename, "", fmt.Sprintf("size=%d (NFS fallback)", written), r.RemoteAddr)
+	writeOK(w, map[string]interface{}{"type": typeDir, "filename": filename, "size": written, "deployed": true})
+}
+
+// listDeployed: list all .so files on target pods, merged with etcd metadata.
+func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir string) {
+	nodeType := resolveNodeType(h, typeDir)
+
+	type FileInfo struct {
+		Name    string  `json:"filename"`
+		Version string  `json:"version"`
+		Load    bool    `json:"load"`
+		Size    int64   `json:"size"`
+		Md5     string  `json:"md5"`
+	}
+
+	// 1. Get actual SO files from target pods (via NODE_VERSION + node type label)
+	actualFiles := make(map[string]int64)
+	if h.k8s != nil {
+		_, version := parseTypeDirVersion(typeDir)
+		label := nodeTypeLabel(typeDir)
+		podNames, err := h.k8s.ListPodNamesByVersion(version, label)
+		if err == nil && len(podNames) > 0 {
+			for _, podName := range podNames {
+				files, err := h.listPodPlugins(podName)
+				if err == nil && len(files) > 0 {
+					for name, sz := range files {
+						actualFiles[name] = sz
+					}
+					break
+				}
+			}
 		}
 	}
-	if !found {
-		modules = append(modules, map[string]interface{}{"so_path": soPath, "version": 1.0, "load": true})
+
+	// 2. Get etcd metadata (version, md5, load)
+	etcdMeta := make(map[string]FileInfo) // filename → metadata
+	etcdKey := "/thunder/config/module/" + nodeType
+	raw, _ := h.s.EtcdGet(etcdKey)
+	if raw != "" {
+		var cfg struct {
+			Module []map[string]interface{} `json:"module"`
+		}
+		if json.Unmarshal([]byte(raw), &cfg) == nil {
+			for _, m := range cfg.Module {
+				sp, _ := m["so_path"].(string)
+				if sp == "" {
+					continue
+				}
+				name := filepath.Base(sp)
+				ver, _ := m["version"].(float64)
+				load, _ := m["load"].(bool)
+				sz, _ := m["size"].(float64)
+				md5str, _ := m["md5"].(string)
+				etcdMeta[name] = FileInfo{
+					Name: name, Load: load,
+					Version: fmt.Sprintf("%.0f", ver),
+					Size:    int64(sz),
+					Md5:     md5str,
+				}
+			}
+		}
 	}
-	newRaw, _ := json.Marshal(map[string]interface{}{"module": modules})
-	h.s.EtcdPut(etcdKey, string(newRaw))
 
-	h.s.AuditLog("deploy", typeDir+"/"+body.Filename, "", fmt.Sprintf("size=%d", written), r.RemoteAddr)
-	writeOK(w, map[string]interface{}{"type": typeDir, "filename": body.Filename, "size": written, "deployed": true})
-}
-
-// listDeployed: list .so files on NFS for a type
-func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir string) {
-	dir := filepath.Join("/data/thunder/plugins", typeDir)
-	entries, err := os.ReadDir(dir)
-	if err != nil { writeErr(w, "readdir: "+err.Error()); return }
-	type FileInfo struct{ Name string `json:"filename"`; Size int64 `json:"size"`; Mtime string `json:"mod_time"` }
+	// 3. Merge: actual pod files → add etcd metadata, fill gaps from pod
 	var files []FileInfo
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".so") { continue }
-		info, _ := e.Info()
-		if info == nil { continue }
-		files = append(files, FileInfo{Name: e.Name(), Size: info.Size(), Mtime: info.ModTime().Format(time.RFC3339)})
+	for name, sz := range actualFiles {
+		if meta, ok := etcdMeta[name]; ok {
+			if meta.Size == 0 {
+				meta.Size = sz
+			}
+			files = append(files, meta)
+		} else {
+			files = append(files, FileInfo{
+				Name: name, Size: sz, Load: true,
+				Version: "镜像",
+			})
+		}
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Mtime > files[j].Mtime })
-	writeOK(w, map[string]interface{}{"type": typeDir, "files": files})
+	// Also include etcd-only entries (deployed but file not on pod? rare)
+	for name, meta := range etcdMeta {
+		if _, ok := actualFiles[name]; !ok {
+			files = append(files, meta)
+		}
+	}
+
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	writeOK(w, map[string]interface{}{"type": typeDir, "source": "pod+etcd", "files": files})
 }
+
+// listPodPlugins returns a map of .so filename → size on a pod's /app/plugins/.
+func (h *Handler) listPodPlugins(podName string) (map[string]int64, error) {
+	// exec: stat -c"%s %n" /app/plugins/*.so
+	output, err := h.execPodCmd(podName, "sh", "-c", "stat -c'%s %n' /app/plugins/*.so 2>/dev/null || true")
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]int64)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 {
+			var sz int64
+			fmt.Sscanf(parts[0], "%d", &sz)
+			name := filepath.Base(parts[1])
+			if strings.HasSuffix(name, ".so") {
+				result[name] = sz
+			}
+		}
+	}
+	return result, nil
+}
+
+// execPodCmd runs a command in a pod container and returns stdout.
+func (h *Handler) execPodCmd(podName, cmd string, args ...string) (string, error) {
+	// Build the command
+	fullCmd := append([]string{cmd}, args...)
+	return h.k8s.ExecPodCmd(podName, containerName, fullCmd)
+}
+
 
 // Audit: returns SQLite audit log — GET /api/audit?type=HelloHttp
 func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
@@ -690,4 +846,19 @@ func resolveNodeType(h *Handler, typeDir string) string {
 	}
 	// Fallback: use typeDir as-is (backward compatible)
 	return strings.ToUpper(typeDir)
+}
+
+// isELF returns true if the first 4 bytes are ELF magic.
+func isELF(magic []byte) bool {
+	return len(magic) == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
+}
+
+// fileMD5 returns the hex-encoded MD5 hash of a file, or empty string on error.
+func fileMD5(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	h := md5.Sum(data)
+	return hex.EncodeToString(h[:])
 }
