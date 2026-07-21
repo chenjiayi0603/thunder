@@ -691,11 +691,12 @@ func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir s
 		Md5     string  `json:"md5"`
 	}
 
-	// 1. Get actual SO files from target pods (via NODE_VERSION from Pod spec env)
+	// 1. Get actual SO files from target pods (via NODE_VERSION + node type label)
 	actualFiles := make(map[string]int64)
 	if h.k8s != nil {
 		_, version := parseTypeDirVersion(typeDir)
-		podNames, err := h.k8s.ListPodNamesByVersion(version)
+		label := nodeTypeLabel(typeDir)
+		podNames, err := h.k8s.ListPodNamesByVersion(version, label)
 		if err == nil && len(podNames) > 0 {
 			for _, podName := range podNames {
 				files, err := h.listPodPlugins(podName)

@@ -15,8 +15,9 @@ import (
 type K8sPodClient interface {
 	// ListPodNames returns names of Running pods matching a label selector.
 	ListPodNames(labelSelector string) ([]string, error)
-	// ListPodNamesByVersion returns names of Running pods whose NODE_VERSION env matches.
-	ListPodNamesByVersion(version string) ([]string, error)
+	// ListPodNamesByVersion returns names of Running pods whose NODE_VERSION env matches,
+	// optionally filtered by label selector (for node_type matching).
+	ListPodNamesByVersion(version, labelSelector string) ([]string, error)
 	// CopyFileToPod copies a local file into a container via exec+tar.
 	CopyFileToPod(podName, containerName, srcPath, destDir string) (int64, error)
 	// VerifyFileInPod checks file exists in a container and matches expected size.
@@ -26,9 +27,6 @@ type K8sPodClient interface {
 }
 
 // parseTypeDirVersion extracts the version from a typeDir string.
-//   "Logic"     → ("Logic", "v1")
-//   "Logic-v2"  → ("Logic", "v2")
-//   "HelloHttp" → ("HelloHttp", "v1")
 func parseTypeDirVersion(typeDir string) (string, string) {
 	base, ver := typeDir, "v1"
 	if idx := strings.LastIndex(typeDir, "-v"); idx > 0 {
@@ -48,6 +46,23 @@ func parseTypeDirVersion(typeDir string) (string, string) {
 		}
 	}
 	return base, ver
+}
+
+// nodeTypeLabel generates a K8s label selector for node_type matching.
+// Uses the pod's app label convention: "Logic" → "app=thunder-logic", "HelloHttp" → "app=thunder-hello".
+// This is a lightweight derivation — the real version filter is done via NODE_VERSION env.
+func nodeTypeLabel(typeDir string) string {
+	base, _ := parseTypeDirVersion(typeDir)
+	app := strings.ToLower(base)
+	if strings.HasPrefix(app, "hello") && len(app) > 5 {
+		rest := app[5:]
+		if rest == "http" {
+			app = "hello"
+		} else {
+			app = "hello-" + rest
+		}
+	}
+	return "app=thunder-" + app
 }
 
 const containerName = "app"
@@ -102,14 +117,15 @@ func (h *Handler) deploySOToAllPods(typeDir, srcPath, filename string) (*DeployR
 	nodeType := resolveNodeType(h, typeDir)
 	result.NodeType = nodeType
 
-	// Get target pods by NODE_VERSION (from Pod spec env, not hardcoded labels)
+	// Get target pods by NODE_VERSION env + type-based label filter
 	_, version := parseTypeDirVersion(typeDir)
-	podNames, err := h.k8s.ListPodNamesByVersion(version)
+	label := nodeTypeLabel(typeDir) // e.g., "app=thunder-logic" for "Logic"
+	podNames, err := h.k8s.ListPodNamesByVersion(version, label)
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
 	if len(podNames) == 0 {
-		return nil, fmt.Errorf("no Running pods with NODE_VERSION=%q", version)
+		return nil, fmt.Errorf("no Running pods with NODE_VERSION=%q and label %q", version, label)
 	}
 
 	result.TotalPods = len(podNames)

@@ -80,15 +80,17 @@ func (k *K8sClient) ListPodNames(labelSelector string) ([]string, error) {
 }
 
 // ListPodNamesByVersion returns names of Running pods whose NODE_VERSION env matches.
-// This is the canonical way to find pods for a given deployment version,
-// independent of label conventions.
-func (k *K8sClient) ListPodNamesByVersion(version string) ([]string, error) {
+// Optional labelSelector narrows the search (e.g., "app=thunder-hello" for node_type).
+func (k *K8sClient) ListPodNamesByVersion(version, labelSelector string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pods, err := k.clientset.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
-		FieldSelector: "status.phase=Running",
-	})
+	opts := metav1.ListOptions{FieldSelector: "status.phase=Running"}
+	if labelSelector != "" {
+		opts.LabelSelector = labelSelector
+	}
+
+	pods, err := k.clientset.CoreV1().Pods(k.namespace).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
