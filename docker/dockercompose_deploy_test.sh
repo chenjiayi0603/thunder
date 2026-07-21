@@ -1,8 +1,8 @@
 #!/bin/bash
-# Thunder 一次性部署验证脚本
-# 用法: ./scripts/deploy-and-verify.sh [docker|k8s] [service]
-# 示例: ./scripts/deploy-and-verify.sh docker        # 全量 Docker Compose
-#       ./scripts/deploy-and-verify.sh k8s logic      # 仅 Logic 到 k8s
+# Thunder Docker Compose 一次性部署验证脚本
+# 用法: ./docker/dockercompose_deploy_test.sh [docker|k8s] [service]
+# 示例: ./docker/dockercompose_deploy_test.sh docker        # 全量 Docker Compose
+#       ./docker/dockercompose_deploy_test.sh k8s logic      # 仅 Logic 到 k8s
 
 set -e
 ENV="${1:-docker}"

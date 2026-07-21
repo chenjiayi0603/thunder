@@ -7163,3 +7163,120 @@ var soPathCmdMap = map[string]int{
 3. **步骤 3 (前端)** — 第一道防线，用户操作时拦 + 提示
 4. **步骤 4 (Worker 容错)** — 兜底，前面都挂了也能启动
 5. **步骤 5 (持久化可配)** — 可选优化
+
+---
+
+## 🟠 #158 [Admin-Web] 前端 + 后端 + 存储 多项问题修复
+
+> 2026-07-21 | 发现 | 状态: 🟠 需修复
+>
+> 大需求：将以下 6 个子任务作为整体 `admin-web 问题修复` 需求的子项。
+
+### 子任务 1 — 版本号显示 "v镜像" 而非数字
+
+**现象**：已部署插件表中，镜像自带的 SO 版本列显示 `v镜像`（前端在 version 字段前加了 `v` 前缀）。
+
+**原因**：`listDeployed` 对未热更新的 SO 返回 `version: "镜像"`，前端渲染为 `'v' + version` → `v镜像`。
+
+**修复**：
+- 前端：version 为 "镜像" 时不加 `v` 前缀，直接用 `<span class="badge">镜像</span>` 渲染
+- 后端：考虑统一用 etag/hash 标识镜像版本
+
+---
+
+### 子任务 2 — 灰度路由实施计划
+
+**现象**：灰度路由页面显示 `⚠ 灰度路由未启用或依赖 #134`，缺少具体实施步骤。
+
+**目标**：将 etcd canary 灰度从设计落地为可操作的端到端流程。
+
+**需实施的步骤**：
+
+1. **K8s 资源准备**：
+   - 确认 `logic-v2-deployment.yaml` 可用（镜像已改为 `thunder-logic:latest`）
+   - 创建灰度专用的 Deployment 模板（`-v2`、`-canary` 后缀）
+2. **创建灰度实例**：
+   - `kubectl apply -f k8s/logic-v2-deployment.yaml` → 启动 v2 Pod
+   - 确认 v2 Pod 注册到 etcd（`NODE_VERSION=v2`）
+3. **划分流量**：
+   - `etcdctl put /thunder/canary/LOGIC/weights '{"v1":90,"v2":10}'`
+   - 通过 `canary.py` CLI 操作（已有实现）
+4. **前端对接**：
+   - 灰度页面读 etcd canary key 展示当前权重
+   - 提供滑块/输入框调整权重，调 `canary.py` 或直写 etcd
+   - 显示各版本 Pod 数量、流量比例
+5. **监控验证**：
+   - 确认 Interface→Logic 请求按权重分流
+   - Worker 日志确认 `CanaryExpand` 输出正确
+
+---
+
+### 子任务 3 — 配置下发合规检查 + SQLite 审计
+
+**现象**：配置页面只能看到 `{}`，无合规校验，无操作记录。
+
+**需实施**：
+
+1. **合规检查**：写 etcd 前校验配置 JSON
+   - 只允许更新 `module` / `so` / `custom` 三个 section
+   - `module` 条目必须有 `cmd`、`so_path`、`version` 字段
+   - `so_path` 对应的文件必须是合法 ELF（校验 ELF magic）
+   - 其他字段（`inner_host`、`inner_port` 等）标记为只读，拒绝修改
+2. **配置下发流程**：
+   - 用户编辑配置 → 预览 diff → 确认 → 写入 etcd
+   - 写 etcd 成功后记录到 SQLite audit 表
+3. **SQLite 记录操作记录**：
+   - 表结构：`id, timestamp, action, target, detail, ip`
+   - 每次配置修改记录：旧值预览 + 新值预览 + 操作人 IP
+   - 前端"历史版本"表从 SQLite 读取（不再显示"待 P1 Go 后端实现"）
+
+---
+
+### 子任务 4 — Lua 下发数据显示
+
+**现象**：Lua 页面显示 `⚠ 无数据`，但 `deploy/Logic/scripts/logic_v1.lua` 存在。
+
+**原因**：Lua 脚本通过 etcd key `/thunder/config/module/{NODE_TYPE}` 的 `custom` 字段管理，或者未写入 etcd。
+
+**修复**：
+- 后端：`listLua` 应扫描所有节点的 Lua 脚本（从 etcd 或 Pod 文件系统读取）
+- 前端 Lua 页面：展示脚本名、URL、版本、大小、操作按钮
+- 上传：支持通过 admin-web 上传 .lua 文件到制品库，再下发到目标 Pod
+
+---
+
+### 子任务 5 — 制品库重启后数据丢失
+
+**现象**：admin-web Pod 重启后，制品库显示"暂无插件"，之前上传的 .so 文件消失。
+
+**原因**：admin-web Deployment 使用 `emptyDir` 挂载 `/app/data`，Pod 重启后数据丢失。
+
+**修复**：
+1. **短期**：admin-web 启动时扫描 `/app/data/artifacts/` 目录下的文件，自动重建制品库列表
+2. **长期**：改用 PVC 或 hostPath 持久化存储制品库（需独立的 PV/PVC，不再依赖 NFS）
+3. admin-web Deployment 中添加 `volumes` → `hostPath` 或新建 PVC
+4. 制品库列表从文件系统实时读取，不依赖内存缓存
+
+---
+
+### 子任务 6 — 审计记录持久化丢失
+
+**现象**：`audit` 页面显示"暂无审计记录"，之前的操作记录全部消失。
+
+**原因**：SQLite 数据库文件存储在 `emptyDir` 中，Pod 重启后丢失。
+
+**修复**：
+1. 同子任务 5 — 改用持久化存储（PVC 或 hostPath）
+2. SQLite 数据库路径改为持久化目录
+3. 确保 `admin.db` 在 Pod 重启/重建后数据不丢失
+4. admin-web Deployment YAML 中 `volumeMounts` → `/app/data` 挂载到持久化卷
+
+### 依赖关系
+
+```
+子任务 5 (持久化存储)  ← 子任务 3 (SQLite 审计)、子任务 6 (SQLite 不丢)
+子任务 5 (持久化存储)  ← 子任务 1 (制品库列表不丢)
+子任务 2 (灰度路由)    ← #134 canary 权重键 (已完成)
+子任务 3 (配置下发)    ← #157 格式规范
+子任务 4 (Lua 下发)    ← 无强依赖
+```
