@@ -256,30 +256,42 @@ func (h *Handler) Canary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Config stub — P4 (§7.2: GET /api/config/{module}?type=xxx, PUT /api/config/{module})
+// Config — #158 子任务3: GET 读 etcd 真实配置, PUT 合规检查 + etcd 写入 + SQLite 审计
 func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/config/")
 	path = strings.TrimSuffix(path, "/")
 	module := strings.ToUpper(path)
+	etcdKey := "/thunder/config/module/" + module
 
-	// GET: read config  → ?type=Logic.json
+	// GET: read config from etcd
 	if r.Method == "GET" {
 		cfgType := r.URL.Query().Get("type")
 		if cfgType == "" {
 			writeErr(w, "?type= query parameter required")
 			return
 		}
+		raw, err := h.s.EtcdGet(etcdKey)
+		if err != nil {
+			writeErr(w, "etcd error: "+err.Error())
+			return
+		}
+		var content interface{}
+		if raw == "" {
+			content = map[string]interface{}{}
+		} else {
+			if err := json.Unmarshal([]byte(raw), &content); err != nil {
+				content = map[string]interface{}{}
+			}
+		}
 		writeOK(w, map[string]interface{}{
-			"module":   module,
-			"type":     cfgType,
-			"content":  map[string]interface{}{},
-			"revision": 0,
-			"message":  "config management coming in P4",
+			"module":  module,
+			"type":    cfgType,
+			"content": content,
 		})
 		return
 	}
 
-	// PUT: update config
+	// PUT: validate + write etcd + SQLite audit
 	if r.Method == "PUT" {
 		var body struct {
 			Type    string                 `json:"type"`
@@ -289,16 +301,107 @@ func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, "invalid JSON body")
 			return
 		}
+
+		// 1. 合规检查
+		if err := validateConfig(body.Content); err != nil {
+			writeErr(w, "合规检查失败: "+err.Error())
+			return
+		}
+
+		// 2. 保存旧值到 SQLite config_history
+		oldRaw, _ := h.s.EtcdGet(etcdKey)
+		if oldRaw != "" {
+			h.s.ConfigHistorySave(etcdKey, oldRaw)
+		}
+
+		// 3. 写入 etcd
+		newRaw, err := json.Marshal(body.Content)
+		if err != nil {
+			writeErr(w, "JSON marshal: "+err.Error())
+			return
+		}
+		if err := h.s.EtcdPut(etcdKey, string(newRaw)); err != nil {
+			writeErr(w, "etcd write: "+err.Error())
+			return
+		}
+
+		// 4. SQLite audit log
+		h.s.AuditLog("config_update", etcdKey,
+			truncate(oldRaw, 200), truncate(string(newRaw), 200), r.RemoteAddr)
+
 		writeOK(w, map[string]interface{}{
-			"module":   module,
-			"type":     body.Type,
-			"revision": 1,
-			"message":  "config management coming in P4",
+			"module":  module,
+			"type":    body.Type,
+			"content": body.Content,
+		})
+		return
+	}
+
+	// GET /api/config/{module}/history — 从 SQLite 读取历史版本
+	if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/history") {
+		etcdKey := "/thunder/config/module/" + module
+		entries, err := h.s.ConfigHistoryList(etcdKey)
+		if err != nil {
+			writeErr(w, "history query: "+err.Error())
+			return
+		}
+		writeOK(w, map[string]interface{}{
+			"module":  module,
+			"history": entries,
 		})
 		return
 	}
 
 	writeErr(w, "method not allowed")
+}
+
+// validateConfig performs compliance checks on config content before etcd write.
+// Only allows module/so/custom sections; module entries must have cmd, so_path, version.
+func validateConfig(content map[string]interface{}) error {
+	allowedSections := map[string]bool{"module": true, "so": true, "custom": true}
+
+	for key := range content {
+		if !allowedSections[key] {
+			return fmt.Errorf("不允许修改只读字段 %q（仅允许 module/so/custom）", key)
+		}
+	}
+
+	// Validate module entries
+	modules, ok := content["module"]
+	if !ok {
+		return nil // no module section is fine
+	}
+	modList, ok := modules.([]interface{})
+	if !ok {
+		return fmt.Errorf("module 必须是数组")
+	}
+	for i, m := range modList {
+		entry, ok := m.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("module[%d] 必须是对象", i)
+		}
+		// 必须有 cmd, so_path, version; 不允许修改只读字段
+		for _, required := range []string{"so_path", "version"} {
+			if _, exists := entry[required]; !exists {
+				return fmt.Errorf("module[%d] 缺少必填字段 %q", i, required)
+			}
+		}
+		// 拒绝只读字段
+		for _, readonly := range []string{"inner_host", "inner_port"} {
+			if _, exists := entry[readonly]; exists {
+				return fmt.Errorf("module[%d] 不允许修改只读字段 %q", i, readonly)
+			}
+		}
+	}
+	return nil
+}
+
+// truncate returns s truncated to maxLen chars with "..." suffix.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // SO plugin management — upload to local artifact store, list from NFS (deployed)
@@ -322,60 +425,75 @@ func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PUT: upload to local artifact store (NOT NFS — deploy is a separate step)
-	if r.Method == "PUT" {
-		idx := strings.Index(path, "/")
-		if idx < 0 {
-			writeErr(w, "path required: /api/plugins/{Type}/{filename}")
-			return
-		}
-		typeDir := path[:idx]
-		filename := path[idx+1:]
-		if typeDir == "" || filename == "" {
-			writeErr(w, "type and filename required")
-			return
-		}
-		if !strings.HasSuffix(filename, ".so") {
-			writeErr(w, "only .so files allowed")
-			return
-		}
-		// #157: 校验 ELF magic — 拒绝非 .so 文件防止 CrashLoop
-		var buf bytes.Buffer
-		tee := io.TeeReader(r.Body, &buf)
-		magic := make([]byte, 4)
-		if _, err := io.ReadFull(tee, magic); err != nil {
-			writeErr(w, "read file: "+err.Error())
-			return
-		}
-		if !isELF(magic) {
-			writeErr(w, fmt.Sprintf("not a valid .so file (ELF magic: %x, expected 7f454c46)", magic))
-			return
-		}
-		// Reconstruct body: magic bytes + remaining stream
-		bodyReader := io.MultiReader(bytes.NewReader(magic), io.MultiReader(&buf, r.Body))
+		// PUT: upload to local artifact store AND MinIO (#159: Pull 模式存储底座)
+		if r.Method == "PUT" {
+			idx := strings.Index(path, "/")
+			if idx < 0 {
+				writeErr(w, "path required: /api/plugins/{Type}/{filename}")
+				return
+			}
+			typeDir := path[:idx]
+			filename := path[idx+1:]
+			if typeDir == "" || filename == "" {
+				writeErr(w, "type and filename required")
+				return
+			}
+			if !strings.HasSuffix(filename, ".so") {
+				writeErr(w, "only .so files allowed")
+				return
+			}
+			// #157: 校验 ELF magic — 拒绝非 .so 文件防止 CrashLoop
+			var buf bytes.Buffer
+			tee := io.TeeReader(r.Body, &buf)
+			magic := make([]byte, 4)
+			if _, err := io.ReadFull(tee, magic); err != nil {
+				writeErr(w, "read file: "+err.Error())
+				return
+			}
+			if !isELF(magic) {
+				writeErr(w, fmt.Sprintf("not a valid .so file (ELF magic: %x, expected 7f454c46)", magic))
+				return
+			}
+			// Buffer entire file for dual write (local PVC + MinIO)
+			var fileBuf bytes.Buffer
+			fileBuf.Write(magic)
+			if _, err := io.Copy(&fileBuf, io.MultiReader(&buf, r.Body)); err != nil {
+				writeErr(w, "buffer file: "+err.Error())
+				return
+			}
+			fileData := fileBuf.Bytes()
 
-		artifactDir := filepath.Join("/app/data/artifacts", typeDir)
-		if err := os.MkdirAll(artifactDir, 0755); err != nil {
-			writeErr(w, "mkdir: "+err.Error())
+			// Write to local PVC (always, as fallback)
+			artifactDir := filepath.Join("/app/data/artifacts", typeDir)
+			if err := os.MkdirAll(artifactDir, 0755); err != nil {
+				writeErr(w, "mkdir: "+err.Error())
+				return
+			}
+			fpath := filepath.Join(artifactDir, filename)
+			if err := os.WriteFile(fpath, fileData, 0644); err != nil {
+				writeErr(w, "write: "+err.Error())
+				return
+			}
+
+			// #159: Artifact URL for Manager Pull download
+			artifactKey := typeDir + "/" + filename
+			var minioURL string
+			if h.s.MinIO != nil && h.s.MinIO.IsAvailable() {
+				if err := h.s.MinIO.PutObject(artifactKey, bytes.NewReader(fileData), int64(len(fileData))); err != nil {
+					fmt.Printf("WARNING: MinIO upload failed (%v) \u2014 file on local PVC only\n", err)
+				}
+			}
+			// Always provide download URL (MinIO or admin-web self-serve)
+			if h.s.MinIO != nil {
+				minioURL = h.s.MinIO.GetObjectURL(artifactKey)
+			}
+
+			writeOK(w, map[string]interface{}{
+				"type": typeDir, "filename": filename, "path": fpath, "size": len(fileData),
+				"minio_url": minioURL,
+			})
 			return
 		}
-		fpath := filepath.Join(artifactDir, filename)
-		f, err := os.Create(fpath)
-		if err != nil {
-			writeErr(w, "create file: "+err.Error())
-			return
-		}
-		defer f.Close()
-		written, err := io.Copy(f, bodyReader)
-		if err != nil {
-			writeErr(w, "write: "+err.Error())
-			return
-		}
-		writeOK(w, map[string]interface{}{
-			"type": typeDir, "filename": filename, "path": fpath, "size": written,
-		})
-		return
-	}
 
 	// GET: list files from artifact store
 	if r.Method == "GET" {
@@ -515,6 +633,29 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 				NodeType:      nodeType,
 			})
 		}
+		// #158 子任务4: etcd 无 Lua 脚本时回退扫描本地文件系统
+		if len(scripts) == 0 {
+			localDir := filepath.Join("/app/lua_scripts", nodeType)
+			if entries, err := os.ReadDir(localDir); err == nil {
+				for _, e := range entries {
+					if e.IsDir() || !strings.HasSuffix(e.Name(), ".lua") {
+						continue
+					}
+					data, err := os.ReadFile(filepath.Join(localDir, e.Name()))
+					if err != nil {
+						continue
+					}
+					name := strings.TrimSuffix(e.Name(), ".lua")
+					scripts = append(scripts, ScriptInfo{
+						Name:          e.Name(),
+						URLPath:       "/" + strings.ToLower(nodeType) + "/" + name,
+						Version:       0,
+						ScriptContent: string(data),
+						NodeType:      nodeType,
+					})
+				}
+			}
+		}
 		writeOK(w, map[string]interface{}{
 			"node_type": nodeType,
 			"scripts":   scripts,
@@ -524,6 +665,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "POST" {
 		// POST body: {"url_path":"/hello/lua_echo","script_content":"...","version":99}
+		// #159: large scripts (>4KB) auto-uploaded to MinIO, script_url set in etcd
 		var body struct {
 			URLPath       string `json:"url_path"`
 			ScriptContent string `json:"script_content"`
@@ -544,6 +686,17 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// #159: Upload large Lua scripts to MinIO
+		var scriptURL string
+		if len(body.ScriptContent) > 4096 && h.s.MinIO != nil && h.s.MinIO.IsAvailable() {
+			luaKey := "lua/" + nodeType + "/" + body.URLPath + ".lua"
+			if err := h.s.MinIO.PutObject(luaKey, strings.NewReader(body.ScriptContent), int64(len(body.ScriptContent))); err != nil {
+				fmt.Printf("WARNING: MinIO Lua upload failed (%v) — using etcd inline\n", err)
+			} else {
+				scriptURL = h.s.MinIO.GetObjectURL(luaKey)
+			}
+		}
+
 		// Find and update matching module
 		var previous map[string]interface{}
 		found := false
@@ -562,6 +715,9 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 				existing := modules[i]
 				existing["script_content"] = body.ScriptContent
 				existing["version"] = float64(body.Version)
+				if scriptURL != "" {
+					existing["script_url"] = scriptURL
+				}
 				if _, ok := existing["so_path"]; !ok {
 					existing["so_path"] = "plugins/HelloHttp_ModuleLua.so"
 				}
@@ -580,11 +736,15 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 			if body.Version == 0 {
 				body.Version = 1
 			}
-			modules = append(modules, map[string]interface{}{
-				"url_path":         body.URLPath,
-				"script_content":   body.ScriptContent,
-				"version":          body.Version,
-			})
+			entry := map[string]interface{}{
+				"url_path":       body.URLPath,
+				"script_content": body.ScriptContent,
+				"version":        body.Version,
+			}
+			if scriptURL != "" {
+				entry["script_url"] = scriptURL
+			}
+			modules = append(modules, entry)
 		}
 
 		if err := writeModuleConfig(modules); err != nil {
@@ -603,15 +763,19 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		fpath := filepath.Join(scriptsDir, name+".lua")
 		os.WriteFile(fpath, []byte(body.ScriptContent), 0644)
 
-		writeOK(w, map[string]interface{}{
+		resp := map[string]interface{}{
 			"node_type": nodeType,
 			"url_path":  body.URLPath,
 			"version":   body.Version,
 			"previous":  previous,
-		})
+		}
+		if scriptURL != "" {
+			resp["script_url"] = scriptURL
+		}
+		writeOK(w, resp)
 		return
-	}
 
+	}
 	writeErr(w, "method not allowed")
 }
 
@@ -687,7 +851,7 @@ func (h *Handler) deploySOFallbackNFS(w http.ResponseWriter, r *http.Request, ty
 	srcData, _ := os.ReadFile(src)
 	srcMd5 := md5Sum(srcData)
 
-	if err := h.bumpEtcdModuleVersion(nodeType, filename, written, srcMd5); err != nil {
+	if err := h.bumpEtcdModuleVersion(nodeType, typeDir, filename, written, srcMd5); err != nil {
 		writeErr(w, "etcd bump: "+err.Error()); return
 	}
 
@@ -766,7 +930,7 @@ func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir s
 		} else {
 			files = append(files, FileInfo{
 				Name: name, Size: sz, Load: true,
-				Version: "镜像",
+				Version: "", // 镜像内置，未热更新 → 前端渲染为"镜像" badge
 			})
 		}
 	}

@@ -38,8 +38,8 @@ spec:
           mountPath: /app/data
       volumes:
       - name: admin-data
-        emptyDir: {}
-        # TODO: Replace emptyDir with PVC for artifact+audit persistence across node reschedule
+        persistentVolumeClaim:
+          claimName: thunder-admin-web
 ---
 apiVersion: v1
 kind: Service

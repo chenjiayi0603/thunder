@@ -675,7 +675,6 @@ cmd_test_k8s() {
         [thunder-hello-ws]="thunder-hello-ws:${tag}"
         [thunder-hello-wss]="thunder-hello-wss:${tag}"
         [thunder-logic]="thunder-logic:${tag}"
-        []="${tag}"
         [thunder-admin-web]="thunder-admin-web:${tag}"
     )
     for dep in "${!DEP_IMAGE[@]}"; do

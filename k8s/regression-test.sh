@@ -1,12 +1,44 @@
 #!/bin/bash
-# Thunder K8s 回归测试 — 覆盖全部 5 个网关
-# 用法: bash k8s/regression-test.sh
-set -uo pipefail  # 允许个别命令失败，不中断全流程
+# Thunder K8s 回归测试 — 统一入口
+# 用法:
+#   bash k8s/regression-test.sh              # 全量非破坏性测试 (core + admin API + canary)
+#   bash k8s/regression-test.sh --quick      # 仅核心 52 项
+#   bash k8s/regression-test.sh --all        # 全部含扩缩容/稳定性 (可能有破坏性操作)
+set -uo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-PASS=0; FAIL=0; SKIP=0
+BOLD='\033[1m'; CYAN='\033[0;36m'
+
+MODE="full"  # quick | full | all
+for arg in "$@"; do
+  case "$arg" in
+    --quick) MODE="quick" ;;
+    --full)  MODE="full" ;;
+    --all)   MODE="all" ;;
+    *) echo "Unknown flag: $arg"; echo "Usage: $0 [--quick|--full|--all]"; exit 1 ;;
+  esac
+done
+
+TOTAL_PASS=0; TOTAL_FAIL=0; TOTAL_SKIP=0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NS=thunder
 HOST_IP=192.168.3.61
+STAGE_FAIL=0  # per-stage exit code
+
+# ---- stage runner ----
+run_stage() {
+  local title="$1"; shift
+  echo ""
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}${CYAN}  STAGE: $title${NC}"
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  "$@"
+  STAGE_FAIL=$?
+}
+
+# ---- shared check helper ----
+PASS=0; FAIL=0; SKIP=0
 
 check() {
   local name="$1"; local result="$2"; local expect="${3:-}"
@@ -447,11 +479,77 @@ else
   check "HelloWs WebSocket" "FAIL" "无响应"
 fi
 
-# ============== 汇总 ==============
+# ============== Core 汇总 ==============
+CORE_PASS=$PASS; CORE_FAIL=$FAIL; CORE_SKIP=$SKIP
+TOTAL_PASS=$((TOTAL_PASS + CORE_PASS))
+TOTAL_FAIL=$((TOTAL_FAIL + CORE_FAIL))
+TOTAL_SKIP=$((TOTAL_SKIP + CORE_SKIP))
+
+echo ""
+echo "────────────────────────────────────────────────────────────"
+echo -e " Core: 通过: ${GREEN}${CORE_PASS}${NC}  失败: ${RED}${CORE_FAIL}${NC}  跳过: ${YELLOW}${CORE_SKIP}${NC}"
+echo "────────────────────────────────────────────────────────────"
+
+# ---- 仅在 full/all 模式下运行额外 suite ----
+if [ "$MODE" = "quick" ]; then
+  echo -e "\n${YELLOW}Quick mode: 跳过 admin API / canary / 扩缩容测试${NC}"
+  OVERALL_FAIL=$TOTAL_FAIL
+else
+  # ---------- Stage 2: admin-web API ----------
+  echo ""
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}${CYAN}  STAGE: admin-web API (pytest)${NC}"
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  ADMIN_OK=0
+  if E2E_ADMIN_HOST="${HOST_IP}" python3 -m pytest "${ROOT_DIR}/tests/e2e/test_admin_web.py" -v --mode=external --tb=short 2>&1; then
+    ADMIN_OK=1
+    echo -e "${GREEN}admin-web API: ALL PASSED${NC}"
+  else
+    echo -e "${RED}admin-web API: SOME FAILED${NC}"
+  fi
+  if [ "$ADMIN_OK" -eq 0 ]; then TOTAL_FAIL=$((TOTAL_FAIL + 1)); else TOTAL_PASS=$((TOTAL_PASS + 1)); fi
+
+  # ---------- Stage 3: 灰度路由 ----------
+  echo ""
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}${CYAN}  STAGE: 灰度路由 Canary (pytest)${NC}"
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+  CANARY_OK=0
+  if PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python E2E_ADMIN_HOST="${HOST_IP}" python3 -m pytest "${ROOT_DIR}/tests/e2e/test_canary_k8s.py" -v --mode=external --tb=short 2>&1; then
+    CANARY_OK=1
+    echo -e "${GREEN}灰度路由: ALL PASSED${NC}"
+  else
+    echo -e "${RED}灰度路由: SOME FAILED${NC}"
+  fi
+  if [ "$CANARY_OK" -eq 0 ]; then TOTAL_FAIL=$((TOTAL_FAIL + 1)); else TOTAL_PASS=$((TOTAL_PASS + 1)); fi
+
+  # ---------- Stage 4: 扩缩容 (仅 --all) ----------
+  if [ "$MODE" = "all" ]; then
+    echo ""
+    echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}${CYAN}  STAGE: 扩缩容 & 自愈 (bash)${NC}"
+    echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+    SCALE_OK=0
+    if bash "${ROOT_DIR}/tests/test_k8s_scale.sh" 2>&1; then
+      SCALE_OK=1
+      echo -e "${GREEN}扩缩容: PASSED${NC}"
+    else
+      echo -e "${RED}扩缩容: FAILED${NC}"
+    fi
+    if [ "$SCALE_OK" -eq 0 ]; then TOTAL_FAIL=$((TOTAL_FAIL + 1)); else TOTAL_PASS=$((TOTAL_PASS + 1)); fi
+  fi
+fi
+
+# ============== 最终汇总 ==============
 echo ""
 echo "============================================================"
-TOTAL=$((PASS + FAIL + SKIP))
-echo -e " 通过: ${GREEN}${PASS}${NC}  失败: ${RED}${FAIL}${NC}  跳过: ${YELLOW}${SKIP}${NC}  总计: ${TOTAL}"
+echo -e " 回归测试完成  (mode: ${MODE})"
+echo "============================================================"
+OVERALL_TOTAL=$((TOTAL_PASS + TOTAL_FAIL + TOTAL_SKIP))
+echo -e " 通过: ${GREEN}${TOTAL_PASS}${NC}  失败: ${RED}${TOTAL_FAIL}${NC}  跳过: ${YELLOW}${TOTAL_SKIP}${NC}  总计: ${OVERALL_TOTAL}"
+if [ "$MODE" != "quick" ]; then
+  echo " (core + admin API + canary"$([ "$MODE" = "all" ] && echo " + scale")")"
+fi
 echo "============================================================"
 
-[ "$FAIL" -gt 0 ] && exit 1 || exit 0
+[ "$TOTAL_FAIL" -gt 0 ] && exit 1 || exit 0

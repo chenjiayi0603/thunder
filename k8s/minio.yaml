@@ -1,0 +1,113 @@
+# MinIO 制品库 — SO/Lua 文件存储
+# #159: Pull 模式存储底座，替代 exec+tar Push
+#
+# 部署: kubectl apply -f k8s/minio.yaml
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-thunder-minio
+  labels:
+    app: thunder-minio
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity: {storage: 1Gi}
+  hostPath:
+    path: /data/thunder/minio
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thunder-minio
+  namespace: thunder
+  labels:
+    app: thunder-minio
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+  volumeName: pv-thunder-minio
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-credentials
+  namespace: thunder
+type: Opaque
+stringData:
+  root-user: minioadmin
+  root-password: minioadmin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-minio
+  namespace: thunder
+  labels:
+    app: thunder-minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-minio
+  template:
+    metadata:
+      labels:
+        app: thunder-minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - server
+        - /data
+        - --console-address
+        - ":9001"
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: root-user
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: root-password
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: thunder-minio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thunder-minio
+  namespace: thunder
+spec:
+  selector:
+    app: thunder-minio
+  ports:
+  - port: 9000
+    targetPort: 9000
+    name: api
+  - port: 9001
+    targetPort: 9001
+    name: console

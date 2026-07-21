@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <memory>
 #include <string>
 #include "protocol/oss_sys.pb.h"
@@ -2839,6 +2840,32 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                 }
             }
 
+            // #159 Step 4: Persist Lua script_content to local files (Worker fallback)
+            {
+                auto modArr = m_oCurrentConf["module"];
+                for (int i = 0; i < modArr.GetArraySize(); ++i) {
+                    std::string scriptContent;
+                    modArr[i].Get("script_content", scriptContent);
+                    if (!scriptContent.empty()) {
+                        std::string urlPath;
+                        modArr[i].Get("url_path", urlPath);
+                        std::string scriptName = urlPath;
+                        auto lastSlash = scriptName.rfind('/');
+                        if (lastSlash != std::string::npos) scriptName = scriptName.substr(lastSlash + 1);
+                        std::string scriptPath = "scripts/" + scriptName + ".lua";
+                        // Ensure scripts directory exists
+                        mkdir("scripts", 0755);
+                        std::ofstream fout(scriptPath, std::ios::out | std::ios::trunc);
+                        if (fout) {
+                            fout << scriptContent;
+                            LOG4_INFO("ConfigUpdated: Lua script persisted to %s", scriptPath.c_str());
+                        } else {
+                            LOG4_ERROR("ConfigUpdated: cannot write Lua script %s", scriptPath.c_str());
+                        }
+                    }
+                }
+            }
+
             // 5. 更新共享内存 (custom 热更, Worker 无需重启即感知)
             if (!GetCustomConfigVersionData().SetCustomConfig(ev.config_content)) {
                 LOG4_ERROR("ConfigUpdated: custom config shm write failed");
@@ -2847,35 +2874,95 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
             }
 
             // 6. SO/module 版本变化 → 下载 SO + 优雅重启 (Lua/custom 热更新不重启)
-            if (soOrModuleChanged) {
-                LOG4_INFO("ConfigUpdated: so/module version changed, trigger graceful restart");
-                auto newModArr = newConf["module"];
+            // #159: Also downloads missing SO files (Pod restart recovery) and script_url LUA files
+            {
+                auto newModArr = m_oCurrentConf["module"];
                 bool downloadOk = true;
+                bool anyDownloaded = false;
+
                 for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+                    // Download SO from so_url when version changed OR file missing (Pod restart)
                     std::string soUrl;
                     if (newModArr[i].Get("so_url", soUrl) && !soUrl.empty()) {
                         std::string soPath;
                         newModArr[i].Get("so_path", soPath);
                         if (!soPath.empty()) {
-                            std::string outPath = "deploy/" + m_strNodeType + "/" + soPath;
-                            if (DownloadSoFile(soUrl, outPath)) {
-                                LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
-                            } else {
-                                LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
-                                downloadOk = false;
+                            std::string outPath = m_strWorkPath + "/" + soPath;
+                            // #159: Download if version changed OR file doesn't exist (Pod restart recovery)
+                            bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
+                            if (needDownload) {
+                                if (DownloadSoFile(soUrl, outPath)) {
+                                    LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
+                                    anyDownloaded = true;
+                                } else {
+                                    LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
+                                    downloadOk = false;
+                                }
+                            }
+                        }
+                    }
+
+                    // #159 Step 6: Download Lua scripts from script_url (MinIO for large scripts)
+                    std::string scriptUrl;
+                    if (newModArr[i].Get("script_url", scriptUrl) && !scriptUrl.empty()) {
+                        std::string urlPath;
+                        newModArr[i].Get("url_path", urlPath);
+                        if (!urlPath.empty()) {
+                            std::string scriptName = urlPath;
+                            auto lastSlash = scriptName.rfind('/');
+                            if (lastSlash != std::string::npos) scriptName = scriptName.substr(lastSlash + 1);
+                            std::string outPath = "scripts/" + scriptName + ".lua";
+                            bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
+                            if (needDownload) {
+                                if (DownloadSoFile(scriptUrl, outPath)) {
+                                    LOG4_INFO("Lua script downloaded: %s -> %s", scriptUrl.c_str(), outPath.c_str());
+                                    anyDownloaded = true;
+                                } else {
+                                    LOG4_ERROR("Lua script download failed: %s", scriptUrl.c_str());
+                                }
                             }
                         }
                     }
                 }
-                if (downloadOk) {
-                    bool anyBusy = false;
-                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
-                        if (!GracefulRestartWorker(i)) anyBusy = true;
+
+                // #159 Step 5: Save .manifest for version tracking (Worker restart acceleration)
+                if (anyDownloaded || soOrModuleChanged) {
+                    util::CJsonObject manifest;
+                    for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+                        std::string soPath; int version = 0;
+                        newModArr[i].Get("so_path", soPath);
+                        newModArr[i].Get("version", version);
+                        if (!soPath.empty()) {
+                            auto lastSlash = soPath.rfind('/');
+                            std::string soName = (lastSlash != std::string::npos) ? soPath.substr(lastSlash + 1) : soPath;
+                            manifest["so"].Add(soName, version);
+                        }
+                        std::string urlPath;
+                        newModArr[i].Get("url_path", urlPath);
+                        if (!urlPath.empty()) {
+                            auto lastSlash = urlPath.rfind('/');
+                            std::string luaName = (lastSlash != std::string::npos) ? urlPath.substr(lastSlash + 1) : urlPath;
+                            manifest["lua"].Add(luaName + ".lua", version);
+                        }
                     }
-                    if (anyBusy) {
-                        // #79: Worker 忙，配置已写文件+内存，等全部空闲后补触发重启
-                        m_bPendingRestart = true;
-                        LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
+                    std::ofstream mout(".manifest", std::ios::out | std::ios::trunc);
+                    if (mout) {
+                        mout << manifest.ToFormattedString();
+                        LOG4_INFO("ConfigUpdated: .manifest saved");
+                    }
+                }
+
+                if (soOrModuleChanged) {
+                    if (downloadOk) {
+                        bool anyBusy = false;
+                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
+                            if (!GracefulRestartWorker(i)) anyBusy = true;
+                        }
+                        if (anyBusy) {
+                            // #79: Worker 忙，配置已写文件+内存，等全部空闲后补触发重启
+                            m_bPendingRestart = true;
+                            LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
+                        }
                     }
                 }
             }

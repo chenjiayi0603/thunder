@@ -112,6 +112,8 @@ func (k *K8sClient) ListPodNamesByVersion(version, labelSelector string) ([]stri
 // CopyFileToPod copies a local file to a container in a pod via exec+tar.
 // srcPath is the local file path; destDir is the target directory inside the container.
 // Returns the size written on success.
+//
+// Deprecated: #159 Pull 模式替代，保留用于回滚。
 func (k *K8sClient) CopyFileToPod(podName, containerName, srcPath, destDir string) (int64, error) {
 	srcFile, err := os.Open(srcPath)
 	if err != nil {

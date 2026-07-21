@@ -106,6 +106,8 @@ func (h *Handler) VerifySOInPod(podName, filename string, expectedSize int64) er
 // 2. Verify file integrity on each pod
 // 3. Only if all pods succeed → bump global etcd version → all pods ReloadSo
 //
+// Deprecated: #159 Pull 模式 (Manager HTTP GET MinIO) 已替代此 Push 链路。
+// 保留用于回滚，待 Pull 模式稳定后删除。
 // Returns DeployResult with per-pod details.
 func (h *Handler) deploySOToAllPods(typeDir, srcPath, filename string) (*DeployResult, error) {
 	result := &DeployResult{
@@ -181,7 +183,7 @@ func (h *Handler) deploySOToAllPods(typeDir, srcPath, filename string) (*DeployR
 
 	// Only bump etcd if ALL pods succeeded
 	if result.Failed == 0 {
-		if err := h.bumpEtcdModuleVersion(nodeType, filename, srcSize, srcMd5); err != nil {
+		if err := h.bumpEtcdModuleVersion(nodeType, typeDir, filename, srcSize, srcMd5); err != nil {
 			result.EtcdBumped = false
 			return result, fmt.Errorf("all pods deployed but etcd bump failed: %w", err)
 		}
@@ -192,8 +194,9 @@ func (h *Handler) deploySOToAllPods(typeDir, srcPath, filename string) (*DeployR
 }
 
 // bumpEtcdModuleVersion increments the version of a SO module in the global config.
-// Stores size and md5 in etcd so listDeployed can show them without needing the artifact store.
-func (h *Handler) bumpEtcdModuleVersion(nodeType, filename string, size int64, md5 string) error {
+// Stores size, md5, and so_url in etcd.
+// #159: so_url enables Manager Pull mode (HTTP GET admin-web artifacts) instead of exec+tar Push.
+func (h *Handler) bumpEtcdModuleVersion(nodeType, typeDir, filename string, size int64, md5 string) error {
 	etcdKey := "/thunder/config/module/" + nodeType
 	raw, _ := h.s.EtcdGet(etcdKey)
 	modules := []map[string]interface{}{}
@@ -206,6 +209,9 @@ func (h *Handler) bumpEtcdModuleVersion(nodeType, filename string, size int64, m
 		}
 	}
 	soPath := "plugins/" + filename
+	// #159: so_url for Manager Pull download (MinIO or admin-web self-serve)
+	artifactKey := typeDir + "/" + filename
+	soURL := h.s.MinIO.GetObjectURL(artifactKey)
 	found := false
 	for i, m := range modules {
 		if sp, _ := m["so_path"].(string); sp == soPath {
@@ -216,18 +222,25 @@ func (h *Handler) bumpEtcdModuleVersion(nodeType, filename string, size int64, m
 			modules[i]["version"] = ver + 1
 			modules[i]["size"] = size
 			modules[i]["md5"] = md5
+			if soURL != "" {
+				modules[i]["so_url"] = soURL
+			}
 			found = true
 			break
 		}
 	}
 	if !found {
-		modules = append(modules, map[string]interface{}{
+		entry := map[string]interface{}{
 			"so_path": soPath,
 			"version": 1.0,
 			"load":    true,
 			"size":    size,
 			"md5":     md5,
-		})
+		}
+		if soURL != "" {
+			entry["so_url"] = soURL
+		}
+		modules = append(modules, entry)
 	}
 	rawBytes, _ := json.Marshal(map[string]interface{}{"module": modules})
 	newRaw := string(rawBytes)

@@ -474,7 +474,7 @@ void Nodes::SetCanaryWeights(const std::string& strNodeType,
     {
         m_mapCanaryWeights[strNodeType] = mapWeights;
     }
-    LOG4_TRACE("SetCanaryWeights nodeType=%s entries=%zu",
+    LOG4_INFO("SetCanaryWeights nodeType=%s entries=%zu",
                strNodeType.c_str(), mapWeights.size());
 }
 
@@ -488,7 +488,7 @@ void Nodes::ClearCanaryWeights(const std::string& strNodeType)
     {
         m_mapCanaryWeights.erase(strNodeType);
     }
-    LOG4_TRACE("ClearCanaryWeights nodeType=%s", strNodeType.c_str());
+    LOG4_INFO("ClearCanaryWeights nodeType=%s", strNodeType.c_str());
 }
 
 

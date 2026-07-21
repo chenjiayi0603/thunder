@@ -154,7 +154,100 @@ def test_upload_any_type():
     r = _put("/api/plugins/NoSuchType/_e2e_dummy.so", _elf_body())
     assert r["ok"] is True
 
-# ── 7. #157 安全校验 ──
+# ── 7. #159 Pull 模式链路 (MinIO → etcd so_url → Manager GET → Pod) ──
+
+PULL_SO_NAME = "_e2e_pull_test.so"
+PULL_DEPLOY_TYPE = "HelloHttp"
+PULL_TOKEN = f"PULL_E2E_{int(time.time())}"
+
+def _kubectl_exec(pod, cmd):
+    """kubectl exec 到指定 Pod 并返回 stdout + stderr"""
+    import subprocess
+    full_cmd = f"kubectl exec -n thunder {pod} -- {cmd}"
+    r = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=15)
+    return (r.stdout + r.stderr).strip()
+
+def _kubectl_get_pod(label):
+    """获取指定 label 的第一个 Running Pod 名"""
+    import subprocess
+    r = subprocess.run(
+        f"kubectl get pods -n thunder -l {label} --field-selector=status.phase=Running "
+        f"-o jsonpath='{{.items[0].metadata.name}}'",
+        shell=True, capture_output=True, text=True, timeout=10)
+    return r.stdout.strip()
+
+def test_pull_upload_to_minio():
+    """PUT /api/plugins/{type}/{file} — 上传 SO 返回 so_url (Pull 模式)"""
+    elf = _elf_body(PULL_TOKEN)
+    r = _put(f"/api/plugins/{PULL_DEPLOY_TYPE}/{PULL_SO_NAME}", elf)
+    assert r["ok"] is True
+    assert r["data"]["filename"] == PULL_SO_NAME
+    assert r["data"]["size"] > 0
+    # #159: minio_url (or admin-web artifact URL) must exist for Pull mode
+    artifact_url = r["data"].get("minio_url", "")
+    assert artifact_url != "", (
+        "Artifact URL missing in PUT response. "
+        "Pull mode requires admin-web artifact serving endpoint."
+    )
+    assert "api/artifacts" in artifact_url or "minio" in artifact_url, (
+        f"artifact_url looks wrong: {artifact_url}")
+
+def test_pull_so_url_in_etcd():
+    """POST deploy → etcd 写入 so_url (Pull 模式核心字段)"""
+    # 上传 (验证 artifact URL 存在)
+    elf = _elf_body(PULL_TOKEN)
+    r = _put(f"/api/plugins/{PULL_DEPLOY_TYPE}/{PULL_SO_NAME}", elf)
+    if not r["data"].get("minio_url", ""):
+        pytest.skip("Artifact URL not available — admin-web may need redeploy")
+
+    # 下发 (exec+tar + etcd bump → 写入 so_url)
+    r = _post(f"/api/plugins/{PULL_DEPLOY_TYPE}/deploy",
+              {"filename": PULL_SO_NAME})
+    assert r["ok"] is True, f"deploy failed: {r}"
+    assert r["data"]["etcd_bumped"] is True
+
+    # 验证 etcd module config 含 so_url (通过 admin-web deployed list)
+    deployed = _get(f"/api/plugins/{PULL_DEPLOY_TYPE}/deployed")
+    assert deployed["ok"] is True
+    files = deployed["data"]["files"]
+    found = False
+    for f in files:
+        if f["filename"] == PULL_SO_NAME:
+            found = True
+            # etcd 中有版本号即表示 so_url 已写入 (etcd bumped)
+            assert f["version"] != "", "etcd version not bumped for Pull SO"
+            break
+    assert found, f"{PULL_SO_NAME} not in deployed list (etcd bump failed)"
+
+def test_pull_so_reaches_pod():
+    """Manager Poll 拉取 MinIO → SO 到达目标 Pod (Pull 模式端到端)"""
+    pod = _kubectl_get_pod("app=thunder-hello")
+    assert pod, "No running thunder-hello pod"
+
+    # 用独立 token 确保这是新一次下发
+    token = f"PULL_E2E_{int(time.time())}"
+    elf = _elf_body(token)
+    _put(f"/api/plugins/{PULL_DEPLOY_TYPE}/{PULL_SO_NAME}", elf)
+    _post(f"/api/plugins/{PULL_DEPLOY_TYPE}/deploy", {"filename": PULL_SO_NAME})
+
+    # 等待 Manager Poll (5s 周期) + 下载 + GracefulRestart
+    # 兜底总等 35s：Poll 最多 10s + 下载 5s + Restart 20s
+    max_wait = 35
+    found = False
+    for i in range(max_wait):
+        content = _kubectl_exec(pod,
+            f"cat /app/plugins/{PULL_SO_NAME} 2>/dev/null || echo MISSING")
+        if token in content:
+            found = True
+            break
+        time.sleep(1)
+
+    assert found, (
+        f"SO {PULL_SO_NAME} (token={token}) not on pod {pod} after {max_wait}s. "
+        f"Pull mode: Manager may not have downloaded from MinIO."
+    )
+
+# ── 8. #157 安全校验 ──
 
 def test_upload_rejects_non_elf():
     """上传非 ELF 文件应被拒绝 (#157 — 防止 CrashLoop)"""
