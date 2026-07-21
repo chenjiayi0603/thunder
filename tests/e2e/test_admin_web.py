@@ -52,10 +52,17 @@ def test_health_nodes():
 TEST_SO_NAME = "_e2e_admin_test.so"
 TEST_DEPLOY_TYPE = "HelloHttp"
 
+# 构造最小合法 ELF (ELF magic + 64 字节凑够 header)
+def _elf_body(token=None):
+    body = bytes([0x7f, ord('E'), ord('L'), ord('F')]) + b'\x00' * 60
+    if token:
+        body += token.encode()
+    return body
+
 def test_so_upload():
     """PUT /api/plugins/{type}/{file} — 上传测试 SO"""
     token = f"E2E_TEST_{int(time.time())}"
-    r = _put(f"/api/plugins/{TEST_DEPLOY_TYPE}/{TEST_SO_NAME}", token)
+    r = _put(f"/api/plugins/{TEST_DEPLOY_TYPE}/{TEST_SO_NAME}", _elf_body(token))
     assert r["ok"] is True
     assert r["data"]["filename"] == TEST_SO_NAME
 
@@ -109,8 +116,7 @@ def test_audit_deploy_record():
 
 def test_deploy_v2_only():
     """Logic-v2 类型只下发到 v2 Pod，不影响 v1"""
-    token = f"E2E_V2_{int(time.time())}"
-    _put(f"/api/plugins/Logic-v2/{TEST_SO_NAME}", token)
+    _put(f"/api/plugins/Logic-v2/{TEST_SO_NAME}", _elf_body())
 
     r = _post("/api/plugins/Logic-v2/deploy", {"filename": TEST_SO_NAME})
     assert r["ok"] is True
@@ -145,6 +151,21 @@ def test_deploy_nonexistent_file():
 
 def test_upload_any_type():
     """上传到任意 type 都能成功 (admin-web 不校验 type 是否在 K8s 中存在)"""
-    r = _put("/api/plugins/NoSuchType/_e2e_dummy.so", "data")
-    # 上传成功 (制品库只存文件, 不校验 type)
+    r = _put("/api/plugins/NoSuchType/_e2e_dummy.so", _elf_body())
+    assert r["ok"] is True
+
+# ── 7. #157 安全校验 ──
+
+def test_upload_rejects_non_elf():
+    """上传非 ELF 文件应被拒绝 (#157 — 防止 CrashLoop)"""
+    # 文本文件不是 ELF
+    r = _put("/api/plugins/HelloHttp/_e2e_text.so", "this is not an ELF file")
+    assert r["ok"] is False
+    assert "not a valid" in r["error"].lower() or "elf" in r["error"].lower()
+
+def test_upload_accepts_valid_so():
+    """上传合法的 .so 文件应成功"""
+    # 构造一个最小 ELF header
+    elf_header = bytes([0x7f, ord('E'), ord('L'), ord('F')]) + b'\x00' * 60
+    r = _put("/api/plugins/HelloHttp/_e2e_valid.so", elf_header)
     assert r["ok"] is True

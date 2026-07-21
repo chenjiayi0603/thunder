@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -338,6 +339,21 @@ func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, "only .so files allowed")
 			return
 		}
+		// #157: 校验 ELF magic — 拒绝非 .so 文件防止 CrashLoop
+		var buf bytes.Buffer
+		tee := io.TeeReader(r.Body, &buf)
+		magic := make([]byte, 4)
+		if _, err := io.ReadFull(tee, magic); err != nil {
+			writeErr(w, "read file: "+err.Error())
+			return
+		}
+		if !isELF(magic) {
+			writeErr(w, fmt.Sprintf("not a valid .so file (ELF magic: %x, expected 7f454c46)", magic))
+			return
+		}
+		// Reconstruct body: magic bytes + remaining stream
+		bodyReader := io.MultiReader(bytes.NewReader(magic), io.MultiReader(&buf, r.Body))
+
 		artifactDir := filepath.Join("/app/data/artifacts", typeDir)
 		if err := os.MkdirAll(artifactDir, 0755); err != nil {
 			writeErr(w, "mkdir: "+err.Error())
@@ -350,7 +366,7 @@ func (h *Handler) Plugins(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		written, err := io.Copy(f, r.Body)
+		written, err := io.Copy(f, bodyReader)
 		if err != nil {
 			writeErr(w, "write: "+err.Error())
 			return
@@ -830,6 +846,11 @@ func resolveNodeType(h *Handler, typeDir string) string {
 	}
 	// Fallback: use typeDir as-is (backward compatible)
 	return strings.ToUpper(typeDir)
+}
+
+// isELF returns true if the first 4 bytes are ELF magic.
+func isELF(magic []byte) bool {
+	return len(magic) == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
 }
 
 // fileMD5 returns the hex-encoded MD5 hash of a file, or empty string on error.
