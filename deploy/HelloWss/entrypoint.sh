@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 PORT="${INNER_PORT:-27445}"
 [ -n "$INNER_PORT" ] && sed -i "s/\"inner_port\": [0-9]*/\"inner_port\": $INNER_PORT/" ./conf/HelloWss.json
 MY_IP="${POD_IP:-$(hostname -i 2>/dev/null || echo '0.0.0.0')}"

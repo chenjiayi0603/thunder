@@ -15,13 +15,9 @@ spec:
         app: thunder-logic
         version: v2
     spec:
-      volumes:
-      - name: nfs-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
       containers:
       - name: app
-        image: thunder-logic-v2:latest
+        image: localhost:5000/thunder-logic:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: NODE_VERSION
@@ -47,7 +43,3 @@ spec:
             cpu: "2"
         ports:
         - containerPort: 16069
-        volumeMounts:
-        - name: nfs-plugins
-          mountPath: /app/plugins
-          subPath: Logic

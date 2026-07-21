@@ -15,7 +15,7 @@
 
 # 或分步：
 ./deploy.sh build                          # cmake 编译
-./deploy.sh image logic interface logic-v2 hello http https ws wss  # 构建镜像
+./deploy.sh image logic interface hello http https ws wss  # 构建镜像
 ./deploy.sh deploy                         # 导入 containerd + kubectl apply
 bash k8s/regression-test.sh                # 回归测试
 ```

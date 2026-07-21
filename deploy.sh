@@ -611,8 +611,6 @@ cmd_test_k8s() {
     docker build -f deploy/HelloWs/Dockerfile -t "thunder-hello-ws:${tag}" . 2>&1 | tail -3 || { err "HelloWs 镜像构建失败"; images_ok=false; }
     docker build -f deploy/HelloWss/Dockerfile -t "thunder-hello-wss:${tag}" . 2>&1 | tail -3 || { err "HelloWss 镜像构建失败"; images_ok=false; }
     docker build -f deploy/Logic/Dockerfile -t "thunder-logic:${tag}" . 2>&1 | tail -3 || { err "Logic 镜像构建失败"; images_ok=false; }
-    docker build -f deploy/Logic_v2/Dockerfile -t "thunder-logic-v2:${tag}" . 2>&1 | tail -3 || { err "Logic-v2 镜像构建失败"; images_ok=false; }
-
     # admin-web (含 #142 前端修复)
     docker build -f deploy/admin-web/Dockerfile -t "thunder-admin-web:${tag}" deploy/admin-web/ 2>&1 | tail -3 || { err "admin-web 镜像构建失败"; images_ok=false; }
 
@@ -642,7 +640,7 @@ cmd_test_k8s() {
     local ctr_ok=true
     mkdir -p /tmp/thunder-images
     for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
-               thunder-hello-wss thunder-logic thunder-logic-v2 thunder-admin-web; do
+               thunder-hello-wss thunder-logic  thunder-admin-web; do
         log "  导入 $img:${tag} ..."
         docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
             warn "  $img docker save 失败"; ctr_ok=false; continue
@@ -667,7 +665,7 @@ cmd_test_k8s() {
     log "2.3 滚动更新所有 Gateway + admin-web..."
     # 确保 replicas=1 (CLEAN 阶段可能已 scale 到 0)
     for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
-               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
+               thunder-interface thunder-logic  thunder-admin-web; do
         kubectl scale deploy -n "$ns" "$dep" --replicas=1 2>/dev/null || true
     done
     declare -A DEP_IMAGE=(
@@ -677,7 +675,7 @@ cmd_test_k8s() {
         [thunder-hello-ws]="thunder-hello-ws:${tag}"
         [thunder-hello-wss]="thunder-hello-wss:${tag}"
         [thunder-logic]="thunder-logic:${tag}"
-        [thunder-logic-v2]="thunder-logic-v2:${tag}"
+        []="${tag}"
         [thunder-admin-web]="thunder-admin-web:${tag}"
     )
     for dep in "${!DEP_IMAGE[@]}"; do
@@ -806,14 +804,14 @@ cmd_test_k8s() {
     log "4.5 清理本地测试镜像..."
     docker rmi "thunder-interface:${tag}" "thunder-hello:${tag}" "thunder-hello-https:${tag}" \
                "thunder-hello-ws:${tag}" "thunder-hello-wss:${tag}" \
-               "thunder-logic:${tag}" "thunder-logic-v2:${tag}" \
+               "thunder-logic:${tag}" "${tag}" \
                "thunder-admin-web:${tag}" 2>/dev/null || true
     ok "  本地镜像已清理"
 
     # 4.6 关闭业务服务 (归还端口, 不影响下次测试)
     log "4.6 关闭业务服务 (释放端口)..."
     for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
-               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
+               thunder-interface thunder-logic  thunder-admin-web; do
         kubectl scale deploy -n "$ns" "$dep" --replicas=0 2>/dev/null || true
     done
     sleep 3
@@ -892,14 +890,13 @@ cmd_image() {
     local services=("${@}")
 
     if [[ ${#services[@]} -eq 0 ]]; then
-        services=(logic logic-v2 hello http https ws wss interface admin-web)
+        services=(logic hello http https ws wss interface admin-web)
     fi
 
     for svc in "${services[@]}"; do
         local dir ctx tag_name
         case "$svc" in
             logic)     dir="deploy/Logic";       ctx="."; tag_name="thunder-logic" ;;
-            logic-v2)  dir="deploy/Logic_v2";    ctx="."; tag_name="thunder-logic-v2" ;;
             hello)     dir="deploy/HelloHttp";   ctx="."; tag_name="thunder-hello-http" ;;
             https)     dir="deploy/HelloHttps";  ctx="."; tag_name="thunder-hello-https" ;;
             ws)        dir="deploy/HelloWs";     ctx="."; tag_name="thunder-hello-ws" ;;
@@ -936,14 +933,13 @@ cmd_push() {
     local services=("${@}")
 
     if [[ ${#services[@]} -eq 0 ]]; then
-        services=(logic logic-v2 hello http https ws wss interface admin-web)
+        services=(logic hello http https ws wss interface admin-web)
     fi
 
     for svc in "${services[@]}"; do
         local tag_name
         case "$svc" in
             logic)     tag_name="thunder-logic" ;;
-            logic-v2)  tag_name="thunder-logic-v2" ;;
             hello)     tag_name="thunder-hello-http" ;;
             https)     tag_name="thunder-hello-https" ;;
             ws)        tag_name="thunder-hello-ws" ;;
@@ -984,7 +980,7 @@ cmd_deploy() {
 
     # 3. 导入 containerd
     log "导入镜像到 containerd ..."
-    for img in thunder-logic thunder-logic-v2 thunder-hello-http thunder-hello-https \
+    for img in thunder-logic  thunder-hello-http thunder-hello-https \
                thunder-hello-ws thunder-hello-wss thunder-interface; do
         docker save "$img:$tag" 2>/dev/null | sudo -S ctr -n k8s.io image import - 2>/dev/null
     done
@@ -1044,7 +1040,7 @@ cmd_release() {
 
     # 2. docker image build (所有服务)
     log "构建 Docker 镜像..."
-    cmd_image logic interface logic-v2 hello https ws wss || {
+    cmd_image logic interface hello https ws wss || {
         err "镜像构建失败"
         return 1
     }

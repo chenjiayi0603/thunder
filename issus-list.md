@@ -6663,3 +6663,503 @@ k8s/regression-test.sh  Section 8:
   [PASS] kubelet CPU Manager → static
   [PASS] node-tuner marker (boot_id 幂等)
 ```
+
+---
+
+## 🟠 #155 [部署] SO 热更新路径重构 — 移除 NFS 对运行时路径的遮盖
+
+### 问题
+
+当前 K8s 部署把 NFS 挂载到 `/app/plugins/`（dlopen 的运行时路径），
+遮盖了镜像自带 SO：
+
+```
+容器内:
+  /app/plugins/   ←── NFS mount ──→ 宿主机 /data/thunder/plugins/{NodeType}/
+```
+
+这导致 `镜像 /app/plugins/ = 镜像版本` 和 `NFS /app/plugins/ = 热更新版本` 两个 source of truth
+混在一起，首次部署需手动 seed NFS，Pod 重启后版本来源不明确。
+
+### 目标
+
+**镜像 `/app/plugins/` 永远是运行时唯一 source of truth。**
+热更新通过 admin-web 把 SO 推到目标 Pod 的 `/app/plugins/`，不走 NFS 遮盖。
+
+### 方案 — 分两阶段推进
+
+> **核心策略**：阶段 1 先消灭 NFS（零 C++ 改动），阶段 2 再实现真正的逐 Pod 独立触发。
+
+#### 阶段 1：消灭 NFS，保留全局 ReloadSo 触发
+
+```
+┌──────────────┐                         ┌──────────────────┐
+│  admin-web   │  ① client-go exec+tar   │ 目标 Pod          │
+│              │ ──────────────────────→ │ /app/plugins/    │
+│ /app/data/   │                         │   xxx.so (覆盖)   │
+│   artifacts/ │  ② etcdPut 全局 key     └────────┬─────────┘
+│              │ ──────────┐                      │
+└──────────────┘           │            ③ DoPollConfig/5s
+                           ↓             （现有机制，无需改动）
+                    ┌─────────────┐              ↓
+                    │    etcd     │      ┌──────────────────┐
+                    │ /config/    │      │ ReloadSo() 热加载 │
+                    │ module/{Type}│      └──────────────────┘
+                    └─────────────┘
+```
+
+**与当前方案的核心差异**：ReloadSo 触发复用现有全局 etcd key `/thunder/config/module/{NODE_TYPE}`，不需要 C++ 代码做任何改动。
+
+```
+阶段 1 流程:
+  1. admin-web 通过 client-go exec+tar 把 SO 推到每个目标 Pod 的 /app/plugins/
+  2. 所有 Pod 文件到位后，bump 全局 etcd version（复用现有 key）
+  3. 所有同类型 Pod 的 DoPollConfig 检测到 version 变更 → 一起 ReloadSo
+  4. pod2 cp 失败? → 不 bump etcd → 已成功的 pod1 不会 reload 旧版本
+     下次 Retry 时只补推 pod2 → bump etcd → 全部一起 reload
+```
+
+#### 阶段 2（可选，需要 C++ 改动）：真正的 per-Pod 独立触发
+
+```
+┌──────────────┐                         ┌──────────────────┐
+│  admin-web   │  ① client-go exec+tar   │ 目标 Pod          │
+│              │ ──────────────────────→ │ /app/plugins/    │
+│              │  ② etcdPut per-pod key  └────────┬─────────┘
+│              │ ──────────┐                      │
+└──────────────┘           │            ③ watch 自己的 key
+                           ↓              （C++ 新增 DoPollPluginVersion）
+                    ┌─────────────┐              ↓
+                    │    etcd     │      ┌──────────────────┐
+                    │ /plugins/   │      │ ReloadSo() 热加载 │
+                    │  {Type}/    │      │   单 Pod 独立触发  │
+                    │  {Pod}/     │      └──────────────────┘
+                    │  {SoName}   │
+                    └─────────────┘
+```
+
+etcd key 设计（per-Pod + per-SO，阶段 2）：
+```
+/thunder/plugins/LOGIC/pod-xxx/CmdGetToken.so  → {"version": 3, "size": 1691584, "updated": "..."}
+/thunder/plugins/LOGIC/pod-yyy/CmdGetToken.so  → {"version": 2, "size": 1691584, "updated": "..."}
+```
+
+Pod 启动时通过 downward API 获取 `POD_NAME`，C++ 侧新增 `DoPollPluginVersion()` poll `/thunder/plugins/{nodeType}/{ownPodName}/`。
+per-Pod key 带 etcd lease（与 Pod registry 共用 lease），Pod 消失 → key 自动过期，不留孤儿数据。
+
+```
+admin-web（阶段 2）:
+  pod1: kubectl cp → etcdPut /plugins/LOGIC/pod1/xxx.so ver+1 → pod1 ReloadSo ✅
+  pod2: kubectl cp → etcdPut /plugins/LOGIC/pod2/xxx.so ver+1 → pod2 ReloadSo ✅
+  pod3: kubectl cp → etcdPut /plugins/LOGIC/pod3/xxx.so ver+1 → pod3 ReloadSo ✅
+  pod2 失败不影响 pod1，无需等全部到位
+```
+
+### 风险评估与设计细化
+
+#### ⚠️ 风险 1：ReloadSo 触发机制（最关键）
+
+**问题**：提案的 "Pod watch 自己的 key" 与当前 C++ 实现不匹配。
+
+当前 `EtcdGrpcConnector.cpp:699` 只 poll 一个全局 key：
+```cpp
+const std::string cfgKey = "/thunder/config/module/" + m_myNodeType;  // 所有 Pod 共享
+auto resp = client.get(cfgKey);
+if (val != m_lastConfigValue) { ConfigUpdated → ReloadSo(); }
+```
+
+C++ 侧要实现 per-Pod key watch 需要新增：
+- downward API 注入 `POD_NAME` 环境变量（K8s Deployment YAML 改造）
+- `EtcdGrpcConnector` 新增 `DoPollPluginVersion()` 轮询 `/thunder/plugins/{nodeType}/{podName}/`
+- 或改用 etcd Watch（替代现有的 unary get 5s poll）
+
+→ **阶段 1 完全规避此风险，零 C++ 改动。阶段 2 才需要 C++ 改动。**
+
+#### ⚠️ 风险 2：kubectl cp 的实现方式
+
+| 方式 | 优点 | 缺点 | 推荐 |
+|:---|:---|:---|:---:|
+| Shell out `kubectl cp` | 实现极简 (1 行 `exec.Command`) | admin-web 镜像需打包 kubectl 二进制 + kubeconfig/ServiceAccount token | ❌ |
+| `client-go` exec API + tar stream | 无外部依赖，标准 K8s in-cluster 调用 | 需自己构造 tar 流，约 100 行 Go | ✅ |
+
+**推荐方式 B**：引入 `client-go`，实现 `copyFileToPod(pod, container, src, dst)`。
+
+关键实现细节：
+- `exec.Stream` 使用 `Stdin` pipe 写入 tar 流，`Stdout`/`Stderr` 读取结果
+- tar 头需要正确设置 `Name`（目标路径相对于 `/`）、`Mode`（0644）、`Size`
+- 需指定 `container` 名（Pod 可能多容器）
+- 增加 retry（最多 3 次）+ 文件校验（exec `md5sum` 或 `stat -c%s` 比对 size）
+
+#### ⚠️ 风险 3：Pod 重新调度导致 per-Pod key 孤儿
+
+阶段 2 中，如果 pod3 在部署期间被 K8s 重新调度（CrashLoopBackOff / 缩容 / Node 故障），新 Pod 名变化 → 旧的 per-Pod etcd key 变成孤儿。
+
+**解决**：per-Pod key 绑定 etcd lease，与 Pod 的 registry key 共用 lease。Pod 消失 → lease 过期 → key 自动删除。新 Pod 启动时从镜像拿回原始 SO 版本（符合"Pod 重启回到镜像版本"的设计意图）。
+
+### 实施步骤
+
+#### 1. K8s Deployment — 移除 NFS 对 `/app/plugins/` 的挂载
+
+所有有插件的 Deployment（Logic / Logic-v2 / Interface / HelloHttp / HelloHttps / HelloWs / HelloWss）：
+- 删除 `volumeMounts` 中 `mountPath: /app/plugins` 的条目
+- 删除 `volumes` 中 `nfs-plugins` PVC 引用
+- 镜像 `/app/plugins/` 自包含，不再被遮盖
+
+#### 2. admin-web RBAC — 授权 Pod list + exec
+
+admin-web ServiceAccount 需要（阶段 1 即可）：
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: thunder-admin-web
+subjects:
+- kind: ServiceAccount
+  name: thunder-admin-web
+  namespace: thunder
+```
+
+admin-web Deployment 中指定 `serviceAccountName: thunder-admin-web`。
+
+#### 3. admin-web — `deploySO` 改为 client-go exec+tar（阶段 1）
+
+当前 `handler.go:599 deploySO()` 做的事：
+```
+读 /app/data/artifacts/{Type}/{File} → io.Copy → NFS /data/thunder/plugins/{Type}/{File}
+→ 全局 bump etcd version → 所有 Pod 一起 ReloadSo
+```
+
+阶段 1 改为：
+```
+1. 读 /app/data/artifacts/{Type}/{File} 获取 SO 字节
+2. 根据 Type 解析目标 nodeType（已有 resolveNodeType）+ 对应 K8s label（如 app=thunder-logic）
+3. client-go 查 K8s API 获取该 label 所有 Running Pod 列表
+4. for each Pod:
+     a. exec+tar 推 SO → {Pod}:{container}:/app/plugins/{File}
+     b. 校验文件到位（exec stat -c%s 比对 size）
+     c. 任一 Pod 失败 → 记录错误，不 bump etcd，返回部分失败结果
+5. 全部 Pod 成功 → bump 现有全局 etcd key /thunder/config/module/{NODE_TYPE} version+1
+   → 所有同类型 Pod DoPollConfig 检测变更 → ReloadSo
+6. audit log 记录每个 Pod 的部署结果（成功/失败/重试次数）
+```
+
+**typeDir → K8s label 映射表**（新增到 handler.go）：
+```
+HelloHttp    → app=thunder-hello,       version=v1
+HelloHttps   → app=thunder-hello-https
+HelloWs      → app=thunder-hello-ws
+HelloWss     → app=thunder-hello-wss
+Interface    → app=thunder-interface
+Logic        → app=thunder-logic,       version=v1
+Logic-v2     → app=thunder-logic,       version=v2
+```
+
+Container 名统一为 `app`（所有 Deployment 的 container name）。
+
+#### 4. admin-web — per-Pod 版本追踪（阶段 2 可选）
+
+阶段 2 新增：
+```go
+// Per-pod version tracking
+func (h *Handler) deploySOPerPod(w, r, typeDir string) {
+    for _, pod := range pods {
+        // 1. cp SO → Pod
+        copyFileToPod(pod, "app", src, "/app/plugins/"+filename)
+        // 2. etcdPut per-pod version
+        etcdKey := fmt.Sprintf("/thunder/plugins/%s/%s/%s", nodeType, pod.Name, filename)
+        h.s.EtcdPut(etcdKey, `{"version":`+newVersion+`, ...}`)
+        // 3. Pod watch 到自己的 key → ReloadSo（独立触发）
+    }
+}
+```
+
+C++ 侧对应改造（阶段 2）：
+- `EtcdGrpcConnector` 新增 `m_podName`（从 `POD_NAME` 环境变量读取）
+- 新增 `DoPollPluginVersion()`，poll `/thunder/plugins/{m_myNodeType}/{m_podName}/`
+- filesize/timestamp 比对，变更 → 触发 `ReloadSo`（复用现有 ConfigUpdated → CmdLogicConfig 链路）
+
+#### 5. 清理 — 移除 NFS plugins PV/PVC/挂载/nfs-server Pod
+
+- 删除 `k8s/plugins-pv.yaml`（PV + PVC）
+- 删除 `k8s/nfs-server.yaml`（nfs-server Pod + Service）
+- 清理所有 Deployment YAML 的 NFS volume 配置（7 个 service + admin-web）
+- admin-web Deployment 改为仅挂载 `/app/data` subPath（不再需要 NFS PVC，改用 emptyDir 或 hostPath 存 artifacts + SQLite，或保留 PVC 仅用于 admin data，去掉 plugins mount）
+- 清理 `deploy.sh` / `nodes.sh` 中 NFS 相关步骤
+
+#### 6. 回退之前临时加的 plugins-seed 机制
+
+以下所有文件删除 plugins-seed 相关逻辑（镜像 `/app/plugins/` 直接可用）：
+- `deploy/HelloHttp/Dockerfile` — 删除 `plugins-seed` 目录创建和 cp
+- `deploy/HelloHttps/Dockerfile` — 同上
+- `deploy/HelloHttp/entrypoint.sh` — 删除 Sync plugins 比对逻辑
+- `deploy/HelloHttps/entrypoint.sh` — 同上
+- `deploy/HelloWs/Dockerfile` + `entrypoint.sh`
+- `deploy/HelloWss/Dockerfile` + `entrypoint.sh`
+- `deploy/Logic/Dockerfile` + `entrypoint.sh`
+- `deploy/Logic_v2/Dockerfile` + `entrypoint.sh`
+- `deploy/Interface/Dockerfile` + `entrypoint.sh`
+
+### 影响
+
+| 操作 | 改前 | 阶段 1（改后） | 阶段 2（改后） |
+|------|------|------|------|
+| 首次部署 | 需手动 seed NFS | 镜像自包含，直接启动 | 同阶段 1 |
+| 热更新 | 写 NFS → 全局 bump → 全 Pod ReloadSo | client-go cp → 全局 bump → 全 Pod ReloadSo | client-go cp → per-Pod etcd → 单 Pod ReloadSo |
+| 更新粒度 | 全或无 | 全或无（但失败不 bump etcd，不会留下不一致状态） | 逐 Pod，失败不影响已更新 |
+| Pod 重启 | 版本来源不明确（NFS or 镜像） | 回到镜像版本 | 回到镜像版本 |
+| 多副本 | NFS 写一次共享 | 每个 Pod cp 一次 | 每个 Pod cp 一次 |
+| 回滚 | NFS 旧版本残留 | `kubectl rollout undo` 镜像 | per-Pod 回滚 etcd version |
+| C++ 改动 | N/A | **零** | ~80 行（DoPollPluginVersion） |
+| Go 改动 | N/A | ~150 行（client-go exec+tar + label 映射） | +80 行（per-Pod etcd） |
+| NFS 依赖 | ✅ 需要 | ❌ 删除 | ❌ 删除 |
+
+### 结论
+
+**可行，且值得做。分两阶段推进。**
+
+#### 架构简化
+
+| 组件 | 改前 | 阶段 1 后 |
+|------|:--:|:---:|
+| nfs-server Pod + Service | 需要 | ❌ 删除 |
+| plugins PV / PVC | 需要 | ❌ 删除 |
+| 7 个 Deployment 的 NFS volumeMount | 各有 1 个 | ❌ 全部删除 |
+| admin-web deploySO | io.Copy → NFS | client-go exec+tar → Pod |
+| Dockerfile plugins-seed | 需要 | ❌ 删除 |
+| entrypoint seed 逻辑 | 需要 | ❌ 删除 |
+| admin-web SA + RBAC | ❌ 无 | ✅ pods: get/list + pods/exec: create |
+
+去掉 NFS 后，整个插件分发链路只剩下 admin-web → Pod，无中间件依赖。
+
+#### 稳定性
+
+- **单点消除**: NFS server 是当前最脆弱的一环。Pod 挂载 NFS 后，NFS server 挂了 → 所有 Pod 的 `/app/plugins/` 变成 stale mount → `ls` 报 ESTALE，新 hot reload 失败
+- **版本一致**: 镜像版本 = 运行时版本，不存在"NFS 有但镜像没有"或反过来的混淆
+- **回滚可靠**: `kubectl rollout undo` 即可，Pod 重启后自动回到镜像版本，不依赖 NFS 上文件状态
+- **首次部署**: 零手工操作，镜像自包含
+- **阶段 1 部分失败安全**: 任一 Pod cp 失败 → 不 bump etcd → 已成功的 Pod 不会 reload 旧版本（已有的 SO 文件下次 cp 时覆盖）
+
+#### 代价
+
+**阶段 1（必须）**：
+```
+go get k8s.io/client-go@v0.30.0
+go get k8s.io/api@v0.30.0
+```
+
+实现量约 150 行 Go 代码：
+- `listPodsByLabel(namespace, labels)` → 获取目标 Pod 列表（40 行）
+- `copyFileToPod(pod, container, src, dst)` → exec+tar stream push SO（80 行）
+- 改造 `deploySO` → 替换 `io.Copy → NFS` 为上述调用（30 行）
+
+**阶段 2（可选，后续迭代）**：
+- C++: `EtcdGrpcConnector` 新增 `DoPollPluginVersion()` ~80 行
+- Go: per-Pod etcd key 写入 ~80 行
+- Deployment YAML: 注入 `POD_NAME` downward API
+
+admin-web 本身就是 Go web 后端 + etcd client，引入 `client-go` 是常规操作，不增加架构复杂度。
+
+---
+
+## 🔴 #157 [稳定性] ConfigUpdated 自动持久化导致脏数据污染配置文件 → CrashLoop
+
+> 2026-07-20 | 发现 | 状态: 🔴 待修复
+
+### 背景
+
+在 #155 SO 热更新测试过程中，通过 admin-web 下发了一个文本文件（`echo "TOKEN" | curl ...`）作为 `.so` 部署到 HelloHttp Pod。随后 HelloHttp 进入 CrashLoop：Manager 进程反复崩溃，Worker 进程数膨胀到数百个，Pod 虽显示 Running 但无法正常服务，etcd 注册丢失。
+
+### 根因链路
+
+```
+admin-web 下发无校验文件 (文本当 .so)
+  → etcd: /thunder/config/module/HELLO_HTTP 写入新条目
+    → DoPollConfig 检测 etcd 变更 → ConfigUpdated 事件
+      → Manager::ConfigUpdated() — Manager.cpp:2833
+        → 将 etcd 配置合并到 m_oCurrentConf
+        → ofstream 写回 Hello.json 文件  ← 持久化！
+        → 触发 Worker 优雅重启
+          → Worker 启动读 Hello.json → 发现无效 .so 条目
+            → dlopen 文本文件失败 → Worker 初始化失败
+              → Manager 检测 Worker 死亡 → 重启 Worker
+                → Worker 再读 Hello.json → 再失败 → 死循环
+```
+
+**关键代码** `Manager.cpp:2823-2840`：
+
+```cpp
+// 3. 合并到 m_oCurrentConf
+m_oCurrentConf.Replace("module", etcdModuleConf);
+
+// 4. 先写文件 (Worker 重启时从文件加载新配置)
+std::ofstream fout(m_strConfFile, std::ios::out | std::ios::trunc);
+fout << m_oCurrentConf.ToFormattedString();  // ← 脏数据永久化
+
+// 5. 更新共享内存
+// 6. SO/module 版本变化 → 优雅重启 Worker
+```
+
+### etcd 配置键的格式规范
+
+etcd key `/thunder/config/module/{NODE_TYPE}` 是一个完整 JSON 配置对象。可更新的字段仅限于以下三个 section，其他字段（如 `inner_host`、`inner_port`、`etcd_endpoints`）不应被 etcd 修改：
+
+```json
+{
+  "inner_host": "0.0.0.0",          // ← 不可通过 etcd 更新
+  "inner_port": 16068,               // ← 不可通过 etcd 更新
+  "module": [                        // ✅ 可更新
+    {
+      "cmd": 10001,                  // 必需: 命令 ID
+      "so_path": "plugins/CmdGetToken.so",  // 必需: SO 文件路径
+      "version": 2,                  // 必需: 版本号 (每次下发 +1)
+      "load": true,                  // 可选: 是否加载 (默认 true)
+      "size": 1691584,               // 可选: 文件大小
+      "md5": "4735a1bc..."           // 可选: MD5 值
+    }
+  ],
+  "so": { ... },                     // ✅ 可更新 (SO 配置)
+  "custom": { ... }                  // ✅ 可更新 (自定义配置)
+}
+```
+
+**格式约束**：
+
+| 字段 | 约束 | 违反后果 |
+|:---|:---|:---|
+| `cmd` | 必须存在且为有效 cmd ID | 无 cmd 的条目导致 `ReloadSo` 无法找到映射 → 模块被跳过但污染文件 |
+| `so_path` | 路径对应的文件必须是合法 ELF (.so) | 文本/非 ELF 文件 → `dlopen` 失败 → Worker 崩溃 |
+| `version` | 必须为数字 | 非数字 → `ReloadSo` 版本比较异常 |
+| section 范围 | 只能更新 `module` / `so` / `custom` | 其他字段（如 `inner_port`）被覆盖 → 网络绑定失败 |
+
+### 问题本质：3 个薄弱点 + 全链路无校验
+
+| # | 薄弱点 | 位置 | 当前行为 | 应该做什么 |
+|:---:|:---|:---|:---|:---|
+| 1 | **Manager 写文件前无校验** | `Manager.cpp:2833` | etcd 收到什么就写什么到文件 | 写文件前 dlopen 预检每个 SO，记录日志，非法条目拒绝写入 |
+| 2 | **admin-web 写 etcd 前无校验** | `handler.go` deploySO / bumpEtcd | 不检查 SO 是否为合法 ELF、不检查格式 | 写 etcd 前校验 ELF 头 + 格式完整性 |
+| 3 | **admin-web 上传无校验** | `handler.go` upload | 上传什么存什么 | 上传时检查 ELF magic number，非法文件拒绝并提示 |
+| 4 | **前端无提示和校验** | `index.html` 插件/配置页 | 无格式说明，无预览，无错误提示 | 显示格式规范，写 etcd 前展示预览，校验失败给明确错误 |
+| 5 | **Worker 加载无容错** | `Worker.cpp:5155` | dlopen 失败 → `LOG4_FATAL` + 继续，可能遗留半初始化状态 | 跳过非法模块，记录 WARN 日志，不阻止启动 |
+
+### 为什么"随便改什么都崩"
+
+因为 etcd `module` 配置是一个**无校验的全局可变状态，且自动持久化到文件**：
+
+- etcd 改了 → 文件被覆盖 → Worker 重启读文件 → **只要文件里有一个无效条目，所有 Worker 都起不来**
+- 这个链路没有任何防护：前端不拦、admin-web 不拦、Manager 不拦、Worker 不兜底
+- 出问题后唯一的恢复方式是**手动删 etcd key + 删 Pod 重建**（配置文件已被 etcd 回写覆盖，镜像内原文件也无法恢复）
+
+### 修复方案
+
+#### 步骤 1 — Manager: ConfigUpdated 写文件前校验 + 日志（~20 行 C++）
+
+`Manager.cpp` `ConfigUpdated` handler，在合并到 `m_oCurrentConf` 后、写文件前：
+
+1. 校验 `module` 数组中每个条目的 `so_path` → `dlopen(RTLD_NOW|RTLD_LOCAL)` 预检
+2. 非法 SO → `LOG4_ERROR` 记录原因 + 从数组中移除，**不写入文件**
+3. 校验 `module` 数组中每个条目必须有 `cmd` 字段
+4. 只允许合并 `module` / `so` / `custom` 三个 section，拒绝其他字段
+5. 写文件成功后 `LOG4_INFO` 记录写入的 module 数量和文件名
+6. 校验失败 → 不写文件、不重启 Worker → 返回错误，等待 etcd 再次更新
+
+#### 步骤 2 — admin-web: 写 etcd 前校验格式（~15 行 Go）
+
+`handler/deploy.go` `bumpEtcdModuleVersion` 和 `handler/handler.go` upload handler：
+
+1. SO 上传时检查文件头 `0x7F 'E' 'L' 'F'`（ELF magic），非 ELF 拒绝并返回明确错误 `"不是有效的 .so 文件"`
+2. `bumpEtcdModuleVersion` 写入 etcd 前，检查写入的 JSON 结构：`module` 数组每个条目必须有 `so_path` + `version`，新条目自动补充 `cmd` 映射
+3. 写 etcd 前做一次本地 `dlopen` 预检（用 `plugin.Open` 或直接读 ELF header）
+4. 校验失败 → 返回错误给前端，**不写入 etcd**
+
+#### 步骤 3 — admin-web 前端: 配置页校验 + 提示（~20 行 JS）
+
+`index.html` 插件页面和配置页面：
+
+1. 插件上传区域显示格式提示：`"仅支持 .so 文件 (ELF 格式)"`
+2. 上传前用 `FileReader` 读前 4 字节检查 ELF magic，非法文件直接 alert
+3. 下发确认弹窗展示将要更新的 etcd key 内容和目标 Pod 列表
+4. 已部署插件表格中，镜像自带的 SO 标注 `来源: 镜像`，热更新的标注 `来源: 下发`
+5. 配置页（`/api/config`）显示 JSON 格式规范说明 + 合法字段列表
+6. 后端返回校验错误时，前端用红色 toast 展示具体错误原因
+
+#### 步骤 4 — Worker: 启动时模块加载容错（~5 行 C++）
+
+`Worker.cpp` `LoadSo` / `ReloadSo`：
+
+1. `dlopen` 失败时 → `LOG4_WARN`（降级，不再 `LOG4_FATAL`），跳过该模块
+2. 正常模块继续加载，不因一个模块失败而阻止整个 Worker 启动
+3. 记录跳过的模块清单到日志
+
+#### 步骤 5 — ConfigUpdated 持久化策略可配置（可选，~10 行 C++）
+
+1. 增加配置项 `config_persist_to_file` (默认 true)
+2. 设为 false 时：ConfigUpdated 仅更新共享内存 + 触发 ReloadSo，不写文件
+3. Worker 重启后从 etcd 重新拉取最新配置（需 C++ 侧支持 etcd config bootstrap）
+
+### 格式规范补充说明
+
+**module 条目最小合法格式**：
+
+```json
+{
+  "cmd": 10001,                              // 必需
+  "so_path": "plugins/CmdGetToken.so",        // 必需
+  "version": 2                                // 必需
+}
+```
+
+**admin-web 维护 cmd 映射表**（与 `deploy.go` typeDirLabelMap 类似）：
+
+```go
+var soPathCmdMap = map[string]int{
+    "plugins/CmdGetToken.so":          10001,
+    "plugins/HelloHttp_ModuleHello.so": 1,
+    "plugins/HelloHttp_ModuleLua.so":   2,
+    "plugins/HelloHttp_ModuleRaw.so":   3,
+}
+```
+
+当 etcd 中读取到的 module 条目缺少 `cmd` 字段时，admin-web 自动从映射表补充后再写回。
+
+### 影响范围
+
+| 操作 | 当前行为 | 修复后 |
+|:---|:---|:---|
+| 下发无效 .so (文本/非 ELF) | CrashLoop，需手动恢复 | 前端拦截 → admin-web 拒绝 → etcd 不写入 |
+| 下发有效 .so 但 Worker 不匹配 | CrashLoop | Manager dlopen 预检 → 拒绝写入文件 → 记录日志 |
+| Worker 启动遇到无效模块 | 启动失败 | 跳过无效模块，正常模块继续加载 |
+| ConfigUpdated 触发 | 无脑写文件 + 重启 | 先校验 → 合法才写 → 非法记录日志不写入 |
+| etcd 配置格式错误 (缺 cmd) | 写文件 → Worker 无法 reload | admin-web 自动补充 cmd → 写入合法格式 |
+| 配置页操作 | 无提示、无预览 | 显示格式规范 + 下发前预览内容 |
+
+### 实施顺序
+
+1. **步骤 1 (Manager)** — 最后防线，必须做
+2. **步骤 2 (admin-web 后端)** — 第二道防线，写 etcd 前拦
+3. **步骤 3 (前端)** — 第一道防线，用户操作时拦 + 提示
+4. **步骤 4 (Worker 容错)** — 兜底，前面都挂了也能启动
+5. **步骤 5 (持久化可配)** — 可选优化

@@ -29,7 +29,17 @@ func main() {
 	}
 	defer s.Close()
 
-	h := handler.New(s)
+	// Init K8s client (nil if not in-cluster — local dev mode)
+	var k8sClient handler.K8sPodClient
+	kc, err := NewK8sClient("")
+	if err != nil {
+		log.Printf("WARNING: K8s client unavailable (%v) — running in local dev mode, deploySO will use NFS fallback", err)
+	} else {
+		k8sClient = kc
+		log.Printf("K8s client initialized (namespace=%s)", kc.namespace)
+	}
+
+	h := handler.New(s, k8sClient)
 
 	mux := http.NewServeMux()
 

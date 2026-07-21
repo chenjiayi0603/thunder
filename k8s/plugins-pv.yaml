@@ -1,3 +1,6 @@
+# DEPRECATED — #155 移除 NFS, SO 热更新改为 admin-web kubectl cp 直推 Pod
+# 保留此文件仅供回滚参考, 新部署不再需要 plugins PV/PVC
+#
 # PV + PVC — NFSv4 共享存储
 # nfs-server Pod (hostNetwork) 提供 NFS 服务
 apiVersion: v1
