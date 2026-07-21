@@ -53,6 +53,10 @@ func main() {
 	mux.HandleFunc("/api/plugins", h.Plugins)
 	mux.HandleFunc("/api/audit", h.Audit)
 
+	// #159: Artifact file serving (Manager Pull — HTTP GET .so / .lua)
+	mux.Handle("/api/artifacts/", http.StripPrefix("/api/artifacts/",
+		http.FileServer(http.Dir("/app/data/artifacts"))))
+
 	// Static files — serve from static/ (Nacos-style SPA)
 	fs := http.FileServer(http.Dir("static"))
 	mux.Handle("/", fs)

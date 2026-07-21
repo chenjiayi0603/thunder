@@ -7333,6 +7333,22 @@ var soPathCmdMap = map[string]int{
 >
 > 由 #158 子任务 5/6 的后续讨论衍生。将 SO 下发、Lua 下发、配置下发统一为 Pull 模式。
 
+### 结论
+
+**要做。** Pod 重建丢 SO 是真实线上 bug，不修永远是坑。exec+tar、NFS、构建镜像三条替代方案均已否决。Manager Pull + MinIO 是唯一可行的闭环方案。
+
+### 可行性
+
+| 维度 | 评估 |
+|------|------|
+| **P0 改动量** | ~210 行（50 YAML + 30 Go + 130 C++），不需 libcurl，不改 Worker |
+| **最重步骤** | 步骤 3：Manager 自实现 HTTP GET MinIO，~100 行 C++ |
+| **降级策略** | Manager 下载 SO 失败 → 不阻塞，用镜像内置 SO 先跑 → 后台异步重试 |
+| **etcd 负载** | 仅存 `so_url` / `script_url` string + `version` int，不存二进制 |
+| **跨节点** | MinIO Service + HTTP 天然跨节点 |
+| **未来扩容** | MinIO 分布式集群 → 换 etcd 里的 URL 即可，Manager 零改动 |
+| **回滚** | 保留 exec+tar 链路标记 deprecated 但不删除，Pull 出问题可切回 |
+
 ### 背景
 
 当前三种制品的分发方式各自独立，且都是 Push 模式——往容器里塞数据，Pod 重建就丢：
@@ -7343,109 +7359,348 @@ var soPathCmdMap = map[string]int{
 | Lua | etcd 内联 `script_content` + 写本地文件 | 几 KB | 🟡 etcd 里有，本地文件丢失 |
 | Config | etcd 内联 JSON | 几 KB | ✅ etcd 直接下发，不丢 |
 
-### 设计目标
+### 触发时机与覆盖策略
 
-三种制品统一走 **etcd 管元数据 + URL Pull** 模式：
+**镜像是一切的基础。** Docker 镜像自带二进制、SO、Lua、配置文件完整缺省版本。Pull 模式只在以下时机触发：
+
+| 时机 | 行为 |
+|------|------|
+| **Pod 首次启动 / 重建** | Manager 从 etcd 拉取 SO/Lua/Config 最新版本列表 → 覆盖本地文件 → fork Worker |
+| **Pod 存活期间 Worker 重启** | Manager 还在，不重新拉取 → Worker 直接用本地已有文件启动 |
+| **热更新（admin-web 下发）** | Manager Poll 检测 etcd version 变化 → 拉取新版本覆盖 → 通知 Worker reload |
+
+**覆盖策略**：
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                     etcd (元数据中心)                         │
-│  /thunder/config/module/{NODE_TYPE}                        │
-│  {                                                         │
-│    "module": [                                             │
-│      {                                                     │
-│        "so_path":  "plugins/HelloHttp_ModuleHttps.so",     │
-│        "so_url":   "http://admin-web:8090/api/artifacts/   │   ← SO: URL
-│                      HelloHttp/ModuleHttps.so",            │
-│        "version":  3                                       │
-│      },                                                    │
-│      {                                                     │
-│        "url_path":       "/hello/lua_echo",                │
-│        "script_content": "-- Lua inline",                  │   ← Lua: etcd 内联 OR URL
-│        "script_url":     "http://admin-web:8090/api/...",  │
-│        "version": 5                                        │
-│      }                                                     │
-│    ],                                                      │
-│    "custom": { ... 配置 JSON ... }                          │   ← Config: etcd 内联
-│  }                                                         │
-└────────────────────────────────────────────────────────────┘
-         │                              │
-         │    ┌─────────────────────────┘
-         ▼    ▼
-┌─────────────────────┐     ┌──────────────────────────┐
-│   Manager 启动       │     │   制品库 (未来可选 MinIO)   │
-│                     │     │                           │
-│ 1. etcd GET config  │     │  admin-web PVC (当前)      │
-│ 2. so_url 非空      │────▶│  GET /api/artifacts/...   │
-│    → HTTP GET →     │     │                           │
-│    /app/plugins/    │     │  或                        │
-│                     │     │  MinIO (未来)              │
-│ 3. script_content   │     │  GET bucket/...?token     │
-│    → 写 /app/scripts│     │                           │
-│                     │     │                           │
-│ 4. script_url 非空  │────▶│  同上                       │
-│    → HTTP GET →     │     │                           │
-│    /app/scripts/    │     │                           │
-│                     │     │                           │
-│ 5. 记录 version 到  │     │                           │
-│    .manifest        │     │                           │
-│                     │     │                           │
-│ 6. fork Worker ────▶│     │                           │
-└─────────────────────┘     └──────────────────────────┘
+镜像自带（完整默认）──▶ etcd 最新版本覆盖 ──▶ /app/ 本地运行时文件
+```
+
+| 制品 | 镜像自带 | 覆盖方式 | 说明 |
+|------|----------|----------|------|
+| **SO** | `/app/plugins/*.so` | **文件覆盖** | 从 MinIO HTTP GET → 直接覆盖本地 so 文件 |
+| **Lua** | `/app/scripts/*.lua` | **文件覆盖** | etcd `script_content` 内联写本地 / MinIO HTTP GET → 直接覆盖 |
+| **Config** | `{Type}/conf/{Type}.json` | **字段覆盖** | 不替换整个文件。etcd 中的 `custom`、`module`、`so` 三个 section 覆盖到本地 JSON 对应字段，**其余字段保持不变** |
+
+> ⚠️ **Config 是字段覆盖，不是文件覆盖。** 本地配置文件包含 `inner_host`、`inner_port`、`worker_num` 等节点专属字段，这些不会被 etcd 下发的配置覆盖。
+
+### 设计目标
+
+三种制品统一走 **etcd 管元数据 + MinIO 存制品 + URL Pull** 模式。MinIO 作为唯一制品存储层，admin-web 写，Manager 读。
+
+```
+┌──────────────┐     ┌─────────────────────────────────┐
+│  admin-web   │     │       MinIO (制品库)              │
+│              │     │                                 │
+│  upload SO   │────▶│  PUT /artifacts/{Type}/{file}    │
+│  upload Lua  │────▶│                                  │
+│              │     │  PVC 持久化 (1Gi hostPath)        │
+└──────┬───────┘     └──────────────┬──────────────────┘
+       │                            │
+       │ 写 so_url/script_url       │ HTTP GET 读
+       ▼                            ▼
+┌──────────────────────────────────────────────────────┐
+│                  etcd (元数据中心)                     │
+│  /thunder/config/module/{NODE_TYPE}                  │
+│  {                                                   │
+│    "module": [                                       │
+│      {                                               │
+│        "so_path": "plugins/HelloHttp_ModuleHttps.so",│
+│        "so_url":  "http://minio:9000/artifacts/       │   ← SO: MinIO URL
+│                     HelloHttp/ModuleHttps.so",       │
+│        "version": 3                                  │
+│      },                                              │
+│      {                                               │
+│        "url_path":       "/hello/lua_echo",          │
+│        "script_content": "-- Lua inline",            │   ← Lua: etcd 内联 (小脚本)
+│        "script_url":     "http://minio:9000/...",    │   ← Lua: MinIO URL (大脚本)
+│        "version": 5                                  │
+│      }                                               │
+│    ],                                                │
+│    "custom": { ... 配置 JSON ... }                    │   ← Config: etcd 内联
+│  }                                                   │
+└──────────────────────────────────────────────────────┘
+         │
+         │ Manager 启动 / Poll
+         ▼
+┌─────────────────────┐
+│   Thunder Manager   │
+│                     │
+│ 1. etcd GET config  │
+│ 2. so_url 非空      │──▶ HTTP GET MinIO → /app/plugins/
+│ 3. script_content   │──▶ 写 /app/scripts/
+│ 4. script_url 非空  │──▶ HTTP GET MinIO → /app/scripts/
+│ 5. .manifest        │
+│ 6. fork Worker      │
+└─────────────────────┘
 ```
 
 ### 三种制品分发对比
 
 | 制品 | 元数据在哪 | 数据在哪儿 | 首次获取 | 热更新 |
 |------|-----------|-----------|----------|--------|
-| **SO** | etcd: `so_path` + `so_url` + `version` | 制品库 (admin-web PVC / MinIO) | Manager HTTP GET `so_url` | Poll version 变化 → 重拉 |
-| **Lua** | etcd: `url_path` + `script_content` (+ `script_url`) + `version` | etcd 内联 OR 制品库 | 读 `script_content` 写本地 或 HTTP GET `script_url` | Poll version 变化 → 重写 |
+| **SO** | etcd: `so_path` + `so_url` + `version` | MinIO bucket | Manager HTTP GET `so_url` | Poll version 变化 → 重拉 |
+| **Lua (小)** | etcd: `url_path` + `script_content` + `version` | etcd 内联 | 读 `script_content` 写本地 | Poll version 变化 → 重写 |
+| **Lua (大)** | etcd: `url_path` + `script_url` + `version` | MinIO bucket | HTTP GET `script_url` | Poll version 变化 → 重拉 |
 | **Config** | etcd: `custom` JSON | etcd 内联 | 读 etcd 直接应用 | Poll → 直接生效 |
 
 ### 关键设计点
 
-**1. `script_url` 支持**（Lua 双通道）：
-- `script_content` 非空 → 从 etcd 直接读（当前方式，小脚本适用）
-- `script_url` 非空 → HTTP GET 拉取（大脚本、二进制 Lua 适用）
-- 两者都有 → 以 `script_url` 为准（URL 优先级 > 内联）
+**1. MinIO 是唯一制品存储层**：
+- admin-web 上传 SO/Lua → PUT 到 MinIO bucket
+- Manager 拉取 SO/Lua → HTTP GET MinIO（直接读，不经过 admin-web）
+- admin-web 不再需要提供制品下载 API，**步骤 0 取消**
+- admin-web PVC 仅用于 SQLite 审计数据库（#5/6），不存 SO
 
-**2. 未来切换到 MinIO 零改动**：
-- Manager 只认 `so_url` / `script_url` 字段，不关心后端是谁
-- `http://admin-web:8090/api/artifacts/...` → 换为 `https://minio:9000/bucket/...?token`
-- 只需改 etcd 里的 URL 值，Manager 代码不动
+**2. Lua 双通道**：
+- `script_content` 非空 → 从 etcd 直接读（小脚本，几 KB）
+- `script_url` 非空 → HTTP GET MinIO（大脚本、预编译 bytecode）
+- 两者都有 → 以 `script_url` 为准
 
 **3. 本地 `.manifest`**：
 ```json
 {
   "so":  {"ModuleHttps.so": 3, "Logic_lite.so": 1},
-  "lua": {"echo.lua": 5},
-  "config_rev": 12
+  "lua": {"echo.lua": 5}
 }
 ```
-Pod 存活期间 Worker 重启 → 比对 manifest vs etcd → 版本一致就跳过下载，直接从本地加载。
+Worker 重启（Manager 存活）→ 比对 manifest vs etcd → 版本一致跳过下载。
 
 ### 各侧改动
 
 | 组件 | 改动 | 量级 |
 |------|------|:--:|
-| **admin-web** | ① 统一 `GET /api/artifacts/{Type}/{file}` 返回制品<br>② `deploySO` 写入 `so_url`；`Lua POST` 写入 `script_url`<br>③ exec+tar 链路可废弃 | 🟡 |
-| **Thunder Manager** | ① 启动时解析 etcd → SO/URL 拉取，Lua 内联/URL 拉取<br>② 本地 `.manifest` 记录版本<br>③ Poll 检测 version 变化 → 对应通道更新 | 🔴 |
+| **MinIO** | 部署 MinIO Pod + PVC + Service | 🟡 |
+| **admin-web** | ① 上传 SO/Lua → PUT MinIO（替代写 PVC）<br>② `deploySO` / `Lua POST` 写入 `so_url` / `script_url` 到 etcd<br>③ exec+tar 链路可废弃<br>④ PVC 保留仅用于 SQLite | 🟡 |
+| **Thunder Manager** | ① 启动时解析 etcd → HTTP GET MinIO → 写本地<br>② 本地 `.manifest`<br>③ Poll 检测 version 变化 → 重拉 | 🔴 |
 | **Worker** | 不变 | 🟢 |
 
 ### 可行性
 
 | 维度 | 评估 |
 |------|------|
-| etcd 负载 | 仅存元数据（string + int），不存二进制 |
-| 跨节点 | HTTP 天然跨节点 |
-| Pod 重建 | Manager 启动即拉取，无窗口期 |
-| MinIO 迁移 | 换 URL 即可，Manager 零改动 |
-| 并发启动 | Manager 串行拉取，可按文件名去重 |
+| etcd 负载 | 仅存元数据，不存二进制 |
+| MinIO 负载 | SO 几 MB，并发读取量低，单节点 MinIO 完全够 |
+| 跨节点 | MinIO Service + HTTP 天然跨节点 |
+| Pod 重建 | Manager 启动即拉取 |
+| 部署复杂度 | MinIO 1 个 Pod + 1 个 PVC + 1 个 Service，~50 行 YAML |
 
 ### 依赖
 
 ```
-#5 制品库 PVC 持久化  ← #159 (admin-web 制品库是 SO/Lua 下载数据源)
+MinIO 部署  ← #159 (SO/Lua 存储数据源)
+#5 PVC      ← admin-web SQLite (审计数据库，不存 SO)
 ```
+
+> 📋 **状态：🔵 设计待确认**
+
+---
+
+
+---
+
+### 逐步骤分析
+
+> 📋 **可行性分析 (2026-07-21)** — 基于现有代码库深度审查
+
+#### 核心结论：完全可行，且工作量比设计估算更低
+
+经过对 `Manager.cpp`、`Worker.cpp`、`ModuleLua.cpp`、`deploy.go`、`handler.go`、`k8s.go` 等关键文件的全面代码审查，**该方案完全可行**。最关键的发现：设计中估计最重的步骤 3（Manager HTTP GET 下载 SO，~100 行 C++）**已经在代码中实现**（`DownloadSoFile()`, Manager.cpp:2973-3005）。实际 P0 改动量约 **~120 行**（比设计估算 210 行少 ~40%）。
+
+#### ✅ 已存在的代码基础设施
+
+| 设计步骤 | 现有实现 | 位置 | 成熟度 |
+|----------|----------|------|:--:|
+| 步骤 3: HTTP GET 下载 SO | `DownloadSoFile()` — socket connect + HTTP/1.0 GET + 写文件 | `Manager.cpp:2973` | ✅ 完成 |
+| 步骤 6: Poll 检测 SO version 变化 → 下载 | `ConfigUpdated` handler 读 `so_url` → 调 `DownloadSoFile()` | `Manager.cpp:2855` | ✅ 完成 |
+| 步骤 6: Poll 检测 Lua version 变化 → 热重载 | `LuaReloadScript()` — 重载 Lua VM，不动 SO | `Worker.cpp:5365` | ✅ 完成 |
+| 步骤 4: `script_content` 内联执行 | `ModuleLua::Init()` — `luaL_loadbuffer` 直接执行 etcd 下发脚本 | `ModuleLua.cpp:249/269` | ✅ 完成 |
+| 元数据格式 | `/thunder/config/module/{NODE_TYPE}` JSON | `Manager.cpp:2733` | ✅ 完成 |
+| 版本变更检测 | `ConfigUpdated` 对比 old/new module version | `Manager.cpp:2785` | ✅ 完成 |
+| etcd 配置合并 | `m_oCurrentConf.Replace("module"/"custom"/"so")` | `Manager.cpp:2825` | ✅ 完成 |
+| 配置持久化到文件 | `std::ofstream` 写 `m_strConfFile` | `Manager.cpp:2833` | ✅ 完成 |
+| admin-web etcd 读写 | `EtcdGet`/`EtcdPut` | `store/etcd.go` | ✅ 完成 |
+| admin-web bump version | `bumpEtcdModuleVersion()` | `deploy.go:196` | ✅ 完成 |
+| Lua POST 写 etcd | `writeModuleConfig()` 写 `script_content` + `version` | `handler.go:578` | ✅ 完成 |
+
+#### 🔴 实际待做工作（按优先级）
+
+**P0 — 阻塞项（必须做才能上线）**
+
+| # | 工作 | 组件 | 量级 | 为什么还没做 |
+|---|------|------|:--:|------|
+| 0 | MinIO 部署 YAML | `k8s/minio.yaml` | ~50 YAML | 新基础设施 |
+| 1a | admin-web 上传写 MinIO | `handler.go` | ~30 Go | 当前写 `/app/data/artifacts/` 本地 PVC |
+| 1b | admin-web 写 `so_url` 到 etcd | `deploy.go` `bumpEtcdModuleVersion` | ~10 Go | 当前只写 `version`/`size`/`md5`，无 `so_url` |
+| 3a | Manager **启动时**下载 SO | `Manager.cpp` 初始化阶段 | ~30 C++ | `DownloadSoFile()` 已存在，但当前只在 `ConfigUpdated` watch 事件中调用，不在启动时调用 |
+
+> ⚠️ **步骤 3 为什么从 ~100 行降到 ~30 行？** `DownloadSoFile()` 已完整实现（socket/gethostbyname/connect/HTTP GET/fwrite），Manager 启动时缺失的仅是：从 etcd GET module 配置 → 遍历 → 调已有 `DownloadSoFile()` → 失败不阻塞 fork Worker。~30 行。
+
+**P1 — 跟进项（Pull 稳定后做）**
+
+| # | 工作 | 组件 | 量级 |
+|---|------|------|:--:|
+| 2 | exec+tar 链路标记 `// Deprecated` | `deploy.go`/`k8s.go` | 注释 |
+| 4 | `script_url` 大脚本支持（Lua 从 MinIO HTTP GET） | Manager/Worker/ModuleLua | ~30 C++ |
+
+**P2 — 优化项**
+
+| # | 工作 | 组件 | 量级 |
+|---|------|------|:--:|
+| 5 | `.manifest` 版本比对加速 Worker 重启 | Manager.cpp | ~50 C++ |
+
+#### 📊 实际总改动量 vs 设计估算
+
+| 阶段 | 设计估算 | 实际评估 | 差异原因 |
+|------|:--:|:--:|------|
+| P0 | 210 行 | **~120 行** | `DownloadSoFile()` 已实现 |
+| P1 | 30 行 | ~30 行 | — |
+| P2 | 50 行 | ~50 行 | — |
+| **合计** | **~340 行** | **~200 行** | **-41%** |
+
+#### ⚠️ 风险点
+
+| 风险 | 等级 | 对策 |
+|------|:--:|------|
+| MinIO 单点故障 | 🟡 | Manager 下载失败 → 不阻塞 fork，用镜像内置 SO 先跑；`DownloadSoFile` 已有 30s 超时 |
+| 下载阻塞 Poll 循环 | 🟡 | 需改为异步下载（当前 `ConfigUpdated` 内同步调 `DownloadSoFile`） |
+| `script_url` vs `script_content` 优先级 | 🟢 | 设计已明确：`script_url` 非空 → 以 `script_url` 为准 |
+| Config 字段覆盖不丢节点专属字段 | 🟢 | 当前 `m_oCurrentConf.Replace("custom", tmp)` 是整块替换，需确认 `inner_host`/`inner_port`/`worker_num` 是否在 custom 内 — 如是则需改为字段级合并 |
+
+#### 🔧 建议实现路线
+
+```
+Phase 1（P0, 本周）:
+  1. 部署 MinIO YAML（k8s/minio.yaml）
+  2. admin-web: PUT 写 MinIO + etcd 加 so_url 字段
+  3. Manager: 启动时调 DownloadSoFile()
+  → Pull 模式可工作，Pod 重建不丢 SO
+
+Phase 2（P1, 下周）:
+  4. exec+tar 标记 deprecated（保留回滚路径）
+  5. script_url 大脚本支持
+
+Phase 3（P2, 后续）:
+  6. .manifest 加速 Worker 重启
+  7. exec+tar 清理
+```
+
+---
+
+#### 步骤 0 — MinIO 部署
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | 新建 `k8s/minio.yaml`：MinIO Pod + PVC + Service |
+| **YAML 内容** | `minio/minio:latest` 镜像，`/data` 挂 1Gi hostPath PVC，Service 暴露 9000 端口，`MINIO_ROOT_USER/MINIO_ROOT_PASSWORD` 通过 Secret 注入 |
+| **Bucket 初始化** | admin-web 启动时 `mc mb artifacts` 创建 bucket，或手动 `kubectl exec` 执行一次 |
+| **改动量** | ~50 行 YAML + admin-web 启动时 ~5 行 Go（minio-go SDK 创建 bucket） |
+| **风险** | 🟢 低。MinIO 单节点模式，和 etcd 一样是基础设施层 |
+| **结论** | 🟢 必须做。MinIO 是整个 Pull 模式的存储底座 |
+
+---
+
+#### 步骤 1 — admin-web: 上传 SO/Lua 写 MinIO + 写 etcd 元数据
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | ① `Plugins.PUT` 上传 SO → 原来写 `/app/data/artifacts/` → 改为 PUT MinIO bucket<br>② `bumpEtcdModuleVersion()` 新增 `so_url` 字段：`"http://minio.thunder:9000/artifacts/{TypeDir}/{filename}"`<br>③ `Lua.POST` 大脚本 → 同样 PUT MinIO + 写 `script_url`；小脚本仍用 `script_content` 内联 |
+| **依赖** | `github.com/minio/minio-go/v7` SDK ~5 行代码：`client.PutObject(ctx, bucket, key, reader, size, opts)` |
+| **改动量** | ~30 行 Go（minio-go SDK 集成 + etcd url 字段写入） |
+| **风险** | 🟢 低。新增字段不影响旧 Manager |
+| **需要注意** | ① MinIO Service DNS：`minio.thunder.svc:9000`（假设部署在 thunder namespace）<br>② 文件已存在 → 覆盖写入（MinIO 默认行为）<br>③ 制品库列表：`GET /api/plugins/{Type}` 改为 `client.ListObjects` 列出 MinIO bucket |
+| **结论** | 🟢 核心步骤，替代当前 PVC 文件写入 |
+
+---
+
+#### 步骤 2 — exec+tar 链路废弃策略
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | `deploy.go` 里的 `deploySOToAllPods`, `CopyFileToPod`, `VerifyFileInPod`；`k8s.go` 里的 exec+tar 相关方法 |
+| **改动量** | ~200 行可删 |
+| **策略** | 分三步：① 加 `// Deprecated` 注释 ② Manager Pull 上线验证稳定后删除 ③ 清理 k8s.go 中仅用于 exec+tar 的方法 |
+| **风险** | 🟡 先删 exec+tar 再上线 Pull → 空窗期。必须先上线 Pull 再删 |
+| **结论** | 🟢 先标记 deprecated，Pull 稳定后删除 |
+
+---
+
+#### 步骤 3 — Thunder Manager: 启动时从 MinIO 下载 SO
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | Manager 初始化阶段（fork Worker 之前）：<br>1. etcd GET `/thunder/config/module/{NODE_TYPE}` 拿 module 列表<br>2. 遍历，`so_url` 非空 → HTTP GET MinIO → 写 `/app/plugins/{base(so_path)}`<br>3. `so_url` 为空 → 用镜像自带 SO |
+| **HTTP 客户端** | 自实现，~80 行 C++：socket connect → `GET /bucket/key HTTP/1.1\r\nHost: minio.thunder\r\n\r\n` → 读响应体 → 写文件。SO 只有几 MB，不需要 libcurl |
+| **改动量** | 🟡 ~100 行 C++（HTTP GET + 文件写入 + 3 次重试） |
+| **降级策略** | 下载失败 → 不阻塞 fork Worker，用镜像内置 SO 先跑 → 后台异步重试每分钟一次 |
+| **风险** | 🟡 中。网络超时 30s，重试 3 次，磁盘满检查 |
+| **结论** | 🔴 核心步骤。不做这个 Pod 重建永远丢 SO |
+
+---
+
+#### 步骤 4 — Thunder Manager: `script_content` 持久化到本地
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | Manager 启动时，对每个有 `script_content` 的 module，从 etcd 读 → 写 `/app/scripts/{name}.lua` |
+| **前提** | Thunder Lua 加载机制需要确认：是 Worker 从 `script_content` 字符串 eval，还是需要本地文件路径？如果需要本地文件，这一步必做；如果直接 eval 字符串，不需要 |
+| **改动量** | ~30 行 C++。Manager 已有 etcd 读 + 文件写能力 |
+| **风险** | 🟢 低 |
+| **结论** | 🟡 确认 Lua 加载路径后再定优先级 |
+
+---
+
+#### 步骤 5 — Thunder Manager: 本地 `.manifest`（P2 优化）
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | `/app/.manifest` JSON 记录已下载版本。Worker 重启时比对 → 跳过下载 |
+| **场景** | Worker OOM 重启（Manager 还在）→ 秒级恢复 |
+| **改动量** | ~50 行 C++ |
+| **优先级** | P2。不做也能用，但加上后 Worker 恢复更快 |
+| **结论** | 🟢 可选，先做 P0 再评估 |
+
+---
+
+#### 步骤 6 — Thunder Manager: Poll 热更新
+
+| 项目 | 内容 |
+|------|------|
+| **改动** | 扩展 `DoPollConfig`：<br>1. SO version 变化 → HTTP GET MinIO 新 SO → 覆盖 `/app/plugins/` → 通知 Worker `ReloadSo`<br>2. Lua version 变化 → 读 etcd 或 HTTP GET MinIO → 通知 Worker `CmdReloadLua`<br>3. Config 变化 → 现有逻辑不变 |
+| **改动量** | 🟡 ~80 行 C++ |
+| **注意** | 下载不能阻塞 poll 循环 → 异步线程；多个 module 变更 → 串行下载 |
+| **结论** | 🔴 核心步骤。热更新是主要下发场景 |
+
+---
+
+### 总改动量
+
+| 步骤 | 模块 | 状态 | 行数 | 优先级 |
+|------|------|:--:|:--:|:--:|
+| 0. MinIO 部署 | Infra | 🟡 新部署 | 50 YAML | P0 |
+| 1. 上传写 MinIO + etcd | admin-web | 🟡 替换 | 30 Go | P0 |
+| 2. exec+tar deprecated | admin-web | 🟢 注释 | 0 (注释) | P1 |
+| 3. Manager 启动下载 SO | Thunder | 🔴 核心 | 100 C++ | P0 |
+| 4. script_content → 本地 | Thunder | 🟢 小 | 30 C++ | P1 |
+| 5. .manifest | Thunder | 🟢 可选 | 50 C++ | P2 |
+| 6. Poll 热更新 | Thunder | 🔴 核心 | 80 C++ | P0 |
+| **合计** | | | **~340 行** | |
+
+**P0（阻塞，210 行）**：MinIO 部署 + admin-web 写 MinIO/etcd + Manager 启动下载 + Poll 热更新
+
+**P1（跟进，30 行）**：exec+tar 废弃 + Lua 本地持久化
+
+**P2（优化，50 行）**：manifest 加速
+
+---
+
+### 合理性总结
+
+| 评估项 | 结论 |
+|--------|------|
+| 设计闭环 | ✅ MinIO 存 + etcd 管 + Manager 拉 + Poll 热更 |
+| 为什么是 MinIO 而不是 admin-web HTTP GET | 🔵 单节点稳定性相当，但 MinIO 胜在**可拓展的稳定性**：<br>  · 多节点集群 → 高可用 + 负载均衡，admin-web 进程做不到<br>  · 故障隔离 → MinIO 挂不影响 admin-web API<br>  · 扩容 → 加节点自动 rebalance，不依赖 PVC RWX<br>  · 当前单节点即可，架构预留分布式升级路径 |
+| 最大改动 | 步骤 3（Manager HTTP GET），~100 行 C++ 自实现 |
+| 最不确定 | 步骤 4（Lua 加载路径需确认） |
+| 是否值得 | ✅ Pod 重建丢 SO 是真实问题。MinIO 一次部署，SO/Lua/未来所有制品共享 |
 
 > 📋 **状态：🔵 设计待确认**

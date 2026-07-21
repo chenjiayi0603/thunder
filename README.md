@@ -127,9 +127,12 @@ Thunder was built for scenarios where **latency matters** and **downtime is unac
 
 ---
 
-## 🔌 Writing a Plugin
+## 🔌 Deploying a Plugin
+
+Thunder supports **dual-mode deployment**: Push (exec+tar) + Pull (Manager HTTP GET from admin-web). Push is the legacy path, Pull is the default since #159.
 
 ```cpp
+// code/HelloHttp/src/ModuleHello/ModuleHello.cpp
 #include "cmd/Module.hpp"
 
 class ModuleHello : public net::Module {
@@ -142,10 +145,27 @@ MUDULE_CREATE(core::ModuleHello);
 ```
 
 ```bash
-./deploy.sh build-so HelloHttp_ModuleHello
-curl -X POST http://localhost:8090/api/so-extract -F "file=ModuleHello.so"
-# → deployed. no restart. no dropped connections.
+# 1. Build all SO modules + deploy to deploy/{type}/plugins/
+./deploy.sh build
+
+# 2. Upload .so to admin-web artifact store (→ MinIO / PVC)
+curl -X PUT --data-binary @ModuleHello.so \
+  http://192.168.3.61:30090/api/plugins/HelloHttp/ModuleHello.so
+
+# 3. Deploy — bumps etcd version + so_url → Manager Pull downloads + graceful restart
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"filename":"ModuleHello.so"}' \
+  http://192.168.3.61:30090/api/plugins/HelloHttp/deploy
+
+# → no restart. no dropped connections. new connections use updated .so.
 ```
+
+| Step | Push mode (legacy, #2) | Pull mode (default, #159) |
+|------|------|------|
+| Upload | → local PVC | → local PVC + MinIO |
+| Deploy | exec+tar to each pod | etcd bump (version + so_url) |
+| Pod receives | kubectl cp via K8s API | Manager Poll → HTTP GET admin-web → download |
+| Pod restart | ❌ SO lost | ✅ Manager re-downloads on startup |
 
 ---
 

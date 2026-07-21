@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,8 +12,9 @@ import (
 )
 
 type Store struct {
-	etcd *clientv3.Client
-	db   *sql.DB
+	etcd  *clientv3.Client
+	db    *sql.DB
+	MinIO *MinIOClient
 }
 
 func New(etcdEP, dbPath string) (*Store, error) {
@@ -26,7 +28,11 @@ func New(etcdEP, dbPath string) (*Store, error) {
 	if err != nil { return nil, fmt.Errorf("sqlite: %w", err) }
 	if err := initDB(db); err != nil { return nil, err }
 
-	return &Store{etcd: cli, db: db}, nil
+	// #159: MinIO client for artifact storage (graceful fallback to admin-web self-serve)
+	minioEP := os.Getenv("MINIO_ENDPOINT")
+	minioClient, _ := NewMinIOClient(minioEP, "")
+
+	return &Store{etcd: cli, db: db, MinIO: minioClient}, nil
 }
 
 func (s *Store) Close() {
