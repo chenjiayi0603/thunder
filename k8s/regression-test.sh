@@ -230,8 +230,9 @@ if [ -z "$ADMIN_POD" ] || [ -z "$HELLO_POD" ]; then
   check "审计记录" "SKIP" "admin-web 或 hello Pod 未运行"
 else
   # C1: upload artifact → deploy (admin-web client-go exec+tar → Pod) → hello Pod 读取
+  # #157: admin-web 校验 ELF magic, 测试 SO 需构造合法 ELF header
   TOKEN="REGRESS_DEPLOY_$(date +%s)"
-  echo "$TOKEN" | curl -s -X PUT --data-binary @- "${ADMIN_NODEPORT}/api/plugins/HelloHttp/_regression_deploy.so" > /dev/null 2>/dev/null
+  printf '\x7fELF%1024s%s' '' "$TOKEN" | tr ' ' '\000' | curl -s -X PUT --data-binary @- "${ADMIN_NODEPORT}/api/plugins/HelloHttp/_regression_deploy.so" > /dev/null 2>/dev/null
   DEPLOY_RESULT=$(curl -s -X POST -H "Content-Type: application/json" \
     -d '{"filename":"_regression_deploy.so"}' \
     "${ADMIN_NODEPORT}/api/plugins/HelloHttp/deploy" 2>/dev/null)
