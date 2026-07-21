@@ -679,25 +679,24 @@ func (h *Handler) deploySOFallbackNFS(w http.ResponseWriter, r *http.Request, ty
 	writeOK(w, map[string]interface{}{"type": typeDir, "filename": filename, "size": written, "deployed": true})
 }
 
-// listDeployed: list all .so files on target pods, merged with etcd metadata (version/size/md5).
-// Image-bundled SO files that have never been hot-deployed show version as "镜像".
+// listDeployed: list all .so files on target pods, merged with etcd metadata.
 func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir string) {
 	nodeType := resolveNodeType(h, typeDir)
 
 	type FileInfo struct {
 		Name    string  `json:"filename"`
-		Version string  `json:"version"` // "1.0" from etcd, or "镜像" for image-bundled
+		Version string  `json:"version"`
 		Load    bool    `json:"load"`
 		Size    int64   `json:"size"`
 		Md5     string  `json:"md5"`
 	}
 
-	// 1. Get actual SO files from target pods (via kubectl exec ls)
-	actualFiles := make(map[string]int64) // filename → size
+	// 1. Get actual SO files from target pods (via NODE_VERSION from Pod spec env)
+	actualFiles := make(map[string]int64)
 	if h.k8s != nil {
-		podNames, err := h.k8s.ListPodNames(getLabelForTypeDir2(typeDir))
+		_, version := parseTypeDirVersion(typeDir)
+		podNames, err := h.k8s.ListPodNamesByVersion(version)
 		if err == nil && len(podNames) > 0 {
-			// Use first Running pod to list SO files
 			for _, podName := range podNames {
 				files, err := h.listPodPlugins(podName)
 				if err == nil && len(files) > 0 {
@@ -798,14 +797,6 @@ func (h *Handler) execPodCmd(podName, cmd string, args ...string) (string, error
 	return h.k8s.ExecPodCmd(podName, containerName, fullCmd)
 }
 
-// getLabelForTypeDir2 is the same as getLabelForTypeDir but returns the label for pod listing.
-func getLabelForTypeDir2(typeDir string) string {
-	label, ok := getLabelForTypeDir(typeDir)
-	if !ok {
-		return ""
-	}
-	return label
-}
 
 // Audit: returns SQLite audit log — GET /api/audit?type=HelloHttp
 func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {

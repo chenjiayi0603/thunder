@@ -12,10 +12,11 @@ import (
 )
 
 // K8sPodClient is the interface for K8s pod operations needed by deploySO.
-// The concrete implementation (in main package) uses client-go.
 type K8sPodClient interface {
 	// ListPodNames returns names of Running pods matching a label selector.
 	ListPodNames(labelSelector string) ([]string, error)
+	// ListPodNamesByVersion returns names of Running pods whose NODE_VERSION env matches.
+	ListPodNamesByVersion(version string) ([]string, error)
 	// CopyFileToPod copies a local file into a container via exec+tar.
 	CopyFileToPod(podName, containerName, srcPath, destDir string) (int64, error)
 	// VerifyFileInPod checks file exists in a container and matches expected size.
@@ -24,17 +25,29 @@ type K8sPodClient interface {
 	ExecPodCmd(podName, containerName string, cmd []string) (string, error)
 }
 
-// typeDir → K8s label selector mapping.
-// Used to find target pods for SO deployment.
-// Container name is always "app" (standard across all thunder Deployments).
-var typeDirLabelMap = map[string]string{
-	"HelloHttp":  "app=thunder-hello",
-	"HelloHttps": "app=thunder-hello-https",
-	"HelloWs":    "app=thunder-hello-ws",
-	"HelloWss":   "app=thunder-hello-wss",
-	"Interface":  "app=thunder-interface",
-	"Logic":      "app=thunder-logic,version=v1",
-	"Logic-v2":   "app=thunder-logic,version=v2",
+// parseTypeDirVersion extracts the version from a typeDir string.
+//   "Logic"     → ("Logic", "v1")
+//   "Logic-v2"  → ("Logic", "v2")
+//   "HelloHttp" → ("HelloHttp", "v1")
+func parseTypeDirVersion(typeDir string) (string, string) {
+	base, ver := typeDir, "v1"
+	if idx := strings.LastIndex(typeDir, "-v"); idx > 0 {
+		suffix := typeDir[idx+1:]
+		if len(suffix) >= 2 && suffix[0] == 'v' {
+			allDigits := true
+			for _, c := range suffix[1:] {
+				if c < '0' || c > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				base = typeDir[:idx]
+				ver = suffix
+			}
+		}
+	}
+	return base, ver
 }
 
 const containerName = "app"
@@ -60,23 +73,6 @@ type DeployResult struct {
 	Failed     int               `json:"failed"`
 	Pods       []PodDeployResult `json:"pods"`
 	EtcdBumped bool              `json:"etcd_bumped"`
-}
-
-// getLabelForTypeDir returns the K8s label selector for a typeDir, with fuzzy matching.
-func getLabelForTypeDir(typeDir string) (string, bool) {
-	// Exact match first
-	if label, ok := typeDirLabelMap[typeDir]; ok {
-		return label, true
-	}
-	// Fuzzy match: normalize and search
-	normalized := strings.ToUpper(strings.ReplaceAll(typeDir, "_", ""))
-	for k, v := range typeDirLabelMap {
-		kNorm := strings.ToUpper(strings.ReplaceAll(k, "_", ""))
-		if kNorm == normalized {
-			return v, true
-		}
-	}
-	return "", false
 }
 
 // DeploySOToPod copies a SO file from the artifact store to a single pod.
@@ -106,18 +102,14 @@ func (h *Handler) deploySOToAllPods(typeDir, srcPath, filename string) (*DeployR
 	nodeType := resolveNodeType(h, typeDir)
 	result.NodeType = nodeType
 
-	// Get target pods
-	label, ok := getLabelForTypeDir(typeDir)
-	if !ok {
-		return nil, fmt.Errorf("unknown typeDir %q: no K8s label mapping (available: %v)", typeDir, mapKeys(typeDirLabelMap))
-	}
-
-	podNames, err := h.k8s.ListPodNames(label)
+	// Get target pods by NODE_VERSION (from Pod spec env, not hardcoded labels)
+	_, version := parseTypeDirVersion(typeDir)
+	podNames, err := h.k8s.ListPodNamesByVersion(version)
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
 	if len(podNames) == 0 {
-		return nil, fmt.Errorf("no Running pods found for label %q", label)
+		return nil, fmt.Errorf("no Running pods with NODE_VERSION=%q", version)
 	}
 
 	result.TotalPods = len(podNames)
@@ -235,10 +227,3 @@ func md5Sum(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-func mapKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
