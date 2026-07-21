@@ -13,8 +13,8 @@
 #   6. Node 级 sysctl (TCP buffer)             → Pod 级 sysctl 的双层保护
 #
 # 运行:
-#   sudo bash scripts/init-k8s-node.sh
-#   sudo bash scripts/init-k8s-node.sh --dry-run    # 只检查不改动
+#   sudo bash k8s/init-k8s-node.sh
+#   sudo bash k8s/init-k8s-node.sh --dry-run    # 只检查不改动
 #
 # 要求:
 #   - Root 权限 (sudo)
@@ -44,7 +44,7 @@ CHANGES_MADE=0
 # =============================================================================
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        error "此脚本需要 root 权限: sudo bash scripts/init-k8s-node.sh"
+        error "此脚本需要 root 权限: sudo bash k8s/init-k8s-node.sh"
         exit 1
     fi
 }
@@ -348,7 +348,7 @@ configure_node_sysctls() {
 
     cat > "$sysctl_file" <<'EOF'
 # Thunder K8s 性能优化 sysctl (#154)
-# 由 scripts/init-k8s-node.sh 自动生成
+# 由 k8s/init-k8s-node.sh 自动生成
 
 # TCP Buffer: 低延迟优先，最大化并发连接
 net.ipv4.tcp_rmem = 4096 16384 32768

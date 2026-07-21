@@ -19,7 +19,7 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       # sysctls 不能与 hostNetwork 同时使用 (K8s 限制)
-      # TCP buffer 优化由 Node 级 sysctl (scripts/init-k8s-node.sh) 统一管理
+      # TCP buffer 优化由 Node 级 sysctl (k8s/init-k8s-node.sh) 统一管理
       containers:
       - name: app
         image: localhost:5000/thunder-hello-https:latest
