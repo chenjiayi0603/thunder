@@ -569,8 +569,8 @@
     API.getConfig(mod, typ).then(function(r){
       if(r.ok && r.data){ _cfgData = r.data;
         document.getElementById("cfgContent").textContent = JSON.stringify(r.data.content,null,2);
-        document.getElementById("cfgMeta").textContent = "revision: " + (r.data.revision||"-") + " \xB7 " + new Date().toLocaleString();
-        _renderCfgHistory(r.data.content);
+	        document.getElementById("cfgMeta").textContent = "module: " + mod + " \u00B7 " + new Date().toLocaleString();
+        _renderCfgHistory();
       } else {
         document.getElementById("cfgContent").textContent = "{}";
         document.getElementById("cfgMeta").textContent = "\u65B0\u914D\u7F6E";
@@ -581,12 +581,32 @@
     });
   }
 
-  function _renderCfgHistory(content){
-    var tbody = document.getElementById("cfgHistory");
-    // Mock: show current as revision 1
-    tbody.innerHTML = '<tr><td>1</td><td>' + new Date().toLocaleString() + '</td><td class="text-muted">' + JSON.stringify(content).substring(0,60) + '...</td><td><button class="btn btn-ghost btn-xs">\u67E5\u770B</button></td></tr>';
-    tbody.innerHTML += '<tr><td colspan="4" class="text-sm text-muted">\u5386\u53F2\u7248\u672C\u5F85 P1 Go \u540E\u7AEF SQLite \u5B9E\u73B0</td></tr>';
-  }
+	  function _renderCfgHistory(){
+	    var tbody = document.getElementById("cfgHistory");
+	    var mod = document.getElementById("cfgModule").value;
+	    if(!mod){ tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">请先加载配置</td></tr>'; return; }
+	    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+	    API.request('/config/' + encodeURIComponent(mod) + '/history').then(function(r){
+	      var entries = (r.ok && r.data && r.data.history) || [];
+	      if(!entries.length){ tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无历史</td></tr>'; return; }
+	      var h = "";
+	      entries.forEach(function(e){
+	        var preview = (e.content||'').substring(0, 80);
+	        h += '<tr><td>'+Components.escapeHtml(String(e.revision))+'</td><td>'+Components.formatTime(e.created_at)+'</td><td class="text-muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+Components.escapeAttr(e.content||'')+'">'+Components.escapeHtml(preview)+'</td><td><button class="btn btn-ghost btn-xs" onclick="showCfgHistoryDetail(\''+Components.escapeAttr(JSON.stringify(e))+'\')">查看</button></td></tr>';
+	      });
+	      tbody.innerHTML = h;
+	    }).catch(function(){
+	      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>';
+	    });
+	  }
+
+	  window.showCfgHistoryDetail = function(jsStr){
+	    var e = JSON.parse(jsStr);
+	    var content = e.content || '{}';
+	    try { content = JSON.stringify(JSON.parse(content), null, 2); } catch(_){}
+	    var body = '<div><b>Revision:</b> '+Components.escapeHtml(String(e.revision))+'</div><div><b>时间:</b> '+Components.formatTime(e.created_at)+'</div><pre style="font-size:11px;max-height:300px;overflow:auto;background:var(--border-light);padding:8px;margin-top:8px;border-radius:4px">'+Components.escapeHtml(content)+'</pre>';
+	    Components.modal({title:'配置历史: rev '+e.revision, body:body, confirmText:'关闭'});
+	  };
 
 
   /* config events */
@@ -703,7 +723,7 @@ function loadDeployed(type){
     if(!files.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无已部署插件</td></tr>'; return; }
     var h = "";
     files.forEach(function(f){
-      var ver = (f.version != null) ? 'v'+f.version : '-';
+      var ver = (f.version != null && f.version !== '' && f.version !== '镜像') ? '<span class="badge badge-info">v'+Components.escapeHtml(f.version)+'</span>' : '<span class="badge">镜像</span>';
       var sz = f.size ? (f.size < 1024 ? f.size+'B' : f.size < 1048576 ? (f.size/1024).toFixed(1)+'KB' : (f.size/1048576).toFixed(1)+'MB') : '-';
       var md5 = f.md5 ? '<span style="font-family:monospace;font-size:11px" title="'+Components.escapeAttr(f.md5)+'">'+Components.escapeHtml(f.md5.substring(0,8))+'</span>' : '-';
       h += "<tr><td>"+Components.escapeHtml(f.filename)+"</td><td><span class=\"badge badge-default\">"+Components.escapeHtml(type)+"</span></td><td>"+ver+"</td><td>"+sz+"</td><td>"+md5+"</td></tr>";

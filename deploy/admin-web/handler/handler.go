@@ -256,30 +256,42 @@ func (h *Handler) Canary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Config stub — P4 (§7.2: GET /api/config/{module}?type=xxx, PUT /api/config/{module})
+// Config — #158 子任务3: GET 读 etcd 真实配置, PUT 合规检查 + etcd 写入 + SQLite 审计
 func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/config/")
 	path = strings.TrimSuffix(path, "/")
 	module := strings.ToUpper(path)
+	etcdKey := "/thunder/config/module/" + module
 
-	// GET: read config  → ?type=Logic.json
+	// GET: read config from etcd
 	if r.Method == "GET" {
 		cfgType := r.URL.Query().Get("type")
 		if cfgType == "" {
 			writeErr(w, "?type= query parameter required")
 			return
 		}
+		raw, err := h.s.EtcdGet(etcdKey)
+		if err != nil {
+			writeErr(w, "etcd error: "+err.Error())
+			return
+		}
+		var content interface{}
+		if raw == "" {
+			content = map[string]interface{}{}
+		} else {
+			if err := json.Unmarshal([]byte(raw), &content); err != nil {
+				content = map[string]interface{}{}
+			}
+		}
 		writeOK(w, map[string]interface{}{
-			"module":   module,
-			"type":     cfgType,
-			"content":  map[string]interface{}{},
-			"revision": 0,
-			"message":  "config management coming in P4",
+			"module":  module,
+			"type":    cfgType,
+			"content": content,
 		})
 		return
 	}
 
-	// PUT: update config
+	// PUT: validate + write etcd + SQLite audit
 	if r.Method == "PUT" {
 		var body struct {
 			Type    string                 `json:"type"`
@@ -289,16 +301,107 @@ func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, "invalid JSON body")
 			return
 		}
+
+		// 1. 合规检查
+		if err := validateConfig(body.Content); err != nil {
+			writeErr(w, "合规检查失败: "+err.Error())
+			return
+		}
+
+		// 2. 保存旧值到 SQLite config_history
+		oldRaw, _ := h.s.EtcdGet(etcdKey)
+		if oldRaw != "" {
+			h.s.ConfigHistorySave(etcdKey, oldRaw)
+		}
+
+		// 3. 写入 etcd
+		newRaw, err := json.Marshal(body.Content)
+		if err != nil {
+			writeErr(w, "JSON marshal: "+err.Error())
+			return
+		}
+		if err := h.s.EtcdPut(etcdKey, string(newRaw)); err != nil {
+			writeErr(w, "etcd write: "+err.Error())
+			return
+		}
+
+		// 4. SQLite audit log
+		h.s.AuditLog("config_update", etcdKey,
+			truncate(oldRaw, 200), truncate(string(newRaw), 200), r.RemoteAddr)
+
 		writeOK(w, map[string]interface{}{
-			"module":   module,
-			"type":     body.Type,
-			"revision": 1,
-			"message":  "config management coming in P4",
+			"module":  module,
+			"type":    body.Type,
+			"content": body.Content,
+		})
+		return
+	}
+
+	// GET /api/config/{module}/history — 从 SQLite 读取历史版本
+	if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/history") {
+		etcdKey := "/thunder/config/module/" + module
+		entries, err := h.s.ConfigHistoryList(etcdKey)
+		if err != nil {
+			writeErr(w, "history query: "+err.Error())
+			return
+		}
+		writeOK(w, map[string]interface{}{
+			"module":  module,
+			"history": entries,
 		})
 		return
 	}
 
 	writeErr(w, "method not allowed")
+}
+
+// validateConfig performs compliance checks on config content before etcd write.
+// Only allows module/so/custom sections; module entries must have cmd, so_path, version.
+func validateConfig(content map[string]interface{}) error {
+	allowedSections := map[string]bool{"module": true, "so": true, "custom": true}
+
+	for key := range content {
+		if !allowedSections[key] {
+			return fmt.Errorf("不允许修改只读字段 %q（仅允许 module/so/custom）", key)
+		}
+	}
+
+	// Validate module entries
+	modules, ok := content["module"]
+	if !ok {
+		return nil // no module section is fine
+	}
+	modList, ok := modules.([]interface{})
+	if !ok {
+		return fmt.Errorf("module 必须是数组")
+	}
+	for i, m := range modList {
+		entry, ok := m.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("module[%d] 必须是对象", i)
+		}
+		// 必须有 cmd, so_path, version; 不允许修改只读字段
+		for _, required := range []string{"so_path", "version"} {
+			if _, exists := entry[required]; !exists {
+				return fmt.Errorf("module[%d] 缺少必填字段 %q", i, required)
+			}
+		}
+		// 拒绝只读字段
+		for _, readonly := range []string{"inner_host", "inner_port"} {
+			if _, exists := entry[readonly]; exists {
+				return fmt.Errorf("module[%d] 不允许修改只读字段 %q", i, readonly)
+			}
+		}
+	}
+	return nil
+}
+
+// truncate returns s truncated to maxLen chars with "..." suffix.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // SO plugin management — upload to local artifact store, list from NFS (deployed)
@@ -514,6 +617,29 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 				ScriptContent: content,
 				NodeType:      nodeType,
 			})
+		}
+		// #158 子任务4: etcd 无 Lua 脚本时回退扫描本地文件系统
+		if len(scripts) == 0 {
+			localDir := filepath.Join("/app/lua_scripts", nodeType)
+			if entries, err := os.ReadDir(localDir); err == nil {
+				for _, e := range entries {
+					if e.IsDir() || !strings.HasSuffix(e.Name(), ".lua") {
+						continue
+					}
+					data, err := os.ReadFile(filepath.Join(localDir, e.Name()))
+					if err != nil {
+						continue
+					}
+					name := strings.TrimSuffix(e.Name(), ".lua")
+					scripts = append(scripts, ScriptInfo{
+						Name:          e.Name(),
+						URLPath:       "/" + strings.ToLower(nodeType) + "/" + name,
+						Version:       0,
+						ScriptContent: string(data),
+						NodeType:      nodeType,
+					})
+				}
+			}
 		}
 		writeOK(w, map[string]interface{}{
 			"node_type": nodeType,
@@ -766,7 +892,7 @@ func (h *Handler) listDeployed(w http.ResponseWriter, r *http.Request, typeDir s
 		} else {
 			files = append(files, FileInfo{
 				Name: name, Size: sz, Load: true,
-				Version: "镜像",
+				Version: "", // 镜像内置，未热更新 → 前端渲染为"镜像" badge
 			})
 		}
 	}

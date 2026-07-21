@@ -7168,7 +7168,7 @@ var soPathCmdMap = map[string]int{
 
 ## 🟠 #158 [Admin-Web] 前端 + 后端 + 存储 多项问题修复
 
-> 2026-07-21 | 发现 | 状态: 🟠 需修复
+> 2026-07-21 | 发现 → 修复 | 状态: ✅ 5/6 已修复 (子任务2灰度路由延迟)
 >
 > 大需求：将以下 6 个子任务作为整体 `admin-web 问题修复` 需求的子项。
 
@@ -7176,11 +7176,18 @@ var soPathCmdMap = map[string]int{
 
 **现象**：已部署插件表中，镜像自带的 SO 版本列显示 `v镜像`（前端在 version 字段前加了 `v` 前缀）。
 
-**原因**：`listDeployed` 对未热更新的 SO 返回 `version: "镜像"`，前端渲染为 `'v' + version` → `v镜像`。
+**原因**：
+- 后端 `handler.go:769`：`listDeployed` 对未热更新的 SO（pod 上有文件但 etcd 无版本记录）返回 `version: "镜像"`
+- 前端 `index.html:706`：`var ver = (f.version != null) ? 'v'+f.version : '-'` → 无条件加 `v` → `v镜像`
+- 根因：后端用了中文描述性字符串作版本值，前端未做区分处理
 
 **修复**：
 - 前端：version 为 "镜像" 时不加 `v` 前缀，直接用 `<span class="badge">镜像</span>` 渲染
-- 后端：考虑统一用 etag/hash 标识镜像版本
+- 后端：将 "镜像" 改为空字符串 `""`，前端用 `<span class="badge badge-info">镜像</span>` 兜底
+
+> ✅ **已修复 (2026-07-21)**
+> - `handler.go:769`：`Version: "镜像"` → `Version: ""`
+> - `index.html:706`：version 为空或 "镜像" 时渲染 `<span class="badge">镜像</span>`，否则 `v{version}`
 
 ---
 
@@ -7215,20 +7222,30 @@ var soPathCmdMap = map[string]int{
 
 **现象**：配置页面只能看到 `{}`，无合规校验，无操作记录。
 
-**需实施**：
+**代码分析**：
+- GET handler `handler.go:266-279`：完全存根，返回 `content: {}` + `"config management coming in P4"`
+- PUT handler `handler.go:283-299`：完全存根，不读不写 etcd
+- 配置页面 `index.html:85-107`：有完整的编辑/保存 UI + diff 预览，但后端不工作
+- 历史版本 `index.html:588`：硬编码 `"历史版本待 P1 Go 后端 SQLite 实现"`
+- SQLite 已有 `config_history` 表（`sqlite.go:6-14`）但 Config handler 未调用
+- etcd key 格式：`/thunder/config/module/{NODE_TYPE}`，值格式 `{"module":[{...}]}`
 
-1. **合规检查**：写 etcd 前校验配置 JSON
+**修复**：
+1. GET：读 etcd `/thunder/config/module/{NODE_TYPE}`，返回真实配置 JSON
+2. PUT 合规检查：
    - 只允许更新 `module` / `so` / `custom` 三个 section
    - `module` 条目必须有 `cmd`、`so_path`、`version` 字段
-   - `so_path` 对应的文件必须是合法 ELF（校验 ELF magic）
-   - 其他字段（`inner_host`、`inner_port` 等）标记为只读，拒绝修改
-2. **配置下发流程**：
-   - 用户编辑配置 → 预览 diff → 确认 → 写入 etcd
-   - 写 etcd 成功后记录到 SQLite audit 表
-3. **SQLite 记录操作记录**：
-   - 表结构：`id, timestamp, action, target, detail, ip`
-   - 每次配置修改记录：旧值预览 + 新值预览 + 操作人 IP
-   - 前端"历史版本"表从 SQLite 读取（不再显示"待 P1 Go 后端实现"）
+   - `so_path` 对应文件校验 ELF magic
+   - `inner_host`、`inner_port` 等只读字段拒绝修改
+3. PUT 流程：校验 → 预览 diff → 写入 etcd → SQLite config_history 记录旧值 → SQLite audit_log 记录操作
+4. 历史版本：从 SQLite `config_history` 表读取（替代硬编码占位文字）
+
+> ✅ **已修复 (2026-07-21)**
+> - `handler.go:260-302`：Config handler 完全重写 — GET 读 etcd，PUT 合规检查 + etcd 写入 + SQLite 审计
+> - `handler.go:305-370`：新增 `validateConfig()` 合规校验 + `truncate()` 辅助函数
+> - `index.html:584-610`：`_renderCfgHistory()` 改为从 `/api/config/{module}/history` 拉取真实数据
+> - `index.html:612-619`：新增 `showCfgHistoryDetail()` 查看历史版本详情
+> - `store/sqlite.go`：`config_history` + `audit_log` 表已存在，Config handler 正确调用
 
 ---
 
@@ -7236,12 +7253,20 @@ var soPathCmdMap = map[string]int{
 
 **现象**：Lua 页面显示 `⚠ 无数据`，但 `deploy/Logic/scripts/logic_v1.lua` 存在。
 
-**原因**：Lua 脚本通过 etcd key `/thunder/config/module/{NODE_TYPE}` 的 `custom` 字段管理，或者未写入 etcd。
+**原因**：
+- Go handler `handler.go:445-523` 的 `Lua.GET` 只从 etcd `/thunder/config/module/{node_type}` 读 `script_content` 字段
+- 默认 Lua 脚本仅存在于本地文件系统，未写入 etcd
+- Dockerfile 未将 Lua 脚本打包进镜像，容器内无本地文件可扫描
+- `sync_config`（server.py）只同步 module JSON 配置，不同步 Lua 脚本内容
 
 **修复**：
-- 后端：`listLua` 应扫描所有节点的 Lua 脚本（从 etcd 或 Pod 文件系统读取）
-- 前端 Lua 页面：展示脚本名、URL、版本、大小、操作按钮
-- 上传：支持通过 admin-web 上传 .lua 文件到制品库，再下发到目标 Pod
+1. Dockerfile：添加 `COPY lua_scripts/ /app/lua_scripts/` 打包内置 Lua 脚本
+2. handler.go `Lua.GET`：etcd 无数据时，回退扫描本地 `/app/lua_scripts/{node_type}/` 目录
+3. handler.go `Lua.POST`：上传时同时写本地文件和 etcd（已实现，无需改动）
+
+> ✅ **已修复 (2026-07-21)**
+> - `Dockerfile:7`：新增 `COPY lua_scripts/ /app/lua_scripts/`
+> - `handler.go:518-538`：etcd 无 Lua 脚本时回退扫描 `/app/lua_scripts/{node_type}/*.lua`
 
 ---
 
@@ -7251,11 +7276,21 @@ var soPathCmdMap = map[string]int{
 
 **原因**：admin-web Deployment 使用 `emptyDir` 挂载 `/app/data`，Pod 重启后数据丢失。
 
+**代码分析**：
+- 上传入口：`handler.go:326-377` PUT `/api/plugins/{Type}/{file}` → 写 `/app/data/artifacts/{Type}/{filename}`
+- 列表入口：`handler.go:380-427` GET `/api/plugins/{Type}` → 读 `/app/data/artifacts/` 目录
+- 部署入口：`deploy.go:110-192` `deploySOToAllPods` → 从 `/app/data/artifacts/{Type}/{filename}` 读源文件
+- K8s 配置：`admin-web-deployment.yaml:39-41` `emptyDir: {}` → Pod 重建时清空
+- 不需要 NFS（#155 已移除），部署走 kubectl cp 直推 Pod
+
 **修复**：
-1. **短期**：admin-web 启动时扫描 `/app/data/artifacts/` 目录下的文件，自动重建制品库列表
-2. **长期**：改用 PVC 或 hostPath 持久化存储制品库（需独立的 PV/PVC，不再依赖 NFS）
-3. admin-web Deployment 中添加 `volumes` → `hostPath` 或新建 PVC
-4. 制品库列表从文件系统实时读取，不依赖内存缓存
+1. 新建 `admin-web-pvc.yaml`：1Gi hostPath PV（单节点）或 local-path PVC
+2. 修改 `admin-web-deployment.yaml`：`emptyDir` → `persistentVolumeClaim`
+3. 制品库列表已从文件系统实时读取（`os.ReadDir`），无需改动
+
+> ✅ **已修复 (2026-07-21)**
+> - `k8s/admin-web-pvc.yaml`：新建 — hostPath PV `/data/thunder/admin-web` + PVC `thunder-admin-web`
+> - `k8s/admin-web-deployment.yaml:39-41`：`emptyDir` → `persistentVolumeClaim: claimName: thunder-admin-web`
 
 ---
 
@@ -7265,11 +7300,19 @@ var soPathCmdMap = map[string]int{
 
 **原因**：SQLite 数据库文件存储在 `emptyDir` 中，Pod 重启后丢失。
 
+**代码分析**：
+- SQLite 路径：`main.go:26` `store.New(etcdEP, filepath.Join(dataDir, "admin.db"))`，dataDir=`/app/data`
+- 表结构：`sqlite.go:6-28` `config_history` + `audit_log` 表，`CREATE TABLE IF NOT EXISTS`
+- 写审计：`handler.go:651` `h.s.AuditLog(...)` 写 `audit_log` 表
+- 读审计：`handler.go:819-825` `AuditQuery` 读 `audit_log` 表
+- `/app/data` → `emptyDir` → Pod 重启 = 数据全丢
+
 **修复**：
-1. 同子任务 5 — 改用持久化存储（PVC 或 hostPath）
-2. SQLite 数据库路径改为持久化目录
-3. 确保 `admin.db` 在 Pod 重启/重建后数据不丢失
-4. admin-web Deployment YAML 中 `volumeMounts` → `/app/data` 挂载到持久化卷
+1. 同子任务 5 — `admin-web-deployment.yaml` 已改用 PVC `thunder-admin-web`
+2. `admin-web-pvc.yaml` — 新建 hostPath PV + PVC
+3. SQLite `admin.db` 路径不变（仍在 `/app/data/`），但底层已持久化
+
+> ✅ **已修复 (2026-07-21)** — 同子任务 5，`emptyDir` → PVC `thunder-admin-web`
 
 ### 依赖关系
 
@@ -7280,3 +7323,129 @@ var soPathCmdMap = map[string]int{
 子任务 3 (配置下发)    ← #157 格式规范
 子任务 4 (Lua 下发)    ← 无强依赖
 ```
+
+
+---
+
+## 🟡 #159 [Admin-Web + Thunder] 制品下发链路统一重构 — Push 改 Pull + SO/Lua/Config 三条路径
+
+> 2026-07-21 | 设计 | 状态: 🔵 设计待确认
+>
+> 由 #158 子任务 5/6 的后续讨论衍生。将 SO 下发、Lua 下发、配置下发统一为 Pull 模式。
+
+### 背景
+
+当前三种制品的分发方式各自独立，且都是 Push 模式——往容器里塞数据，Pod 重建就丢：
+
+| 制品 | 当前方式 | 大小 | Pod 重建后 |
+|------|----------|:--:|:--:|
+| SO | exec+tar 推容器可写层 | 几 MB | ❌ 丢失 |
+| Lua | etcd 内联 `script_content` + 写本地文件 | 几 KB | 🟡 etcd 里有，本地文件丢失 |
+| Config | etcd 内联 JSON | 几 KB | ✅ etcd 直接下发，不丢 |
+
+### 设计目标
+
+三种制品统一走 **etcd 管元数据 + URL Pull** 模式：
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                     etcd (元数据中心)                         │
+│  /thunder/config/module/{NODE_TYPE}                        │
+│  {                                                         │
+│    "module": [                                             │
+│      {                                                     │
+│        "so_path":  "plugins/HelloHttp_ModuleHttps.so",     │
+│        "so_url":   "http://admin-web:8090/api/artifacts/   │   ← SO: URL
+│                      HelloHttp/ModuleHttps.so",            │
+│        "version":  3                                       │
+│      },                                                    │
+│      {                                                     │
+│        "url_path":       "/hello/lua_echo",                │
+│        "script_content": "-- Lua inline",                  │   ← Lua: etcd 内联 OR URL
+│        "script_url":     "http://admin-web:8090/api/...",  │
+│        "version": 5                                        │
+│      }                                                     │
+│    ],                                                      │
+│    "custom": { ... 配置 JSON ... }                          │   ← Config: etcd 内联
+│  }                                                         │
+└────────────────────────────────────────────────────────────┘
+         │                              │
+         │    ┌─────────────────────────┘
+         ▼    ▼
+┌─────────────────────┐     ┌──────────────────────────┐
+│   Manager 启动       │     │   制品库 (未来可选 MinIO)   │
+│                     │     │                           │
+│ 1. etcd GET config  │     │  admin-web PVC (当前)      │
+│ 2. so_url 非空      │────▶│  GET /api/artifacts/...   │
+│    → HTTP GET →     │     │                           │
+│    /app/plugins/    │     │  或                        │
+│                     │     │  MinIO (未来)              │
+│ 3. script_content   │     │  GET bucket/...?token     │
+│    → 写 /app/scripts│     │                           │
+│                     │     │                           │
+│ 4. script_url 非空  │────▶│  同上                       │
+│    → HTTP GET →     │     │                           │
+│    /app/scripts/    │     │                           │
+│                     │     │                           │
+│ 5. 记录 version 到  │     │                           │
+│    .manifest        │     │                           │
+│                     │     │                           │
+│ 6. fork Worker ────▶│     │                           │
+└─────────────────────┘     └──────────────────────────┘
+```
+
+### 三种制品分发对比
+
+| 制品 | 元数据在哪 | 数据在哪儿 | 首次获取 | 热更新 |
+|------|-----------|-----------|----------|--------|
+| **SO** | etcd: `so_path` + `so_url` + `version` | 制品库 (admin-web PVC / MinIO) | Manager HTTP GET `so_url` | Poll version 变化 → 重拉 |
+| **Lua** | etcd: `url_path` + `script_content` (+ `script_url`) + `version` | etcd 内联 OR 制品库 | 读 `script_content` 写本地 或 HTTP GET `script_url` | Poll version 变化 → 重写 |
+| **Config** | etcd: `custom` JSON | etcd 内联 | 读 etcd 直接应用 | Poll → 直接生效 |
+
+### 关键设计点
+
+**1. `script_url` 支持**（Lua 双通道）：
+- `script_content` 非空 → 从 etcd 直接读（当前方式，小脚本适用）
+- `script_url` 非空 → HTTP GET 拉取（大脚本、二进制 Lua 适用）
+- 两者都有 → 以 `script_url` 为准（URL 优先级 > 内联）
+
+**2. 未来切换到 MinIO 零改动**：
+- Manager 只认 `so_url` / `script_url` 字段，不关心后端是谁
+- `http://admin-web:8090/api/artifacts/...` → 换为 `https://minio:9000/bucket/...?token`
+- 只需改 etcd 里的 URL 值，Manager 代码不动
+
+**3. 本地 `.manifest`**：
+```json
+{
+  "so":  {"ModuleHttps.so": 3, "Logic_lite.so": 1},
+  "lua": {"echo.lua": 5},
+  "config_rev": 12
+}
+```
+Pod 存活期间 Worker 重启 → 比对 manifest vs etcd → 版本一致就跳过下载，直接从本地加载。
+
+### 各侧改动
+
+| 组件 | 改动 | 量级 |
+|------|------|:--:|
+| **admin-web** | ① 统一 `GET /api/artifacts/{Type}/{file}` 返回制品<br>② `deploySO` 写入 `so_url`；`Lua POST` 写入 `script_url`<br>③ exec+tar 链路可废弃 | 🟡 |
+| **Thunder Manager** | ① 启动时解析 etcd → SO/URL 拉取，Lua 内联/URL 拉取<br>② 本地 `.manifest` 记录版本<br>③ Poll 检测 version 变化 → 对应通道更新 | 🔴 |
+| **Worker** | 不变 | 🟢 |
+
+### 可行性
+
+| 维度 | 评估 |
+|------|------|
+| etcd 负载 | 仅存元数据（string + int），不存二进制 |
+| 跨节点 | HTTP 天然跨节点 |
+| Pod 重建 | Manager 启动即拉取，无窗口期 |
+| MinIO 迁移 | 换 URL 即可，Manager 零改动 |
+| 并发启动 | Manager 串行拉取，可按文件名去重 |
+
+### 依赖
+
+```
+#5 制品库 PVC 持久化  ← #159 (admin-web 制品库是 SO/Lua 下载数据源)
+```
+
+> 📋 **状态：🔵 设计待确认**

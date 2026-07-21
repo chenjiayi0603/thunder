@@ -1,0 +1,29 @@
+# Admin-Web 持久化存储 — 制品库 + SQLite 审计数据库
+# #158 子任务5/6: 替代 emptyDir，Pod 重启/重调度后数据不丢失
+#
+# 部署: kubectl apply -f k8s/admin-web-pvc.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-thunder-admin-web
+  labels:
+    app: thunder-admin-web
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity: {storage: 1Gi}
+  hostPath:
+    path: /data/thunder/admin-web
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+  labels:
+    app: thunder-admin-web
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+  volumeName: pv-thunder-admin-web
