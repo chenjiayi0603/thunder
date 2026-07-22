@@ -80,10 +80,8 @@ struct PoolOffloadAwaiter
 		StepCo20* step = step_;
 		const uint32 seq = stepSeq_;
 		util::WorkStealingPool* pool = pool_;
-		try
-		{
-			fut_ = pool->commit([body = std::move(body), out, work = std::move(work), step, seq, h]() mutable
-								  -> ResultT {
+		fut_ = pool->commit([body = std::move(body), out, work = std::move(work), step, seq, h]() mutable
+				-> ResultT {
 				auto resumeOnWorker = [step, seq, h]() {
 					Worker* wk = dynamic_cast<Worker*>(GetLabor());
 					if (wk == nullptr || step == nullptr)
@@ -119,12 +117,9 @@ struct PoolOffloadAwaiter
 					return r;
 				}
 			});
-		}
-		catch (...)
+		if (!fut_.valid())
 		{
-			LOG4_ERROR("PoolOffloadAwaiter: threadpool commit failed");
-			// 任务未入队，fut_ 保持 invalid。直接 resume 协程，
-			// await_resume 会检查 fut_.valid() 并抛异常通知调用方。
+			LOG4_ERROR("PoolOffloadAwaiter: threadpool commit failed (pool stopped)");
 			if (h && !h.done())
 			{
 				h.resume();

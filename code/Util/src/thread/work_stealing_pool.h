@@ -84,6 +84,7 @@ public:
     ~WorkStealingPool()
     {
         _run.store(false, std::memory_order_release);
+        _cv.notify_all();
         for (auto& t : _pool)
             if (t.joinable()) t.join();
     }
@@ -108,9 +109,16 @@ public:
         if (sz >= _maxQueueSize)
         {
             _queueSize.fetch_sub(1, std::memory_order_relaxed);
-            throw std::runtime_error(
-                "commit on WorkStealingPool: queue full ("
-                + std::to_string(_maxQueueSize) + ")");
+            {
+                std::unique_lock<std::mutex> lk(_cv_mutex);
+                _cv.wait(lk, [this] {
+                    return !_run.load(std::memory_order_acquire)
+                        || _queueSize.load(std::memory_order_acquire) < _maxQueueSize;
+                });
+            }
+            if (!_run.load(std::memory_order_acquire))
+                throw std::runtime_error("commit on WorkStealingPool is stopped.");
+            sz = _queueSize.fetch_add(1, std::memory_order_acq_rel);
         }
 
         using RetType = decltype(f(args...));
@@ -122,6 +130,7 @@ public:
         Task wrapped = [task, this]() {
             (*task)();
             _queueSize.fetch_sub(1, std::memory_order_release);
+            _cv.notify_all();
         };
 
         int n = _activeWorkers.load(std::memory_order_acquire);
@@ -143,8 +152,8 @@ public:
             return fut;
         }
 
-        // Level 2: 顺序全扫
-        for (int i = 0; i < n; i++)
+        // Level 2: 全扫所有 deque（缩容后 active workers 和 deque index 可能不对齐）
+        for (int i = 0; i < THREADPOOL_MAX_NUM; i++)
             if (_submit_deques[i].push(std::move(wrapped)))
             {
                 if (_waitingWorkers.load(std::memory_order_acquire) > 0)
@@ -247,14 +256,20 @@ private:
                     }
 
                     // ── 退出检查（deque 已空时才检查）────────────────────
-                    if (_excessThreads.load(std::memory_order_acquire) > 0)
                     {
-                        _excessThreads.fetch_sub(1, std::memory_order_relaxed);
-                        drainToGlobal(id);
-                        _activeWorkers.fetch_sub(1, std::memory_order_release);
-                        _totalExited++;
-                        _idlThrNum--;
-                        return;
+                        int e = _excessThreads.load(std::memory_order_acquire);
+                        while (e > 0)
+                        {
+                            if (_excessThreads.compare_exchange_weak(e, e - 1,
+                                    std::memory_order_acq_rel, std::memory_order_relaxed))
+                            {
+                                drainToGlobal(id);
+                                _activeWorkers.fetch_sub(1, std::memory_order_release);
+                                _totalExited++;
+                                _idlThrNum--;
+                                return;
+                            }
+                        }
                     }
                     if (!_run.load(std::memory_order_acquire))
                     {
@@ -267,21 +282,21 @@ private:
 
                     // ── steal：随机起点，最多 min(4,N-1) 次 ──────────────
                     int n = _activeWorkers.load(std::memory_order_acquire);
-                    if (n > 1)
+                    // 缩容后 n 可能小于实际 deque index，此时扩大扫范围
+                    int scanN = (n > 1) ? n : THREADPOOL_MAX_NUM;
                     {
-                        uint32_t start = xorshift32() % static_cast<uint32_t>(n);
-                        int tries = std::min(4, n - 1);
+                        uint32_t start = xorshift32() % static_cast<uint32_t>(scanN);
+                        int tries = std::min(4, scanN - 1);
+                        if (n <= 1) tries = std::min(8, scanN); // 单 worker 多扫几个 deque
                         bool stole = false;
                         for (int i = 0; i < tries && !stole; i++)
                         {
-                            int victim = (static_cast<int>(start) + i) % n;
+                            int victim = (static_cast<int>(start) + i) % scanN;
                             if (victim == id) continue;
-                            // 先尝试从 victim 的 submit_deque steal
                             if (_local_deques[id].steal_into(_submit_deques[victim], kStealBatch) > 0)
                             {
                                 stole = true;
                             }
-                            // 再尝试从 victim 的 local_deque steal
                             else if (_local_deques[id].steal_into(_local_deques[victim], kStealBatch) > 0)
                             {
                                 stole = true;
