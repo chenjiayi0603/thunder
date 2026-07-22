@@ -402,6 +402,28 @@ curl -s -X POST http://192.168.3.61:27006/hello/lua_echo -d 'test'
 
 ## SO 热更新（#159 Pull 模式）
 
+### 方式一：`build_and_deploy.py` 一键工具（推荐）
+
+```bash
+# 全流程: CMake 编译 → 上传 MinIO → 下发到 Pod 触发热重载
+python3 tools/build_and_deploy.py --target CmdGetToken     --type Logic     --admin http://192.168.3.61:30090
+python3 tools/build_and_deploy.py --target ModuleHelloHttp  --type HelloHttp --admin http://192.168.3.61:30090
+python3 tools/build_and_deploy.py --target ModuleLuaHttp    --type HelloHttp --admin http://192.168.3.61:30090
+python3 tools/build_and_deploy.py --target ModuleRawHttp    --type HelloHttp --admin http://192.168.3.61:30090
+
+# 只构建+上传 (不下发)
+python3 tools/build_and_deploy.py --target ModuleHelloHttp --type HelloHttp --no-deploy
+
+# 上传已有 .so 文件 (跳过构建)
+python3 tools/build_and_deploy.py --so ./path/to/xxx.so --type HelloHttp --admin http://192.168.3.61:30090
+
+# 查看已部署插件
+python3 tools/build_and_deploy.py --type Logic     --list --admin http://192.168.3.61:30090
+python3 tools/build_and_deploy.py --type HelloHttp --list --admin http://192.168.3.61:30090
+```
+
+### 方式二：curl 手动调用 (适合 CI/脚本)
+
 ```bash
 # 1. 上传 .so 到 admin-web 制品库（→ MinIO + 本地 PVC）
 curl -X PUT --data-binary @ModuleHello.so \
