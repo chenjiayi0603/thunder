@@ -612,7 +612,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 			ScriptContent string `json:"script_content"`
 			NodeType      string `json:"node_type"`
 		}
-		var scripts []ScriptInfo
+		scripts := make([]ScriptInfo, 0)
 		for _, m := range modules {
 			urlPath, _ := m["url_path"].(string)
 			if _, ok := m["script_content"]; !ok { continue } // skip non-Lua entries
