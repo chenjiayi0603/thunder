@@ -26,7 +26,7 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 #define GLOG_ERROR(msg) LOG4CPLUS_ERROR(sLogger, msg)
 
 static constexpr int      kLeaseTTL           = 60;   // seconds (give more tolerance)
-static constexpr int      kKeepAliveRefresh   = 10;   // active keepalive interval (leasekeepaliveonce every 10s, far below 60s TTL)
+static constexpr int      kKeepAliveRefresh   = 10;   // active keepalive interval (leasekeepalive every 10s, far below 60s TTL)
 static constexpr int      kPollInterval         = 5;    // config poll interval
 static constexpr int      kCanaryPollInterval   = 30;   // canary fallback check interval
 static constexpr int      kWatchHealthTimeout   = 45;   // 没有 Watch 事件的最大容忍时间
@@ -667,38 +667,52 @@ void EtcdGrpcConnector::OnCanaryWatchEnded(bool cancelled)
 
 void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
 {
-    // #160: 使用 leasekeepaliveonce 做主动心跳，而非被动查 TTL。
-    //       主动心跳更可靠：每次成功都重置 etcd 端的 lease 过期计时器。
-    //       如果 lease 已过期（节点被失效），则自动重新注册。
-    auto kaResp = client.leasekeepaliveonce(m_leaseId);
-    if (kaResp.error_code() == 0)
-    {
-        // 主动心跳成功 — lease 存活，TTL 被刷新
-        GLOG_INFO("DoKeepalive: heartbeat OK, lease=" << m_leaseId
-                  << " ttl=" << kaResp.value().ttl());
-        return;
-    }
-
-    // 心跳失败 — 检查 lease 是否还存在
+    // #160: 增强 keepalive 健壮性
+    //   leasetimetolive 查询 lease 是否存活:
+    //   - 成功 + TTL OK    → 打印日志, 不做操作
+    //   - 成功 + TTL < 半  → grant 新 lease + 重新 PUT key (旧逻辑, 守护)
+    //   - 失败             → lease 丢失, 自动重新注册 (新逻辑)
     auto ttlResp = client.leasetimetolive(m_leaseId);
-    if (ttlResp.error_code() == 0)
+    if (ttlResp.error_code() != 0)
     {
-        // lease 还在但 keepalive 临时失败（网络抖动），下次重试
-        GLOG_WARN("DoKeepalive: keepalive failed but lease alive, ttl="
-                  << ttlResp.value().ttl() << " — retry next tick");
+        GLOG_WARN("DoKeepalive: lease " << m_leaseId
+                  << " lost (" << ttlResp.error_message() << "), re-registering...");
+
+        auto newLease = client.leasegrant(kLeaseTTL);
+        if (newLease.error_code() != 0)
+        {
+            GLOG_ERROR("DoKeepalive: re-register leasegrant failed: "
+                       << newLease.error_message());
+            return;
+        }
+
+        const int64_t     newLeaseId = newLease.value().lease();
+        const std::string slotKey    = SlotKey(static_cast<int>(m_nodeId));
+        const std::string regKey     = BuildRegistryKey(m_myNodeType, m_myNodeIp, m_myNodePort);
+        const std::string ipPort     = m_myNodeIp + ":" + std::to_string(m_myNodePort);
+        const std::string regValue   = BuildRegistryValue(m_nodeId, m_myNodeType,
+                                                           m_myNodeIp, m_myNodePort, m_myWorkerNum, m_myNodeVersion);
+
+        client.put(slotKey, ipPort,   newLeaseId);
+        client.put(regKey,  regValue, newLeaseId);
+        m_leaseId = newLeaseId;
+
+        GLOG_INFO("DoKeepalive: re-registered lease=" << m_leaseId
+                  << " type=" << m_myNodeType << " addr=" << ipPort);
         return;
     }
 
-    // lease 已丢失（过期/被撤销）— 需要重新注册
-    GLOG_WARN("DoKeepalive: lease " << m_leaseId
-              << " lost (expired or revoked), re-registering...");
+    const int64_t remainTTL = ttlResp.value().ttl();
+    GLOG_INFO("DoKeepalive: lease=" << m_leaseId << " ttl=" << remainTTL);
 
-    // 授予新 lease
+    if (remainTTL > kLeaseTTL / 2)
+        return;
+
+    // TTL 低于一半时换新 lease（旧守护逻辑, 防止边界条件）
     auto newLease = client.leasegrant(kLeaseTTL);
     if (newLease.error_code() != 0)
     {
-        GLOG_ERROR("DoKeepalive: re-register leasegrant failed: "
-                   << newLease.error_message());
+        GLOG_ERROR("DoKeepalive: leasegrant failed: " << newLease.error_message());
         return;
     }
 
@@ -709,13 +723,11 @@ void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
     const std::string regValue   = BuildRegistryValue(m_nodeId, m_myNodeType,
                                                        m_myNodeIp, m_myNodePort, m_myWorkerNum, m_myNodeVersion);
 
-    // 用新 lease 重新写入注册 key
     client.put(slotKey, ipPort,   newLeaseId);
     client.put(regKey,  regValue, newLeaseId);
+    client.leaserevoke(m_leaseId);
     m_leaseId = newLeaseId;
-
-    GLOG_INFO("DoKeepalive: re-registered with new lease=" << m_leaseId
-              << " node_type=" << m_myNodeType << " addr=" << ipPort);
+    GLOG_INFO("DoKeepalive: re-granted lease=" << m_leaseId);
 }
 
 // ============================================================
