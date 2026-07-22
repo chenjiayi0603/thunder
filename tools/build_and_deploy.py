@@ -116,7 +116,9 @@ def build_so(target: str, build_dir: Path) -> Path:
             cwd=build_dir)
 
     print(f"\n📐 编译 target: {target}")
-    run(["cmake", "--build", str(build_dir), "--target", target, "-j$(nproc)"],
+    import multiprocessing
+    jobs = str(multiprocessing.cpu_count())
+    run(["cmake", "--build", str(build_dir), "--target", target, "-j", jobs],
         cwd=build_dir)
 
     so_path = find_so(build_dir, target)
