@@ -48,7 +48,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BUILD_DIR = PROJECT_ROOT / "build"
-DEFAULT_ADMIN_URL = "http://127.0.0.1:8090"
+DEFAULT_ADMIN_URL = "http://192.168.3.61:30090"
 
 
 def run(cmd: list, cwd=None) -> subprocess.CompletedProcess:

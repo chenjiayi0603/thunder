@@ -46,7 +46,7 @@ Thunder Lua 脚本 上传→下发 工具 (对标 build_and_deploy.py)
 import argparse, json, os, sys, urllib.request, urllib.error
 from pathlib import Path
 
-DEFAULT_ADMIN_URL = "http://127.0.0.1:8090"
+DEFAULT_ADMIN_URL = "http://192.168.3.61:30090"
 
 
 def api_request(url: str, method="GET", body=None, data=None) -> dict:

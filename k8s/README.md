@@ -381,7 +381,34 @@ python3 -m pytest . -m smoke -v --mode=external
 
 ## Lua 热更新
 
-### 方式一：K8s 直写 etcd（适合脚本/CI，跳过 admin-web）
+### 方式一：`lua_deploy.py` CLI 工具（推荐，对标 SO 的 build_and_deploy.py）
+
+```bash
+# 上传 + 下发
+python3 tools/lua_deploy.py --file deploy/HelloHttp/scripts/echo.lua --type HELLO_HTTP
+python3 tools/lua_deploy.py --file deploy/Logic/scripts/logic_v1.lua  --type LOGIC
+
+# 只上传不下发
+python3 tools/lua_deploy.py --file echo.lua --type HELLO_HTTP --no-deploy
+
+# 下发已有制品库文件
+python3 tools/lua_deploy.py --deploy echo.lua --type HELLO_HTTP
+
+# 查看
+python3 tools/lua_deploy.py --type HELLO_HTTP --list           # 制品库
+python3 tools/lua_deploy.py --type HELLO_HTTP --list-deployed  # 已部署
+
+# 指定 url_path (默认自动推导: HELLO_HTTP → /hello/)
+python3 tools/lua_deploy.py --file echo.lua --type HELLO_HTTP --url /hello/my_echo
+```
+
+### 方式二：admin-web 页面
+
+`http://192.168.3.61:30090` → `📜 Lua` tab：
+- 拖拽上传 .lua 到制品库 → 点「下发」→ 触发热重载
+- 已部署表中点「编辑」→ 在线修改 → 保存
+
+### 方式三：K8s 直写 etcd（适合脚本/CI，跳过 admin-web）
 
 ```bash
 ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
@@ -395,10 +422,6 @@ kubectl exec -n thunder "$ETCD_POD" -- etcdctl \
 curl -s -X POST http://192.168.3.61:27006/hello/lua_echo -d 'test'
 # → {"code":0,"msg":"HOTRELOAD"}
 ```
-
-### 方式二：admin-web 页面
-
-`http://192.168.3.61:30090` → `📜 Lua` tab：在线编辑 → 保存 → 自动热加载
 
 ## SO 热更新（#159 Pull 模式）
 
