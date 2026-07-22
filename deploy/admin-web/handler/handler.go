@@ -871,8 +871,13 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.URLPath == "" {
 			// 自动从文件名推导 url_path: echo.lua → /hello/echo
+			// HELLO_HTTP → hello, HELLO_HTTPS → hello, LOGIC → logic
 			name := strings.TrimSuffix(body.Filename, ".lua")
-			body.URLPath = "/" + strings.ToLower(nodeType) + "/" + name
+			prefix := strings.ToLower(nodeType)
+			if idx := strings.Index(prefix, "_"); idx > 0 {
+				prefix = prefix[:idx]
+			}
+			body.URLPath = "/" + prefix + "/" + name
 		}
 		// 从 PVC 读取文件
 		fpath := filepath.Join("/app/data/lua_scripts", nodeType, body.Filename)
