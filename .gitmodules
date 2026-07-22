@@ -77,3 +77,7 @@
 	path = code/3party/keydb
 	url = https://github.com/chenjiayi0603/KeyDB.git
 	branch = dev
+
+[submodule "code/3party/paho-mqtt-c"]
+	path = code/3party/paho-mqtt-c
+	url = https://github.com/eclipse-paho/paho.mqtt.c.git

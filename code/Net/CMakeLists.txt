@@ -10,6 +10,24 @@ endforeach()
 
 # picohttpparser — HTTP/1.1 parser (替代 http-parser)
 list(APPEND LIBNET_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../Util/src/util/http/pico/picohttpparser.c")
+set(PAHO_MQTT_SOURCES
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTPacket.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTProperties.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTPacketOut.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/LinkedList.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTPersistence.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTPersistenceDefault.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTTime.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/MQTTReasonCodes.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/Messages.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/Base64.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/Heap.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/Log.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/Tree.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/StackTrace.c"
+  "${THUNDER_3PARTY}/paho-mqtt-c/src/OsWrapper.c")
+list(APPEND LIBNET_SOURCES ${PAHO_MQTT_SOURCES})
+list(APPEND LIBNET_SOURCES "${NET_SRC}/codec/PahoOsStubs.cpp")
 
 file(GLOB_RECURSE NET_ALL_SOURCES CONFIGURE_DEPENDS
   "${NET_SRC}/*.cpp"
@@ -19,7 +37,7 @@ file(GLOB_RECURSE NET_ALL_SOURCES CONFIGURE_DEPENDS
 add_library(Net SHARED ${LIBNET_SOURCES})
 set_target_properties(Net PROPERTIES OUTPUT_NAME "Net")
 
-add_executable(Hello ${NET_ALL_SOURCES})
+add_executable(Hello ${NET_ALL_SOURCES} ${PAHO_MQTT_SOURCES} "${NET_SRC}/codec/PahoOsStubs.cpp")
 target_link_libraries(Hello PRIVATE "/usr/lib/x86_64-linux-gnu/libluajit-5.1.so.2")
 
 foreach(_t Net Hello)
@@ -29,10 +47,14 @@ foreach(_t Net Hello)
   target_include_directories(${_t} PRIVATE "${THUNDER_3PARTY}")
 endforeach()
 
+# paho stubs (必须在 paho src 之前，隐藏内部头文件)
+target_include_directories(Net PRIVATE "${THUNDER_3PARTY}/paho-mqtt-c/stubs" "${THUNDER_3PARTY}/paho-mqtt-c/src")
+target_include_directories(Hello PRIVATE "${THUNDER_3PARTY}/paho-mqtt-c/stubs" "${THUNDER_3PARTY}/paho-mqtt-c/src")
+
 target_link_options(Hello PRIVATE "LINKER:--export-dynamic")
 
 if(THUNDER_BUILD_CENTER)
-  add_executable(Center ${NET_ALL_SOURCES})
+  add_executable(Center ${NET_ALL_SOURCES} ${PAHO_MQTT_SOURCES} "${NET_SRC}/codec/PahoOsStubs.cpp")
   target_compile_definitions(Center PRIVATE NODE_TYPE_CENTER)
   thunder_apply_common_compile_options(Center)
   thunder_target_include_net(Center)
