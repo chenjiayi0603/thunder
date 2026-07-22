@@ -102,6 +102,7 @@ metadata:
   name: thunder-minio
   namespace: thunder
 spec:
+  type: NodePort
   selector:
     app: thunder-minio
   ports:
@@ -111,3 +112,4 @@ spec:
   - port: 9001
     targetPort: 9001
     name: console
+    nodePort: 30091

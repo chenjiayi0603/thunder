@@ -6124,7 +6124,7 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 
 ## 🔵 #150 [分析] IoT 协议支持可行性 — MQTT
 
-> 2026-07-18 | 分析 | 状态: 🔵 待评估
+> 2026-07-18 | 分析 | 状态: 🔵 待评估 | 2026-07-22 补充代码级可行性分析 + 风险评估 + 场景深入 + 实施路线图
 
 ### 背景
 
@@ -6168,16 +6168,15 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 Thunder MQTT 支持（新增 codec）
   │
   ├── code/Net/src/codec/CodecMqtt.cpp        ← MQTT 3.1.1 / 5.0 编解码
-  ├── code/Hello/MqttBroker/                  ← MQTT Broker 节点
-  │     ├── ModuleMqttConnect.so              ← CONNECT/CONNACK 握手
-  │     ├── ModuleMqttSubscribe.so            ← SUBSCRIBE/SUBACK Topic 管理
-  │     ├── ModuleMqttPublish.so              ← PUBLISH/PUBACK QoS 路由
-  │     ├── ModuleMqttWill.so                 ← 遗嘱消息
-  │     └── ModuleMqttSession.so              ← 持久会话恢复
+  ├── code/HelloMqttBroker/                    ← MQTT Broker 节点
+  │     ├── ModuleMqttBroker.so               ← 所有 MQTT 包处理 (CONNECT/SUBSCRIBE/PUBLISH/Will/Session)
+  │     └── ModuleMqttTopicMatch.so (可选)     ← Topic Trie 匹配引擎 (如热更新需求则独立)
   ├── deploy/MqttBroker/                      ← 部署配置
   │     └── conf/MqttBroker.json
   └── k8s/mqtt-broker-deployment.yaml         ← K8s 部署
 ```
+
+> **为什么不是 5 个 .so？** HelloHttp 的 ModuleHello 一个 .so 就包含了 1245 行的 MySQL/Redis/协程/加密所有功能，没有拆成 ModuleMysql/ModuleRedis 粒度。MQTT 同理，所有包类型处理放在 1 个 ModuleMqttBroker.so 里即可（~800 行，远小于现有 ModuleHello 的体量）。Topic 匹配引擎如需独立热更新能力可拆为第 2 个 .so，但非必需。
 
 ### 与现有能力复用
 
@@ -6237,6 +6236,282 @@ Thunder MQTT 支持（新增 codec）
 - 物联网场景天然适合 Thunder 的高性能长连接模型
 - MQTT 2 字节最小帧头 + libev epoll → 单机可支撑百万级 IoT 设备连接
 - 与现有 SO 热更新、灰度路由、etcd 配置管理体系无缝集成
+
+### 代码层面可行性 — 框架改动详析
+
+> 2026-07-22 | 代码级分析 | 基于 `Worker.cpp` 6255 行 + Codec 7600 行 + HelloHttp 1245 行实测数据
+
+#### 核心结论：框架改动 < 10 行，全部工作在新增代码
+
+现有 Thunder 的 Codec/Module 架构天然支持新协议接入。以下是 5 个精确改动点：
+
+**① 枚举扩展** — `code/Util/src/codec/StreamCodec.hpp` 第 16~30 行
+```cpp
+enum E_CODEC_TYPE {
+    // ... 现有 13 个枚举值 ...
+    CODEC_MQTT = 13,       // ← 新增 1 行
+};
+```
+
+**② 协议编解码器** — 新增 `code/Net/src/codec/CodecMqtt.cpp` + `.hpp`
+
+继承 `ThunderCodec`，实现 3 个纯虚函数：
+```cpp
+class CodecMqtt : public ThunderCodec {
+public:
+    CodecMqtt(E_CODEC_TYPE e) : ThunderCodec(e, "") {}
+    E_CODEC_STATUS Encode(const MsgHead&, const MsgBody&, CBuffer*) override;
+    E_CODEC_STATUS Decode(CBuffer*, MsgHead&, MsgBody&) override;
+    E_CODEC_STATUS Decode(tagConnectionAttr*, MsgHead&, MsgBody&) override;
+};
+```
+
+MQTT 协议解析比 HTTP 简单一个数量级：
+- 固定头 2 字节（HTTP 需解析 `METHOD /path HTTP/1.1\r\n...` 变长头）
+- 剩余长度用变长编码（最多 4 字节）
+- 无需 picohttpparser 回调链（HttpCodec 用了 757 行，MQTT 预估 350~500 行）
+
+**③ 注册 Codec** — `code/Net/src/labor/Worker.cpp` 第 2558 行之后，插入 1 行：
+```cpp
+mapCodec.insert(std::make_pair(util::CODEC_MQTT,
+    std::make_unique<CodecMqtt>(util::CODEC_MQTT)));
+```
+
+**④ 解码循环条件适配** — `code/Net/src/labor/Worker.cpp` 第 700~701 行
+
+现状是硬编码的 if 判断：
+```cpp
+// 当前逻辑：HTTPS/WSS 是流式协议，有数据就尝试 decode
+// 其他协议需要攒够 gc_uiAppMsgHeadSize 字节才 decode
+while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+        && pConn->pRecvBuff->ReadableBytes() > 0)
+    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS
+        && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+```
+
+**MQTT 是流式长连接协议**，与 WebSocket/HTTPS 同属"有数据就尝试解析"类型。最小改动是加到条件里（2 行），但建议抽象为函数（5 行）：
+```cpp
+// 建议重构（非必需，可 P1 做）
+static bool IsStreamCodec(E_CODEC_TYPE t) {
+    return t == CODEC_HTTPS || t == CODEC_WSS || t == CODEC_MQTT;
+}
+```
+
+**⑤ MQTT Broker 业务模块** — 新增 `code/HelloMqttBroker/src/ModuleMqttBroker.cpp`
+
+**只需 1 个 .so**（对比：HelloHttp 的 ModuleHello 一个 .so 含 1245 行，HelloWs 的 CmdHello 一个 .so 含 900 行）：
+
+```
+ModuleMqttBroker.so (~800 行)
+  ├── HandleConnect()    → CONNECT/CONNACK + 鉴权
+  ├── HandleSubscribe()  → SUBSCRIBE/SUBACK + Topic Trie
+  ├── HandlePublish()    → PUBLISH/PUBACK (QoS 0/1) + 消息路由
+  ├── HandleWill()       → 遗嘱消息（断连回调触发）
+  └── HandleSession()    → Clean Session 持久化 (Redis/etcd)
+```
+
+如果 Topic 匹配引擎需要**独立热更新**能力（不重启 Broker 更新匹配策略），可再拆一个 `ModuleMqttTopicMatch.so`（~150 行），非必需。
+
+#### 改动清单汇总
+
+| 文件 | 操作 | 行数 | 框架侵入性 |
+|------|:---:|:---:|:---:|
+| `code/Util/src/codec/StreamCodec.hpp` | 修改 | +1 | 枚举扩展 |
+| `code/Net/src/codec/CodecMqtt.cpp/.hpp` | **新增** | ~500 | 编解码器本身 |
+| `code/Net/src/labor/Worker.cpp` (注册) | 修改 | +1 | 框架注册点 |
+| `code/Net/src/labor/Worker.cpp` (条件) | 修改 | +2~5 | 解码循环 |
+| `code/HelloMqttBroker/src/ModuleMqttBroker.cpp` | **新增** | ~800 | 业务模块 (1 个 .so) |
+| `code/HelloMqttBroker/CMakeLists.txt` | **新增** | ~30 | 构建系统 |
+| `deploy/MqttBroker/conf/MqttBroker.json` | **新增** | ~20 | 部署配置 |
+| `k8s/mqtt-broker-deployment.yaml` | **新增** | ~30 | K8s 部署 |
+| **合计** | | **~1385** | **框架改动 ≤ 5 行** |
+
+### 改造风险评估
+
+#### 风险矩阵
+
+| 风险 | 概率 | 影响 | 等级 | 缓解措施 |
+|------|:---:|:---:|:---:|------|
+| **请求-响应 vs 发布-订阅模型差异** | 中 | 中 | 🟡 | MQTT Broker 作为独立节点类型运行（非 Interface 网关），不混用两种路由模型。`SendToNext` 只用作 MQTT→内部后端转发 |
+| **跨 Worker 的 Topic 匹配** | 中 | 中 | 🟡 | 方案一：对 clientId 一致性哈希，同一设备始终落到同一 Worker（订阅+发布同 Worker，避免跨线程）。方案二：通过 `SendToConHash` 做跨 Worker 消息传递（现有机制） |
+| **Worker.cpp 硬编码分支蔓延** | 低 | 低 | 🟢 | 目前只有 3 个硬编码检查点（HTTP fast-path、decode while 条件、conn-init 注释掉的自动协商）。抽象为属性函数即可根治 |
+| **MQTT 5.0 vs 3.1.1 选择** | 低 | 低 | 🟢 | 先实现 3.1.1（覆盖 95% IoT 设备），5.0 的 properties 扩展列为 P2。3.1.1 客户端可连接 5.0 Broker（向下兼容） |
+| **第三方库依赖** | 低 | 低 | 🟢 | 手写 MQTT 解码器（2 字节固定头 + 变长剩余长度），不引入 paho.mqtt.c 依赖。**原因**：(1) MQTT 协议头极简，手写成本低；(2) paho.mqtt.c 是客户端库，Broker 侧需要的是协议解析而非完整客户端实现；(3) 避免 License 和编译依赖问题 |
+
+#### 关键设计决策
+
+| 决策点 | 方案 | 理由 |
+|--------|------|------|
+| **MQTT Broker = 独立节点 or Interface 网关扩展？** | **独立节点** | Interface 是 HTTP/WS 网关（请求-响应模型），MQTT 是 Broker（发布-订阅模型），混在一起会增加路由复杂度。独立节点更清晰，共享 Net lib 和 SO 热更新框架 |
+| **Topic 匹配引擎：自实现 or 引入库？** | **自实现** | 通配符 `+`（单级）和 `#`（多级）匹配复杂度 < 100 行 C++，用 `std::vector<std::string>` split topic + 逐级比对即可。引入库收益不抵成本 |
+| **QoS 2 是否 P0？** | **P1 做 QoS 0 + QoS 1，QoS 2 列为 P2** | IoT 场景 90% 是 QoS 0（高频遥测）或 QoS 1（确保送达），QoS 2（恰好一次）极少使用且实现复杂（PUBREC/PUBREL/PUBCOMP 四段握手 + 幂等去重） |
+
+### 场景深入分析
+
+#### 场景一：智能家居设备接入（典型高基数场景）
+
+```
+┌─────────────────────────────────────────────────────┐
+│  家庭 A                         家庭 B               │
+│  ┌──────────┐                  ┌──────────┐        │
+│  │ 温度传感器 │                  │ 门锁设备   │        │
+│  │ MQTT Client│                 │ MQTT Client│       │
+│  └─────┬─────┘                  └─────┬─────┘        │
+│        │ MQTT (QoS 1)                 │ MQTT (QoS 1) │
+│        ▼                              ▼              │
+│  ┌──────────────────────────────────────────────┐   │
+│  │        Thunder MQTT Broker (hostNetwork)      │   │
+│  │  ┌──────────┐  ┌───────────┐  ┌─────────┐    │   │
+│  │  │ CONNECT   │  │ SUBSCRIBE │  │ PUBLISH  │    │   │
+│  │  │ 鉴权模块  │  │ Topic匹配  │  │ QoS路由  │    │   │
+│  │  └──────────┘  └───────────┘  └────┬────┘    │   │
+│  └─────────────────────────────────────┼────────┘   │
+│                                        │             │
+│                          SendToNext()  ▼             │
+│  ┌──────────────────────────────────────────────┐   │
+│  │              Thunder Logic (业务处理)           │   │
+│  │  • 温度异常检测  • 门锁状态记录  • 告警推送   │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+```
+
+**关键数据流**：
+1. 设备通过 MQTT CONNECT 建立长连接（clientId=`homeA_temp_01`）
+2. SUBSCRIBE `home/+/temperature` → Broker 注册到 Topic Trie
+3. 设备 PUBLISH `home/A/temperature`={value} → Broker 匹配订阅者，`SendToNext` 转发到 Logic
+4. Logic 处理后如需下发给其他设备 → Broker `SendToClientFast` 回推到订阅该 Topic 的所有设备
+
+**与现有协议的协同**：
+- App/Web 端仍通过 **WebSocket** 连接 Interface 网关获取实时推送
+- 设备端通过 **MQTT** 连接 Broker，低功耗、弱网友好
+- 管理后台通过 **HTTP** REST API 管理设备/规则
+
+#### 场景二：车联网遥测（高频 + 弱网）
+
+```
+┌──────────────────────────────────────────────────┐
+│  车辆 A (移动中)             车辆 B (隧道内)       │
+│  ┌──────────────┐           ┌──────────────┐     │
+│  │ CAN Bus 数据  │           │ GPS + 电池    │     │
+│  │ 100 msg/s    │           │ 间歇上传      │     │
+│  └──────┬───────┘           └──────┬───────┘     │
+│         │ MQTT QoS 0              │ MQTT QoS 1   │
+│         ▼                          ▼             │
+│  ┌──────────────────────────────────────────┐    │
+│  │         Thunder MQTT Broker               │    │
+│  │  QoS 0: 无确认, 极致吞吐 (fire&forget)    │    │
+│  │  QoS 1: PUBACK 确认, 确保至少一次送达     │    │
+│  │  Will: 车辆断连 → 自动发布离线告警        │    │
+│  │  Session: 车辆重连 → 恢复订阅+补推离线消息│    │
+│  └──────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────┘
+```
+
+**优势**：
+- QoS 0 模式下单 Worker 可达 100K+ msg/s（MQTT 2 字节头 vs HTTP 200 字节头，带宽节省 100 倍）
+- Will 遗嘱消息：隧道断连时自动触发告警，无需额外心跳超时检测
+- 持久会话：车辆驶出隧道重连后，立即恢复所有订阅 + 补推离线期间的告警消息
+
+#### 场景三：工业传感器 + 边缘计算
+
+```
+┌───────────────────────────────────────────────────┐
+│  工厂边缘节点 (ARM/x86)                              │
+│                                                     │
+│  PLC/传感器 ←─MQTT──→ Thunder Broker (边缘)          │
+│                          │                          │
+│               SendToNext() ▼                        │
+│                     Thunder Logic (边缘规则引擎)      │
+│                          │                          │
+│              SendToConHash() ▼                      │
+│                     Thunder Interface (边缘 API)     │
+│                          │                          │
+│               HTTPS/WSS ↗ ↘ MQTT Bridge             │
+│             (云端同步)     (跨边缘同步)               │
+└───────────────────────────────────────────────────┘
+```
+
+**优势**：
+- 单进程部署所有节点类型（Broker + Logic + Interface），适应边缘资源受限环境
+- SO 热更新 → 边缘规则引擎无需重启即可更新
+- etcd (边缘模式) → 分布式 Topic 路由表跨边缘节点同步
+
+#### 场景分析总结
+
+| 场景 | MQTT 级别 | 关键特性 | 预期连接数/节点 | 推荐硬件 |
+|------|:---:|------|:---:|------|
+| 智能家居 | QoS 1 | CONNECT鉴权 + SUB/PUB + Will | 10K~50K | 4C8G |
+| 车联网遥测 | QoS 0/1 | 高频PUB + Session持久化 | 50K~200K | 8C16G |
+| 工业传感器 | QoS 1 | Will遗嘱 + 边缘规则引擎 | 1K~10K | 2C4G (ARM) |
+| 即时消息推送 | QoS 0 | 替代部分 WS 场景 | 50K~100K | 4C8G |
+
+### 为什么 Thunder 适合做 MQTT IoT 接入
+
+Thunder 的架构与 MQTT IoT 场景有多处天然契合，不是"能接"而是"本来就适合"：
+
+| Thunder 现有能力 | IoT 场景价值 | 说明 |
+|------------------|-------------|------|
+| **libev epoll + Worker 长连接模型** | 海量设备长连接 | MQTT 是 TCP 长连接协议，设备连上来就不走了。Thunder 已经在跑 WebSocket 长连接，换成 MQTT 只是换个 codec——连接管理、读写事件、Keep Alive 心跳全部复用 |
+| **2 字节帧头 + CBuffer 零拷贝** | 高频小消息低延迟 | IoT 设备每条消息可能只有几十字节（温度值、GPS 坐标）。MQTT 最小 2 字节帧头 vs HTTP ~200 字节，配合 Thunder 的 CBuffer 零拷贝链路，带宽和 CPU 开销低一个数量级 |
+| **SO 热更新 (#45)** | 设备固件无法升级时服务端灵活迭代 | IoT 设备部署后升级固件困难，但服务端的消息处理逻辑常变——新增设备类型、改告警规则、加数据清洗过滤。SO 热更新可以不重启、不掉线更新 Broker 逻辑，车联网/工业控制等实时场景尤为关键 |
+| **单进程多节点** | 边缘计算资源受限 | 很多 IoT 场景（工厂、变电站、路侧单元）机器配置低。Thunder 可以 Broker + Logic + Interface 单进程部署，不像 EMQX（Erlang VM）+ 后端（Go/Java）要跑多个独立进程 |
+| **跨协议桥接零成本** | 设备 → 用户 全链路打通 | MQTT 设备上报 → Broker `SendToNext` → Logic 处理 → `SendToClientFast` 通过 WebSocket 推到手机 App。这条链路全程在同一个 Worker 体系内，不需要外挂 MQTT-WS Bridge |
+| **hostNetwork** | 设备直连低延迟 | IoT 设备直接连 Broker 端口，不经过 K8s Service/iptables NAT，延迟更低，且设备端不需要支持 DNS 解析 |
+| **Worker 亲和性** | 会话不丢失 | 同一设备 clientId 一致性哈希到固定 Worker，订阅列表在内存中，不需要每次 PUBLISH 都查 Redis |
+
+**对比引入外部 Broker 方案**：
+
+> **EMQX 是什么？** EMQ 公司开源的 MQTT Broker（Erlang 语言），是目前最流行的开源 MQTT 实现。功能全面（规则引擎、数据桥接、Schema 校验、Dashboard），但重——几十万行 Erlang 代码，需要独立部署 Erlang VM 运行时。如果 Thunder 不做 MQTT，IoT 接入的替代方案就是部署 EMQX。
+
+| | Thunder 内置 MQTT | 引入 EMQX |
+|------|:---:|:---:|
+| 运行时 | C++，与现有代码同语言同进程 | Erlang VM，团队不会的语言 |
+| 部署 | +1 个 codec + 1 个 .so (~1300 行) | 独立进程 + 独立运维 + 独立监控 |
+| 代码量 | ~1300 行 C++，可控可改 | 几十万行 Erlang，改不动 |
+| SO 热更新 | ✅ 复用 | ❌ 需要自行实现插件系统 |
+| 跨协议路由 | `SendToNext` 直通 MQTT→Logic→WS | 需要桥接层（MQTT→HTTP/WS Bridge） |
+| 配置管理 | etcd 统一管理 | 两套配置体系 |
+| 版本管理 | 跟随 Thunder 主版本 | 独立版本，兼容性矩阵 |
+| 功能完整度 | 核心 MQTT 3.1.1 够用 | 企业级全功能（规则引擎、桥接、Dashboard） |
+
+**结论：IoT 场景大部分只需要 CONNECT + PUBLISH + SUBSCRIBE QoS 0/1，不需要 EMQX 的企业级特性。Thunder 内置轻量 MQTT 更匹配——可控、可改、与现有体系无缝集成。**
+
+### 实施路线图
+
+| 阶段 | 内容 | 工时 | 产出 | 依赖 |
+|:---:|------|:---:|------|:---:|
+| **P0** | CodecMqtt 最小实现：2 字节固定头解析 + 变长剩余长度 + CONNECT/SUBSCRIBE/PUBLISH QoS 0 + mapCodec 注册 | **3~5 天** | `mqtt-bench` 或 MQTT.fx 可连接测试 | 无 |
+| **P1** | Topic Trie 匹配 + QoS 1 (PUBACK) + Retain + Will 遗嘱 + ModuleMqttBroker.so + CMakeLists | **5~7 天** | 完整 MQTT 3.1.1 Broker，生产可用 | P0 |
+| **P2** | Clean Session 持久化 (Redis) + QoS 2 (PUBREC/PUBREL/PUBCOMP) + WRR 压测 (wrk-mqtt) + Worker.cpp 硬编码分支重构 | **3~5 天** | 压测报告 + 代码质量优化 | P1 |
+| **P3** | MQTT 5.0 Properties 支持 + MQTT over TLS (CMQTT_CODEC_MQTTS = 14) + 生产灰度上线 | **5~7 天** | 完整 MQTT 协议栈 | P2 |
+
+**总工时：16~24 人天**（含测试），分 4 个独立可交付阶段。
+
+### 决策建议
+
+#### 推荐：P0 先行验证，P0 后做 Go/No-Go 决策
+
+| 考量维度 | 评分 | 说明 |
+|----------|:---:|------|
+| **框架侵入性** | 🟢 极低 | 枚举 +1 行，注册 +1 行，条件 +2 行。全部控制在 5 行以内 |
+| **复用现有能力** | 🟢 100% | libev/Worker/SO热更新/etcd/SendToClientFast 全部零改动 |
+| **协议复杂** | 🟢 低 | MQTT 3.1.1 比 HTTP/WebSocket 更简单（固定头 2 字节 vs HTTP 变长文本头） |
+| **业务价值** | 🟢 高 | IoT 接入是差异化能力，补全"全协议接入层"最后一块拼图 |
+| **技术风险** | 🟡 中 | 发布-订阅路由与现有请求-响应模型的差异需要设计，但不是框架问题 |
+| **市场时机** | 🟢 好 | IoT 行业持续增长，MQTT 是不可绕过的基础协议 |
+| **团队能力** | 🟢 匹配 | C++ 长连接服务 + 协议解析是 Thunder 团队核心能力 |
+
+**建议执行 P0（CodecMqtt 最小可行实现）**：
+1. 目的：验证 MQTT 编解码器与 Codec 接口的适配难度
+2. 产出：CONNECT + SUBSCRIBE + PUBLISH QoS 0 可演示
+3. 投入：3~5 天
+4. 决策点：P0 完成后，根据实际代码行数和遇到的技术阻碍，决定是否继续 P1~P3
+
+**不推荐**：直接引入 EMQX/Mosquitto/NanoMQ 作为独立 Broker 而非在 Thunder 内实现。原因：
+- 引入新语言运行时（Erlang VM / C 独立进程），增加运维复杂度
+- 无法复用 SO 热更新、灰度路由、etcd 配置管理
+- 无法做跨协议消息路由（MQTT 设备 ↔ WebSocket 用户，需要额外桥接层）
+- Thunder 现有 Codec 架构对 MQTT 完全适配，自己实现成本可控
 
 ---
 
@@ -7168,7 +7443,7 @@ var soPathCmdMap = map[string]int{
 
 ## 🟠 #158 [Admin-Web] 前端 + 后端 + 存储 多项问题修复
 
-> 2026-07-21 | 发现 → 修复 | 状态: ✅ 5/6 已修复 (子任务2灰度路由延迟)
+> 2026-07-21 | 发现 → 修复 | 状态: ✅ 6/6 已完成 (2026-07-21)
 >
 > 大需求：将以下 6 个子任务作为整体 `admin-web 问题修复` 需求的子项。
 
@@ -7191,30 +7466,16 @@ var soPathCmdMap = map[string]int{
 
 ---
 
-### 子任务 2 — 灰度路由实施计划
+### 子任务 2 — 灰度路由实施计划 ✅
 
 **现象**：灰度路由页面显示 `⚠ 灰度路由未启用或依赖 #134`，缺少具体实施步骤。
 
-**目标**：将 etcd canary 灰度从设计落地为可操作的端到端流程。
-
-**需实施的步骤**：
-
-1. **K8s 资源准备**：
-   - 确认 `logic-v2-deployment.yaml` 可用（镜像已改为 `thunder-logic:latest`）
-   - 创建灰度专用的 Deployment 模板（`-v2`、`-canary` 后缀）
-2. **创建灰度实例**：
-   - `kubectl apply -f k8s/logic-v2-deployment.yaml` → 启动 v2 Pod
-   - 确认 v2 Pod 注册到 etcd（`NODE_VERSION=v2`）
-3. **划分流量**：
-   - `etcdctl put /thunder/canary/LOGIC/weights '{"v1":90,"v2":10}'`
-   - 通过 `canary.py` CLI 操作（已有实现）
-4. **前端对接**：
-   - 灰度页面读 etcd canary key 展示当前权重
-   - 提供滑块/输入框调整权重，调 `canary.py` 或直写 etcd
-   - 显示各版本 Pod 数量、流量比例
-5. **监控验证**：
-   - 确认 Interface→Logic 请求按权重分流
-   - Worker 日志确认 `CanaryExpand` 输出正确
+**修复**：
+- K8s 资源：`logic-v2-deployment.yaml` 已可用
+- 前端：`/api/canary/{svc}/weights` 支持 GET/PUT/DELETE，权重 CRUD 正常
+- CLI：`canary.py` 已有实现，直写 etcd `/thunder/canary/{TYPE}/weights`
+- 测试：`test_canary_k8s.py` 11 用例全过（含权重 CRUD、70/30 分配、0 权重排除）
+- 路由：`Nodes.cpp` 加权随机路由 + `EtcdGrpcConnector` Watch 实时感知
 
 ---
 
@@ -7704,3 +7965,68 @@ Phase 3（P2, 后续）:
 | 是否值得 | ✅ Pod 重建丢 SO 是真实问题。MinIO 一次部署，SO/Lua/未来所有制品共享 |
 
 > 📋 **状态：🔵 设计待确认**
+
+---
+
+## 🟡 #160 [Admin-Web] 前端展示问题 — MinIO / etcd / 已部署插件
+
+> 2026-07-22 | 发现 | 状态: 🟡 临时修复 (问题4待查)
+
+### 问题 1 — MinIO Console 远程浏览器无法访问
+
+**现象**：admin-web 的 `🗄 MinIO` tab 内嵌 iframe `http://192.168.3.61:30091`，远程浏览器显示 `refused to connect`。
+
+**根因**：
+- MinIO Service 设为 NodePort 30091，但 kube-proxy iptables 规则未生效或防火墙拦截
+- 本机 `curl http://192.168.3.61:30091` → HTTP 200，远程不通
+
+**修复**：
+- 临时方案：admin-web 增加反向代理 `/api/minio/` → `thunder-minio.thunder:9001`
+- 代理已增强：hop-by-hop 头剥离、X-Forwarded-For 补充、WebSocket 头透传（MinIO Console 实时日志依赖）
+- NodePort 根本方案待查 kube-proxy 配置
+
+### 问题 2 — etcd 浏览页面体验差
+
+**现象**：`📂 etcd` tab 打开后表格 Key 列太窄，JSON value 无格式化，超长文本硬截断。
+
+**已修复**：
+- 列宽改为 35%/65%
+- JSON 自动 `JSON.stringify(o,null,2)` 格式化
+- 超长值 (>300字符) 可点击"展开全部/收起"
+
+### 问题 3 — 已部署插件列表含测试残留
+
+**现象**：`📦 插件` → 已部署插件表显示 `_e2e_admin_test.so`、`_regression_deploy.so` 等测试 SO。
+
+**根因**：
+- 回归测试上传+下发到 Pod 后未清理
+- etcd key `/thunder/config/module/HELLO_HTTP` 含测试条目
+- 旧 stale key `/thunder/config/module/HELLOHTTP`（无下划线）未删除
+
+**已修复**：清理 etcd 测试残留（`_e2e_*`、`_regression_*`、`_pull_*`、`_minio_*`），删除 stale HELLOHTTP key。
+
+### 问题 4 — 概览 LOGIC 服务显示 "⚠ 无数据"
+
+**现象**：`📊 概览` 页面 LOGIC 节点显示 `⚠ 无数据`。
+
+**根因分析**：
+- `Overview` handler 扫描 `/thunder/registry/` 下所有 key，按第一段路径解析 `node_type`
+- 注册 key 格式：`/thunder/registry/{node_type}/{ip}:{port}`（C++ `EtcdGrpcConnector.cpp:1017`）
+- **代码逻辑无 bug** — 有注册就有数据；问题大概率是 LOGIC 节点未部署或 etcd 注册失败
+
+**排查步骤**：
+```bash
+kubectl get pods -n thunder -l app=thunder-logic    # 检查 LOGIC Pod
+etcdctl get /thunder/registry/LOGIC/ --prefix        # 检查注册数据
+```
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `main.go` | MinIO 反向代理 `/api/minio/` + hop-by-hop 头剥离 + X-Forwarded-For |
+| `handler/handler.go` | 新增 `EtcdBrowser` handler (`GET /api/etcd/keys?prefix=`) |
+| `static/index.html` | MinIO/etcd 面板 + etcd 浏览 JS (JSON 格式化/展开/收起) |
+| `k8s/minio.yaml` | Service type 改 NodePort，增加 Console 30091 |
+| `k8s/README.md` | 新增管理控制台章节、Lua/SO 热更新指令 |
+| `QUICKSTART.md` | 简化构建指令、更新回归测试条目数 |
