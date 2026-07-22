@@ -18,6 +18,8 @@
     <button data-panel="lua">📜 Lua</button>
     <button data-panel="plugins">📦 插件</button>
     <button data-panel="audit">📋 审计</button>
+    <button data-panel="minio">🗄 MinIO</button>
+    <button data-panel="etcd">📂 etcd</button>
   </nav>
 
   <button class="btn btn-ghost btn-sm" id="themeToggle" title="切换主题">🌙</button>
@@ -138,6 +140,21 @@
     </table>
   </div>
 </section>
+	<section id="minio" class="panel">
+	  <div class="hint-bar hint-info" style="margin-bottom:8px">🔑 用户名: <b>minioadmin</b> 密码: <b>minioadmin</b> | <a href="/api/minio/" target="_blank">新窗口打开</a></div>
+	  <iframe src="/api/minio/" style="width:100%;height:calc(100vh - 160px);border:1px solid var(--border-color);border-radius:var(--radius)"></iframe>
+	</section>
+	<section id="etcd" class="panel">
+	  <div class="toolbar">
+	    <label>前缀 <input type="text" id="etcdPrefix" value="/thunder/" style="width:300px"></label>
+	    <button class="btn btn-primary btn-sm" id="etcdBrowse">浏览</button>
+	  </div>
+	  <div class="card" style="overflow-x:auto">
+	    <table class="table" style="table-layout:fixed;width:100%"><colgroup><col style="width:35%"><col style="width:65%"></colgroup><thead><tr><th>Key</th><th>Value</th></tr></thead>
+	      <tbody id="etcdTable"><tr><td colspan="2" class="text-center"><span class="spinner"></span></td></tr></tbody>
+	    </table>
+	  </div>
+	</section>
 </main>
 <script src="js/state.js"></script>
 <script src="js/components.js"></script>
@@ -676,6 +693,42 @@
       API.request('/plugins/'+type+'/deploy',{method:'POST',body:{filename:filename}}).then(function(r){if(r.ok){Components.toast("\u2705 "+filename+" \u5DF2\u4E0B\u53D1","success");loadDeployed(type)}else Components.toast("\u274C \u4E0B\u53D1\u5931\u8D25: "+(r.error||r.status),"error")}).catch(function(e){Components.toast("\u274C \u7F51\u7EDC\u9519\u8BEF: "+e.message,"error")});
     }});
   };
+
+  /* etcd browser */
+  function tryPrettyJson(s){
+    try{ var o=JSON.parse(s); return JSON.stringify(o,null,2); }catch(e){ return s; }
+  }
+  function browseEtcd(){
+    var prefix=document.getElementById("etcdPrefix").value.trim()||"/thunder/";
+    var tbody=document.getElementById("etcdTable");
+    tbody.innerHTML='<tr><td colspan="2" class="text-center"><span class="spinner"></span> 加载中...</td></tr>';
+    API.request('/etcd/keys?prefix='+encodeURIComponent(prefix)).then(function(r){
+      if(!r.ok){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-danger">'+Components.escapeHtml(r.error||"error")+'</td></tr>'; return; }
+      var entries=r.data.entries||[];
+      if(entries.length===0){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-muted">无匹配 key</td></tr>'; return; }
+      var h='';
+      for(var i=0;i<entries.length;i++){
+        var e=entries[i];
+        var raw=e.value||'';
+        var pretty=tryPrettyJson(raw);
+        var shortKey=e.key.length>80?e.key.substring(0,77)+'...':e.key;
+        var id='_etcd_'+i;
+        var truncated=pretty.length>300?pretty.substring(0,300)+'\n...':pretty;
+        h+='<tr><td style="width:35%;word-break:break-all;font-family:monospace;font-size:12px;vertical-align:top;padding:8px"><b>'+Components.escapeHtml(shortKey)+'</b></td>';
+        h+='<td style="padding:4px 8px;vertical-align:top">';
+        h+='<pre id="'+id+'_pre" style="max-height:120px;overflow:auto;font-size:11px;line-height:1.4;margin:0;background:var(--bg-secondary);padding:6px;border-radius:4px;white-space:pre-wrap;word-break:break-all">'+Components.escapeHtml(truncated)+'</pre>';
+        if(pretty.length>300){
+          h+='<button class="btn btn-ghost btn-xs" onclick="var p=document.getElementById(\''+id+'_pre\');var full='+JSON.stringify(pretty)+';if(p.textContent.length<400){p.textContent=full.substring(0,300)+\'\\n...\';this.textContent=\'展开全部\'}else{p.textContent=full;this.textContent=\'收起\'}" style="margin-top:2px">展开全部</button>';
+        }
+        h+='</td></tr>';
+      }
+      tbody.innerHTML=h;
+    }).catch(function(e){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-danger">网络错误: '+e.message+'</td></tr>'; });
+  }
+  document.getElementById("etcdBrowse").addEventListener("click",browseEtcd);
+  browseEtcd();
+    document.getElementById("etcdPrefix").addEventListener("keydown",function(ev){ if(ev.key==="Enter")browseEtcd(); });
+  browseEtcd(); // 首次打开自动加载
 
   /* plugins events */
   document.getElementById("plugDrop").addEventListener("click",function(){document.getElementById("plugFile").click()});

@@ -1026,3 +1026,35 @@ func fileMD5(path string) string {
 	h := md5.Sum(data)
 	return hex.EncodeToString(h[:])
 }
+
+// #159: etcd browser — list keys and values under a prefix
+func (h *Handler) EtcdBrowser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeErr(w, "method not allowed")
+		return
+	}
+	prefix := r.URL.Query().Get("prefix")
+	if prefix == "" {
+		prefix = "/thunder/"
+	}
+	kvs, err := h.s.EtcdGetPrefix(prefix)
+	if err != nil {
+		writeErr(w, "etcd error: "+err.Error())
+		return
+	}
+	// Convert to sorted key list
+	type KeyEntry struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	entries := make([]KeyEntry, 0, len(kvs))
+	for k, v := range kvs {
+		entries = append(entries, KeyEntry{Key: k, Value: v})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
+	writeOK(w, map[string]interface{}{
+		"prefix":  prefix,
+		"count":   len(entries),
+		"entries": entries,
+	})
+}
