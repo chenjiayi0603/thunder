@@ -6145,12 +6145,22 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 | 特性 | 说明 | 对 Thunder 的意义 |
 |------|------|------|
 | 发布/订阅模型 | Topic-based pub/sub，非请求-响应 | 需要新的路由模型（不是 SendToNext，是 Topic 匹配） |
-| QoS 0/1/2 | 最多一次 / 至少一次 / 恰好一次 | 需要消息确认 + 持久化 + 重传逻辑 |
+| QoS 0/1/2 | 最多一次 / 至少一次 / 恰好一次 (详见下方) | 需要消息确认 + 持久化 + 重传逻辑 |
 | 遗嘱消息 (Will) | 客户端断连后自动发布 | 需要连接状态跟踪 |
 | 持久会话 (Clean Session) | 断连重连后恢复订阅 | 需要 Session 存储（Redis/etcd） |
 | 极简协议头 | 最小 2 字节固定头 | 性能好，适合弱网/低带宽 |
 | 保持连接 (Keep Alive) | 心跳由客户端发起 | 与 Thunder 的 Worker 心跳模型兼容 |
 | 长连接 | TCP/TLS 持久连接 | 适合 Thunder 的 libev 事件模型 |
+
+**QoS 详解**：MQTT 的消息送达保证级别，数字越大越可靠但也越重。
+
+| QoS | 名字 | 工作机制 | 典型场景 | 类比 |
+|:---:|------|------|------|------|
+| **0** | 最多一次 | 发了不管，丢了就丢了，无确认 | 温度传感器每秒报一次，丢一两帧无所谓 | 扔纸飞机 |
+| **1** | 至少一次 | 发完等 PUBACK 确认，没收到就重发，可能重复 | 门锁状态变更，必须送到但不能丢 | 发微信等"收到" |
+| **2** | 恰好一次 | PUBLISH→PUBREC→PUBREL→PUBCOMP 四次握手，保证不丢+不重复 | 扣款指令，IoT 设备几乎没这需求 | 签合同双方各执一份 |
+
+> IoT 实际场景中 90% 的消息是 QoS 0 或 QoS 1。QoS 2 极少用——四次握手太重，大部分嵌入式设备也不支持。
 
 ### 协议开销对比
 
@@ -6478,14 +6488,29 @@ Thunder 的架构与 MQTT IoT 场景有多处天然契合，不是"能接"而是
 
 ### 实施路线图
 
-| 阶段 | 内容 | 工时 | 产出 | 依赖 |
-|:---:|------|:---:|------|:---:|
-| **P0** | CodecMqtt 最小实现：2 字节固定头解析 + 变长剩余长度 + CONNECT/SUBSCRIBE/PUBLISH QoS 0 + mapCodec 注册 | **3~5 天** | `mqtt-bench` 或 MQTT.fx 可连接测试 | 无 |
-| **P1** | Topic Trie 匹配 + QoS 1 (PUBACK) + Retain + Will 遗嘱 + ModuleMqttBroker.so + CMakeLists | **5~7 天** | 完整 MQTT 3.1.1 Broker，生产可用 | P0 |
-| **P2** | Clean Session 持久化 (Redis) + QoS 2 (PUBREC/PUBREL/PUBCOMP) + WRR 压测 (wrk-mqtt) + Worker.cpp 硬编码分支重构 | **3~5 天** | 压测报告 + 代码质量优化 | P1 |
-| **P3** | MQTT 5.0 Properties 支持 + MQTT over TLS (CMQTT_CODEC_MQTTS = 14) + 生产灰度上线 | **5~7 天** | 完整 MQTT 协议栈 | P2 |
+| 阶段 | 内容 | 工时 | 产出 | 依赖 | 覆盖 MQTT 3.1.1 |
+|:---:|------|:---:|------|:---:|:---:|
+| **P0** | CodecMqtt 最小实现：2 字节固定头解析 + 变长剩余长度 + CONNECT/SUBSCRIBE/PUBLISH QoS 0 + mapCodec 注册 | **3~5 天** | `mqtt-bench` 或 MQTT.fx 可连接测试 | 无 | ~40% |
+| **P1** | Topic Trie 匹配 + QoS 1 (PUBACK) + Retain + Will 遗嘱 + ModuleMqttBroker.so + CMakeLists | **5~7 天** | 完整 MQTT 3.1.1 Broker，**IoT 场景可上生产** | P0 | ~80% |
+| **P2** | Clean Session 持久化 (Redis) + QoS 2 (PUBREC/PUBREL/PUBCOMP) + WRR 压测 (wrk-mqtt) + Worker.cpp 硬编码分支重构 | **3~5 天** | 压测报告 + 代码质量优化 | P1 | ~95% |
+| **P3** | MQTT 5.0 Properties 支持 + MQTT over TLS (CMQTT_CODEC_MQTTS = 14) + 生产灰度上线 | **5~7 天** | 完整 MQTT 协议栈 | P2 | 100% |
 
-**总工时：16~24 人天**（含测试），分 4 个独立可交付阶段。
+**总工时：16~24 人天**（含测试），分 4 个独立可交付阶段。**P1 即可上生产，覆盖 IoT 90% 以上场景。**
+
+**各阶段是叠加关系，不是并行开发，不存在冲突**：
+
+```
+P0: Codec 编解码 + QoS 0       ← 地基
+ │
+ ├─ P1: +QoS1 + Topic + Will   ← 在 P0 的 CodecMqtt.cpp / ModuleMqttBroker.cpp 里加方法
+ │    │                           (HandlePublish 里多加一个 PUBACK 回执分支)
+ │    │
+ │    ├─ P2: +QoS2 + Session   ← 同上，继续加 HandlePubrec/HandlePubrel/HandlePubcomp
+ │    │    │
+ │    │    └─ P3: +MQTT5 + TLS ← 同上，加 Properties 解析 + CODEC_MQTTS
+```
+
+同一个 `CodecMqtt.cpp`、同一个 `ModuleMqttBroker.cpp`，每阶段往里面加方法/分支，不会出现多人同时改同一段代码的冲突。
 
 ### 决策建议
 

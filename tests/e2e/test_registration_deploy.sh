@@ -223,6 +223,38 @@ else
 fi
 
 # ============================================================
+# 5. 清理测试数据
+# ============================================================
+CLEANUP="${1:-}"  # 传 --cleanup 才清理
+if [ "$CLEANUP" = "--cleanup" ]; then
+    echo ""
+    echo "── 5. 清理测试数据 ──"
+
+    # 清理 etcd 中测试 Lua 条目
+    http_get "/api/config/HELLO_HTTP?type=Logic.json" > /tmp/_reg_clean_cfg.json
+    python3 -c "
+import json
+with open('/tmp/_reg_clean_cfg.json') as f: d=json.load(f)
+cfg=d['data']['content']; mods=cfg.get('module',[])
+keep=[m for m in mods if not (
+    (m.get('script_content','') and m.get('url_path','').split('/')[-1].startswith('_reg_test_'))) ]
+cfg['module']=keep
+import urllib.request as u
+body=json.dumps({'type':'Logic.json','content':cfg}).encode()
+u.urlopen(u.Request('${ADMIN_URL}/api/config/HELLO_HTTP',data=body,method='PUT',
+    headers={'Content-Type':'application/json'}),timeout=10)
+print(f'  cleaned etcd: {len(keep)} kept')
+" 2>/dev/null
+
+    # 清理 PVC 测试文件
+    kubectl exec -n thunder deploy/thunder-admin-web -- sh -c "
+      rm -f /app/data/lua_scripts/HELLO_HTTP/_reg_test_*.lua 2>/dev/null
+      rm -f /app/data/artifacts/HelloHttp/_reg_test_*.so 2>/dev/null
+    " 2>/dev/null
+    echo "  cleaned PVC test files"
+fi
+
+# ============================================================
 # 结果汇总
 # ============================================================
 echo ""
