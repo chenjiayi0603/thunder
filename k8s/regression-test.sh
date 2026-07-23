@@ -428,9 +428,10 @@ fi
 
 # 9.6 前置: GenKey 的 token 只存在单个 Logic 节点内存里 (LogicSession 纯内存, 无共享存储),
 # v1/v2 双 Logic 节点并存时 VerifyKey 轮询到另一节点必失败 (空响应或 code:1)。
-# 功能测试期间摘掉 v2 (缩容 + 删其注册键, watch 秒级生效), 9.7 结束后恢复。
+# 功能测试期间摘掉 v2 (缩容 + 等 Pod 完全退出 + 删其注册键), 9.7 结束后恢复。
 ETCD_POD=$(kubectl get pods -n $NS -l app=thunder-etcd --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 kubectl scale deploy -n $NS thunder-logic-v2 --replicas=0 >/dev/null 2>&1 || true
+kubectl wait --for=delete pod -l app=thunder-logic,version=v2 -n $NS --timeout=90s >/dev/null 2>&1 || true
 if [ -n "$ETCD_POD" ]; then
   for k in $(kubectl exec -n $NS "$ETCD_POD" -- etcdctl get /thunder/registry/LOGIC/ --prefix --keys-only 2>/dev/null | grep ':16069$'); do
     kubectl exec -n $NS "$ETCD_POD" -- etcdctl del "$k" >/dev/null 2>&1

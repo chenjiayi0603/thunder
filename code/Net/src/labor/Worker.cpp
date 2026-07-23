@@ -6251,15 +6251,72 @@ void Worker::EnterDrainMode()
     m_bAccepting = false;
     m_drainStartTime = time(nullptr);
 
-    // 设计说明 (issus #2/#3): 进入排空后不主动关闭或转移任何已有连接。
+    // 排空策略:
     //   - 新连接: Manager 已先拉起新 Worker, SO_REUSEPORT 下内核把新连接分发给它
     //     (AcceptClientConn 在 m_bDraining 时不再 accept), 本 Worker 不再接新活。
-    //   - 在途请求: 已有连接上正在处理的请求 (含协程挂起等 DB/S2S 的) 留在本 Worker
-    //     跑完并把响应发出去, 不被打断。
-    //   - 为何不"关空闲连接": 仅凭收发缓冲是否为空无法区分"真空闲"与"请求已读完、
-    //     协程挂起、响应尚未生成"——后者缓冲也为空, 误关会丢在途请求 (响应发不出去)。
-    //   交由 Run() 主循环的 IsDrainComplete (缓冲空 + 无活跃 Step + 无 pending HTTP)
-    //   + DRAIN_GRACE_PERIOD 兜底自然排空, 排空/超时后在 Run() 末尾 Destroy() 统一关闭。
+    //   - 在途请求 (有活跃 Step): 留在本 Worker 跑完并把响应发出去 (请求上下文
+    //     无法随 fd 迁移), 由 IsDrainComplete + DRAIN_GRACE_PERIOD(30s) 兜底,
+    //     超时在 Run() 末尾 Destroy() 统一关闭。
+    //   - 真正空闲的 keep-alive 连接: 迁移给 Manager → 转发给新 Worker,
+    //     避免网关热更新时大量客户端同时重连 (重连风暴)。
+    //
+    // 空闲判定 (同时满足才迁移, 见 issus #3):
+    //   ① pRecvBuff 空 — 没有已读取但未处理的数据
+    //   ② pSendBuff 空 — 没有待发送的响应数据
+    //   ③ mapHttpAttr[fd] 空 — 没有绑定的活跃 Step/协程
+    //      ("请求已读完、协程挂起、响应未生成"时缓冲也为空, 必须靠 ③ 排除)
+    //
+    // 不迁移: 监听 fd / Manager 通信 fd / S2S 连接 (CODEC_PB_INTERNAL) /
+    //         HTTP 半解析状态 (parser 状态在进程内存, 无法迁移)。
+    {
+        std::vector<int> fdsToTransfer;
+        for (auto& [fd, conn] : mapFdAttr)
+        {
+            if (fd == m_iC2SListenFd) continue;
+            if (fd == iManagerControlFd || fd == iManagerDataFd) continue;
+            if (conn->eCodecType == util::CODEC_PB_INTERNAL) continue;
+
+            bool recvEmpty = (conn->pRecvBuff->ReadableBytes() == 0);
+            bool sendEmpty = (conn->pSendBuff->ReadableBytes() == 0);
+            if (!recvEmpty || !sendEmpty) continue;  // 在途数据, 不迁移
+
+            auto httpIt = mapHttpAttr.find(fd);
+            if (httpIt != mapHttpAttr.end() && !httpIt->second.empty()) continue;  // 有活跃 Step
+
+            fdsToTransfer.push_back(fd);
+        }
+
+        int transferred = 0;
+        for (int fd : fdsToTransfer)
+        {
+            auto it = mapFdAttr.find(fd);
+            if (it == mapFdAttr.end()) continue;
+
+            tagConnectionAttr* pConn = it->second.get();
+            int ret = send_fd_with_attr(iManagerDataFd, fd,
+                          const_cast<char*>(static_cast<const char*>(pConn->szRemoteAddr)),
+                          32,
+                          static_cast<int>(pConn->eCodecType));
+            if (ret >= 0)
+            {
+                LOG4_TRACE("Worker %d transferred idle fd %d (%s) to Manager",
+                           iWorkerIndex, fd, pConn->szRemoteAddr);
+                m_pIoBackend->CloseFd(fd);
+                mapFdAttr.erase(it);
+                ++transferred;
+            }
+            else
+            {
+                LOG4_TRACE("Worker %d transfer fd %d failed errno=%d, keeping for drain",
+                           iWorkerIndex, fd, ret);
+            }
+        }
+        if (transferred > 0)
+        {
+            LOG4_INFO("Worker %d drain: transferred %d idle connections to new Worker",
+                      iWorkerIndex, transferred);
+        }
+    }
 }
 
 bool Worker::IsDrainComplete()
