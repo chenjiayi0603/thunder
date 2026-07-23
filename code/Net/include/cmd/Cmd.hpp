@@ -21,6 +21,18 @@ namespace net
 
 class Step;
 
+}
+
+namespace util
+{
+
+class CJsonObject;
+
+}
+
+namespace net
+{
+
 /**
  * @brief 指令基类
  */
@@ -50,6 +62,18 @@ public:
      * @return 命令是否处理成功
      */
     virtual bool AnyMessage(const tagMsgShell& stMsgShell,const MsgHead& oInMsgHead,const MsgBody& oInMsgBody) = 0;
+    // ↓ 新虚函数只能追加在既有虚函数末尾, 插到中间会位移全部 vtable 槽位 (旧 .so ABI 不兼容)
+    /**
+     * @brief 是否 net::Module 派生类
+     * @note 跨 SO 边界禁止用 static_cast<Module*> 探测类型 (纯 Cmd 对象更小, 越界写 UB),
+     * 统一用此虚函数判别. 纯 Cmd 返回 false.
+     */
+    virtual bool IsModule() const {return(false);}
+    /**
+     * @brief 设置模块配置
+     * @note 只有 Module 子类持有 m_oModuleConf; 纯 Cmd (如 CmdGetToken) 无此成员, 默认忽略.
+     */
+    virtual void SetModuleConf(const util::CJsonObject& oConf) {(void)oConf;}
     /**
      * @brief 获取指令号码
      */

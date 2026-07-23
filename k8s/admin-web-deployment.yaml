@@ -19,7 +19,7 @@ spec:
       containers:
       - name: app
         image: localhost:5000/thunder-admin-web:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         # --- 资源请求/限制 (非 Guaranteed QoS, admin 不绑核) ---
         resources:
           requests:

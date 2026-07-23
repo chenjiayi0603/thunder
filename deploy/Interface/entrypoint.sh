@@ -29,4 +29,13 @@ if [ "$RETRIES" -ge 5 ] 2>/dev/null; then
     exit 98
 fi
 tail -f log/Interface_robot.log 2>/dev/null &
-sleep infinity
+# daemon 化后 PID 1 需感知 Worker 退出 (进程名 <server_name>_Loader / <server_name>_W<n>)
+# daemon fork + setproctitle 有延迟, 先等进程出现 (最长 30s) 再进入监控
+for _i in $(seq 1 30); do pgrep -f 'Interface_robot_' >/dev/null 2>&1 && break; sleep 1; done
+if ! pgrep -f 'Interface_robot_' >/dev/null 2>&1; then
+    echo "FATAL: Interface_robot never started"
+    exit 1
+fi
+while pgrep -f 'Interface_robot_' >/dev/null 2>&1; do sleep 5; done
+echo "FATAL: Interface_robot exited, container will restart"
+exit 1

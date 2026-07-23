@@ -6219,7 +6219,23 @@ Thunder MQTT 支持（新增 codec）
 | [EMQX](https://github.com/emqx/emqx) | Erlang | 最流行的开源 MQTT Broker，百万连接 |
 | [Mosquitto](https://github.com/eclipse/mosquitto) | C | Eclipse 基金会，轻量级 |
 | [NanoMQ](https://github.com/nanomq/nanomq) | C | EMQX 团队出品，基于 NNG，边缘轻量 |
-| [paho.mqtt.c](https://github.com/eclipse/paho.mqtt.c) | C | Eclipse MQTT C 客户端库（可参考协议解析） |
+| [paho.mqtt.c](https://github.com/eclipse/paho.mqtt.c) | C | Eclipse MQTT C 客户端库 | ⚠️ 不可用作独立协议库 (详见下方) |
+
+### MQTTPacket 嵌入评估 (2026-07-22)
+
+**问题**：能否像 HTTP 用 picohttpparser 一样，用 paho.mqtt.c 的 MQTTPacket 模块做纯协议解析？
+
+**结论：不能。手写是正确的。**
+
+| | picohttpparser (HTTP) | MQTTPacket (MQTT) |
+|------|------|------|
+| 设计 | 独立纯 HTTP 解析库 | paho C 客户端内部协议层 |
+| 对外依赖 | **零** | Log.h / Messages.h / StackTrace.h / WebSocket.h / MQTTTime.h / Heap.h / MQTTPersistence.h 共 7 个 |
+| 单独编译 | `gcc picohttpparser.c -c` | ❌ 需 stub 全部内部模块 |
+| IO 耦合 | 只操作 buffer | `MQTTPacket_send_*()` 直接写 socket |
+| 代码量 | 500 行 | 核心编解码等效 ~200 行，不值得为这点引入 7 个 stub |
+
+**最终方案**：手写 CodecMqtt（200 行），参考 MQTTPacket 常量定义确保协议正确性，Topic 匹配自实现。
 
 ### 场景分析
 
@@ -8055,3 +8071,257 @@ etcdctl get /thunder/registry/LOGIC/ --prefix        # 检查注册数据
 | `k8s/minio.yaml` | Service type 改 NodePort，增加 Console 30091 |
 | `k8s/README.md` | 新增管理控制台章节、Lua/SO 热更新指令 |
 | `QUICKSTART.md` | 简化构建指令、更新回归测试条目数 |
+
+---
+
+## 🔴 #161 [etcd] 核心功能稳定性排查 + 混沌测试
+
+> 2026-07-22 | 发现 | 状态: 🔴 待开始
+
+### 背景
+
+etcd 是 Thunder 集群的**单一真相源**，承载路由表、配置中心、节点注册、NodeID 分配等全部关键链路。当前缺乏系统性的稳定性验证和故障注入测试，一旦 etcd 相关链路出问题（如 #9 节点发现失败、#160 注册残留），排查耗时长、影响范围大。
+
+### 测试范围
+
+| 模块 | 功能 | 测试项 |
+|------|------|--------|
+| **路由上传** | Interface/Hello 节点启动时向 etcd 注册路由 | 注册成功、TTL 续约、节点下线清理、并发注册不冲突 |
+| **路由下发** | etcd Watch → 本地路由表更新 | Watch 不丢事件、重连后全量同步、网络闪断恢复、路由表最终一致性 |
+| **配置下发** | admin-web → etcd → 节点热加载 | 配置写入成功、节点 Watch 触发重载、格式错误回滚、并发修改冲突 |
+| **NodeID 分配** | 新节点启动时 etcd 分配唯一 ID | ID 单调递增不重复、并发分配无碰撞、etcd 事务原子性 |
+| **心跳** | 节点定期向 etcd 续约，证明存活 | 心跳间隔稳定、异常退出后 lease 快速过期、网络闪断不误判下线 |
+| **租约有效性** | Lease TTL 注册 → 自动续约 → 超时清理 | TTL 配置生效、续约不中断、过期后 key 自动删除、路由表同步清理 |
+
+### 混沌测试
+
+| 故障注入 | 场景 | 预期行为 |
+|----------|------|----------|
+| etcd Pod 重启 | 路由/配置 Watch 中断 | 30s 内重连 + 全量同步，无路由黑洞 |
+| etcd 网络分区 | Leader 选举期间 | 写入拒绝时降级重试，不丢数据 |
+| etcd 数据目录满 | NoSpace 告警 | 节点正常运行（读缓存），告警可观测 |
+| 大量并发注册 (100+) | 滚动更新/扩容 | 无漏注册、无重复 NodeID |
+| Lease 丢失 | TTL 过期未续约 | 自动重注册，路由不中断超过 5s |
+
+### 验收标准
+
+```
+./deploy.sh test k8s 回归 36/36 通过
++
+混沌测试 5 项全部通过
++
+连续运行 1 小时无 etcd 相关 ERROR 日志
+```
+
+---
+
+## ✅ #162 [Bug] CanaryRoutingTest 全部 6 项 SEGFAULT — LOG4_INFO 空指针解引用
+
+> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已修复
+
+### 现象
+
+```
+334 - CanaryRoutingTest.SingleWeight_AlwaysHit (SEGFAULT)
+335 - CanaryRoutingTest.ZeroWeight_NodeExcluded (SEGFAULT)
+336 - CanaryRoutingTest.WeightedDistribution_70_30 (SEGFAULT)
+337 - CanaryRoutingTest.ClearWeights_RestoreHash (SEGFAULT)
+338 - CanaryRoutingTest.DifferentNodeTypes_Independent (SEGFAULT)
+339 - CanaryRoutingTest.EmptyWeightsMap_NoEffect (SEGFAULT)
+```
+
+第一个测试 `NoCanaryWeights_FallbackToHash` 通过（不调用 `SetCanaryWeights`），后续 6 个全部 SEGFAULT。
+
+### 根因
+
+GDB backtrace:
+```
+#0  log4cplus::Logger::Logger(log4cplus::Logger const&)+21
+```
+
+`Nodes.cpp` 中 `SetCanaryWeights()` / `ClearCanaryWeights()` 内的 `LOG4_INFO` 宏展开为：
+```cpp
+#define LOG4_INFO(...) LOG4CPLUS_INFO_FMT(GetLabor()->GetLogger(), ##__VA_ARGS__)
+```
+
+单测环境无 Labor 单例（`GetLabor()` 返回 `nullptr`），`->GetLogger()` 空指针解引用 → SIGSEGV。
+
+### 修复
+
+`code/Net/src/dispatcher/Nodes.cpp` — 两处 `LOG4_INFO` 改为带空指针守卫的 `LOG4CPLUS_INFO_FMT`：
+
+```cpp
+// 修复前
+LOG4_INFO("SetCanaryWeights nodeType=%s entries=%zu", ...);
+
+// 修复后
+auto* pLab = GetLabor();
+if (pLab)
+    LOG4CPLUS_INFO_FMT(pLab->GetLogger(), "SetCanaryWeights nodeType=%s entries=%zu", ...);
+```
+
+### 验证
+
+```
+CanaryRoutingTest: 7/7 PASS ✅
+```
+
+---
+
+## 🔵 #163 [特性] MQTT Echo Demo — CmdMqttEcho.so
+
+> 2026-07-22 | 新增 | 状态: ✅ 已实现
+
+### 背景
+
+`ModuleMqttBroker` 实现了完整的 MQTT 3.1.1 Broker 功能，但缺少应用层 demo。新增 `CmdMqttEcho` 作为独立 SO 模块，演示 MQTT Echo 回显。
+
+### 功能
+
+```
+客户端: subscribe echo/+/response
+客户端: publish echo/ping "hello"
+→ Broker 自动广播 echo/ping/response "hello" 给所有订阅 echo/+/response 的客户端
+```
+
+### 架构
+
+| 文件 | 作用 |
+|------|------|
+| `ModuleMqttBroker.hpp` | 新增 C-linkage 接口 `MqttEchoEnable()` / `MqttEchoIsEnabled()` |
+| `ModuleMqttBroker.cpp` | `HandlePublish` 中增加 echo 逻辑（检查 `echo/` 前缀） |
+| `CmdMqttEcho.hpp/cpp` (新) | 独立 SO，`Init()` 调用 `MqttEchoEnable()` 激活 echo |
+| `CMakeLists.txt` | 新增 `CmdMqttEcho` 构建目标 → `HelloMqttBroker_CmdMqttEcho.so` |
+
+### 跨 SO 通信
+
+`MqttEchoEnable()` 使用 `extern "C"` 声明（C linkage），`CmdMqttEcho.so` 加载时动态链接器解析符号到 `ModuleMqttBroker.so`。
+
+### 测试
+
+```
+codec_mqtt:    15/15 PASS ✅
+topic_match:    8/8 PASS ✅
+```
+
+---
+
+
+## 🔴 #164 [Infra] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
+
+> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已修复 (config + 自动校验) + 🟡 待加固 (entrypoint 健康检查)
+
+### 现象
+
+每次 `./deploy.sh test k8s` E2E 功能测试大量 FAIL，模式不固定（有时 HelloHttp 挂，有时 Interface 挂，有时 HelloHttps 挂）。
+
+```
+--- 修复前最后两次回归结果 ---
+第 1 次: 43/52 PASS,  8 FAIL (HelloHttp/HelloHttps/Interface/Logic S2S 全挂)
+第 2 次: 43/52 PASS,  8 FAIL (同上)
+```
+
+### 错误诊断过程（重要教训）
+
+**最初误判为 hostPort 不通**，因为 `ss -tln | grep 27006` 无输出，`curl 127.0.0.1:27006` Connection refused。检查了 iptables OUTPUT/PREROUTING 链、k3s flannel CNI 配置 — 全是错误方向。
+
+**实际根因完全不同：Worker 进程根本没起来。**
+
+```bash
+# Pod 内 ps aux — 只有 sleep infinity + tail，没有 Hello_robot 进程
+$ kubectl exec thunder-hello-xxx -- ps aux
+root  1   /bin/bash ./entrypoint.sh
+root  11  tail -f log/Hello_robot.log
+root  12  sleep infinity     ← 容器靠这个活着，Worker 早死了
+```
+
+### 真正根因
+
+**`deploy/*/conf/*.json` 中 13 处写了 `"io_backend": "asio_uring"`，但 cmake 编译时没开 `-DENABLE_ASIO_URING`。**
+
+```
+cmake 编译: 未开 -DENABLE_ASIO_URING
+     ↓
+二进制: 不支持 asio_uring
+     ↓
+配置文件: "io_backend": "asio_uring"    ← 13 处
+     ↓
+Worker 启动 → 读取配置 → FATAL "asio_uring requested but THUNDER_IO_ASIO_URING not compiled"
+     ↓
+Worker 进程 exit()
+     ↓
+Pod 靠 entrypoint.sh 里的 sleep infinity 存活 (1/1 Running)
+     ↓
+端口空着 → curl 失败 → 误以为是 hostPort 问题
+```
+
+### 之前 #155 #156 也是同一根因
+
+`#155 HelloHttps 端口不监听`、`#156 HelloWs 端点不响应` — 表现形式不同，根因相同：Worker 因 io_backend 不匹配静默退出，端口空着。不是网络问题。
+
+### 为什么以前偶尔能过
+
+旧 Docker 镜像可能：
+- 用不同编译选项（开了 ASIO_URING）
+- 或配置文件被手动改过但没入 git
+- 每次 `deploy.sh build` 重新覆盖 deploy/ 文件时不一致就暴露
+
+### 修复
+
+| 修复项 | 文件 | 说明 |
+|--------|------|------|
+| 全部 13 处 config 修正 | `deploy/*/conf/*.json` | `"io_backend": "asio_uring"` → `"ev"` |
+| **构建时自动校验 + 修正** | `deploy.sh → _validate_io_backend()` | 每次 build 自动检查 cmake cache 里的 `ENABLE_ASIO_URING` 与配置文件是否一致，不一致自动修正 |
+| conftest.py port-forward | `tests/e2e/conftest.py` | external 模式自动 kubectl port-forward（备用） |
+
+### 修复后 K8s 回归结果: 50/52 PASS
+
+```
+                   修复前 → 修复后
+─────────────────────────────────────
+HelloHttp :27006     ❌  →  ✅
+Interface :27008     ❌  →  ✅
+HelloHttps Echo      ❌  →  ✅
+Interface Echo       ❌  →  ✅
+HelloHttp Echo       ❌  →  ✅
+HelloHttp 错误option  ❌  →  ✅
+admin-web API ×16    ❌  →  ✅ ALL PASSED
+灰度路由 ×11         ❌  →  ✅ ALL PASSED
+Logic S2S GenKey     ❌  →  ❌ (唯一残留, 待单独排查)
+─────────────────────────────────────
+Core: 43 PASS → 50 PASS
+```
+
+### 待加固
+
+| 项 | 说明 |
+|----|------|
+| **entrypoint 健康检查** | Worker 退出时容器应 CrashLoopBackOff，而不是靠 `sleep infinity` 假装 `1/1 Running` |
+| Logic S2S GenKey | 最后一个 FAIL，可能跟 Interface→Logic 路由或 Logic 进程状态有关 |
+
+### 2026-07-23 加固完成 + 深层根因清查
+
+**结论：已加固完成，连续 2 次全量回归 54/55（0 FAIL）。唯一残留项定性为真实产品 bug（非 infra）。**
+
+本轮在 entrypoint 健康检查之外，又挖出 4 个导致"反复不稳定"的深层根因：
+
+1. **tag 固定 `test` 不触发 rollout（"测的不是新代码"真凶）**：`kubectl set image` 值不变 → pod template 无变化 → 不重建 Pod。修复：tag 改时间戳 `test-$(date +%Y%m%d-%H%M%S)` + 部署后 2.4b 逐个校验 deployment 镜像版本 + import/save 失败 fail-fast。
+2. **线上 deployment 残留 `imagePullPolicy: Always`（ErrImagePull 真凶）**：仓库 yaml 早已改 `IfNotPresent`，但旧脚本只在 deployment 缺失时才 apply，线上 spec 从未被矫正。`Always` + 本地导入镜像 + docker.io 不可达 → Pod 重建必挂。旧流程靠"固定 tag 不重建 Pod"掩盖了它。修复：2.2b 每次运行对存量 deployment 补丁 `imagePullPolicy: IfNotPresent`。
+3. **磁盘 91% > kubelet imageGC 高水位 85%**：GC 每 5 分钟删"未使用"镜像，刚 import 未启动的镜像被删 → ErrImagePull。修复：清理 60GB+ 旧镜像（磁盘→58%）+ 2.4a 检测 ImagePullBackOff 自动重导入兜底 + CLEAN 清理 containerd 旧 test 镜像。
+4. **`set -e` 下测试失败静默退出**：`test_output=$(bash regression-test.sh)` 返回非 0 时脚本直接终止，CLEAN 不执行、残留污染环境。修复：`|| test_ret=$?` 捕获。
+
+其他加固：6 个 entrypoint 改监控循环（Worker 死 → 容器重启，含 daemon fork/setproctitle 启动等待竞态处理）；6 个业务 deployment 加 readinessProbe（pgrep）；`test k8s` 补 `_validate_io_backend`；conftest.py 删重复 `pytest_addoption`（恢复 `--mode` 校验，防止误起本地 compose）；regression-test.sh 补 Logic 健康检查；deploy.sh 汇总解析剥 ANSI。
+
+**残留项定性（非 infra）**：Logic Worker 启动后 ~100ms 在 etcd watch/canary 快照路径**确定性 SIGSEGV**（Manager 已重启 3500+ 次），GenKey/VerifyKey 仅在崩溃间隙的存活窗口能通过——"偶发"的真相。待 gdb 抓栈单独立项修复。
+
+### 2026-07-23 深夜：Logic 崩溃全链路根因 + 一次性修复（第 10 次回归 55/55 全绿）
+
+gdb 抓栈 + 反汇编 + 全面审计后，确认崩溃是 **3 层产品 bug 叠加**，已全部修复：
+
+1. **`static_cast<net::Module*>` 强转纯 Cmd 对象（主因）**：`CmdGetToken`/`CmdHello`/`CmdMqttEcho` 都继承 `net::Cmd`（非 Module），`Worker::LoadSoAndGetCmd` 却强转 `Module*` 写 `m_oModuleConf`（304 字节对象写到偏移 336）→ 越界写必崩。修复：`SetModuleConf`/`IsModule` 提升为 `Cmd` 基类虚函数（**追加在虚表末尾**，插中间会位移全部 vtable 槽位）；`LoadSoAndGetModule` 同款强转加 `IsModule()` 防护，误配拒载不崩。
+2. **SO 热更新下载无校验（崩溃循环放大器）**：etcd `/thunder/config/module/LOGIC` 残留测试写入的 version bump + so_url → Manager 从 minio 拉 .so → 返回 349 字节 AccessDenied XML 错误页 → `DownloadSoFile` 不校验状态/内容直接覆盖本地插件 → 新 Worker dlopen 垃圾文件崩、老 Worker 卡 drain → 请求黑洞。修复：HTTP 200 + ELF 魔数 + 64MB 上限 + 原子替换；配置/Lua 落盘同步改原子写；deploy.sh 阶段 0/4 清 LOGIC module key 残留。
+3. **ABI 不一致温床**：`THUNDER_BUILD_NODE_PLUGINS` 缓存为 OFF 导致 Logic/Interface 插件多年不重编；`code/Net/src/` 与 `code/Net/include/` 双份头文件 7 个漂移（Module/CW/Interface/NetDefine/HttpCodec/RedisStep/StorageOperator）同名类两种布局。修复：开关显式置 ON 写进两条构建路径；7 个头文件全同步（删除死代码 `code/Net/Interface.cpp`）；logic-v2 纳入镜像滚动更新（不再跑 24h 旧镜像）。
+4. **VerifyKey 轮询落空（架构性）**：token 存单个 Logic 节点内存（LogicSession 纯内存），v1/v2 双节点轮询命中另一节点必失败。回归脚本功能测试段缩容 v2 + 删其注册键（确定性），测完恢复并等收敛到 1 pod（`test_deploy_v2_only` 计数依赖）。
+5. **环境**：磁盘清至 56%；旧构建树全清（`build.root-owned-stale` 为 root 所有待 sudo 删）；`GTEST_SRC_DIR` 本地源支持（代理抖动时离线全量构建）。
+
+**验证**：第 10 次 `./deploy.sh test k8s` **55/55 PASS（0 FAIL 0 SKIP）**——Logic 零崩溃、GenKey/VerifyKey 全链路通、admin-web 16 项 + 灰度 11 项全过。

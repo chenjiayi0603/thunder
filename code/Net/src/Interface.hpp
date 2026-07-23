@@ -66,7 +66,7 @@ bool Launch(std::unique_ptr<Step> step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1
  * @param dTimeout 超时时间（单位秒，默认使用配置时间）
  * @return 是否成功
  * */
-bool Register(MysqlStep *step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
+bool Register(std::unique_ptr<MysqlStep> step,uint32 uiTimeOutMax=3,uint8 uiToRetry = 1,double dTimeout = 0.0);
 
 bool Json2Pb(const std::string &strJson,google::protobuf::Message &message);
 

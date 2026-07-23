@@ -153,6 +153,9 @@ cmd_build() {
     cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
         -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
         -DTHUNDER_BUILD_TESTS=ON \
+        -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+        -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+        ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
         "${CMAKE_OPENSSL_ARGS[@]}"
 
     log "thirdparty_deploy..."
@@ -171,7 +174,46 @@ cmd_build() {
         exit 1
     }
 
+    # ─── 构建后校验: io_backend 与 cmake 编译选项一致性 ───
+    _validate_io_backend
+
     ok "Build 完成"
+}
+
+_validate_io_backend() {
+    local cmake_cache="${BUILD_DIR}/CMakeCache.txt"
+    local asio_enabled=false
+    if [[ -f "$cmake_cache" ]] && grep -q "ENABLE_ASIO_URING:BOOL=ON" "$cmake_cache" 2>/dev/null; then
+        asio_enabled=true
+    fi
+    local mismatch=()
+    while IFS=: read -r file line content; do
+        if $asio_enabled; then
+            # cmake 开了 asio_uring → 配置必须用 asio_uring, 不能用 ev
+            if echo "$content" | grep -q '"io_backend": "ev"'; then
+                mismatch+=("$file:$line 期望 asio_uring 实际 ev")
+            fi
+        else
+            # cmake 没开 asio_uring → 配置不能用 asio_uring
+            if echo "$content" | grep -q '"io_backend": "asio_uring"'; then
+                mismatch+=("$file:$line 期望 ev 实际 asio_uring (二进制不支持)")
+            fi
+        fi
+    done < <(grep -rn '"io_backend"' "${PROJECT_DIR}/deploy/" --include="*.json" 2>/dev/null)
+    if [[ ${#mismatch[@]} -gt 0 ]]; then
+        err "io_backend 配置与 cmake 编译选项不一致！"
+        for m in "${mismatch[@]}"; do
+            err "  $m"
+        done
+        err "修复: deploy.sh build 会自动修正, 或手动改 deploy/*/conf/*.json"
+        # Auto-fix: align configs with cmake
+        if $asio_enabled; then
+            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "ev"/"io_backend": "asio_uring"/' {} \;
+        else
+            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "asio_uring"/"io_backend": "ev"/' {} \;
+        fi
+        ok "io_backend 已自动修正"
+    fi
 }
 
 # ─── SO 镜像构建 ─────────────────────────────────
@@ -464,7 +506,7 @@ cmd_test_regression() {
 cmd_test_k8s() {
     local ns="${K8S_NAMESPACE:-thunder}"
     local host_ip="${K8S_HOST_IP:-192.168.3.61}"
-    local tag="test"
+    local tag="test-$(date +%Y%m%d-%H%M%S)"
     local pass=0 fail=0
 
     echo ""
@@ -561,6 +603,10 @@ cmd_test_k8s() {
                 ok "  已清理 ${key} 中的 _regression 残留 (重建后从本地 conf 恢复)"
             fi
         done
+        # 删除 LOGIC module key (历次 SO 下发测试残留的 version bump + so_url:
+        # Pod 启动会按 so_url 从 minio 拉陈旧/损坏 .so 覆盖本地插件 → Worker 崩溃循环。
+        # 每次回归必须从本地 conf 版本 1 起步, SO 下发测试运行期间会自行重建该 key)
+        kubectl exec -n "$ns" "$etcd_pod" -- etcdctl del /thunder/config/module/LOGIC 2>/dev/null || true
         ok "  etcd 残留检查完成"
     else
         warn "  etcd 不可达, 跳过"
@@ -577,6 +623,18 @@ cmd_test_k8s() {
     # 1.1 C++ cmake build + install (确保 deploy/ 下有最新二进制)
     log "1.1 C++ cmake build + install..."
     cd "${PROJECT_DIR}"
+    # 先 configure: 缓存里可能残留 THUNDER_BUILD_NODE_PLUGINS=OFF (Logic/Interface .so 不重建 → 新旧 ABI 混用崩溃)
+    detect_openssl
+    cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
+        -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
+        -DTHUNDER_BUILD_TESTS=ON \
+        -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+        -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+        ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
+        "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
+        err "cmake configure 失败"
+        return 1
+    }
     cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" || {
         err "C++ 编译失败"
         return 1
@@ -585,6 +643,8 @@ cmd_test_k8s() {
         err "cmake install 失败"
         return 1
     }
+    # 构建后校验: io_backend 与 cmake 编译选项一致性 (与 cmd_build 对齐)
+    _validate_io_backend
     ok "  C++ 构建完成"
 
     # 1.2 Go admin-web 编译
@@ -635,37 +695,74 @@ cmd_test_k8s() {
     echo ""
     echo -e "${BOLD}--- [2/4] DEPLOY (滚动更新) ---${NC}"
 
-    # 2.1 导入镜像到 containerd (docker nsenter, 不需要 sudo)
-    log "2.2 导入镜像到 containerd..."
-    local ctr_ok=true
-    mkdir -p /tmp/thunder-images
-    for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
-               thunder-hello-wss thunder-logic  thunder-admin-web; do
-        log "  导入 $img:${tag} ..."
-        docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
-            warn "  $img docker save 失败"; ctr_ok=false; continue
-        }
-    done
-    if $ctr_ok; then
+    # 导入镜像到 containerd 的实际操作 (2.1 初次导入 + 2.4a imageGC 误删后重导入共用)
+    _ctr_import() {
+        mkdir -p /tmp/thunder-images
+        local img ctr_ok=true
+        for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
+                   thunder-hello-wss thunder-logic thunder-admin-web; do
+            log "  导入 $img:${tag} ..."
+            docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
+                warn "  $img docker save 失败"; ctr_ok=false
+            }
+        done
+        $ctr_ok || { rm -rf /tmp/thunder-images; return 1; }
         # 一次性导入全部 (避免容器反复启动)
         docker run --rm --privileged --pid=host --network=host \
             -v /tmp/thunder-images:/tmp/thunder-images \
             alpine:latest nsenter -t 1 -m -u -n -i -p -- sh -c '
                 for f in /tmp/thunder-images/*.tar; do
-                    ctr -n k8s.io image import "$f" 2>/dev/null
+                    ctr -n k8s.io image import "$f" || exit 1
                 done
-            ' 2>/dev/null || true
-        ok "  镜像导入完成"
-    else
-        warn "  部分镜像未导入"
-    fi
-    rm -rf /tmp/thunder-images
+            '
+        local ret=$?
+        rm -rf /tmp/thunder-images
+        return $ret
+    }
+
+    # 2.1 导入镜像到 containerd (docker nsenter, 不需要 sudo)
+    log "2.1 导入镜像到 containerd..."
+    _ctr_import || {
+        err "镜像导入 containerd 失败"
+        return 1
+    }
+    ok "  镜像导入完成"
+
+    # 2.2b 确保 7 个 Deployment 存在 (缺失则从 k8s/ apply, 不再静默跳过)
+    log "2.2b 检查 Deployment 是否存在..."
+    declare -A DEP_YAML=(
+        [thunder-hello]="hello-deployment.yaml"
+        [thunder-hello-https]="hello-https-deployment.yaml"
+        [thunder-hello-ws]="hello-ws-deployment.yaml"
+        [thunder-hello-wss]="hello-wss-deployment.yaml"
+        [thunder-interface]="interface-deployment.yaml"
+        [thunder-logic]="logic-deployment.yaml"
+        [thunder-logic-v2]="logic-v2-deployment.yaml"
+        [thunder-admin-web]="admin-web-deployment.yaml"
+    )
+    for dep in "${!DEP_YAML[@]}"; do
+        if ! kubectl get deploy "$dep" -n "$ns" >/dev/null 2>&1; then
+            log "  $dep 不存在, apply k8s/${DEP_YAML[$dep]} ..."
+            kubectl apply -f "k8s/${DEP_YAML[$dep]}" || {
+                err "  $dep apply 失败"
+                return 1
+            }
+            ok "  $dep 已创建"
+        else
+            # 历史 deployment 可能残留 imagePullPolicy: Always (旧 yaml 创建, 从不重新 apply)
+            # Always + 时间戳 tag → kubelet 无视本地镜像直连 docker.io, 必挂 ImagePullBackOff
+            kubectl patch deployment "$dep" -n "$ns" --type=strategic \
+                -p '{"spec":{"template":{"spec":{"containers":[{"name":"app","imagePullPolicy":"IfNotPresent"}]}}}}' \
+                >/dev/null 2>&1 || true
+        fi
+    done
+    ok "  Deployment 检查完成"
 
     # 2.3 滚动更新所有 Deployment
     log "2.3 滚动更新所有 Gateway + admin-web..."
     # 确保 replicas=1 (CLEAN 阶段可能已 scale 到 0)
     for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
-               thunder-interface thunder-logic  thunder-admin-web; do
+               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
         kubectl scale deploy -n "$ns" "$dep" --replicas=1 2>/dev/null || true
     done
     declare -A DEP_IMAGE=(
@@ -675,13 +772,14 @@ cmd_test_k8s() {
         [thunder-hello-ws]="thunder-hello-ws:${tag}"
         [thunder-hello-wss]="thunder-hello-wss:${tag}"
         [thunder-logic]="thunder-logic:${tag}"
+        [thunder-logic-v2]="thunder-logic:${tag}"
         [thunder-admin-web]="thunder-admin-web:${tag}"
     )
     for dep in "${!DEP_IMAGE[@]}"; do
         local img="${DEP_IMAGE[$dep]}"
         kubectl -n "$ns" set image "deployment/${dep}" "*=${img}" 2>/dev/null || {
-            warn "  $dep 未部署，跳过"
-            continue
+            err "  $dep set image 失败"
+            return 1
         }
         ok "  $dep → $img"
     done
@@ -698,20 +796,51 @@ cmd_test_k8s() {
         kubectl get pods -n "$ns" 2>/dev/null | grep -v -E "Completed|Error|Evicted" | head -20
     }
 
-    # 2.5 验证 etcd 注册 (等待节点重新注册)
-    log "2.5 等待 etcd 重新注册..."
+    # 2.4a 磁盘压力大时 kubelet imageGC 会删掉刚导入但尚未被使用的镜像 (本机磁盘 >85% 时每 5min 一轮)
+    #       检测到 ImagePull 失败则重导入并强制重建 Pending Pod, 避免 ErrImagePull 假死
+    if kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -qE 'ImagePullBackOff|ErrImagePull'; then
+        warn "  检测到 ImagePull 失败 (kubelet imageGC 可能删了未使用镜像), 重新导入..."
+        _ctr_import || {
+            err "镜像重导入 containerd 失败"
+            return 1
+        }
+        kubectl delete pods -n "$ns" --field-selector=status.phase=Pending 2>/dev/null || true
+        kubectl wait --for=condition=Ready pods --all -n "$ns" --timeout=180s 2>/dev/null || {
+            err "  重导入后 Pod 仍未 Ready"
+            kubectl get pods -n "$ns" 2>/dev/null | grep -v -E "Completed|Error|Evicted" | head -20
+            return 1
+        }
+        ok "  重导入后 Pod 全部 Ready"
+    fi
+
+    # 2.4b 校验各 Deployment 镜像版本 == 本次 tag (防止跑旧镜像)
+    log "2.4b 校验 Deployment 镜像版本 (tag=${tag})..."
+    for dep in "${!DEP_IMAGE[@]}"; do
+        local actual=$(kubectl get deployment "$dep" -n "$ns" -o jsonpath='{.spec.template.spec.containers[*].image}' 2>/dev/null || echo "")
+        if [[ "$actual" != *":${tag}"* ]]; then
+            err "  $dep 镜像版本不符: 期望 :${tag}, 实际: ${actual:-<none>}"
+            return 1
+        fi
+        ok "  $dep → $actual"
+    done
+
+    # 2.5 验证 etcd 注册 (等待节点重新注册, 含 LOGIC)
+    log "2.5 等待 etcd 重新注册 (含 LOGIC)..."
     local max_wait=60 waited=0
     while [[ $waited -lt $max_wait ]]; do
-        local reg_count=$(kubectl exec -n "$ns" "$etcd_pod" -- etcdctl get /thunder/registry/ --prefix --keys-only 2>/dev/null | grep -c "/" || echo "0")
-        if [[ "$reg_count" -ge 5 ]]; then
-            ok "  已注册 $reg_count 个节点 (${waited}s)"
+        local reg_keys=$(kubectl exec -n "$ns" "$etcd_pod" -- etcdctl get /thunder/registry/ --prefix --keys-only 2>/dev/null || echo "")
+        local reg_count=$(echo "$reg_keys" | grep -c "/" || echo "0")
+        if [[ "$reg_count" -ge 5 ]] && echo "$reg_keys" | grep -q "LOGIC"; then
+            ok "  已注册 $reg_count 个节点, 含 LOGIC (${waited}s)"
             break
         fi
         sleep 5
         waited=$((waited + 5))
     done
     if [[ $waited -ge $max_wait ]]; then
-        warn "  注册超时 (当前 $reg_count 个), 继续测试..."
+        warn "  注册超时 (当前 $reg_count 个, LOGIC 未就绪), 继续测试..."
+        warn "  thunder-logic 最近日志:"
+        kubectl logs -n "$ns" deploy/thunder-logic --tail=30 2>/dev/null | sed 's/^/    /' || true
     fi
 
     echo -e "${GREEN}✔${NC} DEPLOY 完成"
@@ -741,15 +870,16 @@ cmd_test_k8s() {
     echo ""
     echo -e "${BOLD}--- [3/4] TEST (全量回归) ---${NC}"
 
-    local test_output
-    test_output=$(bash "${PROJECT_DIR}/k8s/regression-test.sh" 2>&1)
-    local test_ret=$?
+    local test_output test_ret=0
+    # set -e 下命令替换赋值失败会静默终止脚本 (CLEAN 不执行), 必须用 || 捕获
+    test_output=$(bash "${PROJECT_DIR}/k8s/regression-test.sh" 2>&1) || test_ret=$?
     echo "$test_output"
-    # 解析通过/失败/跳过/总计
-    local t_pass=$(echo "$test_output" | grep '通过:' | grep -o '[0-9]\+' | head -1 || echo "?")
-    local t_fail=$(echo "$test_output" | grep '失败:' | grep -o '[0-9]\+' | head -1 || echo "0")
-    local t_skip=$(echo "$test_output" | grep '跳过:' | grep -o '[0-9]\+' | head -1 || echo "0")
-    local t_total=$(echo "$test_output" | grep '总计:' | grep -o '[0-9]\+' | head -1 || echo "?")
+    # 解析通过/失败/跳过/总计 (先剥 ANSI 颜色码, 取含"总计"的最终汇总行)
+    local summary_line=$(echo "$test_output" | sed 's/\x1b\[[0-9;]*m//g' | grep '总计:' | tail -1)
+    local t_pass=$(echo "$summary_line" | grep -oP '通过:\s*\K[0-9]+' || echo "?")
+    local t_fail=$(echo "$summary_line" | grep -oP '失败:\s*\K[0-9]+' || echo "0")
+    local t_skip=$(echo "$summary_line" | grep -oP '跳过:\s*\K[0-9]+' || echo "0")
+    local t_total=$(echo "$summary_line" | grep -oP '总计:\s*\K[0-9]+' || echo "?")
     if [[ $test_ret -eq 0 ]]; then
         ok "回归测试: ${t_pass}/${t_total} PASS (${t_fail} FAIL, ${t_skip} SKIP)"
     else
@@ -789,6 +919,8 @@ cmd_test_k8s() {
                 ok "  已删除 stale key: $key"
             fi
         done
+        # LOGIC module key 一并清除 (SO 下发测试的 version bump/so_url 残留会致下轮 Pod 拉坏 .so 崩溃)
+        kubectl exec -n "$ns" "$etcd_pod_clean" -- etcdctl del /thunder/config/module/LOGIC 2>/dev/null || true
         ok "  etcd 清理完成"
     fi
 
@@ -799,18 +931,25 @@ cmd_test_k8s() {
         ok "  审计记录已清理"
     fi
 
-    # 4.5 清理本地 docker 测试镜像
+    # 4.5 清理本地 docker 测试镜像 (所有 thunder-*:test-*, 非仅本次 tag)
     log "4.5 清理本地测试镜像..."
-    docker rmi "thunder-interface:${tag}" "thunder-hello:${tag}" "thunder-hello-https:${tag}" \
-               "thunder-hello-ws:${tag}" "thunder-hello-wss:${tag}" \
-               "thunder-logic:${tag}" "${tag}" \
-               "thunder-admin-web:${tag}" 2>/dev/null || true
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^thunder-.*:test-' | \
+        xargs -r docker rmi 2>/dev/null || true
     ok "  本地镜像已清理"
+
+    # 4.5b 清理 containerd 中旧 test 镜像 (保留本次 tag, 防止磁盘累积; 失败只 warn)
+    log "4.5b 清理 containerd 旧 test 镜像..."
+    docker run --rm --privileged --pid=host --network=host \
+        alpine:latest nsenter -t 1 -m -u -n -i -p -- sh -c "
+            ctr -n k8s.io images ls -q | grep -E 'thunder-.*:test-' | grep -v ':${tag}' | \
+                xargs -r ctr -n k8s.io images rm
+        " 2>/dev/null || warn "  containerd 旧镜像清理失败 (忽略)"
+    ok "  containerd 旧镜像已清理"
 
     # 4.6 关闭业务服务 (归还端口, 不影响下次测试)
     log "4.6 关闭业务服务 (释放端口)..."
     for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
-               thunder-interface thunder-logic  thunder-admin-web; do
+               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
         kubectl scale deploy -n "$ns" "$dep" --replicas=0 2>/dev/null || true
     done
     sleep 3

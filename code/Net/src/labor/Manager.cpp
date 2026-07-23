@@ -31,7 +31,7 @@
 #include "cmd/sys_cmd/CmdMgrServerConfig.hpp"
 
 // #45 SO download — forward declaration (defined at end of file)
-static bool DownloadSoFile(const std::string& url, const std::string& outPath);
+static bool DownloadSoFile(const std::string& url, const std::string& outPath, bool bCheckElf);
 
 namespace net
 {
@@ -1994,6 +1994,18 @@ bool Manager::CheckWorker()
     {
         RestartWorker(pid);
     }
+    // drain 看门狗: old Worker 超时未退出则强杀
+    // (覆盖旧二进制收不到 SIGTERM/drain 卡住等 Worker 侧失效场景; Worker 侧自身 grace 为 30s)
+    for (auto& [idx, lc] : m_workerLifecycle)
+    {
+        if (lc.state == WorkerLifecycle::DRAINING && lc.oldPid > 0
+            && lc.drainStartTime > 0 && time(nullptr) - lc.drainStartTime > 60)
+        {
+            LOG4_WARN("old worker %d drain 超过 60s 未退出, SIGKILL 强杀", lc.oldPid);
+            kill(lc.oldPid, SIGKILL);
+            lc.drainStartTime = time(nullptr);  // 同一 PID 每分钟最多强杀一次, 等 waitpid 收尾
+        }
+    }
     return(true);
 }
 
@@ -2829,12 +2841,19 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                 if (newConf.Get("so",     tmp)) m_oCurrentConf.Replace("so",     tmp);
             }
 
-            // 4. 先写文件 (Worker 重启时从文件加载新配置)
+            // 4. 先写文件 (Worker 重启时从文件加载新配置) — 临时文件 + rename 原子替换, 防半截配置
             {
-                std::ofstream fout(m_strConfFile, std::ios::out | std::ios::trunc);
+                std::string tmpFile = m_strConfFile + ".tmp";
+                std::ofstream fout(tmpFile, std::ios::out | std::ios::trunc);
                 if (fout) {
                     fout << m_oCurrentConf.ToFormattedString();
-                    LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
+                    fout.close();
+                    if (rename(tmpFile.c_str(), m_strConfFile.c_str()) == 0) {
+                        LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
+                    } else {
+                        remove(tmpFile.c_str());
+                        LOG4_ERROR("ConfigUpdated: cannot rename config file %s", m_strConfFile.c_str());
+                    }
                 } else {
                     LOG4_ERROR("ConfigUpdated: cannot write config file %s", m_strConfFile.c_str());
                 }
@@ -2855,10 +2874,17 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                         std::string scriptPath = "scripts/" + scriptName + ".lua";
                         // Ensure scripts directory exists
                         mkdir("scripts", 0755);
-                        std::ofstream fout(scriptPath, std::ios::out | std::ios::trunc);
+                        std::string tmpScript = scriptPath + ".tmp";
+                        std::ofstream fout(tmpScript, std::ios::out | std::ios::trunc);
                         if (fout) {
                             fout << scriptContent;
-                            LOG4_INFO("ConfigUpdated: Lua script persisted to %s", scriptPath.c_str());
+                            fout.close();
+                            if (rename(tmpScript.c_str(), scriptPath.c_str()) == 0) {
+                                LOG4_INFO("ConfigUpdated: Lua script persisted to %s", scriptPath.c_str());
+                            } else {
+                                remove(tmpScript.c_str());
+                                LOG4_ERROR("ConfigUpdated: cannot rename Lua script %s", scriptPath.c_str());
+                            }
                         } else {
                             LOG4_ERROR("ConfigUpdated: cannot write Lua script %s", scriptPath.c_str());
                         }
@@ -2891,7 +2917,7 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                             // #159: Download if version changed OR file doesn't exist (Pod restart recovery)
                             bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
                             if (needDownload) {
-                                if (DownloadSoFile(soUrl, outPath)) {
+                                if (DownloadSoFile(soUrl, outPath, true)) {
                                     LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
                                     anyDownloaded = true;
                                 } else {
@@ -2914,7 +2940,7 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                             std::string outPath = "scripts/" + scriptName + ".lua";
                             bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
                             if (needDownload) {
-                                if (DownloadSoFile(scriptUrl, outPath)) {
+                                if (DownloadSoFile(scriptUrl, outPath, false)) {
                                     LOG4_INFO("Lua script downloaded: %s -> %s", scriptUrl.c_str(), outPath.c_str());
                                     anyDownloaded = true;
                                 } else {
@@ -3058,7 +3084,7 @@ bool Manager::GracefulRestartWorker(int iWorkerIndex)
 } /* namespace net */
 
 // #45 SO download — HTTP GET SO file from URL, write to disk
-static bool DownloadSoFile(const std::string& url, const std::string& outPath)
+static bool DownloadSoFile(const std::string& url, const std::string& outPath, bool bCheckElf)
 {
     auto p = url.find("://");
     std::string r = (p != std::string::npos) ? url.substr(p + 3) : url;
@@ -3079,14 +3105,38 @@ static bool DownloadSoFile(const std::string& url, const std::string& outPath)
     std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
     send(fd, req.c_str(), req.size(), MSG_NOSIGNAL);
     std::string resp; char buf[65536]; ssize_t n;
-    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0) resp.append(buf, n);
+    const size_t kMaxResp = 64 * 1024 * 1024;  // 64MB 上限, 防异常响应内存耗尽
+    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0)
+    {
+        resp.append(buf, n);
+        if (resp.size() > kMaxResp) { close(fd); return false; }
+    }
     close(fd);
     auto h = resp.find("\r\n\r\n");
     if (h == std::string::npos) return false;
+    // 非 200 响应 (如 minio AccessDenied XML 错误页) 不能覆盖插件文件
+    if ((resp.compare(0, 9, "HTTP/1.0 ") == 0 || resp.compare(0, 9, "HTTP/1.1 ") == 0)
+        && resp.compare(9, 3, "200") != 0)
+    {
+        return false;
+    }
     std::string body = resp.substr(h + 4);
-    FILE* fp = fopen(outPath.c_str(), "wb");
+    if (body.empty()) return false;
+    // .so 必须是 ELF, 拦截 XML/JSON 错误页等垃圾内容
+    if (bCheckElf && (body.size() < 4 || body.compare(0, 4, "\x7f" "ELF") != 0))
+    {
+        return false;
+    }
+    // 原子替换: 先写临时文件再 rename, 避免半截文件直接覆盖可用插件
+    std::string tmpPath = outPath + ".tmp";
+    FILE* fp = fopen(tmpPath.c_str(), "wb");
     if (!fp) return false;
     size_t written = fwrite(body.data(), 1, body.size(), fp);
     fclose(fp);
-    return written == body.size();
+    if (written != body.size())
+    {
+        remove(tmpPath.c_str());
+        return false;
+    }
+    return rename(tmpPath.c_str(), outPath.c_str()) == 0;
 }
