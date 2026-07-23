@@ -358,7 +358,9 @@ bool Manager::RecvFdFromWorker(int workerFd)
             {
                 LOG4_TRACE("forward client fd %d from old worker %d to new worker %d",
                            clientFd, sendingPid, lc.newPid);
-                send_fd_with_attr(newIt->second.iDataFd, clientFd, remoteAddr, 32, codecType);
+                // addr_len 必须是 16: Worker 侧 recv_fd_with_attr 按 16 读地址再读 attr,
+                // 发 32 会导致 Worker 把地址中段当 codecType (读到 0 → "no codec found")
+                send_fd_with_attr(newIt->second.iDataFd, clientFd, remoteAddr, 16, codecType);
             }
             close(clientFd);  // Manager 不持有
             return true;
@@ -2506,6 +2508,32 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 							wit->second.dBeatTime = ev_now(m_loop);
 						LOG4_INFO("new worker %d ready, signaling old worker %d to drain",
 								  lc.newPid, lc.oldPid);
+						// 热更新排空: 先定向通知旧 Worker 允许迁移空闲 fd (CMD_WORKER_DRAIN),
+						// 单纯关停无此通知 → 旧 Worker drain 不迁移 fd
+						auto oldIt = m_mapWorker.find(lc.oldPid);
+						if (oldIt != m_mapWorker.end())
+						{
+							tagWorkerAttr& oldAttr = oldIt->second;
+							if (oldAttr.pMgrToWorkerQueue && oldAttr.iMgrToWorkerEventFd >= 0)
+							{
+								if (oldAttr.pMgrToWorkerQueue->TryEnqueue(CMD_WORKER_DRAIN, GetSequence(), "", 0))
+								{
+									ShmRingQueue::NotifyEventFd(oldAttr.iMgrToWorkerEventFd);
+								}
+							}
+							else
+							{
+								MsgHead oDrainHead; MsgBody oDrainBody;
+								oDrainHead.set_cmd(CMD_WORKER_DRAIN);
+								oDrainHead.set_seq(GetSequence());
+								oDrainHead.set_msgbody_len(0);
+								auto oldConn = m_mapFdAttr.find(oldAttr.iControlFd);
+								if (oldConn != m_mapFdAttr.end())
+								{
+									SendTo(oldConn->second.get(), oDrainHead, oDrainBody);
+								}
+							}
+						}
 						kill(lc.oldPid, SIGTERM);
 						break;
 					}

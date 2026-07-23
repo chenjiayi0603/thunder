@@ -343,6 +343,7 @@ public:
     void SetCanaryWeights(const std::string& strNodeType,
                            const std::map<std::string, int32_t>& mapWeights) override;
     void ClearCanaryWeights(const std::string& strNodeType = "") override;
+    void SetDrainMigrate(bool b) { m_bDrainMigrate = b; }  ///< 热更新排空时允许迁移空闲 fd (由 CMD_WORKER_DRAIN 置位)
     //动态库
     void LoadSo(util::CJsonObject& oSoConf,bool boForce=false);
     void ReloadSo(util::CJsonObject& oCmds);
@@ -372,6 +373,9 @@ private:
     std::atomic<bool> m_bDraining{false};
     std::atomic<bool> m_bAccepting{true};
     time_t m_drainStartTime = 0;
+    // 仅热更新 (Manager 发 CMD_WORKER_DRAIN 通知新 Worker 已就绪) 才迁移空闲 fd;
+    // 单纯关停 (k8s 缩容/手动 stop) 不迁移, 直接排空关闭
+    std::atomic<bool> m_bDrainMigrate{false};
     static constexpr int DRAIN_GRACE_PERIOD = 30;
 };
 

@@ -58,6 +58,7 @@
 #include "cmd/sys_cmd/CmdReloadModule.hpp"
 #include "cmd/sys_cmd/CmdReloadCustom.hpp"
 #include "cmd/sys_cmd/CmdReloadLua.hpp"
+#include "cmd/sys_cmd/CmdDrainMigrate.hpp"
 #include "storage/RedisOperator.hpp"
 
 namespace net
@@ -2721,6 +2722,7 @@ void Worker::PreloadCmd()
     AddCmd(new CmdReloadSo(),CMD_REQ_RELOAD_SO);
     AddCmd(new CmdReloadModule(),CMD_REQ_RELOAD_MODULE);
     AddCmd(new CmdReloadLua(), CMD_REQ_RELOAD_LUA);
+    AddCmd(new CmdDrainMigrate(), CMD_WORKER_DRAIN);
     AddCmd(new CmdReloadCustom(),CMD_REQ_SET_NODE_CUSTOM_CONFIG);
 }
 
@@ -6259,6 +6261,8 @@ void Worker::EnterDrainMode()
     //     超时在 Run() 末尾 Destroy() 统一关闭。
     //   - 真正空闲的 keep-alive 连接: 迁移给 Manager → 转发给新 Worker,
     //     避免网关热更新时大量客户端同时重连 (重连风暴)。
+    //     仅在热更新 (Manager 发 CMD_WORKER_DRAIN 置 m_bDrainMigrate) 时迁移;
+    //     单纯关停 (k8s 缩容/手动 stop, 无新 Worker 接收) 不迁移, 直接排空关闭。
     //
     // 空闲判定 (同时满足才迁移, 见 issus #3):
     //   ① pRecvBuff 空 — 没有已读取但未处理的数据
@@ -6268,6 +6272,7 @@ void Worker::EnterDrainMode()
     //
     // 不迁移: 监听 fd / Manager 通信 fd / S2S 连接 (CODEC_PB_INTERNAL) /
     //         HTTP 半解析状态 (parser 状态在进程内存, 无法迁移)。
+    if (m_bDrainMigrate)
     {
         std::vector<int> fdsToTransfer;
         for (auto& [fd, conn] : mapFdAttr)
