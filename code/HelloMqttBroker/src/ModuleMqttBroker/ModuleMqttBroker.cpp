@@ -516,10 +516,25 @@ void ModuleMqttBroker::HandlePingreq(const net::tagMsgShell& sh) {
 }
 
 // ===== DISCONNECT 处理器 ===================================================
-// 正常断连: 清理 fd→clientId 映射 + QoS 1 pending。Will 遗嘱不触发。
+// 正常断连: 清理 fd→clientId 映射 + 订阅 + QoS 1 pending。Will 遗嘱不触发。
 void ModuleMqttBroker::HandleDisconnect(const net::tagMsgShell& sh) {
     m_mapFdToClientId.erase(sh.iFd);
+    {
+        std::lock_guard<std::mutex> lk(m_mutexSubscribers);
+        for (auto it = m_mapTopicSubscribers.begin(); it != m_mapTopicSubscribers.end(); ) {
+            auto& subs = it->second;
+            subs.erase(std::remove_if(subs.begin(), subs.end(),
+                [&](const SubscriptionInfo& s) { return s.fd == (uint32_t)sh.iFd; }),
+                subs.end());
+            if (subs.empty())
+                it = m_mapTopicSubscribers.erase(it);
+            else
+                ++it;
+        }
+    }
     CleanupPendingDeliveries(sh.iFd);
+    m_mapKeepAlive.erase(sh.iFd);
+    m_mapWill.erase(sh.iFd);
 }
 
 // ===== 意外断连处理 (Will 遗嘱) =============================================

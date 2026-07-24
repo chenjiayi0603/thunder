@@ -128,7 +128,7 @@ class TestMqttSubPub:
         sub = _make_client(client_id="test_sub_qos0")
         sub.on_message = lambda _c, _u, msg: (received.append((msg.topic, msg.payload)), event.set())
         sub.subscribe("test/qos0", qos=0)
-        time.sleep(0.3)  # 等 SUBACK
+        time.sleep(0.5)  # 等 SUBACK
 
         pub = _make_client(client_id="test_pub_qos0")
         pub.publish("test/qos0", b"hello_qos0", qos=0)
@@ -157,7 +157,7 @@ class TestMqttSubPub:
         sub_b = _make_client(client_id="test_bcast_b")
         sub_b.on_message = lambda _c, _u, msg: (received_b.append(msg.payload), event_b.set())
         sub_b.subscribe("test/broadcast", qos=0)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_bcast_pub")
         pub.publish("test/broadcast", b"broadcast_msg", qos=0)
@@ -197,7 +197,7 @@ class TestMqttQos1:
         sub = _make_client(client_id="test_qos1_sub")
         sub.on_message = lambda _c, _u, msg: (received.append(msg.payload), event.set())
         sub.subscribe("test/qos1sub", qos=1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_qos1_pub2")
         pub.publish("test/qos1sub", b"qos1_msg", qos=1)
@@ -220,7 +220,7 @@ class TestMqttQos1:
             received.append((msg.topic, msg.payload, msg.qos)), event.set()
         )
         sub.subscribe("echo/+/response", qos=1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_qos1_echo_pub")
         pub.publish("echo/qos1ping", b"qos1_hello", qos=1)
@@ -253,7 +253,7 @@ class TestMqttQos1:
             received_b.append(msg.qos), event_b.set()
         )
         sub_b.subscribe("test/qos1multi", qos=1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_qos1_multi_pub")
         pub.publish("test/qos1multi", b"multi_qos1", qos=1)
@@ -280,7 +280,7 @@ class TestMqttUnsubscribe:
         sub = _make_client(client_id="test_unsub")
         sub.on_message = lambda _c, _u, msg: (received.append(msg.payload), event.set())
         sub.subscribe("test/unsub", qos=0)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         # 发布第一条 — 应收到
         pub = _make_client(client_id="test_unsub_pub")
@@ -290,7 +290,7 @@ class TestMqttUnsubscribe:
 
         # 取消订阅
         sub.unsubscribe("test/unsub")
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         # 发布第二条 — 不应收到
         event.clear()
@@ -332,7 +332,7 @@ class TestMqttEcho:
         sub = _make_client(client_id="test_echo_sub")
         sub.on_message = lambda _c, _u, msg: (received.append((msg.topic, msg.payload)), event.set())
         sub.subscribe("echo/+/response", qos=0)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_echo_pub")
         pub.publish("echo/ping", b"hello_echo", qos=0)
@@ -374,7 +374,7 @@ class TestMqttRetain:
         # 清理 retain 消息 (发空 payload)
         pub2 = _make_client(client_id="test_retain_clean")
         pub2.publish("test/retain", b"", qos=0, retain=True)
-        time.sleep(0.3)
+        time.sleep(0.5)
         pub2.loop_stop()
         pub2.disconnect()
 
@@ -394,7 +394,7 @@ class TestMqttTopicMatch:
         sub = _make_client(client_id="test_wild_sub")
         sub.on_message = lambda _c, _u, msg: (received.append(msg.topic), event.set())
         sub.subscribe("sensor/+/temperature", qos=0)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_wild_pub")
         pub.publish("sensor/room1/temperature", b"22.5", qos=0)
@@ -415,7 +415,7 @@ class TestMqttTopicMatch:
         sub = _make_client(client_id="test_hash_sub")
         sub.on_message = lambda _c, _u, msg: (received.append(msg.topic), event.set())
         sub.subscribe("home/#", qos=0)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         pub = _make_client(client_id="test_hash_pub")
         pub.publish("home/floor1/room/temp", b"25.0", qos=0)
