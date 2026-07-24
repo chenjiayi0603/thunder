@@ -6191,6 +6191,10 @@ QoS 2:  IDLE → WAIT_PUBREC → WAIT_PUBREL → WAIT_PUBCOMP → DONE
 
 > IoT 实际场景中 90%+ 的消息是 QoS 0 或 QoS 1。QoS 2 极少用——四次握手太重，
 > 大部分嵌入式设备也不支持。Thunder MQTT Broker 当前实现 QoS 0/1，QoS 2 不做。
+>
+> **客户端控制 QoS**：客户端 `publish(topic, payload, qos=N)` 自行决定每跳 QoS。
+> 发布者 QoS 和订阅者 QoS 可不同 — 订阅者 `subscribe(topic, qos=M)` 指定
+> 期望的 QoS，Broker 协商降级为 `min(M, brokerMaxQos)`。
 
 ### 协议开销对比
 
@@ -8201,44 +8205,6 @@ CanaryRoutingTest: 7/7 PASS ✅
 
 ---
 
-## 🔵 #163 [特性] MQTT Echo Demo — CmdMqttEcho.so
-
-> 2026-07-22 | 新增 | 状态: ✅ 已实现
-
-### 背景
-
-`ModuleMqttBroker` 实现了完整的 MQTT 3.1.1 Broker 功能，但缺少应用层 demo。新增 `CmdMqttEcho` 作为独立 SO 模块，演示 MQTT Echo 回显。
-
-### 功能
-
-```
-客户端: subscribe echo/+/response
-客户端: publish echo/ping "hello"
-→ Broker 自动广播 echo/ping/response "hello" 给所有订阅 echo/+/response 的客户端
-```
-
-### 架构
-
-| 文件 | 作用 |
-|------|------|
-| `ModuleMqttBroker.hpp` | 新增 C-linkage 接口 `MqttEchoEnable()` / `MqttEchoIsEnabled()` |
-| `ModuleMqttBroker.cpp` | `HandlePublish` 中增加 echo 逻辑（检查 `echo/` 前缀） |
-| `CmdMqttEcho.hpp/cpp` (新) | 独立 SO，`Init()` 调用 `MqttEchoEnable()` 激活 echo |
-| `CMakeLists.txt` | 新增 `CmdMqttEcho` 构建目标 → `HelloMqttBroker_CmdMqttEcho.so` |
-
-### 跨 SO 通信
-
-`MqttEchoEnable()` 使用 `extern "C"` 声明（C linkage），`CmdMqttEcho.so` 加载时动态链接器解析符号到 `ModuleMqttBroker.so`。
-
-### 测试
-
-```
-codec_mqtt:    15/15 PASS ✅
-topic_match:    8/8 PASS ✅
-```
-
----
-
 
 ## 🔴 #164 [Infra] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
 
@@ -8351,7 +8317,7 @@ Core: 43 PASS → 50 PASS
 
 gdb 抓栈 + 反汇编 + 全面审计后，确认崩溃是 **3 层产品 bug 叠加**，已全部修复：
 
-1. **`static_cast<net::Module*>` 强转纯 Cmd 对象（主因）**：`CmdGetToken`/`CmdHello`/`CmdMqttEcho` 都继承 `net::Cmd`（非 Module），`Worker::LoadSoAndGetCmd` 却强转 `Module*` 写 `m_oModuleConf`（304 字节对象写到偏移 336）→ 越界写必崩。修复：`SetModuleConf`/`IsModule` 提升为 `Cmd` 基类虚函数（**追加在虚表末尾**，插中间会位移全部 vtable 槽位）；`LoadSoAndGetModule` 同款强转加 `IsModule()` 防护，误配拒载不崩。
+1. **`static_cast<net::Module*>` 强转纯 Cmd 对象（主因）**：`CmdGetToken`/`CmdHello` 都继承 `net::Cmd`（非 Module），`Worker::LoadSoAndGetCmd` 却强转 `Module*` 写 `m_oModuleConf`（304 字节对象写到偏移 336）→ 越界写必崩。修复：`SetModuleConf`/`IsModule` 提升为 `Cmd` 基类虚函数（**追加在虚表末尾**，插中间会位移全部 vtable 槽位）；`LoadSoAndGetModule` 同款强转加 `IsModule()` 防护，误配拒载不崩。
 2. **SO 热更新下载无校验（崩溃循环放大器）**：etcd `/thunder/config/module/LOGIC` 残留测试写入的 version bump + so_url → Manager 从 minio 拉 .so → 返回 349 字节 AccessDenied XML 错误页 → `DownloadSoFile` 不校验状态/内容直接覆盖本地插件 → 新 Worker dlopen 垃圾文件崩、老 Worker 卡 drain → 请求黑洞。修复：HTTP 200 + ELF 魔数 + 64MB 上限 + 原子替换；配置/Lua 落盘同步改原子写；deploy.sh 阶段 0/4 清 LOGIC module key 残留。
 3. **ABI 不一致温床**：`THUNDER_BUILD_NODE_PLUGINS` 缓存为 OFF 导致 Logic/Interface 插件多年不重编；`code/Net/src/` 与 `code/Net/include/` 双份头文件 7 个漂移（Module/CW/Interface/NetDefine/HttpCodec/RedisStep/StorageOperator）同名类两种布局。修复：开关显式置 ON 写进两条构建路径；7 个头文件全同步（删除死代码 `code/Net/Interface.cpp`）；logic-v2 纳入镜像滚动更新（不再跑 24h 旧镜像）。
 4. **VerifyKey 轮询落空（架构性）**：token 存单个 Logic 节点内存（LogicSession 纯内存），v1/v2 双节点轮询命中另一节点必失败。回归脚本功能测试段缩容 v2 + 删其注册键（确定性），测完恢复并等收敛到 1 pod（`test_deploy_v2_only` 计数依赖）。
