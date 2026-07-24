@@ -8208,7 +8208,7 @@ CanaryRoutingTest: 7/7 PASS ✅
 
 ## 🔴 #164 [Infra] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
 
-> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已修复 (config + 自动校验) + 🟡 待加固 (entrypoint 健康检查)
+> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已完成 — 55/55 PASS, 所有子项修复到位
 
 ### 现象
 
@@ -8324,3 +8324,49 @@ gdb 抓栈 + 反汇编 + 全面审计后，确认崩溃是 **3 层产品 bug 叠
 5. **环境**：磁盘清至 56%；旧构建树全清（`build.root-owned-stale` 为 root 所有待 sudo 删）；`GTEST_SRC_DIR` 本地源支持（代理抖动时离线全量构建）。
 
 **验证**：第 10 次 `./deploy.sh test k8s` **55/55 PASS（0 FAIL 0 SKIP）**——Logic 零崩溃、GenKey/VerifyKey 全链路通、admin-web 16 项 + 灰度 11 项全过。
+
+
+## 🔵 #165 [部署] MQTT Broker K8s 部署支持 — Dockerfile + deploy.sh 集成
+
+> 2026-07-24 | 分析 | 状态: 🔵 待实现
+
+### 背景
+
+ModuleMqttBroker 已有完整的 MQTT 3.1.1 Broker 实现（QoS 0/1, Retain, Will, Echo），
+14 个 E2E 测试全部通过。但当前只能在**原生进程**或 **docker-compose** 模式下运行，
+无法部署到 K8s。
+
+### 根因
+
+```
+docker-compose 模式 (能用):           K8s 模式 (不能用):
+  Dockerfile: 基础 Ubuntu              image: localhost:5000/thunder-mqtt-broker
+  volumes: ../:/thunder:rw             无 volume mount
+  → 二进制/配置/.so 从宿主机挂载          → 镜像里没有文件 → CrashLoopBackOff
+```
+
+### 需要做的事
+
+| 项 | 文件 | 说明 |
+|----|------|------|
+| MQTT Dockerfile | `deploy/MqttBroker/Dockerfile` (新) | 基于 `deploy/HelloHttp/Dockerfile` 模式，COPY 二进制/config/.so |
+| deploy.sh 构建 | `deploy.sh` | 新增 `docker build -f deploy/MqttBroker/Dockerfile -t thunder-mqtt:latest .` |
+| deploy.sh 推送 | `deploy.sh` | 新增 docker tag + push 到 `localhost:5000/thunder-mqtt-broker:latest` |
+| K8s deployment | `k8s/mqtt-broker-deployment.yaml` | ✅ 已创建，改用 baked image 后即可部署 |
+| E2E 测试 | `tests/e2e/test_mqtt_broker.py` | --mode=external 连接 K8s NodePort 31883 测试 |
+
+### Dockerfile 模板（参考 HelloHttp）
+
+```dockerfile
+FROM ubuntu:26.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates bash procps libjemalloc2 && rm -rf /var/lib/apt/lists/*
+WORKDIR /thunder/deploy/MqttBroker
+COPY deploy/MqttBroker/bin/Hello ./bin/Hello
+COPY deploy/MqttBroker/conf/MqttBroker.json ./conf/MqttBroker.json
+COPY deploy/MqttBroker/plugins/ ./plugins/
+COPY deploy/MqttBroker/entrypoint.sh ./entrypoint.sh
+COPY deploy/MqttBroker/node.sh ./node.sh
+COPY deploy/MqttBroker/scripts/ ./scripts/
+RUN chmod +x ./bin/Hello ./entrypoint.sh ./node.sh
+CMD ["bash", "./entrypoint.sh"]
+```
