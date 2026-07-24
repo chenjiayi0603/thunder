@@ -415,6 +415,40 @@ services:
         reservations:
           memory: 128M
 
+  # MQTT Broker — IoT 设备接入 (MQTT 3.1.1, port 21883)
+  mqtt-broker:
+    <<: [*thunder-node, *thunder-ulimits]
+    working_dir: /thunder/deploy/MqttBroker
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
+    depends_on:
+      etcd1:
+        condition: service_healthy
+    stop_grace_period: 30s
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start
+        trap './node.sh stop' TERM INT
+        tail -f /dev/null &
+        wait $! || true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':21883 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
   # Admin Web — 管理后台 + Lua/SO 热更新 API
   admin-web:
     <<: *thunder-node

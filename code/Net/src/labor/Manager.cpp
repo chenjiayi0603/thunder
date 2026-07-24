@@ -1421,6 +1421,19 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
     int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
     int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
 
+    // 创建共享内存原子标志: Manager 置位 → Worker 排空结束时迁移 fd (替代 CMD_WORKER_DRAIN 消息)
+    auto* pDrainMigrate = static_cast<std::atomic<bool>*>(mmap(
+        nullptr, sizeof(std::atomic<bool>), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+    if (pDrainMigrate != MAP_FAILED)
+    {
+        new (pDrainMigrate) std::atomic<bool>(false);
+    }
+    else
+    {
+        pDrainMigrate = nullptr;
+        LOG4_ERROR("mmap pDrainMigrate failed");
+    }
+
     auto* pLoaderMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
     auto* pRouteMM  = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
     auto* pCustMM   = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1442,6 +1455,7 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderMM);
         pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteMM);
         pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustMM);
+        pWorker->SetDrainMigrateFlag(pDrainMigrate);
         pWorker->Run();
         LOG4_FATAL("Worker terminated");
         delete pWorker;
@@ -1461,6 +1475,7 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         outAttr.pWorkerToMgrQueue = pWorkerToMgr;
         outAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
         outAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
+        outAttr.pDrainMigrate = pDrainMigrate;
         return iPid;
     }
     else
@@ -1573,6 +1588,10 @@ bool Manager::RestartWorker(int iDeathPid)
         }
         ShmRingQueue::CloseEventFd(oldAttr.iMgrToWorkerEventFd);
         ShmRingQueue::CloseEventFd(oldAttr.iWorkerToMgrEventFd);
+        if (oldAttr.pDrainMigrate)
+        {
+            munmap(oldAttr.pDrainMigrate, sizeof(std::atomic<bool>));
+        }
 
         m_mapWorker.erase(worker_iter);
 
@@ -2508,30 +2527,15 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 							wit->second.dBeatTime = ev_now(m_loop);
 						LOG4_INFO("new worker %d ready, signaling old worker %d to drain",
 								  lc.newPid, lc.oldPid);
-						// 热更新排空: 先定向通知旧 Worker 允许迁移空闲 fd (CMD_WORKER_DRAIN),
-						// 单纯关停无此通知 → 旧 Worker drain 不迁移 fd
+						// 热更新排空: 置位共享内存原子标志, 通知旧 Worker 排空结束时迁移 fd。
+						// 单纯关停无此置位 → 旧 Worker drain 不迁移 fd, 直接退出。
 						auto oldIt = m_mapWorker.find(lc.oldPid);
 						if (oldIt != m_mapWorker.end())
 						{
 							tagWorkerAttr& oldAttr = oldIt->second;
-							if (oldAttr.pMgrToWorkerQueue && oldAttr.iMgrToWorkerEventFd >= 0)
+							if (oldAttr.pDrainMigrate)
 							{
-								if (oldAttr.pMgrToWorkerQueue->TryEnqueue(CMD_WORKER_DRAIN, GetSequence(), "", 0))
-								{
-									ShmRingQueue::NotifyEventFd(oldAttr.iMgrToWorkerEventFd);
-								}
-							}
-							else
-							{
-								MsgHead oDrainHead; MsgBody oDrainBody;
-								oDrainHead.set_cmd(CMD_WORKER_DRAIN);
-								oDrainHead.set_seq(GetSequence());
-								oDrainHead.set_msgbody_len(0);
-								auto oldConn = m_mapFdAttr.find(oldAttr.iControlFd);
-								if (oldConn != m_mapFdAttr.end())
-								{
-									SendTo(oldConn->second.get(), oDrainHead, oDrainBody);
-								}
+								oldAttr.pDrainMigrate->store(true, std::memory_order_release);
 							}
 						}
 						kill(lc.oldPid, SIGTERM);

@@ -314,6 +314,7 @@ add_custom_target(thunder_3party_all DEPENDS
   ep_etcd_cpp_apiv3
 )
 
+
 # 使用 bash 显式执行，避免依赖 chmod +x（WSL/Windows 挂载盘或部分 FS 上 chmod 会失败导致整 target 报错）
 add_custom_target(thirdparty_deploy
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/deploy_thirdparty.sh"

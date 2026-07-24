@@ -8,10 +8,13 @@
 #   ./deploy.sh test e2e       E2E    Docker 集成测试             ~3min
 #   ./deploy.sh test smoke     冒烟   核心链路 + etcd 注册中心     ~5s (需集群)
 #   ./deploy.sh test regression 回归   全量自动化回归 (提交前必跑) ~5min
+#   ./deploy.sh test k8s       K8s    K8s 全量回归 (含 fd 迁移/优雅重启) ~10min
 #   ./deploy.sh test perf      性能   wrk 压测                   ~1min
 #
 # === 一键全量 ===
-#   ./tests/run_all.sh          构建 → 部署 → 全部测试 (推荐提交前使用)
+#   ./tests/run_all.sh          Docker Compose 环境: 构建 → 部署 → 全部测试
+#                               (unit + gtest + lua + smoke + graceful restart,
+#                                推荐提交前使用, 需 Docker, 不需要 K8s 集群)
 #
 # === 常用命令 ===
 #   ./deploy.sh build           cmake configure + build + install
@@ -503,6 +506,17 @@ cmd_test_regression() {
 # 阶段 2: DEPLOY    — 清 etcd → 导入 containerd → rollout restart → 等 Ready
 # 阶段 3: TEST      — regression-test.sh 36 项全量
 # 阶段 4: CLEAN     — 删测试 artifacts/NFS残留/etcd测试键/审计记录
+#
+# === fd 迁移 / 优雅重启回归注意事项 ===
+# 本测试覆盖 Worker 优雅重启 (GracefulRestartWorker) 的 fd 迁移路径:
+#   1. Manager 通过共享内存原子标志 (pDrainMigrate) 通知旧 Worker 排空时迁移 fd
+#      (替代旧 CMD_WORKER_DRAIN 消息, 见 WorkerAttr.hpp / SpawnSingleWorker)
+#   2. 旧 Worker 收到 SIGTERM → EnterDrainMode() → 不接受新请求, 等待 20s
+#   3. 排空完成或超时后 TransferAllFds() 一次性迁移所有客户端 fd 给新 Worker
+#      (不再做部分迁移, 避免 StepNode/StepCo20 等跨节点 Step 上下文被破坏)
+#   4. Manager RecvFdFromWorker() 接收 fd → 转发给新 Worker → FdTransfer() 接收
+# 验证点: rollout restart 后旧 Worker 的 keep-alive 连接不断开,
+#         客户端无感知, 无重连风暴。
 cmd_test_k8s() {
     local ns="${K8S_NAMESPACE:-thunder}"
     local host_ip="${K8S_HOST_IP:-192.168.3.61}"

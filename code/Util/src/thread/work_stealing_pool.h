@@ -27,16 +27,45 @@ namespace util
 /**
  * Work-Stealing 线程池（Go LRQ 风格）
  *
- * 公开 API 与 util::threadpool 完全相同：
- *   commit / idlCount / queueSize / maxQueueSize / resize
+ * ── commit() 三级分发（生产者路径）────────────────────────────────────
  *
- * 内部差异：
- *   - 每个 worker 持有两个 WorkerDeque，消除 push/steal 的 tail 竞争：
- *       _submit_deques[id]  仅由 commit() 线程 push，worker dequeue / 其他 worker steal
- *       _local_deques[id]   仅由 worker[id] 写入（steal_into），worker 自己 dequeue
- *   - commit() 三级分发：Power of Two Choices → 全扫 → global_q
- *   - worker 循环：local_deque → submit_deque → steal → global_q → yield
- *   - 缩容：worker 退出前将两个 deque 的剩余任务 drain 到 global_q
+ *   commit(fn)
+ *       │
+ *       ▼
+ *   ┌────────────┐  fail   ┌────────────┐  fail   ┌────────────┐
+ *   │ Level 1    │ ──────→ │ Level 2    │ ──────→ │ Level 3    │
+ *   │ Two Choices│         │ 全扫 16 个 │         │ global_q   │
+ *   │ O(1) 挑2个  │         │ submit_deq │         │ 无界兜底   │
+ *   └─────┬──────┘         └─────┬──────┘         └─────┬──────┘
+ *         │ success              │ success              │
+ *         ▼                      ▼                      ▼
+ *   _submit_deques[idx]  _submit_deques[i]      ConcurrentQueue
+ *   .push(task)          .push(task)            .enqueue(task)
+ *
+ *
+ * ── worker 消费循环（消费者路径）──────────────────────────────────────
+ *
+ *   每个 worker[id] 有自己的一对 deque：
+ *     _submit_deques[id] — commit() 写, worker 读, 别人 steal（生产者→消费者）
+ *     _local_deques[id]  — worker 独占写(steal_into), 自己读（本地缓存）
+ *
+ *   while(true):
+ *     ┌─ 1. _local_deques[id].dequeue()         ← 自己 steal 来的，最快，无锁
+ *     ├─ 2. _submit_deques[id].dequeue()        ← commit() 投递的
+ *     ├─ 3. steal 其他 worker                    ← 负载均衡
+ *     │      先抢 victim._submit_deques (积压多)
+ *     │      再抢 victim._local_deques  (备用)
+ *     ├─ 4. _global_q.try_dequeue()            ← 兜底
+ *     └─ 5. cv.wait()                           ← 空闲等通知
+ *
+ *
+ * ── 缩容 drain ────────────────────────────────────────────────────────
+ *
+ *   resize(n) → _excessThreads += (cur - n)
+ *   worker 空闲时 CAS 抢到退出权:
+ *     drainToGlobal(id): _local[id] + _submit[id] → _global_q
+ *     然后线程退出（任务不丢）
+ *
  *
  * 关联文档：docs/architecture/23-work-stealing-threadpool.md
  * 关联 issue：#109
@@ -57,18 +86,18 @@ private:
     std::array<Deque, THREADPOOL_MAX_NUM> _submit_deques;
     std::array<Deque, THREADPOOL_MAX_NUM> _local_deques;
 
-    moodycamel::ConcurrentQueue<Task> _global_q;
+    moodycamel::ConcurrentQueue<Task> _global_q;  // 无锁 MPMC 并发队列（CAS），三级分发兜底 + 缩容 drain 目标
 
     std::vector<std::thread> _pool;
     std::atomic<bool>   _run          { true };
-    std::atomic<int>    _idlThrNum    { 0 };
-    std::atomic<size_t> _queueSize    { 0 };
-    size_t              _maxQueueSize;
-    std::atomic<int>    _excessThreads{ 0 };
+    std::atomic<int>    _idlThrNum    { 0 };    // 当前空闲线程数（cv.wait 中的不计入）
+    std::atomic<size_t> _queueSize    { 0 };    // 所有队列中未完成任务总数，用于背压
+    size_t              _maxQueueSize;          // 达到时 commit() 阻塞等待
+    std::atomic<int>    _excessThreads{ 0 };    // resize 缩容: 需要退出的线程数，CAS 抢
     std::atomic<int>    _totalCreated { 0 };
     std::atomic<int>    _totalExited  { 0 };
-    std::atomic<int>    _activeWorkers{ 0 };
-    std::atomic<int>    _waitingWorkers{ 0 };
+    std::atomic<int>    _activeWorkers{ 0 };    // 当前活跃 worker 数（不含已标记退出但未析构的）
+    std::atomic<int>    _waitingWorkers{ 0 };   // cv.wait 中的线程数，commit() 据此决定是否 notify
     std::condition_variable _cv;
     std::mutex              _cv_mutex;
 
@@ -76,7 +105,7 @@ public:
     explicit WorkStealingPool(unsigned short size = 1, size_t maxQueue = 0)
         : _maxQueueSize(maxQueue > 0
               ? maxQueue
-              : static_cast<size_t>(size) * kDefaultQueueDepthMultiplier)
+              : static_cast<size_t>(size) * kDefaultQueueDepthMultiplier)  // 默认队列容量 = 线程数 × 64
     {
         addThread(size);
     }
@@ -105,6 +134,7 @@ public:
         if (!_run.load(std::memory_order_acquire))
             throw std::runtime_error("commit on WorkStealingPool is stopped.");
 
+        // 先占位再检查：fetch_add 拿到的是旧值，旧值 >= 上限说明满，回退并阻塞等待
         size_t sz = _queueSize.fetch_add(1, std::memory_order_acq_rel);
         if (sz >= _maxQueueSize)
         {
@@ -130,7 +160,7 @@ public:
         Task wrapped = [task, this]() {
             (*task)();
             _queueSize.fetch_sub(1, std::memory_order_release);
-            _cv.notify_all();
+            _cv.notify_all();  // 任务完成释放队列槽位，唤醒被背压阻塞的 commit()
         };
 
         int n = _activeWorkers.load(std::memory_order_acquire);
@@ -179,6 +209,9 @@ public:
              - _totalExited.load(std::memory_order_relaxed);
     }
 
+    // 动态调整线程数，不丢任务
+    // 扩容: 直接 addThread
+    // 缩容: 只设 _excessThreads 标记，worker 空闲时自行 CAS 抢退出权并 drain 任务
     void resize(unsigned short n)
     {
         if (n < 1) n = 1;
@@ -201,6 +234,8 @@ private:
         return s;
     }
 
+    // 线程退出前将两个 deque 的剩余任务搬到 global_q，保证任务不丢
+    // 先搬 _local（本线程独占无竞争），再搬 _submit（可能有 commit() 正在 push，但放后面减少窗口）
     void drainToGlobal(int id)
     {
         while (auto t = _local_deques[id].dequeue())
@@ -225,6 +260,8 @@ private:
                     tick++;
 
                     // ── 61-tick：防高负载下 global_q 长期饥饿 ──────────────
+                    // worker 始终优先消费自己的 deque，global_q 可能永远排不上队
+                    // 每 61 次循环（质数，避免与业务周期共振）强制检查一次 global_q
                     if (tick % 61 == 0)
                     {
                         Task t;
@@ -293,10 +330,13 @@ private:
                         {
                             int victim = (static_cast<int>(start) + i) % scanN;
                             if (victim == id) continue;
+                            // steal_into(dst, batch): 从 victim 队列批量窃取 batch 个任务到自己的 _local_deques[id]（dst 参数）
+                            // 优先级 1: 抢 victim _submit_deques — commit() 投递的生产者队列，积压概率最高
                             if (_local_deques[id].steal_into(_submit_deques[victim], kStealBatch) > 0)
                             {
                                 stole = true;
                             }
+                            // 优先级 2: 抢 victim _local_deques — victim 自己 steal 来的本地缓存，次优先
                             else if (_local_deques[id].steal_into(_local_deques[victim], kStealBatch) > 0)
                             {
                                 stole = true;
@@ -327,6 +367,10 @@ private:
                     }
 
                     // idle: cv 阻塞等通知，避免 yield() 空转消耗 CPU
+                    // 唤醒条件（满足任一即退出 wait）:
+                    //   !_run         — 析构/stop，线程退出
+                    //   _queueSize>0  — commit() 有新任务入队，起来干活
+                    //   _excessThreads>0 — resize 缩容，CAS 抢退出权
                     _waitingWorkers.fetch_add(1, std::memory_order_release);
                     {
                         std::unique_lock<std::mutex> lk(_cv_mutex);

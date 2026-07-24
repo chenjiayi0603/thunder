@@ -474,8 +474,11 @@ void Nodes::SetCanaryWeights(const std::string& strNodeType,
     {
         m_mapCanaryWeights[strNodeType] = mapWeights;
     }
-    LOG4_INFO("SetCanaryWeights nodeType=%s entries=%zu",
-               strNodeType.c_str(), mapWeights.size());
+    // 守卫 GetLabor() 以避免单测环境 SEGFAULT（GetLabor() 返回 nullptr）
+    auto* pLab = GetLabor();
+    if (pLab)
+        LOG4CPLUS_INFO_FMT(pLab->GetLogger(), "SetCanaryWeights nodeType=%s entries=%zu",
+                           strNodeType.c_str(), mapWeights.size());
 }
 
 void Nodes::ClearCanaryWeights(const std::string& strNodeType)
@@ -488,7 +491,10 @@ void Nodes::ClearCanaryWeights(const std::string& strNodeType)
     {
         m_mapCanaryWeights.erase(strNodeType);
     }
-    LOG4_INFO("ClearCanaryWeights nodeType=%s", strNodeType.c_str());
+    // 守卫 GetLabor() 以避免单测环境 SEGFAULT（GetLabor() 返回 nullptr）
+    auto* pLab = GetLabor();
+    if (pLab)
+        LOG4CPLUS_INFO_FMT(pLab->GetLogger(), "ClearCanaryWeights nodeType=%s", strNodeType.c_str());
 }
 
 
