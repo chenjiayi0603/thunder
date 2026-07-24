@@ -6160,7 +6160,37 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 | **1** | 至少一次 | 发完等 PUBACK 确认，没收到就重发，可能重复 | 门锁状态变更，必须送到但不能丢 | 发微信等"收到" |
 | **2** | 恰好一次 | PUBLISH→PUBREC→PUBREL→PUBCOMP 四次握手，保证不丢+不重复 | 扣款指令，IoT 设备几乎没这需求 | 签合同双方各执一份 |
 
-> IoT 实际场景中 90% 的消息是 QoS 0 或 QoS 1。QoS 2 极少用——四次握手太重，大部分嵌入式设备也不支持。
+**QoS 2 四次握手详解**（逐跳，非端到端）：
+
+```
+发布者                  Broker                  订阅者
+  │                       │                       │
+  │──① PUBLISH QoS2──────→│                       │  Step 1: 发消息
+  │   pid=100              │                       │
+  │                       │──① PUBLISH QoS2──────→│
+  │                       │   pid=2001             │
+  │←──② PUBREC 100───────│                       │  Step 2: 收到确认
+  │                       │←──② PUBREC 2001───────│
+  │──③ PUBREL 100────────→│                       │  Step 3: 准备释放
+  │                       │──③ PUBREL 2001────────→│   (此时可清理缓存)
+  │←──④ PUBCOMP 100──────│                       │  Step 4: 完成
+  │                       │←──④ PUBCOMP 2001──────│
+```
+
+每跳状态机:
+
+```
+QoS 1:  IDLE → WAIT_PUBACK  → DONE
+        发     等 PUBACK        收到/超时重发
+
+QoS 2:  IDLE → WAIT_PUBREC → WAIT_PUBREL → WAIT_PUBCOMP → DONE
+        发     等 PUBREC     收PUBREC后     等 PUBCOMP
+        ①                   发 PUBREL ③                收 PUBCOMP ④
+                            (此时可清理消息缓存)
+```
+
+> IoT 实际场景中 90%+ 的消息是 QoS 0 或 QoS 1。QoS 2 极少用——四次握手太重，
+> 大部分嵌入式设备也不支持。Thunder MQTT Broker 当前实现 QoS 0/1，QoS 2 不做。
 
 ### 协议开销对比
 
@@ -6204,13 +6234,16 @@ Thunder MQTT 支持（新增 codec）
 
 ### 需要新增的能力
 
-| 能力 | 说明 | 复杂度 |
+| 能力 | 说明 | 状态 |
 |------|------|:---:|
-| Topic 匹配引擎 | 通配符 `+`（单级）、`#`（多级）匹配 | 中 |
-| QoS 状态机 | PUBACK/PUBREC/PUBREL/PUBCOMP 四段握手 | 中 |
-| 持久会话存储 | Redis/etcd 存 clientId→订阅列表+未读消息 | 中 |
-| 遗嘱消息 | 连接状态追踪 + 断连触发发布 | 低 |
-| Retain 消息 | 每个 Topic 保留最后一 条消息，新订阅立即可得 | 低 |
+| Topic 匹配引擎 | 通配符 `+`（单级）、`#`（多级）匹配 | ✅ 已实现 |
+| QoS 0 (最多一次) | 发了不管，无确认 | ✅ 已实现 |
+| QoS 1 (至少一次) | 逐跳 PUBLISH→PUBACK，分配独立 packet_id，等确认 | ✅ 已实现 |
+| QoS 2 (恰好一次) | 四次握手 PUBLISH→PUBREC→PUBREL→PUBCOMP，IoT 极少用 | ❌ 不做 |
+| 遗嘱消息 | 连接状态追踪 + 断连触发发布 | ✅ 已实现 |
+| Retain 消息 | 每个 Topic 保留最后一条消息，新订阅立即可得 | ✅ 已实现 |
+| Echo Demo | echo/ping → echo/ping/response | ✅ 已实现 |
+| 持久会话存储 | Redis/etcd 存 clientId→订阅列表+未读消息 | 🔵 待实现 |
 
 ### 参考实现
 

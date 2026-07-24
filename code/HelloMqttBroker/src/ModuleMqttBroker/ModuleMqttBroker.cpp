@@ -75,7 +75,7 @@
  *          ├─ MQTT_SUBSCRIBE   → HandleSubscribe()   注册订阅+投递Retain
  *          ├─ MQTT_UNSUBSCRIBE → HandleUnsubscribe() 移除订阅
  *          ├─ MQTT_PUBLISH     → HandlePublish()     解析+匹配+广播+[Echo Demo]
- *          ├─ MQTT_PUBACK      → HandlePuback()      桩 (客户端消费, Broker 不管)
+ *          ├─ MQTT_PUBACK      → HandlePuback()      QoS 1 投递确认, 清理 pending
  *          ├─ MQTT_PINGREQ     → HandlePingreq()     回 PINGRESP
  *          └─ MQTT_DISCONNECT  → HandleDisconnect()  清理 fd→clientId 映射
  *
@@ -434,14 +434,31 @@ void ModuleMqttBroker::HandlePublish(const net::tagMsgShell& sh, const MsgBody& 
     std::vector<SubscriptionInfo> subs;
     MatchSubscribers(topic, subs);
 
-    // 构造转发 PUBLISH 包体: TopicLength(2B) + Topic(N B) + Payload
-    // 注意: 转发给订阅者统一用 QoS 0 (fire & forget), 不包含 packet_id
-    std::string body; WriteU16(tl,body); body+=topic; body+=msg;
     for(auto& s:subs) {
-        // 排除发布者自身 (根据 fd+seq 判断)
         if(s.fd==(uint32_t)sh.iFd&&s.seq==sh.ulSeq) continue;
-        SendMqttPacket(net::tagMsgShell((int32)s.fd,s.seq),
-                       net::MQTT_PUBLISH, body);
+
+        if (qos > 0) {
+            // QoS 1 转发: body = TopicLen(2) + Topic + PacketId(2) + Payload
+            uint16_t fwdPid = AllocPacketId();
+            std::string qosBody;
+            WriteU16(tl, qosBody);
+            qosBody += topic;
+            WriteU16(fwdPid, qosBody);
+            qosBody += msg;
+
+            {
+                std::lock_guard<std::mutex> lk(m_mutexPending);
+                m_mapPending[fwdPid] = {(int32)s.fd, s.seq, qosBody, fwdPid, time(nullptr)};
+            }
+            SendMqttPacket(net::tagMsgShell((int32)s.fd, s.seq),
+                           net::MQTT_PUBLISH, qosBody, 2);  // seq=2 = QoS 1
+        } else {
+            // QoS 0 转发: body = TopicLen(2) + Topic + Payload
+            std::string body;
+            WriteU16(tl, body); body += topic; body += msg;
+            SendMqttPacket(net::tagMsgShell((int32)s.fd, s.seq),
+                           net::MQTT_PUBLISH, body);
+        }
     }
 
     // ===== Echo Demo =====
@@ -450,21 +467,47 @@ void ModuleMqttBroker::HandlePublish(const net::tagMsgShell& sh, const MsgBody& 
     {
         std::string echoTopic = topic + "/response";
         uint16_t etl = static_cast<uint16_t>(echoTopic.size());
-        std::string echoBody; WriteU16(etl, echoBody); echoBody += echoTopic; echoBody += msg;
 
         std::vector<SubscriptionInfo> echoSubs;
         MatchSubscribers(echoTopic, echoSubs);
         for (auto& s : echoSubs)
         {
-            SendMqttPacket(net::tagMsgShell((int32)s.fd, s.seq),
-                           net::MQTT_PUBLISH, echoBody);
+            if (qos > 0) {
+                uint16_t echoPid = AllocPacketId();
+                std::string echoBody;
+                WriteU16(etl, echoBody); echoBody += echoTopic;
+                WriteU16(echoPid, echoBody); echoBody += msg;
+                {
+                    std::lock_guard<std::mutex> lk(m_mutexPending);
+                    m_mapPending[echoPid] = {(int32)s.fd, s.seq, echoBody, echoPid, time(nullptr)};
+                }
+                SendMqttPacket(net::tagMsgShell((int32)s.fd, s.seq),
+                               net::MQTT_PUBLISH, echoBody, 2);
+            } else {
+                std::string echoBody;
+                WriteU16(etl, echoBody); echoBody += echoTopic; echoBody += msg;
+                SendMqttPacket(net::tagMsgShell((int32)s.fd, s.seq),
+                               net::MQTT_PUBLISH, echoBody);
+            }
         }
     }
 }
 
 // ===== PUBACK 处理器 =======================================================
-// 目前为桩实现 (不做任何处理)。Server 端发的 PUBACK 由客户端消费, Broker 无需处理。
-void ModuleMqttBroker::HandlePuback(const net::tagMsgShell& sh, const MsgBody& b) { (void)sh; (void)b; }
+// QoS 1 投递确认: 订阅者收到 QoS 1 PUBLISH 后回 PUBACK, Broker 清理 pending 记录。
+void ModuleMqttBroker::HandlePuback(const net::tagMsgShell& sh, const MsgBody& b) {
+    const std::string& r = b.body();
+    if (r.size() < 4) return;  // fixed header(2) + packet_id(2)
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(r.data());
+    uint32_t rl; uint8_t hl = ParseHdrLen(p, r.size(), rl);
+    if (r.size() < hl + 2u) return;
+    uint16_t pid = ReadU16(p + hl);
+    {
+        std::lock_guard<std::mutex> lk(m_mutexPending);
+        m_mapPending.erase(pid);
+    }
+    LOG4_TRACE("MQTT PUBACK: fd=%d pid=%u", sh.iFd, pid);
+}
 
 // ===== PINGREQ 处理器 ======================================================
 // 收到 PINGREQ → 立即回 PINGRESP。PINGREQ 无 payload, PINGRESP 也无 payload。
@@ -473,9 +516,10 @@ void ModuleMqttBroker::HandlePingreq(const net::tagMsgShell& sh) {
 }
 
 // ===== DISCONNECT 处理器 ===================================================
-// 正常断连: 清理 fd→clientId 映射。Will 遗嘱不触发 (正常断开不触发遗嘱)。
+// 正常断连: 清理 fd→clientId 映射 + QoS 1 pending。Will 遗嘱不触发。
 void ModuleMqttBroker::HandleDisconnect(const net::tagMsgShell& sh) {
     m_mapFdToClientId.erase(sh.iFd);
+    CleanupPendingDeliveries(sh.iFd);
 }
 
 // ===== 意外断连处理 (Will 遗嘱) =============================================
@@ -483,6 +527,7 @@ void ModuleMqttBroker::HandleDisconnect(const net::tagMsgShell& sh) {
 // 查找该 fd 在 CONNECT 时注册的 Will 遗嘱, 发布给匹配的订阅者。
 // 如果 will.retain=true, 遗嘱消息也会存入 m_mapRetained。
 void ModuleMqttBroker::HandleUnexpectedDisconnect(int32 fd) {
+    CleanupPendingDeliveries(fd);
     WillInfo w;
     {
         std::lock_guard<std::mutex> lk(m_mutexWill);
@@ -532,20 +577,34 @@ void ModuleMqttBroker::DeliverRetained(const net::tagMsgShell& sh, const std::st
 }
 
 // ===== 发送 MQTT 包 (底层) ==================================================
-// 将 MQTT 包类型 + body 原始字节封装为 MsgHead+MsgBody, 通过框架发送。
-//
-// 关键: 使用 GetLabor()->SendTo(sh, h, b) 而非 SendToClient。
-//   SendToClient 会自动 cmd+1 (Thunder 框架的请求→响应惯例: 奇数请求, 偶数响应),
-//   但 MQTT 的 cmd 编码是精确映射的 (每类 MQTT 包都是独立值), 被 +1 会变成其他包类型。
-//   SendTo 不做 +1, 直接发送, 保证 CodecMqtt::Encode 得到正确的包类型。
-void ModuleMqttBroker::SendMqttPacket(const net::tagMsgShell& sh, uint8_t pt, const std::string& body) {
+// qosFlags: 低 4 位直接写入 PUBLISH Fixed Header (bit0 retain, bit1-2 qos, bit3 dup)
+//   0 = QoS 0, 2 = QoS 1, 10 = QoS 1 DUP
+void ModuleMqttBroker::SendMqttPacket(const net::tagMsgShell& sh, uint8_t pt, const std::string& body, uint8_t qosFlags) {
     MsgHead h;
     h.set_cmd(net::MQTT_CMD(pt));
-    h.set_seq(0);  // QoS flags: 0 = QoS 0 (fire & forget)
+    h.set_seq(qosFlags);
     h.set_msgbody_len(body.size());
     MsgBody b;
     b.set_body(body);
     GetLabor()->SendTo(sh, h, b);
+}
+
+// 分配 MQTT Packet Identifier (1~65535 循环)
+uint16_t ModuleMqttBroker::AllocPacketId() {
+    uint16_t pid = m_uNextPacketId++;
+    if (m_uNextPacketId == 0) m_uNextPacketId = 1;
+    return pid;
+}
+
+// 清理某连接的 QoS 1 pending 投递
+void ModuleMqttBroker::CleanupPendingDeliveries(int32 fd) {
+    std::lock_guard<std::mutex> lk(m_mutexPending);
+    for (auto it = m_mapPending.begin(); it != m_mapPending.end(); ) {
+        if (it->second.fd == fd)
+            it = m_mapPending.erase(it);
+        else
+            ++it;
+    }
 }
 
 // 发送 PUBACK: PacketId(2 字节大端)

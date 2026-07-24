@@ -24,6 +24,7 @@ private:
     struct WillInfo { std::string topic; std::string message; uint8_t qos = 0; bool retain = false; };
     struct RetainedMsg { std::string topic; std::string payload; uint8_t qos = 0; };
     struct ConnKeepAlive { uint16_t interval = 0; double lastActivity = 0; };
+    struct PendingDelivery { int32 fd; uint32_t seq; std::string body; uint16_t packet_id; time_t sent_at; };
 
     void HandleConnect(const net::tagMsgShell&, const MsgBody&);
     void HandleSubscribe(const net::tagMsgShell&, const MsgBody&);
@@ -33,12 +34,14 @@ private:
     void HandlePingreq(const net::tagMsgShell&);
     void HandleDisconnect(const net::tagMsgShell&);
     void HandleUnexpectedDisconnect(int32 fd);
-    void SendMqttPacket(const net::tagMsgShell&, uint8_t packetType, const std::string& body);
+    void SendMqttPacket(const net::tagMsgShell&, uint8_t packetType, const std::string& body, uint8_t qosFlags = 0);
     void SendPuback(uint16_t packetId, const net::tagMsgShell&);
     void DeliverRetained(const net::tagMsgShell&, const std::string& topicFilter);
     void CloseConnection(const net::tagMsgShell&);
     void MatchSubscribers(const std::string& topic, std::vector<SubscriptionInfo>& outSubs);
     static bool TopicMatches(const std::string& filter, const std::string& topic);
+    uint16_t AllocPacketId();
+    void CleanupPendingDeliveries(int32 fd);
 
     std::unordered_map<std::string, std::vector<SubscriptionInfo>> m_mapTopicSubscribers;
     std::mutex m_mutexSubscribers;
@@ -49,6 +52,10 @@ private:
     std::mutex m_mutexRetained;
     std::unordered_map<int32, ConnKeepAlive> m_mapKeepAlive;
     uint8_t m_ucMaxQos = 1;
+    // QoS 1 pending deliveries
+    std::unordered_map<uint16_t, PendingDelivery> m_mapPending;
+    std::mutex m_mutexPending;
+    uint16_t m_uNextPacketId = 1;
 };
 
 

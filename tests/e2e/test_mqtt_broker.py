@@ -210,6 +210,63 @@ class TestMqttQos1:
         sub.loop_stop()
         sub.disconnect()
 
+    def test_qos1_echo_roundtrip(self) -> None:
+        """QoS 1 Echo 往返: 发布者发 echo/ping QoS1 → 订阅者收到 echo/ping/response QoS1"""
+        received: list[tuple[str, bytes, int]] = []
+        event = threading.Event()
+
+        sub = _make_client(client_id="test_qos1_echo_sub")
+        sub.on_message = lambda _c, _u, msg: (
+            received.append((msg.topic, msg.payload, msg.qos)), event.set()
+        )
+        sub.subscribe("echo/+/response", qos=1)
+        time.sleep(0.3)
+
+        pub = _make_client(client_id="test_qos1_echo_pub")
+        pub.publish("echo/qos1ping", b"qos1_hello", qos=1)
+
+        assert event.wait(timeout=5), "未收到 QoS 1 Echo 响应"
+        assert received[0][0] == "echo/qos1ping/response"
+        assert received[0][1] == b"qos1_hello"
+        assert received[0][2] == 1, f"期望 QoS 1, 实际 QoS {received[0][2]}"
+
+        pub.loop_stop()
+        pub.disconnect()
+        sub.loop_stop()
+        sub.disconnect()
+
+    def test_qos1_broadcast_to_multiple_subscribers(self) -> None:
+        """QoS 1 广播: 一条 QoS 1 消息 → 多个 QoS 1 订阅者都收到"""
+        received_a: list[int] = []  # QoS levels
+        received_b: list[int] = []
+        event_a = threading.Event()
+        event_b = threading.Event()
+
+        sub_a = _make_client(client_id="test_qos1_multi_a")
+        sub_a.on_message = lambda _c, _u, msg: (
+            received_a.append(msg.qos), event_a.set()
+        )
+        sub_a.subscribe("test/qos1multi", qos=1)
+
+        sub_b = _make_client(client_id="test_qos1_multi_b")
+        sub_b.on_message = lambda _c, _u, msg: (
+            received_b.append(msg.qos), event_b.set()
+        )
+        sub_b.subscribe("test/qos1multi", qos=1)
+        time.sleep(0.3)
+
+        pub = _make_client(client_id="test_qos1_multi_pub")
+        pub.publish("test/qos1multi", b"multi_qos1", qos=1)
+
+        assert event_a.wait(timeout=5), "订阅者 A 未收到"
+        assert event_b.wait(timeout=5), "订阅者 B 未收到"
+        assert received_a[0] == 1, f"A 期望 QoS 1, 实际 {received_a[0]}"
+        assert received_b[0] == 1, f"B 期望 QoS 1, 实际 {received_b[0]}"
+
+        for c in (pub, sub_a, sub_b):
+            c.loop_stop()
+            c.disconnect()
+
 
 @pytest.mark.integration
 class TestMqttUnsubscribe:
