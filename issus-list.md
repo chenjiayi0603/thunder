@@ -8370,3 +8370,140 @@ COPY deploy/MqttBroker/scripts/ ./scripts/
 RUN chmod +x ./bin/Hello ./entrypoint.sh ./node.sh
 CMD ["bash", "./entrypoint.sh"]
 ```
+
+
+## 🔵 #166 [工具] 部署流水线优化 — 增量构建 + 智能镜像 + 环境自愈 + Docker Compose 支持
+
+> 2026-07-24 | 分析 | 状态: 🔵 待实现
+
+### 背景
+
+当前 `./deploy.sh test k8s` 每次 11 分钟全量编译+部署+回归，即使只改了
+MQTT Broker 一行注释也要重编所有服务镜像。且 Docker Compose 测试路径与 K8s
+路径代码分离，`--mode=external` 只测原生进程，无法覆盖容器化场景。
+
+### 目标
+
+"有变化才构建，不浪费；有污染能自愈，不残留"
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  增量构建         智能镜像部署          环境自愈             │
+│  ─────────       ────────────          ────────             │
+│  git diff 判断    image digest 比较     端口+进程检测        │
+│  哪些文件变了      同一 digest 跳过      区分 K8s vs 原生    │
+│  → 只编译受影响    → 只推送+部署变化     → 自动清理非 K8s    │
+│    的服务镜像        的镜像              进程+端口           │
+│                                                             │
+│  无损 CLEAN                     Docker Compose 模式          │
+│  ──────────                     ──────────────────           │
+│  只缩容(scale→0)                同一套 PRE-CHECK +           │
+│  keep etcd/Redis/MySQL          TEST + CLEAN 逻辑            │
+│  下次秒级恢复                    适配 compose up/down        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 详细设计
+
+#### P0: 环境自愈 PRE-CHECK (每次 test 前自动跑)
+
+```
+1. 检查测试端口 (27006/27008/21883/...)
+   ├─ 被 K8s Pod 占用 → 跳过 (正常)
+   └─ 被原生进程占用 → kill (上次测试残留)
+
+2. 检查僵尸进程
+   ├─ Hello_robot/Interface_robot/MqttBroker_robot
+   └─ 判断是否在 kubepods cgroup → 是则跳过, 否则 kill
+
+3. 检查资源余量
+   ├─ 磁盘 < 5GB → 警告 (可能 docker build 失败)
+   └─ 内存 < 2GB → 警告 (可能 make -j OOM)
+
+4. 检查残留 etcd 测试键
+   └─ /thunder/config/module/LOGIC → 清掉 (防止旧 .so 下载)
+```
+
+#### P1: 无损 CLEAN (不伤数据)
+
+```
+现在 (有问题):
+  scale→0 + killall + 删所有 docker 镜像 + kubectl delete deployment
+
+改为:
+  # 默认模式: 缩容保留
+  scale→0 (保留 etcd/MySQL/Redis 数据)
+  只杀非 K8s 原生进程 (通过 cgroup 区分)
+
+  # 完全清理模式 (--full-clean):
+  scale→0 + 删 deployment + 清 etcd 测试键 + 清 minio
+
+  # 调试模式 (--keep-running):
+  不缩容, 只清端口冲突, 方便连续多次测试
+```
+
+#### P2: 增量镜像部署
+
+```bash
+STATE_FILE=".deploy-state/mirror-digests"  # 各服务上次部署的 image digest
+
+for img in thunder-interface thunder-hello ...; do
+  NEW_DIGEST=$(docker image inspect $img:${tag} --format '{{.ID}}')
+  diff <(echo "$NEW_DIGEST") <(grep "^$img " $STATE_FILE || echo "")
+
+  if [ "$NEW_DIGEST" != "$OLD_DIGEST" ]; then
+    ctr import $img              # 只导入变化的镜像
+    kubectl set image deploy/$img  # 只更新变化的 deployment
+    sed -i "s/^$img .*/$img $NEW_DIGEST/" $STATE_FILE
+  fi
+done
+```
+
+#### P3: 增量构建检测
+
+```
+STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commit
+
+每次 test k8s:
+  CHANGED=$(git diff --name-only $(cat STATE_FILE) HEAD)
+
+  变更范围           → 构建范围
+  ─────────         ────────
+  code/Net/          → 全量编译 + 所有镜像重建 (框架改了, 都受影响)
+  code/HelloHttp/    → 只编 Hello 镜像 (thunder-hello + thunder-hello-https/ws/wss)
+  code/Interface/    → 只编 Interface 镜像
+  code/HelloMqttBroker/  → 只编 MQTT 镜像
+  deploy/HelloHttp/  → 只编 Hello 镜像 (Dockerfile/entrypoint 改了)
+  tests/e2e/         → 跳过 BUILD, 直接 DEPLOY + TEST (只改了测试)
+  k8s/               → 跳过 BUILD, 直接 DEPLOY + TEST
+  issus-list.md      → 跳过全部 (纯文档)
+
+  如果 STATE_FILE 不存在 → 全量 BUILD (首次运行)
+```
+
+#### P4: Docker Compose 模式
+
+```
+./deploy.sh test compose [--quick]
+
+  PRE-CHECK  = 同 K8s (端口检测 + 进程清理)
+  BUILD      = 同增量逻辑
+  DEPLOY     = docker compose up -d
+               (compose 自带增量 — 只重建 changed services)
+               (如果用 --quick → 跳过 docker compose build)
+  TEST       = pytest --mode=local
+               E2E_HOST=127.0.0.1 (compose 用 host network)
+  CLEAN      = compose stop (默认) 或 compose down --volumes (--full-clean)
+```
+
+### 实施计划
+
+| 优先级 | 项目 | 预计改动 | 时间 |
+|:---:|------|------|:---:|
+| P0 | 环境自愈 PRE-CHECK | deploy.sh ~30 行 | 0.5h |
+| P1 | 无损 CLEAN | deploy.sh ~20 行 | 0.5h |
+| P2 | 增量镜像部署 (digest 比较) | deploy.sh ~40 行 + .deploy-state/ | 1h |
+| P3 | 增量构建检测 (git diff + 状态文件) | deploy.sh ~50 行 | 1h |
+| P4 | Docker Compose 模式 | deploy.sh ~80 行 | 1.5h |
+
+**总计: deploy.sh 新增 ~220 行, .deploy-state/ 目录, 预计 4-5h。**
