@@ -966,12 +966,13 @@ cmd_test_k8s() {
     # 4.6 关闭业务服务 (归还端口, 不影响下次测试)
     log "4.6 关闭业务服务 (释放端口)..."
     for dep in thunder-hello thunder-hello-https thunder-hello-ws thunder-hello-wss \
-               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web; do
+               thunder-interface thunder-logic thunder-logic-v2 thunder-admin-web \
+               thunder-mqtt-broker; do
         kubectl scale deploy -n "$ns" "$dep" --replicas=0 2>/dev/null || true
     done
     sleep 3
     # 杀残留孤儿进程
-    sudo killall -9 Hello_robot Interface_robot 2>/dev/null || true
+    sudo killall -9 Hello_robot Interface_robot MqttBroker_robot 2>/dev/null || true
     ok "  服务已关闭, 端口已释放"
 
     echo -e "${GREEN}✔${NC} CLEAN 完成"

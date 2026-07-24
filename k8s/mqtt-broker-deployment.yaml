@@ -22,9 +22,9 @@ spec:
         image: localhost:5000/thunder-mqtt-broker:latest
         imagePullPolicy: IfNotPresent
         readinessProbe:
-          exec:
-            command: ["pgrep", "-f", "MqttBroker_robot_"]
-          initialDelaySeconds: 5
+          tcpSocket:
+            port: 21883
+          initialDelaySeconds: 10
           periodSeconds: 5
         env:
         - name: POD_IP

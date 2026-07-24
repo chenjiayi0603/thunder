@@ -211,6 +211,28 @@ else
   check "Logic :16068" "FAIL" "Logic_robot 不存在, 排查: kubectl logs -n $NS deploy/thunder-logic"
 fi
 
+# MQTT Broker — TCP 连通性 + pub/sub 验证
+MQTT_RESP=$(python3 -c "
+import socket, struct, time
+s = socket.socket(); s.settimeout(5)
+try:
+    s.connect(('${HOST_IP}', 21883))
+    cid = 'reg_test_probe'
+    pl = struct.pack('!H',4)+b'MQTT'+b'\x04\x02\x00\x3c'
+    pl += struct.pack('!H',len(cid))+cid.encode()
+    rl = len(pl); rl_b = bytes([rl]) if rl < 128 else bytes([rl|0x80, rl//128])
+    s.send(b'\x10'+rl_b+pl)
+    resp = s.recv(4)
+    s.close()
+    print('OK' if resp[:2]==b'\x20\x02' and resp[3]==0 else 'BAD')
+except Exception as e: print('FAIL')
+" 2>/dev/null || echo "FAIL")
+if [ "$MQTT_RESP" = "OK" ]; then
+  check "MQTT Broker :21883 CONNACK" "PASS"
+else
+  check "MQTT Broker :21883" "FAIL" "MQTT 连接失败"
+fi
+
 # ============== 6. SO 插件 — 镜像自包含, 无 NFS (#155) ==============
 echo ""
 echo "--- 6. SO 插件 (镜像自包含, 无 NFS) ---"
