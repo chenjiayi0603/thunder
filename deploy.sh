@@ -685,6 +685,8 @@ cmd_test_k8s() {
     docker build -f deploy/HelloWs/Dockerfile -t "thunder-hello-ws:${tag}" . 2>&1 | tail -3 || { err "HelloWs 镜像构建失败"; images_ok=false; }
     docker build -f deploy/HelloWss/Dockerfile -t "thunder-hello-wss:${tag}" . 2>&1 | tail -3 || { err "HelloWss 镜像构建失败"; images_ok=false; }
     docker build -f deploy/Logic/Dockerfile -t "thunder-logic:${tag}" . 2>&1 | tail -3 || { err "Logic 镜像构建失败"; images_ok=false; }
+    # MQTT Broker (IoT 设备接入)
+    docker build -f deploy/MqttBroker/Dockerfile -t "thunder-mqtt:${tag}" . 2>&1 | tail -3 || { err "MQTT 镜像构建失败"; images_ok=false; }
     # admin-web (含 #142 前端修复)
     docker build -f deploy/admin-web/Dockerfile -t "thunder-admin-web:${tag}" deploy/admin-web/ 2>&1 | tail -3 || { err "admin-web 镜像构建失败"; images_ok=false; }
 
@@ -714,7 +716,7 @@ cmd_test_k8s() {
         mkdir -p /tmp/thunder-images
         local img ctr_ok=true
         for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
-                   thunder-hello-wss thunder-logic thunder-admin-web; do
+                   thunder-hello-wss thunder-logic thunder-mqtt thunder-admin-web; do
             log "  导入 $img:${tag} ..."
             docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
                 warn "  $img docker save 失败"; ctr_ok=false
@@ -752,6 +754,7 @@ cmd_test_k8s() {
         [thunder-interface]="interface-deployment.yaml"
         [thunder-logic]="logic-deployment.yaml"
         [thunder-logic-v2]="logic-v2-deployment.yaml"
+        [thunder-mqtt-broker]="mqtt-broker-deployment.yaml"
         [thunder-admin-web]="admin-web-deployment.yaml"
     )
     for dep in "${!DEP_YAML[@]}"; do
@@ -1148,7 +1151,8 @@ cmd_deploy() {
     for yaml in k8s/logic-deployment.yaml k8s/logic-v2-deployment.yaml \
                 k8s/hello-deployment.yaml k8s/hello-https-deployment.yaml \
                 k8s/hello-ws-deployment.yaml k8s/hello-wss-deployment.yaml \
-                k8s/interface-deployment.yaml; do
+                k8s/interface-deployment.yaml \
+                k8s/mqtt-broker-deployment.yaml; do
         kubectl apply -f "$yaml" 2>/dev/null
     done
 
