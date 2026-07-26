@@ -56,6 +56,129 @@ warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
 error() { echo -e "${RED}✘${NC} $*"; }
 err()  { echo -e "${RED}✘${NC} $*"; }
 
+# ─── 状态文件 & 增量部署支持 (#166) ──────────────────
+STATE_DIR="${PROJECT_DIR}/.deploy-state"
+mkdir -p "$STATE_DIR"
+STATE_K8S_OK="${STATE_DIR}/test-k8s-last-ok"     # 记录上次全量通过的 commit
+STATE_DIGESTS="${STATE_DIR}/image-digests"       # 各服务 image digest
+
+# 核心测试端口
+TEST_PORTS=(27006 27008 27010 27012 27443 21883 30090 31883)
+
+# ── 环境自愈: 清除非 K8s 进程占用的测试端口 ──
+_self_heal() {
+    local killed=0
+    for port in "${TEST_PORTS[@]}"; do
+        local pid
+        pid=$(lsof -ti :"$port" 2>/dev/null || echo "")
+        [[ -z "$pid" ]] && continue
+        # 区分 K8s Pod vs 原生进程
+        if cat /proc/$pid/cgroup 2>/dev/null | grep -q "kubepods"; then
+            continue  # K8s Pod, 不动
+        fi
+        warn "端口 $port 被非 K8s 进程 PID=$pid 占用, 清理中..."
+        kill -9 $pid 2>/dev/null || true
+        killed=$((killed + 1))
+    done
+    # 杀残留孤儿进程
+    for name in Hello_robot Interface_robot MqttBroker_robot; do
+        local orphans
+        orphans=$(pgrep -f "$name" 2>/dev/null || echo "")
+        [[ -z "$orphans" ]] && continue
+        for p in $orphans; do
+            if cat /proc/$p/cgroup 2>/dev/null | grep -q "kubepods"; then continue; fi
+            kill -9 $p 2>/dev/null || true
+            killed=$((killed + 1))
+        done
+    done
+    [[ $killed -gt 0 ]] && { sleep 1; ok "环境自愈: 已清理 $killed 个冲突"; }
+    return 0
+}
+
+# ── 资源余量检查 ──
+_check_resources() {
+    local mem_avail disk_avail
+    mem_avail=$(free -m | awk '/^Mem:/{print $7}')
+    disk_avail=$(df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+    echo "  内存: ${mem_avail}MB  磁盘: ${disk_avail}GB  CPU: $(nproc)核"
+    [[ "$mem_avail" -lt 2048 ]] && warn "  ← 内存不足 2GB, make -j 可能 OOM"
+    [[ "${disk_avail:-0}" -lt 5 ]] && warn "  ← 磁盘不足 5GB, docker build 可能失败"
+}
+
+# ── 增量构建检测: 返回需要构建的服务列表 ──
+# 输出: "all" = 全量, "none" = 跳过, "hello interface logic mqtt admin" = 部分
+_changed_services() {
+    local last_ok state_file="$STATE_K8S_OK"
+    if [[ ! -f "$state_file" ]] || $FORCE; then
+        echo "all"
+        return
+    fi
+    local last_commit; last_commit=$(cat "$state_file")
+    local changed; changed=$(cd "$PROJECT_DIR" && git diff --name-only "$last_commit" HEAD 2>/dev/null || echo "")
+    if [[ -z "$changed" ]]; then
+        echo "none"
+        return
+    fi
+    # 框架层变更 → 全量
+    if echo "$changed" | grep -q "^code/Net/"; then
+        echo "all"; return
+    fi
+    # 基础库变更 → 全量
+    if echo "$changed" | grep -q "^code/Util/\|^code/3party/\|^CMakeLists.txt"; then
+        echo "all"; return
+    fi
+    local svcs=""
+    echo "$changed" | grep -q "^code/HelloHttp/\|^deploy/HelloHttp/\|^deploy/HelloHttps/\|^deploy/HelloWs/\|^deploy/HelloWss/" && svcs="$svcs hello"
+    echo "$changed" | grep -q "^code/Interface/\|^deploy/Interface/" && svcs="$svcs interface"
+    echo "$changed" | grep -q "^code/Logic/\|^deploy/Logic/" && svcs="$svcs logic"
+    echo "$changed" | grep -q "^code/HelloMqttBroker/\|^deploy/MqttBroker/" && svcs="$svcs mqtt"
+    echo "$changed" | grep -q "^deploy/admin-web/" && svcs="$svcs admin"
+    # 如果只改了测试/文档/k8s yaml → 跳过构建
+    local code_only
+    code_only=$(echo "$changed" | grep -v "^tests/\|^k8s/\|^issus-list.md\|^deploy.sh\|^.deploy-state/" || echo "")
+    if [[ -z "$code_only" ]] && [[ -z "$svcs" ]]; then
+        echo "none"; return
+    fi
+    echo "${svcs:-all}"
+}
+
+# ── 智能镜像部署: 只导入有变化的镜像 ──
+_smart_ctr_import() {
+    local tag="$1" img ctr_ok=true
+    mkdir -p /tmp/thunder-images
+    for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
+               thunder-hello-wss thunder-logic thunder-mqtt thunder-admin-web; do
+        local new_digest old_digest
+        new_digest=$(docker image inspect "$img:${tag}" --format '{{.ID}}' 2>/dev/null || echo "")
+        [[ -z "$new_digest" ]] && continue
+        old_digest=$(grep "^$img " "$STATE_DIGESTS" 2>/dev/null | awk '{print $2}' || echo "")
+        if [[ "$new_digest" == "$old_digest" ]]; then
+            log "  $img:${tag} digest 未变化, 跳过"
+            continue
+        fi
+        log "  $img:${tag} digest 已变化, 导入..."
+        docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || { warn "  $img save 失败"; ctr_ok=false; }
+    done
+    $ctr_ok || { rm -rf /tmp/thunder-images; return 1; }
+    # 一次性导入全部
+    docker run --rm --privileged --pid=host --network=host \
+        -v /tmp/thunder-images:/tmp/thunder-images \
+        alpine:latest nsenter -t 1 -m -u -n -i -p -- sh -c '
+            for f in /tmp/thunder-images/*.tar; do
+                ctr -n k8s.io image import "$f" || exit 1
+            done
+        ' || { rm -rf /tmp/thunder-images; return 1; }
+    # 更新 digest 记录
+    for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
+               thunder-hello-wss thunder-logic thunder-mqtt thunder-admin-web; do
+        local d
+        d=$(docker image inspect "$img:${tag}" --format '{{.ID}}' 2>/dev/null || echo "")
+        [[ -n "$d" ]] && { grep -v "^$img " "$STATE_DIGESTS" 2>/dev/null > "${STATE_DIGESTS}.tmp" || true; echo "$img $d" >> "${STATE_DIGESTS}.tmp"; mv "${STATE_DIGESTS}.tmp" "$STATE_DIGESTS"; }
+    done
+    rm -rf /tmp/thunder-images
+    return 0
+}
+
 # ─── 参数解析 ───────────────────────────────────
 CMD="${1:-help}"; shift || true
 _ADMIN_SUB="${1:-}"  # admin nodes/status/config 透传
@@ -530,65 +653,33 @@ cmd_test_k8s() {
     echo -e "${BOLD}============================================${NC}"
 
     # ============================================================
-    # 阶段 0: PRE-CHECK — 检查端口/僵尸/资源
+    # 阶段 0: PRE-CHECK — 环境自愈 + 增量检测 (#166)
     # ============================================================
     echo ""
-    echo -e "${BOLD}--- [0/4] PRE-CHECK (构建前检查+清理) ---${NC}"
+    echo -e "${BOLD}--- [0/4] PRE-CHECK (环境自愈) ---${NC}"
 
-    # 0.1 端口冲突检查
-    log "0.1 检查 hostPort 冲突..."
-    # 0.1 端口冲突检查 (只报告, 不杀进程 — 端口可能属于正常运行的 K8s Pod)
-    local port_conflicts=$(ss -tlnp 2>/dev/null | grep -E ':(27006|27008|27010|27012|27443|30090)\s' || echo "")
-    if [[ -n "$port_conflicts" ]]; then
-        warn "  发现端口占用 (可能是正常 Pod):"
-        echo "$port_conflicts" | head -5 | sed 's/^/    /'
-        # 只尝试清理非 K8s 进程 (通过检查 cgroup 判断)
-        for port in 27006 27008 27010 27012 27443 30090; do
-            local pid=$(lsof -ti :$port 2>/dev/null || echo "")
-            if [[ -n "$pid" ]]; then
-                # 检查是否在容器 cgroup 中 (K8s Pod 进程)
-                if cat /proc/$pid/cgroup 2>/dev/null | grep -q "kubepods"; then
-                    log "  :$port → K8s Pod (不杀)"
-                else
-                    warn "  :$port → 非容器进程 PID=$pid, 尝试 kill..."
-                    kill -9 $pid 2>/dev/null || {
-                        warn "    kill 失败 (需要 sudo? 手动: sudo kill -9 $pid)"
-                    }
-                fi
-            fi
-        done
-        sleep 1
-        port_conflicts=$(ss -tlnp 2>/dev/null | grep -E ':(27006|27008|27010|27012|27443|30090)\s' || echo "")
-        if [[ -n "$port_conflicts" ]]; then
-            warn "  ← 仍有端口占用, DEPLOY 阶段会通过 Recreate 自动释放"
-        else
-            ok "  ← 端口已释放"
-        fi
-    else
-        ok "  无端口冲突"
-    fi
+    # 0.1 自愈: 清除非 K8s 进程占用的端口
+    log "0.1 环境自愈 (端口+进程)..."
+    _self_heal
 
-    # 0.2 杀 hostPID 僵尸 + 清理非 Running Pod
-    log "0.2 清理残留..."
-    sudo killall -9 Hello_robot Interface_robot 2>/dev/null || true
-    sleep 1
-    local zombie_count=$(kubectl get pods -n "$ns" --field-selector=status.phase!=Running 2>/dev/null | grep -c -v "NAME" || echo "0")
+    # 0.2 僵尸 Pod 清理 (只清理业务服务，保护 infra: etcd/mysql/redis/minio)
+    local zombie_count
+    zombie_count=$(kubectl get pods -n "$ns" --no-headers --field-selector=status.phase!=Running 2>/dev/null \
+        | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" | wc -l)
+    zombie_count=${zombie_count##* }
     if [[ "$zombie_count" -gt 0 ]]; then
-        kubectl delete pod -n "$ns" --field-selector=status.phase!=Running 2>/dev/null || true
+        kubectl get pods -n "$ns" --no-headers --field-selector=status.phase!=Running 2>/dev/null \
+            | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" \
+            | awk '{print $1}' | xargs -r kubectl delete pod -n "$ns" 2>/dev/null || true
     fi
-    ok "  残留已清理"
 
     # 0.3 资源余量
     log "0.3 宿主机资源..."
-    local mem_avail=$(free -m | awk '/^Mem:/{print $7}')
-    local disk_avail=$(df -BG /var/lib/docker 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
-    echo "  可用内存: ${mem_avail}MB  磁盘: ${disk_avail}GB  CPU: $(nproc)核"
-    if [[ "$mem_avail" -lt 2048 ]]; then
-        warn "  ← 内存不足 2GB, make -j 可能 OOM"
-    fi
-    if [[ "${disk_avail:-0}" -lt 5 ]]; then
-        warn "  ← 磁盘不足 5GB, docker build 可能失败"
-    fi
+    _check_resources
+
+    # 0.4 增量检测: 哪些服务需要重新构建
+    local CHANGED_SVCS; CHANGED_SVCS=$(_changed_services)
+    log "0.4 增量检测: 需构建服务 = ${CHANGED_SVCS}"
 
     # 0.4 清理残留容器
     log "0.4 清理残留容器..."
@@ -629,120 +720,96 @@ cmd_test_k8s() {
     echo -e "${GREEN}✔${NC} PRE-CHECK 完成"
 
     # ============================================================
-    # 阶段 1: BUILD — C++ cmake + docker 镜像
+    # 阶段 1: BUILD — 增量构建 (#166)
     # ============================================================
     echo ""
-    echo -e "${BOLD}--- [1/4] BUILD (全新构建) ---${NC}"
+    echo -e "${BOLD}--- [1/4] BUILD (需构建: ${CHANGED_SVCS}) ---${NC}"
 
-    # 1.1 C++ cmake build + install (确保 deploy/ 下有最新二进制)
-    log "1.1 C++ cmake build + install..."
-    cd "${PROJECT_DIR}"
-    # 先 configure: 缓存里可能残留 THUNDER_BUILD_NODE_PLUGINS=OFF (Logic/Interface .so 不重建 → 新旧 ABI 混用崩溃)
-    detect_openssl
-    cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
-        -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
-        -DTHUNDER_BUILD_TESTS=ON \
-        -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
-        -DTHUNDER_BUILD_NODE_PLUGINS=ON \
-        ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
-        "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
-        err "cmake configure 失败"
-        return 1
-    }
-    cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" || {
-        err "C++ 编译失败"
-        return 1
-    }
-    cmake --install "${BUILD_DIR}" || {
-        err "cmake install 失败"
-        return 1
-    }
-    # 构建后校验: io_backend 与 cmake 编译选项一致性 (与 cmd_build 对齐)
-    _validate_io_backend
-    ok "  C++ 构建完成"
+    if [[ "$CHANGED_SVCS" == "none" ]]; then
+        ok "  无代码变更, 跳过 BUILD"
+    else
+        # 1.1 C++ cmake build + install
+        log "1.1 C++ cmake build + install..."
+        cd "${PROJECT_DIR}"
+        detect_openssl
+        cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
+            -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
+            -DTHUNDER_BUILD_TESTS=ON \
+            -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+            -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+            ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
+            "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
+            err "cmake configure 失败"
+            return 1
+        }
+        cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" || {
+            err "C++ 编译失败"
+            return 1
+        }
+        cmake --install "${BUILD_DIR}" || {
+            err "cmake install 失败"
+            return 1
+        }
+        _validate_io_backend
+        ok "  C++ 构建完成"
 
-    # 1.2 Go admin-web 编译
-    log "1.2 编译 admin-web (Go)..."
-    cd "${PROJECT_DIR}/deploy/admin-web"
-    CGO_ENABLED=1 go build -o admin-web . 2>&1 || {
-        err "admin-web Go 编译失败"
-        return 1
-    }
-    ok "  admin-web 编译完成"
-    cd "${PROJECT_DIR}"
+        # 1.2 admin-web
+        if [[ "$CHANGED_SVCS" == "all" ]] || echo "$CHANGED_SVCS" | grep -q "admin"; then
+            log "1.2 编译 admin-web (Go)..."
+            cd "${PROJECT_DIR}/deploy/admin-web"
+            CGO_ENABLED=1 go build -o admin-web . 2>&1 || { err "admin-web Go 编译失败"; return 1; }
+            ok "  admin-web 编译完成"
+            cd "${PROJECT_DIR}"
+        fi
 
-    # 1.3 构建 Docker 镜像 (不用 --no-cache: C++/Go 已全新编译, COPY 自动失效缓存;
-    #     apt-get install 层缓存安全, 不会影响二进制正确性)
-    log "1.3 构建 Docker 镜像..."
-    local images_ok=true
+        # 1.3 Docker 镜像 (按需构建)
+        log "1.3 构建 Docker 镜像..."
+        local images_ok=true
+        _build_docker_if_needed() {
+            local svc="$1" dockerfile="$2" img_name="$3" ctx="${4:-.}"
+            if [[ "$CHANGED_SVCS" == "all" ]] || echo " $CHANGED_SVCS " | grep -q " $svc "; then
+                docker build -f "$dockerfile" -t "${img_name}:${tag}" "$ctx" 2>&1 | tail -3 || {
+                    err "${img_name} 镜像构建失败"; images_ok=false
+                }
+            else
+                log "  ${img_name}:${tag} 跳过 (未变更)"
+            fi
+        }
+        _build_docker_if_needed "interface"  "deploy/Interface/Dockerfile"    "thunder-interface"
+        _build_docker_if_needed "hello"      "deploy/HelloHttp/Dockerfile"    "thunder-hello"
+        _build_docker_if_needed "hello"      "deploy/HelloHttps/Dockerfile"   "thunder-hello-https"
+        _build_docker_if_needed "hello"      "deploy/HelloWs/Dockerfile"      "thunder-hello-ws"
+        _build_docker_if_needed "hello"      "deploy/HelloWss/Dockerfile"     "thunder-hello-wss"
+        _build_docker_if_needed "logic"      "deploy/Logic/Dockerfile"        "thunder-logic"
+        _build_docker_if_needed "mqtt"       "deploy/MqttBroker/Dockerfile"   "thunder-mqtt"
+        _build_docker_if_needed "admin"      "deploy/admin-web/Dockerfile"    "thunder-admin-web" "deploy/admin-web/"
 
-    # Interface (含 #144 Watch 修复)
-    docker build -f deploy/Interface/Dockerfile -t "thunder-interface:${tag}" . 2>&1 | tail -3 || { err "Interface 镜像构建失败"; images_ok=false; }
-
-    # Hello (所有 Hello* 共用一套二进制)
-    docker build -f deploy/HelloHttp/Dockerfile -t "thunder-hello:${tag}" . 2>&1 | tail -3 || { err "HelloHttp 镜像构建失败"; images_ok=false; }
-    docker build -f deploy/HelloHttps/Dockerfile -t "thunder-hello-https:${tag}" . 2>&1 | tail -3 || { err "HelloHttps 镜像构建失败"; images_ok=false; }
-    docker build -f deploy/HelloWs/Dockerfile -t "thunder-hello-ws:${tag}" . 2>&1 | tail -3 || { err "HelloWs 镜像构建失败"; images_ok=false; }
-    docker build -f deploy/HelloWss/Dockerfile -t "thunder-hello-wss:${tag}" . 2>&1 | tail -3 || { err "HelloWss 镜像构建失败"; images_ok=false; }
-    docker build -f deploy/Logic/Dockerfile -t "thunder-logic:${tag}" . 2>&1 | tail -3 || { err "Logic 镜像构建失败"; images_ok=false; }
-    # MQTT Broker (IoT 设备接入)
-    docker build -f deploy/MqttBroker/Dockerfile -t "thunder-mqtt:${tag}" . 2>&1 | tail -3 || { err "MQTT 镜像构建失败"; images_ok=false; }
-    # admin-web (含 #142 前端修复)
-    docker build -f deploy/admin-web/Dockerfile -t "thunder-admin-web:${tag}" deploy/admin-web/ 2>&1 | tail -3 || { err "admin-web 镜像构建失败"; images_ok=false; }
-
-    if [[ "$images_ok" != "true" ]]; then
-        err "部分镜像构建失败"
-        return 1
+        if [[ "$images_ok" != "true" ]]; then
+            err "部分镜像构建失败"
+            return 1
+        fi
+        ok "  Docker 镜像构建完成"
     fi
-    ok "  Docker 镜像全部构建完成"
-
-    # 1.4 校验 — 确认二进制含新代码（用 Build 时间对比）
-    log "1.4 校验构建产物..."
-    local iface_ts=$(docker image inspect thunder-interface:test --format '{{.Created}}' 2>/dev/null)
-    local admin_ts=$(docker image inspect thunder-admin-web:test --format '{{.Created}}' 2>/dev/null)
-    echo "  Interface 镜像:  $iface_ts"
-    echo "  admin-web 镜像:  $admin_ts"
 
     echo -e "${GREEN}✔${NC} BUILD 完成"
 
     # ============================================================
-    # 阶段 2: DEPLOY — 导入 containerd → 滚动更新
+    # 阶段 2: DEPLOY — 智能镜像导入 + 滚动更新 (#166)
     # ============================================================
     echo ""
-    echo -e "${BOLD}--- [2/4] DEPLOY (滚动更新) ---${NC}"
+    echo -e "${BOLD}--- [2/4] DEPLOY (智能导入) ---${NC}"
 
-    # 导入镜像到 containerd 的实际操作 (2.1 初次导入 + 2.4a imageGC 误删后重导入共用)
-    _ctr_import() {
-        mkdir -p /tmp/thunder-images
-        local img ctr_ok=true
-        for img in thunder-interface thunder-hello thunder-hello-https thunder-hello-ws \
-                   thunder-hello-wss thunder-logic thunder-mqtt thunder-admin-web; do
-            log "  导入 $img:${tag} ..."
-            docker save "$img:${tag}" -o "/tmp/thunder-images/${img}.tar" 2>/dev/null || {
-                warn "  $img docker save 失败"; ctr_ok=false
-            }
-        done
-        $ctr_ok || { rm -rf /tmp/thunder-images; return 1; }
-        # 一次性导入全部 (避免容器反复启动)
-        docker run --rm --privileged --pid=host --network=host \
-            -v /tmp/thunder-images:/tmp/thunder-images \
-            alpine:latest nsenter -t 1 -m -u -n -i -p -- sh -c '
-                for f in /tmp/thunder-images/*.tar; do
-                    ctr -n k8s.io image import "$f" || exit 1
-                done
-            '
-        local ret=$?
-        rm -rf /tmp/thunder-images
-        return $ret
-    }
-
-    # 2.1 导入镜像到 containerd (docker nsenter, 不需要 sudo)
-    log "2.1 导入镜像到 containerd..."
-    _ctr_import || {
-        err "镜像导入 containerd 失败"
-        return 1
-    }
-    ok "  镜像导入完成"
+    # 2.1 智能镜像导入 (只导入 digest 变化的镜像)
+    if [[ "$CHANGED_SVCS" == "none" ]]; then
+        ok "  无镜像变更, 跳过 containerd 导入"
+    else
+        log "2.1 智能镜像导入..."
+        _smart_ctr_import "$tag" || {
+            err "镜像导入 containerd 失败"
+            return 1
+        }
+        ok "  镜像导入完成"
+    fi
 
     # 2.2b 确保 7 个 Deployment 存在 (缺失则从 k8s/ apply, 不再静默跳过)
     log "2.2b 检查 Deployment 是否存在..."
@@ -817,7 +884,7 @@ cmd_test_k8s() {
     #       检测到 ImagePull 失败则重导入并强制重建 Pending Pod, 避免 ErrImagePull 假死
     if kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -qE 'ImagePullBackOff|ErrImagePull'; then
         warn "  检测到 ImagePull 失败 (kubelet imageGC 可能删了未使用镜像), 重新导入..."
-        _ctr_import || {
+        _smart_ctr_import "$tag" || {
             err "镜像重导入 containerd 失败"
             return 1
         }
@@ -984,6 +1051,9 @@ cmd_test_k8s() {
     echo -e "${BOLD}============================================${NC}"
     if [[ $fail -eq 0 ]]; then
         echo -e "  ${GREEN}✔ K8s 回归测试: ${t_pass:-?}/${t_total:-?} PASS (${t_fail:-0} FAIL, ${t_skip:-0} SKIP)${NC}"
+        # 保存状态: 记录本次通过的 commit + 更新镜像 digest
+        git rev-parse HEAD > "$STATE_K8S_OK" 2>/dev/null || true
+        ok "  增量状态已保存 ($STATE_K8S_OK)"
     else
         echo -e "  ${RED}✘ K8s 回归测试: ${t_fail:-?} FAIL (${t_pass:-?}/${t_total:-?})${NC}"
     fi
