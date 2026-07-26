@@ -68,13 +68,14 @@ TEST_PORTS=(27006 27008 27010 27012 27443 21883 30090 31883)
 # ── 环境自愈: 清除非 K8s 进程占用的测试端口 ──
 _self_heal() {
     local killed=0
+    set +e  # 自愈过程不允许失败中断
     for port in "${TEST_PORTS[@]}"; do
         local pid
-        pid=$(lsof -ti :"$port" 2>/dev/null || echo "")
+        pid=$(timeout 3 ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K[0-9]+' | head -1 || echo "")
         [[ -z "$pid" ]] && continue
         # 区分 K8s Pod vs 原生进程
-        if cat /proc/$pid/cgroup 2>/dev/null | grep -q "kubepods"; then
-            continue  # K8s Pod, 不动
+        if cat /proc/$pid/cgroup 2>/dev/null | grep -q "kubepods" 2>/dev/null; then
+            continue
         fi
         warn "端口 $port 被非 K8s 进程 PID=$pid 占用, 清理中..."
         kill -9 $pid 2>/dev/null || true
@@ -82,16 +83,15 @@ _self_heal() {
     done
     # 杀残留孤儿进程
     for name in Hello_robot Interface_robot MqttBroker_robot; do
-        local orphans
-        orphans=$(pgrep -f "$name" 2>/dev/null || echo "")
-        [[ -z "$orphans" ]] && continue
-        for p in $orphans; do
-            if cat /proc/$p/cgroup 2>/dev/null | grep -q "kubepods"; then continue; fi
+        for p in $(pgrep -f "$name" 2>/dev/null || echo ""); do
+            [[ -z "$p" ]] && continue
+            cat /proc/$p/cgroup 2>/dev/null | grep -q "kubepods" 2>/dev/null && continue
             kill -9 $p 2>/dev/null || true
             killed=$((killed + 1))
         done
     done
     [[ $killed -gt 0 ]] && { sleep 1; ok "环境自愈: 已清理 $killed 个冲突"; }
+    set -e
     return 0
 }
 
@@ -661,24 +661,28 @@ cmd_test_k8s() {
     # 0.1 自愈: 清除非 K8s 进程占用的端口
     log "0.1 环境自愈 (端口+进程)..."
     _self_heal
+    log "0.1a 环境自愈完成"
 
-    # 0.2 僵尸 Pod 清理 (只清理业务服务，保护 infra: etcd/mysql/redis/minio)
-    local zombie_count
+    # 0.2 僵尸 Pod 清理 (只清理业务服务, 保护 infra)
+    set +e
+    local zombie_count=0
     zombie_count=$(kubectl get pods -n "$ns" --no-headers --field-selector=status.phase!=Running 2>/dev/null \
-        | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" | wc -l)
-    zombie_count=${zombie_count##* }
-    if [[ "$zombie_count" -gt 0 ]]; then
+        | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" 2>/dev/null | wc -l 2>/dev/null || echo "0")
+    zombie_count=$(echo "$zombie_count" | tr -d '[:space:]')
+    [[ -z "$zombie_count" ]] && zombie_count=0
+    if [[ "$zombie_count" -gt 0 ]] 2>/dev/null; then
         kubectl get pods -n "$ns" --no-headers --field-selector=status.phase!=Running 2>/dev/null \
-            | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" \
+            | grep -v -E "etcd|mysql|redis|minio|nfs|node-tuner" 2>/dev/null \
             | awk '{print $1}' | xargs -r kubectl delete pod -n "$ns" 2>/dev/null || true
     fi
+    set -e
 
     # 0.3 资源余量
     log "0.3 宿主机资源..."
     _check_resources
 
     # 0.4 增量检测: 哪些服务需要重新构建
-    local CHANGED_SVCS; CHANGED_SVCS=$(_changed_services)
+    local CHANGED_SVCS; CHANGED_SVCS=$(_changed_services || echo "all")
     log "0.4 增量检测: 需构建服务 = ${CHANGED_SVCS}"
 
     # 0.4 清理残留容器
