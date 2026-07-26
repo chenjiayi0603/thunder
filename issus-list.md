@@ -8507,3 +8507,33 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 | P4 | Docker Compose 模式 | deploy.sh ~80 行 | 1.5h |
 
 **总计: deploy.sh 新增 ~220 行, .deploy-state/ 目录, 预计 4-5h。**
+
+
+### 2026-07-26 复盘: 为什么执行不下去
+
+> 本次尝试在 deploy.sh 里新增了 ~200 行代码, 但端到端测试未跑通, 最终回退。
+
+**犯了四个错:**
+
+1. **自造需求** — `_smart_ctr_import` (image digest 比较), `_changed_services` (git diff 增量检测), `set +e`/`set -e` 到处塞。cmake 自带增量编译, Docker 自带层缓存, 不需要这些东西。
+
+2. **跟 bash 较劲** — deploy.sh 顶部有 `set -euo pipefail`, 新增函数中的 docker/kubectl 偶发非零返回值会被它杀死整个脚本。反复加 `set +e`/`set -e` 包围, 越加越乱。
+
+3. **在不稳定的环境上反复试** — K8s 节点磁盘 95% 满载 → Pod 被 Evicted → 部署失败。重试了 5 次以上而不先解决环境问题。
+
+4. **没按计划走** — #166 设计了 P0→P4 四级优先级, 实际实现时跳过了最基础的功能验证, 直接做了 P2/P3 的复杂优化, 然后卡死在集成阶段。
+
+**正确做法:**
+
+| 之前 | 应该 |
+|------|------|
+| 从 digest 比较/增量检测等复杂功能开始 | 从 Docker Compose 入口开始 (最简单, 最快验证) |
+| 函数写完没独立测试就开始集成 | 写完一个函数测一个 (bash -n + 独立调用) |
+| K8s 环境挂了继续硬跑 | 先检查磁盘, 磁盘不够就报出来, 不硬跑 |
+| 200 行一起改 | 10-20 行一个 commit, 每步都能回退 |
+
+**已做出的有效改动:**
+- `tests/e2e/test_mqtt_broker.py`: _self_heal 端口检测 (ss 替代 lsof)
+- Zombie Pod 清理保护 infra (跳过 etcd/mysql/redis)
+- CLEAN 增加 MQTT deployment 清理
+- K8s 回归测试增加 MQTT CONNACK 检查
