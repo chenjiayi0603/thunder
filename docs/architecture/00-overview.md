@@ -95,7 +95,7 @@ Thunder 帮你搞定网络 IO、协议解析、服务发现、热更新。
 | **hostNetwork (非 NodePort)** | 数据面零 K8s 组件 | Pod 不能漂移 |
 | **dlopen SO 热更新** | 不重启进程，连接不断 | SO 需兼容 ABI |
 
-> 📖 深度阅读：[FAQ.md](../FAQ.md) · [架构设计](01-architecture-design.md) · [io_uring 设计](13-asio-uring-design.md)
+> 📖 深度阅读：[FAQ.md](../FAQ.md) · [架构设计](01-architecture-design.md) · [io_uring 设计](asio-uring-backend.md)
 
 ---
 
@@ -110,7 +110,7 @@ Thunder 支持插拔式 IO 后端，编译时选择：
 | `native_uring` | io_uring 原始接口 | 无批量优势，演示用 | 学习/对比 |
 | `dpdk` | 内核旁路 | 计划中 | 极低延迟场景 |
 
-> 📖 深度阅读：[IoBackend 对比](../performance/11-io-backend-comparison.md) · [AsioUring 设计](13-asio-uring-design.md)
+> 📖 深度阅读：[IoBackend 对比](../performance/11-io-backend-comparison.md) · [AsioUring 设计](asio-uring-backend.md)
 
 ---
 
@@ -159,7 +159,7 @@ Worker 进程
 | 理解 etcd 怎么用 | [02-etcd-designed.md](02-etcd-designed.md) 🟡 |
 | 部署到 K8s | [04-thunder-on-k8s.md](04-thunder-on-k8s.md) 🟡 |
 | 理解协程怎么写 | [10-coroutine-access-patterns.md](10-coroutine-access-patterns.md) 🔴 |
-| 理解 io_uring 怎么接 | [13-asio-uring-design.md](13-asio-uring-design.md) 🔴 |
+| 理解 io_uring 怎么接 | [asio-uring-backend.md](asio-uring-backend.md) 🔴 |
 | 理解热更新机制 | [08-so-module-hot-reload-via-etcd.md](08-so-module-hot-reload-via-etcd.md) 🟡 |
 | 看性能测试数据 | [../performance/](../performance/) 🟢 |
 | 看设计 FAQ | [../FAQ.md](../FAQ.md) 🟢 |

@@ -51,7 +51,7 @@
             "entrance_symbol": "create",
             "load": true,
             "version": 12,
-            "script_content": "function handle_request(msg)\n  local body = '{\"genkey\":\"1\",\"token\":\"canary_test_token\",\"key\":\"canary_test_key\",\"address\":\"192.168.3.61\"}'\n  local function on_response(resp_body)\n    -- \u76f4\u63a5\u8fd4\u56de Logic \u7684\u54cd\u5e94\u7ed9\u5ba2\u6237\u7aef\uff08\u4e0d\u901a\u8fc7 SendToClientFast\uff0c\u907f\u514d\u53cc\u91cd\u53d1\u9001\uff09\n    return resp_body\n  end\n  local ok = SendToNodeType(\"LOGIC\", 10001, body, 5, on_response)\n  if not ok then\n    return false -- \u8ba9\u6846\u67b6\u8fd4\u56de 500\n  end\n  return true\nend\n"
+            "script_content": "function handle_request(msg)\n  local body = '{\"genkey\":\"1\",\"token\":\"canary_test_token\",\"key\":\"canary_test_key\",\"address\":\"192.168.3.61\"}'\n  local function on_response(resp_body)\n    -- 直接返回 Logic 的响应给客户端（不通过 SendToClientFast，避免双重发送）\n    return resp_body\n  end\n  local ok = SendToNodeType(\"LOGIC\", 10001, body, 5, on_response)\n  if not ok then\n    return false -- 让框架返回 500\n  end\n  return true\nend\n"
         },
         {
             "url_path": "/hello/raw",
