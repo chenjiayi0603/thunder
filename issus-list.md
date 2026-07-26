@@ -8442,7 +8442,8 @@ MQTT Broker 一行注释也要重编所有服务镜像。且 Docker Compose 测�
   不缩容, 只清端口冲突, 方便连续多次测试
 ```
 
-#### P2: 增量镜像部署
+#### ~~P2: 增量镜像部署~~ (已移除: cmake 自带增量, 不需要)
+<details><summary>原设计 (保留备查)</summary>
 
 ```bash
 STATE_FILE=".deploy-state/mirror-digests"  # 各服务上次部署的 image digest
@@ -8459,7 +8460,10 @@ for img in thunder-interface thunder-hello ...; do
 done
 ```
 
-#### P3: 增量构建检测
+</details>
+
+#### ~~P3: 增量构建检测~~ (已移除: 同上)
+<details><summary>原设计 (保留备查)</summary>
 
 ```
 STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commit
@@ -8481,7 +8485,9 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
   如果 STATE_FILE 不存在 → 全量 BUILD (首次运行)
 ```
 
-#### P4: Docker Compose 模式
+</details>
+
+#### P4: Docker Compose 模式 (⇦ 剩余待做)
 
 ```
 ./deploy.sh test compose [--quick]
@@ -8496,17 +8502,18 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
   CLEAN      = compose stop (默认) 或 compose down --volumes (--full-clean)
 ```
 
-### 实施计划
+### 实施计划 (2026-07-26 修订)
 
-| 优先级 | 项目 | 预计改动 | 时间 |
-|:---:|------|------|:---:|
-| P0 | 环境自愈 PRE-CHECK | deploy.sh ~30 行 | 0.5h |
-| P1 | 无损 CLEAN | deploy.sh ~20 行 | 0.5h |
-| P2 | 增量镜像部署 (digest 比较) | deploy.sh ~40 行 + .deploy-state/ | 1h |
-| P3 | 增量构建检测 (git diff + 状态文件) | deploy.sh ~50 行 | 1h |
-| P4 | Docker Compose 模式 | deploy.sh ~80 行 | 1.5h |
+| 优先级 | 项目 | 状态 |
+|:---:|------|:---:|
+| P0 | 环境自愈 PRE-CHECK (端口检测+清理) | ✅ 已做 |
+| P1 | 无损 CLEAN (只缩容, 不删数据) | ✅ 已做 |
+| P2 | K8s 回归测试集成 MQTT | ✅ 已做 (56/56 PASS) |
+| P3 | Docker Compose 一键测试 `./deploy.sh test compose` | 🔵 待做 |
 
-**总计: deploy.sh 新增 ~220 行, .deploy-state/ 目录, 预计 4-5h。**
+**P2/P3 已移除:**
+- ~~增量镜像部署 (digest 比较)~~ → cmake+Docker 自带增量, 不需要额外做
+- ~~增量构建检测 (git diff + 状态文件)~~ → 同上
 
 
 ### 2026-07-26 复盘: 为什么执行不下去
