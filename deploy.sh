@@ -212,6 +212,8 @@ show_help() {
     echo "  test e2e      Docker 集成测试 (~3min)"
     echo "  test smoke    冒烟测试 (核心链路 + etcd 注册中心, 需集群)"
     echo "  test regression 全量回归 (提交前必跑, ~5min)"
+    echo "  test compose   Docker Compose 集成测试 (~3min)"
+    echo "  test k8s       K8s 全量回归 (需集群, ~10min)"
     echo "  test perf/bench wrk 性能测试"
     echo "  up            启动 Docker 开发环境"
     echo "  down          停止 Docker 环境并清理"
@@ -640,6 +642,86 @@ cmd_test_regression() {
 #   4. Manager RecvFdFromWorker() 接收 fd → 转发给新 Worker → FdTransfer() 接收
 # 验证点: rollout restart 后旧 Worker 的 keep-alive 连接不断开,
 #         客户端无感知, 无重连风暴。
+# ─── Docker Compose 一键测试 (#166 P4) ──────────────────────
+# ./deploy.sh test compose        全流程: build → up → test → stop
+# ./deploy.sh test compose --quick 跳过 cmake build (已有二进制)
+cmd_test_compose() {
+    local compose_dir="${PROJECT_DIR}/docker"
+    local compose_file="${compose_dir}/docker-compose.yml"
+    local quick=false
+    [[ " $* " =~ " --quick " ]] && quick=true
+
+    echo ""
+    echo -e "${BOLD}============================================${NC}"
+    echo -e "${BOLD}  Docker Compose 集成测试${NC}"
+    echo -e "${BOLD}============================================${NC}"
+
+    # PRE-CHECK
+    echo ""
+    log "自愈检查..."
+    _self_heal
+    _check_resources
+
+    # BUILD (可选)
+    if ! $quick && [[ "${SKIP_BUILD:-false}" != "true" ]]; then
+        log "cmake build + install..."
+        cd "${PROJECT_DIR}"
+        detect_openssl
+        cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
+            -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
+            -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+            "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
+            err "cmake configure 失败"; return 1
+        }
+        cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" || { err "C++ 编译失败"; return 1; }
+        cmake --install "${BUILD_DIR}" || { err "cmake install 失败"; return 1; }
+        _validate_io_backend
+        ok "  C++ 构建完成"
+    else
+        ok "  跳过构建 (--quick)"
+    fi
+
+    # UP
+    log "docker compose up -d..."
+    cd "${compose_dir}"
+    docker compose -f "${compose_file}" down --remove-orphans 2>/dev/null || true
+    docker compose -f "${compose_file}" up -d 2>&1 || { err "compose up 失败"; return 1; }
+    ok "  服务已启动"
+
+    # 等端口
+    log "等待端口就绪..."
+    sleep 5
+    for port in 27006 21883; do
+        for i in $(seq 1 30); do
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$port" 2>/dev/null && break
+            sleep 1
+        done
+    done
+    ok "  端口就绪"
+
+    # TEST
+    log "运行 E2E 测试..."
+    cd "${TESTS_DIR}/e2e"
+    python3 -m pytest . -v -s --tb=short -m "integration or smoke" \
+        --mode=local 2>&1 | tail -20
+    local test_ret=${PIPESTATUS[0]}
+
+    # STOP (保留数据, 不 down --volumes)
+    log "docker compose stop..."
+    cd "${compose_dir}"
+    docker compose -f "${compose_file}" stop 2>/dev/null || true
+    ok "  服务已停止 (数据保留)"
+
+    if [[ $test_ret -eq 0 ]]; then
+        echo -e "  ${GREEN}✔ Docker Compose 集成测试 PASS${NC}"
+    else
+        echo -e "  ${RED}✘ Docker Compose 集成测试 FAIL${NC}"
+    fi
+    return $test_ret
+}
+
+# ─── K8s 全量回归测试 ────────────────────────────────────────
+# ./deploy.sh test k8s
 cmd_test_k8s() {
     local ns="${K8S_NAMESPACE:-thunder}"
     local host_ip="${K8S_HOST_IP:-192.168.3.61}"
@@ -1345,6 +1427,9 @@ case "${CMD}" in
                 ;;
             k8s)
                 cmd_test_k8s
+                ;;
+            compose)
+                cmd_test_compose
                 ;;
             *)
                 # 全部: unit + e2e
