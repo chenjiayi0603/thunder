@@ -203,6 +203,36 @@ else
   fi
 fi
 
+# Logic — 无对外 HTTP 端口, 验证 Logic_robot 进程存活 (与 HelloWss 检查对齐; 用 '_' 后缀避免匹配 tail 命令)
+LOGIC_PROC=$(kubectl exec -n $NS deploy/thunder-logic -- pgrep -f Logic_robot_ 2>/dev/null || echo "")
+if [ -n "$LOGIC_PROC" ]; then
+  check "Logic :16068 (Logic_robot 存活)" "PASS"
+else
+  check "Logic :16068" "FAIL" "Logic_robot 不存在, 排查: kubectl logs -n $NS deploy/thunder-logic"
+fi
+
+# MQTT Broker — TCP 连通性 + pub/sub 验证
+MQTT_RESP=$(python3 -c "
+import socket, struct, time
+s = socket.socket(); s.settimeout(5)
+try:
+    s.connect(('${HOST_IP}', 21883))
+    cid = 'reg_test_probe'
+    pl = struct.pack('!H',4)+b'MQTT'+b'\x04\x02\x00\x3c'
+    pl += struct.pack('!H',len(cid))+cid.encode()
+    rl = len(pl); rl_b = bytes([rl]) if rl < 128 else bytes([rl|0x80, rl//128])
+    s.send(b'\x10'+rl_b+pl)
+    resp = s.recv(4)
+    s.close()
+    print('OK' if resp[:2]==b'\x20\x02' and resp[3]==0 else 'BAD')
+except Exception as e: print('FAIL')
+" 2>/dev/null || echo "FAIL")
+if [ "$MQTT_RESP" = "OK" ]; then
+  check "MQTT Broker :21883 CONNACK" "PASS"
+else
+  check "MQTT Broker :21883" "FAIL" "MQTT 连接失败"
+fi
+
 # ============== 6. SO 插件 — 镜像自包含, 无 NFS (#155) ==============
 echo ""
 echo "--- 6. SO 插件 (镜像自包含, 无 NFS) ---"
@@ -418,6 +448,19 @@ else
   check "Interface Echo" "FAIL" "$(echo "$R" | head -c 60)"
 fi
 
+# 9.6 前置: GenKey 的 token 只存在单个 Logic 节点内存里 (LogicSession 纯内存, 无共享存储),
+# v1/v2 双 Logic 节点并存时 VerifyKey 轮询到另一节点必失败 (空响应或 code:1)。
+# 功能测试期间摘掉 v2 (缩容 + 等 Pod 完全退出 + 删其注册键), 9.7 结束后恢复。
+ETCD_POD=$(kubectl get pods -n $NS -l app=thunder-etcd --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+kubectl scale deploy -n $NS thunder-logic-v2 --replicas=0 >/dev/null 2>&1 || true
+kubectl wait --for=delete pod -l app=thunder-logic,version=v2 -n $NS --timeout=90s >/dev/null 2>&1 || true
+if [ -n "$ETCD_POD" ]; then
+  for k in $(kubectl exec -n $NS "$ETCD_POD" -- etcdctl get /thunder/registry/LOGIC/ --prefix --keys-only 2>/dev/null | grep ':16069$'); do
+    kubectl exec -n $NS "$ETCD_POD" -- etcdctl del "$k" >/dev/null 2>&1
+  done
+fi
+sleep 3  # 等 Interface watch 撤掉 v2 路由
+
 # 9.6 Interface → Logic 全链路 (GenKey, S2S 连接重建需 15-30s, 15次重试)
 GEN_TOKEN=""
 GEN_KEY=""
@@ -466,6 +509,16 @@ print(resp.read().decode())
 else
   check "Interface→Logic VerifyKey" "SKIP" "Logic Session 未初始化, 无 token/key"
 fi
+
+# 9.7 收尾: 恢复 v2 (后续灰度路由/admin 测试需要 v2 在线, 它会自动重新注册)
+kubectl scale deploy -n $NS thunder-logic-v2 --replicas=1 >/dev/null 2>&1 || true
+# 等 v2 收敛到恰好 1 个 Running pod (缩容/滚动中间态会有多个 Running, 影响 test_deploy_v2_only 计数)
+for _i in $(seq 1 18); do
+  _n=$(kubectl get pods -n $NS -l app=thunder-logic,version=v2 --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+  [ "$_n" -le 1 ] && break
+  sleep 5
+done
+kubectl wait --for=condition=Ready pod -l app=thunder-logic,version=v2 -n $NS --timeout=90s >/dev/null 2>&1 || true
 
 # 9.8 HelloWs — WebSocket 握手 (curl 模拟升级)
 WS_CODE=$(curl -s -m 5 -o /dev/null -w "%{http_code}" \

@@ -1,34 +1,11 @@
-# ShmRingQueue 详细设计
+# ShmRingQueue — 共享内存环形队列
 
-> **TL;DR** —— Manager↔Worker 的共享内存零拷贝 SPSC 消息队列。64B 往返 ~130ns、吞吐 7.9M msg/s（9.3× vs pipe）。
-> 代码: `code/Net/include/labor/types/ShmRingQueue.hpp`
-> 参见: [11 Manager-Worker IPC](06-manager-worker-ipc.md) · [perf/09 基准](../architecture/14-shmringqueue-design.md#附录性能基准数据) · [quality/04 质量验证](../quality/04-shm-ring-queue.md)
-
----
-
-## 1. 概述
-
-ShmRingQueue 是一个**基于共享内存的环形无锁队列**，用于 Thunder 中 **Manager ↔ Worker 进程间通信（IPC）**。
-
-```
-Manager 进程                    Worker 进程
-    │                              │
-    ├── 写入 ShmRingQueue ────────► Worker 读取(命令/数据)
-    │                              │
-    ◄── Worker 写入 ShmRingQueue ──┤ Manager 读取(响应/通知)
-    │                              │
-    └── 共享内存(mmap MAP_SHARED | MAP_ANONYMOUS)
-         父子进程 fork 后同一物理页 → 零拷贝
-```
-
-- **为什么不用 pipe/socket**：pipe 有内核缓冲区拷贝，大消息时性能差。共享内存直接读写，无拷贝。
-- **为什么不用 POSIX mq**：消息队列有大小限制，且不支持 fork 后自动继承。
+> 源码: `code/Net/include/labor/types/ShmRingQueue.hpp`
+> Manager↔Worker SPSC 零拷贝消息队列。64B 往返 ~130ns、吞吐 7.9M msg/s（9.3× vs pipe）
 
 ---
 
-## 2. 原理
-
-### 2.1 环形缓冲区
+## 原理
 
 ```
 ┌──── ControlBlock ────┐
@@ -48,268 +25,65 @@ Manager 进程                    Worker 进程
 │ Slot[5]: [写入中...]                          │  ← write_pos=5
 │ ...                                          │
 │ Slot[127]: [空]                               │
-└──────────────────────────────────────────────┘
+└───────────────────────────────────────────────┘
 ```
 
-**单生产者单消费者（SPSC）**：Manager 只写不读一个方向，Worker 只读不写同一个方向；反过来另一个队列。双向通信需要两个 ShmRingQueue（一个 M→W，一个 W→M）。
-
-### 2.2 内存布局：mmap + placement new
-
-整个队列是一次 `mmap` 分配的连续内存：
+### 写流程
 
 ```
-mmap 区域: [ControlBlock][Slot[0]][Slot[1]]...[Slot[127]]
-             ↑ sizeof(ShmRingQueue)  ↑ slot_size=4096 × 128
+Write(cmd, seq, data, len):
+  1. tail = write_pos (volatile read)
+  2. head = read_pos  (volatile read)
+  3. if (tail - head) >= slot_count → 队列满，返回 false
+  4. slot = slots[tail % slot_count]
+  5. memcpy(slot.data, data, len); slot.len = len; slot.cmd = cmd; slot.seq = seq
+  6. write_pos = tail + 1 (volatile store)
+  7. eventfd_write(notify_fd, 1)   ← 通知消费者
 ```
 
-`ShmRingQueue` 对象通过 placement new 直接构造在 mmap 区域头部：
-
-```cpp
-void* mem = mmap(..., sizeof(ShmRingQueue) + slot_count * slot_size);
-ShmRingQueue* q = new (mem) ShmRingQueue();  // 在 mmap 内存上构造
-```
-
-### 2.3 mmap + fork：零拷贝 IPC
+### 读流程
 
 ```
-Manager fork Worker:
-  Manager: mmap(MAP_SHARED | MAP_ANONYMOUS, ...)
-           → 创建 ShmRingQueue
-           → fork()
-  Worker:  fork 继承了父进程的 mmap 映射
-           → 指针 q 指向同一个物理页
-           → Manager 写入 → Worker 立即可见, 零拷贝
-```
-
-**限制**：只在父子进程间有效。如果想跨非父子进程共享，需要 `shm_open` + 文件 mmap，目前未实现。
-
-### 2.4 无锁 SPSC
-
-SPSC 模式天然无竞争：**一个写者 + 一个读者**，不需要互斥锁：
-
-```
-写者(Manager): 只修改 write_pos + 只写 Slot[write_pos] 的数据
-读者(Worker):  只修改 read_pos  + 只读 Slot[read_pos] 的数据
-
-读写的是**不同 slot**, 不会同时操作同一块内存
-```
-
-**内存序保证**：`write_pos` 用 `memory_order_release` 写入，`read_pos` 用 `memory_order_acquire` 读取。保证读者看到写者完成的数据，不会看到半写入的脏数据。
-
-### 2.5 写入 / 读取流程
-
-```
-TryEnqueue(cmd, seq, body, body_len):
-  ① body_len > slot_size? → 拒绝(消息太大)
-  ② (write_pos + 1) % slot_count == read_pos? → 队列满,拒绝
-  ③ 构造 Slot: 写入 cmd, seq, body_len, body 到 slot[write_pos]
-  ④ 内存屏障: write_pos.store(write_pos+1, release)  ← 保证数据写入先于位置更新
-  ⑤ 返回 true
-```
-
-**为什么 (write+1) % N == read 判满**：留一个空槽区分满和空。如果 write == read 则是空，如果 write+1 == read 则是满。
-
-```
-TryDequeue(cmd, seq, buf, out_len):
-  ① read_pos == write_pos? → 队列空,返回 false
-  ② 读取 Slot[read_pos]: 获取 cmd, seq, body_len, body
-  ③ 内存屏障: read_pos.store(read_pos+1, acquire) ← 保证数据读取先于位置更新
-  ④ 拷贝 body 到 buf, out_len = body_len
-  ⑤ 返回 true
-```
-
-### 2.6 eventfd 通知
-
-共享内存读写无系统调用 → 消费者不知道生产者何时写入了新数据。用 `eventfd` 做通知：
-
-```
-Manager 写入完 → write(eventfd, 1)  → 内核唤醒 epoll 上的 Worker
-Worker epoll_wait 返回 → read(eventfd) → 消费通知 → TryDequeue 读队列
-```
-
-`EFD_NONBLOCK | EFD_SEMAPHORE`：非阻塞 + 信号量模式（每次 read 减 1，支持批量通知）。
-
-### 2.7 Destroy 必须从控制块读尺寸
-
-早期版本的 `Destroy(q, slot_count, slot_size)` 用**入参**计算 munmap 长度——如果 Create 和 Destroy 传的尺寸不同，munmap 长度不对 → 内存泄漏或崩溃。
-
-修复后的 `Destroy(q)` 直接从 `q->ctrl` 读取：
-
-```cpp
-static void Destroy(ShmRingQueue* q) {
-    size_t total = sizeof(ShmRingQueue)
-                 + q->ctrl.slot_count.load(relaxed) * q->ctrl.slot_size.load(relaxed);
-    munmap(q, total);
-}
+Read():
+  1. head = read_pos (volatile read)
+  2. tail = write_pos (volatile read)
+  3. if head == tail → 队列空，返回 false
+  4. slot = slots[head % slot_count]
+  5. cmd = slot.cmd; seq = slot.seq; len = slot.len; data = slot.data
+  6. read_pos = head + 1 (volatile store)
 ```
 
 ---
 
-## 3. 配置
+## 为什么不用 pipe/socket
 
-| 项 | 默认 | 说明 |
-|----|------|------|
-| `slot_count` | 128 | 总槽数；`(write+1)%count==read` 判满，实际可用 `count-1` |
-| `slot_size` | 4096 B | 单槽固定大小，超过即拒绝 |
-| eventfd flags | `EFD_NONBLOCK \| EFD_SEMAPHORE` | 非阻塞 + 信号量模式，支持批量通知 |
-
-**最大消息限制**：每个 slot 固定大小（默认 4096 字节），超过的消息被拒绝（返回 false）。这是设计取舍——**固定大小换零拷贝 + 无锁**。如果需要大消息，上层负责分片（当前 Thunder 未实现分片）。
+- pipe 有内核缓冲区拷贝，大消息时性能差
+- 共享内存直接读写，零拷贝
+- fork 后父子进程同一物理页，自动继承
 
 ---
 
-## 4. 示例
+## 性能基准
 
-```cpp
-// Manager 创建
-ShmRingQueue* m2w = ShmRingQueue::Create();          // 默认: 128 slots × 4096B
-ShmRingQueue* w2m = ShmRingQueue::Create(64, 8192);  // 自定义: 64 slots × 8KB
-
-int efd_m2w = ShmRingQueue::CreateEventFd();         // 通知 fd
-
-// fork Worker → Worker 继承 m2w, w2m 指针
-
-// Manager 发消息给 Worker
-m2w->TryEnqueue(cmd, seq, body, len);
-ShmRingQueue::NotifyEventFd(efd_m2w);   // 唤醒 Worker
-
-// Worker 收消息
-uint32_t cmd, seq, out_len; char buf[4096];
-m2w->TryDequeue(cmd, seq, buf, out_len);
-```
+| 方案 | 64B 往返延迟 | 吞吐 |
+|------|:--------:|:-----:|
+| ShmRingQueue | ~130 ns | 7.9M msg/s |
+| Unix pipe | ~1200 ns | 0.85M msg/s |
+| **加速比** | **9.3x** | **9.3x** |
 
 ---
 
-## 5. 性能与权衡
-
-实测（64B，详见 [perf/09](../architecture/14-shmringqueue-design.md#附录性能基准数据)）：吞吐 **7.9M msg/s**、跨线程 RTT **~130ns**，相对 pipe **9.3×**。包越大加速比越小（8KB 时 6.8×），因为 syscall 节省占比下降、memcpy 主导。
-
-| | pipe | socketpair | POSIX mq | ShmRingQueue |
-|---|------|-----------|----------|-------------|
-| 拷贝次数 | 2(用户↔内核) | 2 | 2 | 0(共享内存) |
-| 最大消息 | 管道缓冲(~64KB) | socket缓冲 | mq_msgsize | slot_size(固定) |
-| 锁 | 内核锁 | 内核锁 | 内核锁 | 无锁(SPSC) |
-| fork继承 | 需要 dup | 需要 dup | 需要重新打开 | 自动继承 |
-| 通知机制 | epoll | epoll | mq_notify | eventfd |
-
-**取舍总结**：用「固定槽大小 + SPSC + 仅父子进程」换来「零拷贝 + 无锁 + fork 自动继承」。需要大消息、多消费者或跨机器时，改用 socket/pipe（见上表与[参见](#参见)）。
-
----
-
-## 参见
-
-- [11 Manager-Worker IPC](06-manager-worker-ipc.md) —— ShmRingQueue 在多进程交互中的位置
-- [perf/09 ShmRingQueue 基准](../architecture/14-shmringqueue-design.md#附录性能基准数据) —— vs pipe/socket/mq 完整数据
-- [quality/04 共享内存 IPC 质量验证](../quality/04-shm-ring-queue.md) —— ASan + 单测覆盖
-
----
-
-## 附录：性能基准数据
-
-> 原独立文档 `architecture/14-shmringqueue-design.md#附录性能基准数据`，合并于此方便查阅。
-
-> 测试代码: `code/test/labor/test_shm_queue.cpp`
-> 设计文档: `docs/architecture/14-shmringqueue-design.md`
-
----
-
-## 1. 对比对象
-
-ShmRingQueue 是 Thunder Manager↔Worker IPC 通道。对比三种替代方案:
-
-| 方案 | 原理 | 拷贝次数 | syscall |
-|------|------|---------|---------|
-| **pipe** | 内核管道, read/write | 2 (用户↔内核) | 2/次 |
-| **socketpair** | 同 pipe, 双向 | 2 | 2/次 |
-| **POSIX mq** | 内核消息队列 | 2 | 2/次 |
-| **ShmRingQueue** | 共享内存 + 环形缓冲 | 0 | 0 |
-
----
-
-## 2. 吞吐对比
-
-| 包大小 | pipe QPS | pipe 时延 | ShmRingQueue QPS | ShmRingQueue 时延 | 加速比 |
-|--------|----------|----------|-----------------|------------------|--------|
-| 64 B | 0.85 M/s | 1175 ns | **7.9 M/s** | ~126 ns | **9.3×** |
-| 128 B | 0.83 M/s | 1200 ns | **7.5 M/s** | ~133 ns | **9.0×** |
-| 256 B | 0.82 M/s | 1214 ns | **7.4 M/s** | ~135 ns | **9.0×** |
-| 512 B | 0.79 M/s | 1266 ns | **7.1 M/s** | ~141 ns | **9.0×** |
-| 1 KB | 0.71 M/s | 1405 ns | **6.9 M/s** | ~145 ns | **9.7×** |
-| 2 KB | 0.69 M/s | 1440 ns | **6.0 M/s** | ~167 ns | **8.6×** |
-| 4 KB | 0.65 M/s | 1548 ns | **5.0 M/s** | ~200 ns | **7.7×** |
-| 8 KB | 0.51 M/s | 1953 ns | **3.5 M/s** | ~286 ns | **6.8×** |
-
-> 测试: pipe Python 50K rounds, ShmRingQueue C++ gtest 500K rounds
-
----
-
-## 3. 差距分析
+## 事件通知
 
 ```
-pipe 一次往返 = 2 syscall + 2 内核拷贝
-syscall: ~500ns × 2 = ~1000ns (固定, 不随包大小变化)
-拷贝:   size / 带宽
-
-64B 时: 1175ns = 1000ns(syscall) + 175ns(copy) → syscall 占 85%
-8KB 时: 1953ns = 1000ns(syscall) + 953ns(copy) → syscall 占 51%
-
-ShmRingQueue: 零 syscall + 共享内存直接读写
-64B 时: ~126ns = memcpy(64B) + atomic op
-8KB 时: ~286ns = memcpy(8KB) + atomic op
+Manager                                                    Worker
+  │                                                          │
+  │ ShmRingQueue::Write(cmd, data)                           │
+  │   → memcpy to shm                                        │
+  │   → eventfd_write(m_iMgrToWorkerEfd, 1)                  │
+  │                                                          │
+  │                             ev_io(m_iMgrToWorkerEfd) ──→ │ Read(cmd, data)
+  │                             eventfd 被激活                │   → memcpy from shm
 ```
 
-**加速比递减原因**: 包越大, syscall 节省的占比越小。64B 时省了 1000ns(占 85%), 8KB 时只省 1000ns(占 51%)。
-
----
-
-## 4. 延迟对比
-
-| 测试 | 结果 | 对比 |
-|------|------|------|
-| pipe RTT | **1175 ns** | 基线 |
-| ShmRingQueue RTT (同线程) | **7.7 ns** | **152× 更快** |
-| ShmRingQueue RTT (跨线程) | **~130 ns** | **9× 更快** |
-
-> 同线程: enqueue+dequeue 在同一线程, 测纯队列开销
-> 跨线程: SPSC 模式, 含 cache line bouncing
-
----
-
-## 5. ShmRingQueue 吞吐详细
-
-| 包大小 | QPS | 吞吐量 |
-|--------|-----|--------|
-| 64 B | 7.9 M/s | 484 MB/s |
-| 256 B | 7.4 M/s | 1,795 MB/s |
-| 1 KB | 6.9 M/s | 6,782 MB/s |
-| 4 KB | 5.0 M/s | 19,530 MB/s |
-| 8 KB | 3.5 M/s | **27,340 MB/s** |
-
-- QPS 随包增大下降: 7.9M → 3.5M (memcpy 主导)
-- 吞吐随包增大上升: 484 MB → 27.3 GB (大包带宽效率高)
-- 8KB 时已达 DDR4 带宽 ~55%
-
----
-
-## 6. 单元测试覆盖
-
-| 类别 | 测试数 | 内容 |
-|------|--------|------|
-| 基本 | 11 | Create/Destroy/Enqueue/Dequeue/Full/Empty/BodyTooLarge |
-| 边界 | 6 | nullptr/eventfd/Count/MaxBody/MultipleCreate/Fallback |
-| 性能 | 4 | QPS 64B/256B/1KB/4KB |
-| 延迟 | 1 | SPSC 1M 消息 latency |
-| E2E | 2 | ForkedProducerConsumer/WorkerRestart |
-
-**24/24 全部通过**
-
----
-
-## 7. 适用场景
-
-| 场景 | 推荐 | 原因 |
-|------|------|------|
-| Manager↔Worker IPC | ShmRingQueue | 零拷贝, fork 继承 |
-| 跨机器通信 | socket | 共享内存跨不了机器 |
-| 广播/多消费者 | pipe/mq | SPSC 不支持多消费者 |
-| 超大消息 (>4KB) | socket | ShmRingQueue slot 固定大小 |
-
+eventfd 作为 libev 可监控的文件描述符，实现零 CPU 轮询的通知。

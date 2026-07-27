@@ -9,21 +9,12 @@
 > 🟢🔵 通用
 
 ```bash
-# 首次：拉取三方库源码
+# 首次
 git submodule update --init --recursive
 
-# 生成 Makefile（只需执行一次，之后重编不需要）
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-
-# 编译三方库（curl/grpc/protobuf/openssl 等，仅首次 ~20min）
-cmake --build build --target thirdparty_deploy -j1
-
-# 编译 Thunder 主工程 + 安装二进制到 deploy/*/bin/
-cmake --build build -j1
-cmake --install build
+# 一条命令完成: cmake configure → 三方库 → 主工程 → 安装二进制
+./deploy.sh build
 ```
-
-> ⚠️ 必须 `-j1`，多线程编译会因磁盘 IO 瓶颈卡死。
 
 ---
 
@@ -43,22 +34,14 @@ cmake --install build
 ### 🔵 Kubernetes
 
 ```bash
-# 一键发布（编译 + 镜像 + 部署 + 回归）
+# 一键发布（编译 + 镜像 + 部署 + 全量回归 79 项）
 ./deploy.sh release k8s
 
-# 或分步执行：
-./deploy.sh build                          # cmake 编译 → 产出二进制到 deploy/*/bin/
-./deploy.sh image logic interface logic-v2 hello http https ws wss
-# ↑ 为每个服务构建 Docker 镜像（COPY deploy/XXX/ → /app/）
-./deploy.sh deploy                         # 导入镜像到 containerd + kubectl apply YAML
-bash k8s/regression-test.sh                # 回归测试（19 项）
-```
-
-**手动导入镜像** (`deploy.sh deploy` 需要 sudo 密码):
-
-```bash
-# 将 Docker 镜像导出为 tar，导入到 k3s/containerd 运行时
-docker save thunder-logic:latest | sudo ctr -n k8s.io image import -
+# 或分步：
+./deploy.sh build                          # cmake 编译
+./deploy.sh image all                      # 构建全部 Docker 镜像
+./deploy.sh deploy                         # 导入 containerd + 滚动更新
+bash k8s/regression-test.sh                # 回归测试（79 项）
 ```
 
 ---
@@ -68,11 +51,12 @@ docker save thunder-logic:latest | sudo ctr -n k8s.io image import -
 ### 🔵 K8s 回归测试
 
 ```bash
-bash k8s/regression-test.sh
-# 通过: 19  失败: 0  跳过: 0
+bash k8s/regression-test.sh          # 全量 79 项 (core + admin API + canary)
+bash k8s/regression-test.sh --quick  # 仅核心 52 项
+bash k8s/regression-test.sh --all    # 含扩缩容/稳定性
 ```
 
-覆盖：CoreDNS / 5 网关 Pod / 插件隔离 / DNS 解析 / 服务直连
+覆盖：CoreDNS / 5 网关 Pod / 插件隔离 / DNS / 服务直连 / SO 热更新 / RBAC / 节点调优 / 全链路 / admin-web API 16 项 / 灰度路由 11 项
 
 ### 🟢 Docker Compose 冒烟测试
 
@@ -169,69 +153,15 @@ python3 tools/canary.py LOGIC reset
 
 ### Lua 热更新
 
-#### 🔵 K8s — 直接写 etcd（跳过 Admin，适合脚本/CI）
+admin-web → `📜 Lua` tab：在线编辑脚本 → 保存 → 自动热加载。
 
-```bash
-ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
+详见 [`k8s/README.md#lua-热更新`](k8s/README.md#lua-热更新)
 
-# 1. 写新 Lua 脚本到 etcd（version 从 12 升到 99，script_content 含新逻辑）
-kubectl exec -n thunder "$ETCD_POD" -- etcdctl --endpoints=http://127.0.0.1:2379 \
-  put /thunder/config/module/HELLO_HTTP \
-  '{"module":[{"url_path":"/hello/lua_echo","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":99,"script_content":"function handle_request(msg)\n  SendToClientFast('"'"'{\"code\":0,\"msg\":\"HOTRELOAD_V99\"}'"'"')\n  return true\nend"}]}'
-# → OK（Manager Watch 检测到 version 12→99，触发 Worker 热重载）
+### SO 热更新（#159 Pull 模式）
 
-# 2. 验证新逻辑已生效
-curl -s -X POST http://192.168.3.61:27006/hello/lua_echo -d 'test'
-# → {"code":0,"msg":"HOTRELOAD_V99"}
+admin-web → `📦 插件` tab：上传 .so → 点"下发" → 自动部署。
 
-# 3. Worker 日志确认全链路
-kubectl logs -n thunder deploy/thunder-hello --tail=10 | grep -E "Unload|Load|ModuleLua"
-# → UnloadSoAndDeleteModule() → LoadSoAndGetModule() → ModuleLua::Init()
-# → script_content_len=101   (101 字节新脚本已加载)
-```
-
-#### 🟢 Docker Compose — Admin API
-
-```bash
-# 通过 Admin 上传 Lua 脚本
-curl -X POST http://127.0.0.1:8090/api/lua-scripts \
-  -H "Content-Type: application/json" \
-  -d '{"node_type":"HELLO_HTTP","name":"echo.lua","url_path":"/hello/lua_echo","content":"function handle_request(msg)\n  SendToClientFast('"'"'{\"code\":0,\"msg\":\"HOTRELOAD\"}'"'"')\n  return true\nend"}'
-
-# 同步配置到 etcd（触发 Manager Watch → Worker 重载）
-curl -X POST http://127.0.0.1:8090/api/sync-config
-```
-
-**全链路**: `Admin/etcd` → etcd key `/thunder/config/module/{TYPE}` → Manager Watch 检测 version 变化 → `CMD_REQ_RELOAD_LUA` → Worker `dlclose/dlopen` SO → `ModuleLua::Init()` 执行新脚本
-
-### SO 热更新
-
-#### 🔵 K8s — 重建镜像 + 滚动更新
-
-```bash
-# SO 模块代码变更后，重新编译 + 构建镜像
-./deploy.sh build                          # cmake 编译新 .so
-./deploy.sh image hello                    # 构建含新 .so 的 Docker 镜像
-docker save thunder-hello-http:latest | sudo ctr -n k8s.io image import -
-                                           # 导入到 k3s containerd 运行时
-kubectl rollout restart deploy/thunder-hello -n thunder
-                                           # 滚动更新 Pod（新 Pod 启动含新 .so）
-kubectl rollout status deploy/thunder-hello -n thunder
-                                           # 等待更新完成
-```
-
-#### 🟢 Docker Compose — Admin SO 上传
-
-```bash
-# 编译出新 .so 后，通过 Admin 直接上传到共享 volume
-curl -X PUT http://127.0.0.1:8090/plugins/HelloHttp/HelloHttp_ModuleHello.so \
-  --data-binary @build/lib/HelloHttp_ModuleHello.so
-# → Admin 写文件到 deploy/HelloHttp/plugins/ → 更新 etcd version
-# → Manager Watch → Worker GracefulRestart → dlopen 新 .so
-```
-
-> 🔵 K8s: SO 烘焙在 Docker 镜像内（`/app/plugins/`），通过重建镜像 + 滚动更新部署。
-> 🟢 Compose: SO 在宿主机 volume，Admin 直接 PUT 文件即可，无需重建镜像。
+详见 [`k8s/README.md#so-热更新`](k8s/README.md#so-热更新)
 
 ---
 
@@ -247,7 +177,9 @@ curl -X PUT http://127.0.0.1:8090/plugins/HelloHttp/HelloHttp_ModuleHello.so \
 | Logic v1 | S2S | 16068 | `127.0.0.1` | ClusterIP (`10.244.x.x`) |
 | Logic v2 | S2S | 16069 | `127.0.0.1` | ClusterIP (`10.244.x.x`) |
 | etcd | gRPC | 12379/2379 | `127.0.0.1:12379` | `thunder-etcd.thunder:2379` |
-| Admin Web | HTTP | 8090 | `127.0.0.1:8090` | ClusterIP |
+| Admin Web | HTTP | 8090 | `127.0.0.1:8090` | NodePort 30090 |
+| MinIO API | HTTP | 9000 | — | `thunder-minio.thunder:9000` |
+| MinIO Console | HTTP | 9001 | — | NodePort 30091 |
 
 ---
 

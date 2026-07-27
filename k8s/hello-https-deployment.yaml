@@ -24,6 +24,12 @@ spec:
       - name: app
         image: localhost:5000/thunder-hello-https:latest
         imagePullPolicy: IfNotPresent
+        # Worker daemon 死亡即 NotReady (#164); 进程名 <server_name>_Loader/_W<n>
+        readinessProbe:
+          exec:
+            command: ["pgrep", "-f", "Hello_https_robot_"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
         env:
         - name: NODE_VERSION
           value: "v1"

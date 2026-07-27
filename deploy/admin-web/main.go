@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -52,10 +54,56 @@ func main() {
 	mux.HandleFunc("/api/plugins/", h.Plugins)
 	mux.HandleFunc("/api/plugins", h.Plugins)
 	mux.HandleFunc("/api/audit", h.Audit)
+	mux.HandleFunc("/api/etcd/keys", h.EtcdBrowser)
 
 	// #159: Artifact file serving (Manager Pull — HTTP GET .so / .lua)
 	mux.Handle("/api/artifacts/", http.StripPrefix("/api/artifacts/",
 		http.FileServer(http.Dir("/app/data/artifacts"))))
+
+	// #160: MinIO Console 反向代理 — 解决远程浏览器无法直连 NodePort 30091
+	// MinIO Console 是 React SPA，JS 会发绝对路径请求 (/api/v1/..., /ws, /static/...)，
+	// 必须把所有 MinIO Console 使用的路径前缀都代理过去，iframe 才能正常工作。
+	minioTarget := os.Getenv("MINIO_CONSOLE_URL")
+	if minioTarget == "" {
+		minioTarget = "http://thunder-minio.thunder:9001" // 集群内 DNS
+	}
+	minioURL, err := url.Parse(minioTarget)
+	if err != nil {
+		log.Fatalf("MINIO_CONSOLE_URL 解析失败: %v", err)
+	}
+	log.Printf("MinIO Console 代理 → %s", minioTarget)
+
+	minioProxy := httputil.NewSingleHostReverseProxy(minioURL)
+	origErrHandler := minioProxy.ErrorHandler
+	minioProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("MinIO proxy error: %v (url=%s)", err, r.URL.String())
+		if origErrHandler != nil {
+			origErrHandler(w, r, err)
+		} else {
+			http.Error(w, "minio proxy error: "+err.Error(), 502)
+		}
+	}
+
+	// #160: MinIO Console 返回 X-Frame-Options: DENY 导致浏览器拒绝 iframe 嵌入
+	// 必须剥离此头，并在 CSP 中追加 frame-ancestors 允许 admin-web 自身嵌入
+	minioProxy.ModifyResponse = func(r *http.Response) error {
+		r.Header.Del("X-Frame-Options")
+		csp := r.Header.Get("Content-Security-Policy")
+		if csp != "" {
+			r.Header.Set("Content-Security-Policy", csp+"; frame-ancestors 'self'")
+		}
+		return nil
+	}
+
+	// 代理 /api/minio/ → MinIO Console 入口 (strip 前缀，因为 MinIO 不认这个路径)
+	mux.Handle("/api/minio/", http.StripPrefix("/api/minio", minioProxy))
+	// 代理 /static/ → MinIO Console 静态资源 (JS/CSS，不 strip)
+	mux.Handle("/static/", minioProxy)
+	// 代理 /api/v1/ → MinIO Console JS 发出的管理 API 请求
+	mux.Handle("/api/v1/", minioProxy)
+	// 代理 /ws → MinIO Console WebSocket 实时通知
+	mux.Handle("/ws", minioProxy)
+	mux.Handle("/ws/", minioProxy)
 
 	// Static files — serve from static/ (Nacos-style SPA)
 	fs := http.FileServer(http.Dir("static"))

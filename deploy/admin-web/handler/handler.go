@@ -563,7 +563,18 @@ func countSoFiles(dir string) int {
 func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/lua/")
 	path = strings.TrimSuffix(path, "/")
-	nodeType := strings.ToUpper(path)
+
+	// Parse: {nodeType}[/{subPath}]
+	//   subPath = "files"         → artifact store list
+	//   subPath = "deploy"       → deploy from artifact store to etcd
+	//   subPath = "{filename}"   → upload .lua file
+	//   subPath = ""             → deployed scripts from etcd
+	parts := strings.SplitN(path, "/", 2)
+	nodeType := strings.ToUpper(parts[0])
+	subPath := ""
+	if len(parts) > 1 {
+		subPath = parts[1]
+	}
 
 	if nodeType == "" {
 		writeErr(w, "node_type required: /api/lua/{node_type}")
@@ -598,7 +609,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		return h.s.EtcdPut(cfgKey, string(raw))
 	}
 
-	if r.Method == "GET" {
+	if r.Method == "GET" && subPath == "" {
 		modules, err := readModuleConfig()
 		if err != nil {
 			writeErr(w, "etcd error: "+err.Error())
@@ -612,7 +623,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 			ScriptContent string `json:"script_content"`
 			NodeType      string `json:"node_type"`
 		}
-		var scripts []ScriptInfo
+		scripts := make([]ScriptInfo, 0)
 		for _, m := range modules {
 			urlPath, _ := m["url_path"].(string)
 			if _, ok := m["script_content"]; !ok { continue } // skip non-Lua entries
@@ -663,7 +674,7 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == "POST" {
+	if r.Method == "POST" && subPath == "" {
 		// POST body: {"url_path":"/hello/lua_echo","script_content":"...","version":99}
 		// #159: large scripts (>4KB) auto-uploaded to MinIO, script_url set in etcd
 		var body struct {
@@ -776,6 +787,147 @@ func (h *Handler) Lua(w http.ResponseWriter, r *http.Request) {
 		return
 
 	}
+
+	// --- #160: Lua 制品库 (PVC + MinIO) ---
+
+	// GET /api/lua/{nodeType}/files — 列出制品库中的 .lua 文件
+	if r.Method == "GET" && subPath == "files" {
+		artifactDir := filepath.Join("/app/data/lua_scripts", nodeType)
+		type FileInfo struct {
+			Name  string `json:"filename"`
+			Size  int64  `json:"size"`
+			Mtime string `json:"mod_time"`
+		}
+		var files []FileInfo
+		if entries, err := os.ReadDir(artifactDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".lua") {
+					continue
+				}
+				info, err := e.Info()
+				if err != nil { continue }
+				files = append(files, FileInfo{
+					Name: e.Name(), Size: info.Size(),
+					Mtime: info.ModTime().Format(time.RFC3339),
+				})
+			}
+		}
+		if files == nil { files = []FileInfo{} }
+		sort.Slice(files, func(i, j int) bool { return files[i].Mtime > files[j].Mtime })
+		writeOK(w, map[string]interface{}{"type": nodeType, "files": files})
+		return
+	}
+
+	// PUT /api/lua/{nodeType}/{filename} — 上传 .lua 到制品库 (PVC + MinIO)
+	if r.Method == "PUT" && subPath != "" && subPath != "files" && subPath != "deploy" {
+		filename := subPath
+		if !strings.HasSuffix(filename, ".lua") {
+			writeErr(w, "only .lua files allowed")
+			return
+		}
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeErr(w, "read body: "+err.Error())
+			return
+		}
+		// 写入本地 PVC
+		artifactDir := filepath.Join("/app/data/lua_scripts", nodeType)
+		if err := os.MkdirAll(artifactDir, 0755); err != nil {
+			writeErr(w, "mkdir: "+err.Error()); return
+		}
+		fpath := filepath.Join(artifactDir, filename)
+		if err := os.WriteFile(fpath, data, 0644); err != nil {
+			writeErr(w, "write: "+err.Error()); return
+		}
+		// 上传到 MinIO (如果可用)
+		var minioURL string
+		artifactKey := "lua/" + nodeType + "/" + filename
+		if h.s.MinIO != nil && h.s.MinIO.IsAvailable() {
+			if err := h.s.MinIO.PutObject(artifactKey, bytes.NewReader(data), int64(len(data))); err != nil {
+				fmt.Printf("WARNING: MinIO Lua upload failed (%v) — file on local PVC only\n", err)
+			}
+		}
+		if h.s.MinIO != nil {
+			minioURL = h.s.MinIO.GetObjectURL(artifactKey)
+		}
+		writeOK(w, map[string]interface{}{
+			"type": nodeType, "filename": filename, "path": fpath, "size": len(data),
+			"minio_url": minioURL,
+		})
+		return
+	}
+
+	// POST /api/lua/{nodeType}/deploy — 从制品库下发 Lua 到 etcd (触发热重载)
+	if r.Method == "POST" && subPath == "deploy" {
+		var body struct {
+			Filename string `json:"filename"`
+			URLPath  string `json:"url_path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, "invalid JSON body"); return
+		}
+		if body.Filename == "" {
+			writeErr(w, "filename required"); return
+		}
+		if body.URLPath == "" {
+			// 自动从文件名推导 url_path: echo.lua → /hello/echo
+			// HELLO_HTTP → hello, HELLO_HTTPS → hello, LOGIC → logic
+			name := strings.TrimSuffix(body.Filename, ".lua")
+			prefix := strings.ToLower(nodeType)
+			if idx := strings.Index(prefix, "_"); idx > 0 {
+				prefix = prefix[:idx]
+			}
+			body.URLPath = "/" + prefix + "/" + name
+		}
+		// 从 PVC 读取文件
+		fpath := filepath.Join("/app/data/lua_scripts", nodeType, body.Filename)
+		data, err := os.ReadFile(fpath)
+		if err != nil {
+			writeErr(w, "read artifact: "+err.Error()); return
+		}
+		content := string(data)
+		// 写入 etcd module config (与现有 POST 逻辑一致)
+		modules, err := readModuleConfig()
+		if err != nil {
+			writeErr(w, "etcd error: "+err.Error()); return
+		}
+		var previous map[string]interface{}
+		found := false
+		for i, m := range modules {
+			if up, _ := m["url_path"].(string); up == body.URLPath {
+				previous = m
+				ver := 0
+				if v, ok := m["version"].(float64); ok { ver = int(v) + 1 } else { ver = 1 }
+				m["script_content"] = content
+				m["version"] = float64(ver)
+				if _, ok := m["so_path"]; !ok {
+					m["so_path"] = "plugins/HelloHttp_ModuleLua.so"
+					m["entrance_symbol"] = "create"
+					m["load"] = true
+				}
+				modules[i] = m
+				found = true
+				break
+			}
+		}
+		if !found {
+			modules = append(modules, map[string]interface{}{
+				"url_path": body.URLPath, "script_content": content, "version": float64(1),
+			})
+		}
+		if err := writeModuleConfig(modules); err != nil {
+			writeErr(w, "etcd write error: "+err.Error()); return
+		}
+		writeOK(w, map[string]interface{}{
+			"node_type":   nodeType,
+			"url_path":    body.URLPath,
+			"filename":    body.Filename,
+			"size":        len(content),
+			"previous":    previous,
+		})
+		return
+	}
+
 	writeErr(w, "method not allowed")
 }
 
@@ -1025,4 +1177,36 @@ func fileMD5(path string) string {
 	}
 	h := md5.Sum(data)
 	return hex.EncodeToString(h[:])
+}
+
+// #159: etcd browser — list keys and values under a prefix
+func (h *Handler) EtcdBrowser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeErr(w, "method not allowed")
+		return
+	}
+	prefix := r.URL.Query().Get("prefix")
+	if prefix == "" {
+		prefix = "/thunder/"
+	}
+	kvs, err := h.s.EtcdGetPrefix(prefix)
+	if err != nil {
+		writeErr(w, "etcd error: "+err.Error())
+		return
+	}
+	// Convert to sorted key list
+	type KeyEntry struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	entries := make([]KeyEntry, 0, len(kvs))
+	for k, v := range kvs {
+		entries = append(entries, KeyEntry{Key: k, Value: v})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
+	writeOK(w, map[string]interface{}{
+		"prefix":  prefix,
+		"count":   len(entries),
+		"entries": entries,
+	})
 }

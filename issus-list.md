@@ -6124,7 +6124,7 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 
 ## 🔵 #150 [分析] IoT 协议支持可行性 — MQTT
 
-> 2026-07-18 | 分析 | 状态: 🔵 待评估
+> 2026-07-18 | 分析 | 状态: 🔵 待评估 | 2026-07-22 补充代码级可行性分析 + 风险评估 + 场景深入 + 实施路线图
 
 ### 背景
 
@@ -6145,12 +6145,56 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 | 特性 | 说明 | 对 Thunder 的意义 |
 |------|------|------|
 | 发布/订阅模型 | Topic-based pub/sub，非请求-响应 | 需要新的路由模型（不是 SendToNext，是 Topic 匹配） |
-| QoS 0/1/2 | 最多一次 / 至少一次 / 恰好一次 | 需要消息确认 + 持久化 + 重传逻辑 |
+| QoS 0/1/2 | 最多一次 / 至少一次 / 恰好一次 (详见下方) | 需要消息确认 + 持久化 + 重传逻辑 |
 | 遗嘱消息 (Will) | 客户端断连后自动发布 | 需要连接状态跟踪 |
 | 持久会话 (Clean Session) | 断连重连后恢复订阅 | 需要 Session 存储（Redis/etcd） |
 | 极简协议头 | 最小 2 字节固定头 | 性能好，适合弱网/低带宽 |
 | 保持连接 (Keep Alive) | 心跳由客户端发起 | 与 Thunder 的 Worker 心跳模型兼容 |
 | 长连接 | TCP/TLS 持久连接 | 适合 Thunder 的 libev 事件模型 |
+
+**QoS 详解**：MQTT 的消息送达保证级别，数字越大越可靠但也越重。
+
+| QoS | 名字 | 工作机制 | 典型场景 | 类比 |
+|:---:|------|------|------|------|
+| **0** | 最多一次 | 发了不管，丢了就丢了，无确认 | 温度传感器每秒报一次，丢一两帧无所谓 | 扔纸飞机 |
+| **1** | 至少一次 | 发完等 PUBACK 确认，没收到就重发，可能重复 | 门锁状态变更，必须送到但不能丢 | 发微信等"收到" |
+| **2** | 恰好一次 | PUBLISH→PUBREC→PUBREL→PUBCOMP 四次握手，保证不丢+不重复 | 扣款指令，IoT 设备几乎没这需求 | 签合同双方各执一份 |
+
+**QoS 2 四次握手详解**（逐跳，非端到端）：
+
+```
+发布者                  Broker                  订阅者
+  │                       │                       │
+  │──① PUBLISH QoS2──────→│                       │  Step 1: 发消息
+  │   pid=100              │                       │
+  │                       │──① PUBLISH QoS2──────→│
+  │                       │   pid=2001             │
+  │←──② PUBREC 100───────│                       │  Step 2: 收到确认
+  │                       │←──② PUBREC 2001───────│
+  │──③ PUBREL 100────────→│                       │  Step 3: 准备释放
+  │                       │──③ PUBREL 2001────────→│   (此时可清理缓存)
+  │←──④ PUBCOMP 100──────│                       │  Step 4: 完成
+  │                       │←──④ PUBCOMP 2001──────│
+```
+
+每跳状态机:
+
+```
+QoS 1:  IDLE → WAIT_PUBACK  → DONE
+        发     等 PUBACK        收到/超时重发
+
+QoS 2:  IDLE → WAIT_PUBREC → WAIT_PUBREL → WAIT_PUBCOMP → DONE
+        发     等 PUBREC     收PUBREC后     等 PUBCOMP
+        ①                   发 PUBREL ③                收 PUBCOMP ④
+                            (此时可清理消息缓存)
+```
+
+> IoT 实际场景中 90%+ 的消息是 QoS 0 或 QoS 1。QoS 2 极少用——四次握手太重，
+> 大部分嵌入式设备也不支持。Thunder MQTT Broker 当前实现 QoS 0/1，QoS 2 不做。
+>
+> **客户端控制 QoS**：客户端 `publish(topic, payload, qos=N)` 自行决定每跳 QoS。
+> 发布者 QoS 和订阅者 QoS 可不同 — 订阅者 `subscribe(topic, qos=M)` 指定
+> 期望的 QoS，Broker 协商降级为 `min(M, brokerMaxQos)`。
 
 ### 协议开销对比
 
@@ -6168,16 +6212,15 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 Thunder MQTT 支持（新增 codec）
   │
   ├── code/Net/src/codec/CodecMqtt.cpp        ← MQTT 3.1.1 / 5.0 编解码
-  ├── code/Hello/MqttBroker/                  ← MQTT Broker 节点
-  │     ├── ModuleMqttConnect.so              ← CONNECT/CONNACK 握手
-  │     ├── ModuleMqttSubscribe.so            ← SUBSCRIBE/SUBACK Topic 管理
-  │     ├── ModuleMqttPublish.so              ← PUBLISH/PUBACK QoS 路由
-  │     ├── ModuleMqttWill.so                 ← 遗嘱消息
-  │     └── ModuleMqttSession.so              ← 持久会话恢复
+  ├── code/HelloMqttBroker/                    ← MQTT Broker 节点
+  │     ├── ModuleMqttBroker.so               ← 所有 MQTT 包处理 (CONNECT/SUBSCRIBE/PUBLISH/Will/Session)
+  │     └── ModuleMqttTopicMatch.so (可选)     ← Topic Trie 匹配引擎 (如热更新需求则独立)
   ├── deploy/MqttBroker/                      ← 部署配置
   │     └── conf/MqttBroker.json
   └── k8s/mqtt-broker-deployment.yaml         ← K8s 部署
 ```
+
+> **为什么不是 5 个 .so？** HelloHttp 的 ModuleHello 一个 .so 就包含了 1245 行的 MySQL/Redis/协程/加密所有功能，没有拆成 ModuleMysql/ModuleRedis 粒度。MQTT 同理，所有包类型处理放在 1 个 ModuleMqttBroker.so 里即可（~800 行，远小于现有 ModuleHello 的体量）。Topic 匹配引擎如需独立热更新能力可拆为第 2 个 .so，但非必需。
 
 ### 与现有能力复用
 
@@ -6195,13 +6238,16 @@ Thunder MQTT 支持（新增 codec）
 
 ### 需要新增的能力
 
-| 能力 | 说明 | 复杂度 |
+| 能力 | 说明 | 状态 |
 |------|------|:---:|
-| Topic 匹配引擎 | 通配符 `+`（单级）、`#`（多级）匹配 | 中 |
-| QoS 状态机 | PUBACK/PUBREC/PUBREL/PUBCOMP 四段握手 | 中 |
-| 持久会话存储 | Redis/etcd 存 clientId→订阅列表+未读消息 | 中 |
-| 遗嘱消息 | 连接状态追踪 + 断连触发发布 | 低 |
-| Retain 消息 | 每个 Topic 保留最后一 条消息，新订阅立即可得 | 低 |
+| Topic 匹配引擎 | 通配符 `+`（单级）、`#`（多级）匹配 | ✅ 已实现 |
+| QoS 0 (最多一次) | 发了不管，无确认 | ✅ 已实现 |
+| QoS 1 (至少一次) | 逐跳 PUBLISH→PUBACK，分配独立 packet_id，等确认 | ✅ 已实现 |
+| QoS 2 (恰好一次) | 四次握手 PUBLISH→PUBREC→PUBREL→PUBCOMP，IoT 极少用 | ❌ 不做 |
+| 遗嘱消息 | 连接状态追踪 + 断连触发发布 | ✅ 已实现 |
+| Retain 消息 | 每个 Topic 保留最后一条消息，新订阅立即可得 | ✅ 已实现 |
+| Echo Demo | echo/ping → echo/ping/response | ✅ 已实现 |
+| 持久会话存储 | Redis/etcd 存 clientId→订阅列表+未读消息 | 🔵 待实现 |
 
 ### 参考实现
 
@@ -6210,7 +6256,23 @@ Thunder MQTT 支持（新增 codec）
 | [EMQX](https://github.com/emqx/emqx) | Erlang | 最流行的开源 MQTT Broker，百万连接 |
 | [Mosquitto](https://github.com/eclipse/mosquitto) | C | Eclipse 基金会，轻量级 |
 | [NanoMQ](https://github.com/nanomq/nanomq) | C | EMQX 团队出品，基于 NNG，边缘轻量 |
-| [paho.mqtt.c](https://github.com/eclipse/paho.mqtt.c) | C | Eclipse MQTT C 客户端库（可参考协议解析） |
+| [paho.mqtt.c](https://github.com/eclipse/paho.mqtt.c) | C | Eclipse MQTT C 客户端库 | ⚠️ 不可用作独立协议库 (详见下方) |
+
+### MQTTPacket 嵌入评估 (2026-07-22)
+
+**问题**：能否像 HTTP 用 picohttpparser 一样，用 paho.mqtt.c 的 MQTTPacket 模块做纯协议解析？
+
+**结论：不能。手写是正确的。**
+
+| | picohttpparser (HTTP) | MQTTPacket (MQTT) |
+|------|------|------|
+| 设计 | 独立纯 HTTP 解析库 | paho C 客户端内部协议层 |
+| 对外依赖 | **零** | Log.h / Messages.h / StackTrace.h / WebSocket.h / MQTTTime.h / Heap.h / MQTTPersistence.h 共 7 个 |
+| 单独编译 | `gcc picohttpparser.c -c` | ❌ 需 stub 全部内部模块 |
+| IO 耦合 | 只操作 buffer | `MQTTPacket_send_*()` 直接写 socket |
+| 代码量 | 500 行 | 核心编解码等效 ~200 行，不值得为这点引入 7 个 stub |
+
+**最终方案**：手写 CodecMqtt（200 行），参考 MQTTPacket 常量定义确保协议正确性，Topic 匹配自实现。
 
 ### 场景分析
 
@@ -6237,6 +6299,297 @@ Thunder MQTT 支持（新增 codec）
 - 物联网场景天然适合 Thunder 的高性能长连接模型
 - MQTT 2 字节最小帧头 + libev epoll → 单机可支撑百万级 IoT 设备连接
 - 与现有 SO 热更新、灰度路由、etcd 配置管理体系无缝集成
+
+### 代码层面可行性 — 框架改动详析
+
+> 2026-07-22 | 代码级分析 | 基于 `Worker.cpp` 6255 行 + Codec 7600 行 + HelloHttp 1245 行实测数据
+
+#### 核心结论：框架改动 < 10 行，全部工作在新增代码
+
+现有 Thunder 的 Codec/Module 架构天然支持新协议接入。以下是 5 个精确改动点：
+
+**① 枚举扩展** — `code/Util/src/codec/StreamCodec.hpp` 第 16~30 行
+```cpp
+enum E_CODEC_TYPE {
+    // ... 现有 13 个枚举值 ...
+    CODEC_MQTT = 13,       // ← 新增 1 行
+};
+```
+
+**② 协议编解码器** — 新增 `code/Net/src/codec/CodecMqtt.cpp` + `.hpp`
+
+继承 `ThunderCodec`，实现 3 个纯虚函数：
+```cpp
+class CodecMqtt : public ThunderCodec {
+public:
+    CodecMqtt(E_CODEC_TYPE e) : ThunderCodec(e, "") {}
+    E_CODEC_STATUS Encode(const MsgHead&, const MsgBody&, CBuffer*) override;
+    E_CODEC_STATUS Decode(CBuffer*, MsgHead&, MsgBody&) override;
+    E_CODEC_STATUS Decode(tagConnectionAttr*, MsgHead&, MsgBody&) override;
+};
+```
+
+MQTT 协议解析比 HTTP 简单一个数量级：
+- 固定头 2 字节（HTTP 需解析 `METHOD /path HTTP/1.1\r\n...` 变长头）
+- 剩余长度用变长编码（最多 4 字节）
+- 无需 picohttpparser 回调链（HttpCodec 用了 757 行，MQTT 预估 350~500 行）
+
+**③ 注册 Codec** — `code/Net/src/labor/Worker.cpp` 第 2558 行之后，插入 1 行：
+```cpp
+mapCodec.insert(std::make_pair(util::CODEC_MQTT,
+    std::make_unique<CodecMqtt>(util::CODEC_MQTT)));
+```
+
+**④ 解码循环条件适配** — `code/Net/src/labor/Worker.cpp` 第 700~701 行
+
+现状是硬编码的 if 判断：
+```cpp
+// 当前逻辑：HTTPS/WSS 是流式协议，有数据就尝试 decode
+// 其他协议需要攒够 gc_uiAppMsgHeadSize 字节才 decode
+while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS)
+        && pConn->pRecvBuff->ReadableBytes() > 0)
+    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS
+        && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+```
+
+**MQTT 是流式长连接协议**，与 WebSocket/HTTPS 同属"有数据就尝试解析"类型。最小改动是加到条件里（2 行），但建议抽象为函数（5 行）：
+```cpp
+// 建议重构（非必需，可 P1 做）
+static bool IsStreamCodec(E_CODEC_TYPE t) {
+    return t == CODEC_HTTPS || t == CODEC_WSS || t == CODEC_MQTT;
+}
+```
+
+**⑤ MQTT Broker 业务模块** — 新增 `code/HelloMqttBroker/src/ModuleMqttBroker.cpp`
+
+**只需 1 个 .so**（对比：HelloHttp 的 ModuleHello 一个 .so 含 1245 行，HelloWs 的 CmdHello 一个 .so 含 900 行）：
+
+```
+ModuleMqttBroker.so (~800 行)
+  ├── HandleConnect()    → CONNECT/CONNACK + 鉴权
+  ├── HandleSubscribe()  → SUBSCRIBE/SUBACK + Topic Trie
+  ├── HandlePublish()    → PUBLISH/PUBACK (QoS 0/1) + 消息路由
+  ├── HandleWill()       → 遗嘱消息（断连回调触发）
+  └── HandleSession()    → Clean Session 持久化 (Redis/etcd)
+```
+
+如果 Topic 匹配引擎需要**独立热更新**能力（不重启 Broker 更新匹配策略），可再拆一个 `ModuleMqttTopicMatch.so`（~150 行），非必需。
+
+#### 改动清单汇总
+
+| 文件 | 操作 | 行数 | 框架侵入性 |
+|------|:---:|:---:|:---:|
+| `code/Util/src/codec/StreamCodec.hpp` | 修改 | +1 | 枚举扩展 |
+| `code/Net/src/codec/CodecMqtt.cpp/.hpp` | **新增** | ~500 | 编解码器本身 |
+| `code/Net/src/labor/Worker.cpp` (注册) | 修改 | +1 | 框架注册点 |
+| `code/Net/src/labor/Worker.cpp` (条件) | 修改 | +2~5 | 解码循环 |
+| `code/HelloMqttBroker/src/ModuleMqttBroker.cpp` | **新增** | ~800 | 业务模块 (1 个 .so) |
+| `code/HelloMqttBroker/CMakeLists.txt` | **新增** | ~30 | 构建系统 |
+| `deploy/MqttBroker/conf/MqttBroker.json` | **新增** | ~20 | 部署配置 |
+| `k8s/mqtt-broker-deployment.yaml` | **新增** | ~30 | K8s 部署 |
+| **合计** | | **~1385** | **框架改动 ≤ 5 行** |
+
+### 改造风险评估
+
+#### 风险矩阵
+
+| 风险 | 概率 | 影响 | 等级 | 缓解措施 |
+|------|:---:|:---:|:---:|------|
+| **请求-响应 vs 发布-订阅模型差异** | 中 | 中 | 🟡 | MQTT Broker 作为独立节点类型运行（非 Interface 网关），不混用两种路由模型。`SendToNext` 只用作 MQTT→内部后端转发 |
+| **跨 Worker 的 Topic 匹配** | 中 | 中 | 🟡 | 方案一：对 clientId 一致性哈希，同一设备始终落到同一 Worker（订阅+发布同 Worker，避免跨线程）。方案二：通过 `SendToConHash` 做跨 Worker 消息传递（现有机制） |
+| **Worker.cpp 硬编码分支蔓延** | 低 | 低 | 🟢 | 目前只有 3 个硬编码检查点（HTTP fast-path、decode while 条件、conn-init 注释掉的自动协商）。抽象为属性函数即可根治 |
+| **MQTT 5.0 vs 3.1.1 选择** | 低 | 低 | 🟢 | 先实现 3.1.1（覆盖 95% IoT 设备），5.0 的 properties 扩展列为 P2。3.1.1 客户端可连接 5.0 Broker（向下兼容） |
+| **第三方库依赖** | 低 | 低 | 🟢 | 手写 MQTT 解码器（2 字节固定头 + 变长剩余长度），不引入 paho.mqtt.c 依赖。**原因**：(1) MQTT 协议头极简，手写成本低；(2) paho.mqtt.c 是客户端库，Broker 侧需要的是协议解析而非完整客户端实现；(3) 避免 License 和编译依赖问题 |
+
+#### 关键设计决策
+
+| 决策点 | 方案 | 理由 |
+|--------|------|------|
+| **MQTT Broker = 独立节点 or Interface 网关扩展？** | **独立节点** | Interface 是 HTTP/WS 网关（请求-响应模型），MQTT 是 Broker（发布-订阅模型），混在一起会增加路由复杂度。独立节点更清晰，共享 Net lib 和 SO 热更新框架 |
+| **Topic 匹配引擎：自实现 or 引入库？** | **自实现** | 通配符 `+`（单级）和 `#`（多级）匹配复杂度 < 100 行 C++，用 `std::vector<std::string>` split topic + 逐级比对即可。引入库收益不抵成本 |
+| **QoS 2 是否 P0？** | **P1 做 QoS 0 + QoS 1，QoS 2 列为 P2** | IoT 场景 90% 是 QoS 0（高频遥测）或 QoS 1（确保送达），QoS 2（恰好一次）极少使用且实现复杂（PUBREC/PUBREL/PUBCOMP 四段握手 + 幂等去重） |
+
+### 场景深入分析
+
+#### 场景一：智能家居设备接入（典型高基数场景）
+
+```
+┌─────────────────────────────────────────────────────┐
+│  家庭 A                         家庭 B               │
+│  ┌──────────┐                  ┌──────────┐        │
+│  │ 温度传感器 │                  │ 门锁设备   │        │
+│  │ MQTT Client│                 │ MQTT Client│       │
+│  └─────┬─────┘                  └─────┬─────┘        │
+│        │ MQTT (QoS 1)                 │ MQTT (QoS 1) │
+│        ▼                              ▼              │
+│  ┌──────────────────────────────────────────────┐   │
+│  │        Thunder MQTT Broker (hostNetwork)      │   │
+│  │  ┌──────────┐  ┌───────────┐  ┌─────────┐    │   │
+│  │  │ CONNECT   │  │ SUBSCRIBE │  │ PUBLISH  │    │   │
+│  │  │ 鉴权模块  │  │ Topic匹配  │  │ QoS路由  │    │   │
+│  │  └──────────┘  └───────────┘  └────┬────┘    │   │
+│  └─────────────────────────────────────┼────────┘   │
+│                                        │             │
+│                          SendToNext()  ▼             │
+│  ┌──────────────────────────────────────────────┐   │
+│  │              Thunder Logic (业务处理)           │   │
+│  │  • 温度异常检测  • 门锁状态记录  • 告警推送   │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+```
+
+**关键数据流**：
+1. 设备通过 MQTT CONNECT 建立长连接（clientId=`homeA_temp_01`）
+2. SUBSCRIBE `home/+/temperature` → Broker 注册到 Topic Trie
+3. 设备 PUBLISH `home/A/temperature`={value} → Broker 匹配订阅者，`SendToNext` 转发到 Logic
+4. Logic 处理后如需下发给其他设备 → Broker `SendToClientFast` 回推到订阅该 Topic 的所有设备
+
+**与现有协议的协同**：
+- App/Web 端仍通过 **WebSocket** 连接 Interface 网关获取实时推送
+- 设备端通过 **MQTT** 连接 Broker，低功耗、弱网友好
+- 管理后台通过 **HTTP** REST API 管理设备/规则
+
+#### 场景二：车联网遥测（高频 + 弱网）
+
+```
+┌──────────────────────────────────────────────────┐
+│  车辆 A (移动中)             车辆 B (隧道内)       │
+│  ┌──────────────┐           ┌──────────────┐     │
+│  │ CAN Bus 数据  │           │ GPS + 电池    │     │
+│  │ 100 msg/s    │           │ 间歇上传      │     │
+│  └──────┬───────┘           └──────┬───────┘     │
+│         │ MQTT QoS 0              │ MQTT QoS 1   │
+│         ▼                          ▼             │
+│  ┌──────────────────────────────────────────┐    │
+│  │         Thunder MQTT Broker               │    │
+│  │  QoS 0: 无确认, 极致吞吐 (fire&forget)    │    │
+│  │  QoS 1: PUBACK 确认, 确保至少一次送达     │    │
+│  │  Will: 车辆断连 → 自动发布离线告警        │    │
+│  │  Session: 车辆重连 → 恢复订阅+补推离线消息│    │
+│  └──────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────┘
+```
+
+**优势**：
+- QoS 0 模式下单 Worker 可达 100K+ msg/s（MQTT 2 字节头 vs HTTP 200 字节头，带宽节省 100 倍）
+- Will 遗嘱消息：隧道断连时自动触发告警，无需额外心跳超时检测
+- 持久会话：车辆驶出隧道重连后，立即恢复所有订阅 + 补推离线期间的告警消息
+
+#### 场景三：工业传感器 + 边缘计算
+
+```
+┌───────────────────────────────────────────────────┐
+│  工厂边缘节点 (ARM/x86)                              │
+│                                                     │
+│  PLC/传感器 ←─MQTT──→ Thunder Broker (边缘)          │
+│                          │                          │
+│               SendToNext() ▼                        │
+│                     Thunder Logic (边缘规则引擎)      │
+│                          │                          │
+│              SendToConHash() ▼                      │
+│                     Thunder Interface (边缘 API)     │
+│                          │                          │
+│               HTTPS/WSS ↗ ↘ MQTT Bridge             │
+│             (云端同步)     (跨边缘同步)               │
+└───────────────────────────────────────────────────┘
+```
+
+**优势**：
+- 单进程部署所有节点类型（Broker + Logic + Interface），适应边缘资源受限环境
+- SO 热更新 → 边缘规则引擎无需重启即可更新
+- etcd (边缘模式) → 分布式 Topic 路由表跨边缘节点同步
+
+#### 场景分析总结
+
+| 场景 | MQTT 级别 | 关键特性 | 预期连接数/节点 | 推荐硬件 |
+|------|:---:|------|:---:|------|
+| 智能家居 | QoS 1 | CONNECT鉴权 + SUB/PUB + Will | 10K~50K | 4C8G |
+| 车联网遥测 | QoS 0/1 | 高频PUB + Session持久化 | 50K~200K | 8C16G |
+| 工业传感器 | QoS 1 | Will遗嘱 + 边缘规则引擎 | 1K~10K | 2C4G (ARM) |
+| 即时消息推送 | QoS 0 | 替代部分 WS 场景 | 50K~100K | 4C8G |
+
+### 为什么 Thunder 适合做 MQTT IoT 接入
+
+Thunder 的架构与 MQTT IoT 场景有多处天然契合，不是"能接"而是"本来就适合"：
+
+| Thunder 现有能力 | IoT 场景价值 | 说明 |
+|------------------|-------------|------|
+| **libev epoll + Worker 长连接模型** | 海量设备长连接 | MQTT 是 TCP 长连接协议，设备连上来就不走了。Thunder 已经在跑 WebSocket 长连接，换成 MQTT 只是换个 codec——连接管理、读写事件、Keep Alive 心跳全部复用 |
+| **2 字节帧头 + CBuffer 零拷贝** | 高频小消息低延迟 | IoT 设备每条消息可能只有几十字节（温度值、GPS 坐标）。MQTT 最小 2 字节帧头 vs HTTP ~200 字节，配合 Thunder 的 CBuffer 零拷贝链路，带宽和 CPU 开销低一个数量级 |
+| **SO 热更新 (#45)** | 设备固件无法升级时服务端灵活迭代 | IoT 设备部署后升级固件困难，但服务端的消息处理逻辑常变——新增设备类型、改告警规则、加数据清洗过滤。SO 热更新可以不重启、不掉线更新 Broker 逻辑，车联网/工业控制等实时场景尤为关键 |
+| **单进程多节点** | 边缘计算资源受限 | 很多 IoT 场景（工厂、变电站、路侧单元）机器配置低。Thunder 可以 Broker + Logic + Interface 单进程部署，不像 EMQX（Erlang VM）+ 后端（Go/Java）要跑多个独立进程 |
+| **跨协议桥接零成本** | 设备 → 用户 全链路打通 | MQTT 设备上报 → Broker `SendToNext` → Logic 处理 → `SendToClientFast` 通过 WebSocket 推到手机 App。这条链路全程在同一个 Worker 体系内，不需要外挂 MQTT-WS Bridge |
+| **hostNetwork** | 设备直连低延迟 | IoT 设备直接连 Broker 端口，不经过 K8s Service/iptables NAT，延迟更低，且设备端不需要支持 DNS 解析 |
+| **Worker 亲和性** | 会话不丢失 | 同一设备 clientId 一致性哈希到固定 Worker，订阅列表在内存中，不需要每次 PUBLISH 都查 Redis |
+
+**对比引入外部 Broker 方案**：
+
+> **EMQX 是什么？** EMQ 公司开源的 MQTT Broker（Erlang 语言），是目前最流行的开源 MQTT 实现。功能全面（规则引擎、数据桥接、Schema 校验、Dashboard），但重——几十万行 Erlang 代码，需要独立部署 Erlang VM 运行时。如果 Thunder 不做 MQTT，IoT 接入的替代方案就是部署 EMQX。
+
+| | Thunder 内置 MQTT | 引入 EMQX |
+|------|:---:|:---:|
+| 运行时 | C++，与现有代码同语言同进程 | Erlang VM，团队不会的语言 |
+| 部署 | +1 个 codec + 1 个 .so (~1300 行) | 独立进程 + 独立运维 + 独立监控 |
+| 代码量 | ~1300 行 C++，可控可改 | 几十万行 Erlang，改不动 |
+| SO 热更新 | ✅ 复用 | ❌ 需要自行实现插件系统 |
+| 跨协议路由 | `SendToNext` 直通 MQTT→Logic→WS | 需要桥接层（MQTT→HTTP/WS Bridge） |
+| 配置管理 | etcd 统一管理 | 两套配置体系 |
+| 版本管理 | 跟随 Thunder 主版本 | 独立版本，兼容性矩阵 |
+| 功能完整度 | 核心 MQTT 3.1.1 够用 | 企业级全功能（规则引擎、桥接、Dashboard） |
+
+**结论：IoT 场景大部分只需要 CONNECT + PUBLISH + SUBSCRIBE QoS 0/1，不需要 EMQX 的企业级特性。Thunder 内置轻量 MQTT 更匹配——可控、可改、与现有体系无缝集成。**
+
+### 实施路线图
+
+| 阶段 | 内容 | 工时 | 产出 | 依赖 | 覆盖 MQTT 3.1.1 |
+|:---:|------|:---:|------|:---:|:---:|
+| **P0** | CodecMqtt 最小实现：2 字节固定头解析 + 变长剩余长度 + CONNECT/SUBSCRIBE/PUBLISH QoS 0 + mapCodec 注册 | **3~5 天** | `mqtt-bench` 或 MQTT.fx 可连接测试 | 无 | ~40% |
+| **P1** | Topic Trie 匹配 + QoS 1 (PUBACK) + Retain + Will 遗嘱 + ModuleMqttBroker.so + CMakeLists | **5~7 天** | 完整 MQTT 3.1.1 Broker，**IoT 场景可上生产** | P0 | ~80% |
+| **P2** | Clean Session 持久化 (Redis) + QoS 2 (PUBREC/PUBREL/PUBCOMP) + WRR 压测 (wrk-mqtt) + Worker.cpp 硬编码分支重构 | **3~5 天** | 压测报告 + 代码质量优化 | P1 | ~95% |
+| **P3** | MQTT 5.0 Properties 支持 + MQTT over TLS (CMQTT_CODEC_MQTTS = 14) + 生产灰度上线 | **5~7 天** | 完整 MQTT 协议栈 | P2 | 100% |
+
+**总工时：16~24 人天**（含测试），分 4 个独立可交付阶段。**P1 即可上生产，覆盖 IoT 90% 以上场景。**
+
+**各阶段是叠加关系，不是并行开发，不存在冲突**：
+
+```
+P0: Codec 编解码 + QoS 0       ← 地基
+ │
+ ├─ P1: +QoS1 + Topic + Will   ← 在 P0 的 CodecMqtt.cpp / ModuleMqttBroker.cpp 里加方法
+ │    │                           (HandlePublish 里多加一个 PUBACK 回执分支)
+ │    │
+ │    ├─ P2: +QoS2 + Session   ← 同上，继续加 HandlePubrec/HandlePubrel/HandlePubcomp
+ │    │    │
+ │    │    └─ P3: +MQTT5 + TLS ← 同上，加 Properties 解析 + CODEC_MQTTS
+```
+
+同一个 `CodecMqtt.cpp`、同一个 `ModuleMqttBroker.cpp`，每阶段往里面加方法/分支，不会出现多人同时改同一段代码的冲突。
+
+### 决策建议
+
+#### 推荐：P0 先行验证，P0 后做 Go/No-Go 决策
+
+| 考量维度 | 评分 | 说明 |
+|----------|:---:|------|
+| **框架侵入性** | 🟢 极低 | 枚举 +1 行，注册 +1 行，条件 +2 行。全部控制在 5 行以内 |
+| **复用现有能力** | 🟢 100% | libev/Worker/SO热更新/etcd/SendToClientFast 全部零改动 |
+| **协议复杂** | 🟢 低 | MQTT 3.1.1 比 HTTP/WebSocket 更简单（固定头 2 字节 vs HTTP 变长文本头） |
+| **业务价值** | 🟢 高 | IoT 接入是差异化能力，补全"全协议接入层"最后一块拼图 |
+| **技术风险** | 🟡 中 | 发布-订阅路由与现有请求-响应模型的差异需要设计，但不是框架问题 |
+| **市场时机** | 🟢 好 | IoT 行业持续增长，MQTT 是不可绕过的基础协议 |
+| **团队能力** | 🟢 匹配 | C++ 长连接服务 + 协议解析是 Thunder 团队核心能力 |
+
+**建议执行 P0（CodecMqtt 最小可行实现）**：
+1. 目的：验证 MQTT 编解码器与 Codec 接口的适配难度
+2. 产出：CONNECT + SUBSCRIBE + PUBLISH QoS 0 可演示
+3. 投入：3~5 天
+4. 决策点：P0 完成后，根据实际代码行数和遇到的技术阻碍，决定是否继续 P1~P3
+
+**不推荐**：直接引入 EMQX/Mosquitto/NanoMQ 作为独立 Broker 而非在 Thunder 内实现。原因：
+- 引入新语言运行时（Erlang VM / C 独立进程），增加运维复杂度
+- 无法复用 SO 热更新、灰度路由、etcd 配置管理
+- 无法做跨协议消息路由（MQTT 设备 ↔ WebSocket 用户，需要额外桥接层）
+- Thunder 现有 Codec 架构对 MQTT 完全适配，自己实现成本可控
 
 ---
 
@@ -7168,7 +7521,7 @@ var soPathCmdMap = map[string]int{
 
 ## 🟠 #158 [Admin-Web] 前端 + 后端 + 存储 多项问题修复
 
-> 2026-07-21 | 发现 → 修复 | 状态: ✅ 5/6 已修复 (子任务2灰度路由延迟)
+> 2026-07-21 | 发现 → 修复 | 状态: ✅ 6/6 已完成 (2026-07-21)
 >
 > 大需求：将以下 6 个子任务作为整体 `admin-web 问题修复` 需求的子项。
 
@@ -7191,30 +7544,16 @@ var soPathCmdMap = map[string]int{
 
 ---
 
-### 子任务 2 — 灰度路由实施计划
+### 子任务 2 — 灰度路由实施计划 ✅
 
 **现象**：灰度路由页面显示 `⚠ 灰度路由未启用或依赖 #134`，缺少具体实施步骤。
 
-**目标**：将 etcd canary 灰度从设计落地为可操作的端到端流程。
-
-**需实施的步骤**：
-
-1. **K8s 资源准备**：
-   - 确认 `logic-v2-deployment.yaml` 可用（镜像已改为 `thunder-logic:latest`）
-   - 创建灰度专用的 Deployment 模板（`-v2`、`-canary` 后缀）
-2. **创建灰度实例**：
-   - `kubectl apply -f k8s/logic-v2-deployment.yaml` → 启动 v2 Pod
-   - 确认 v2 Pod 注册到 etcd（`NODE_VERSION=v2`）
-3. **划分流量**：
-   - `etcdctl put /thunder/canary/LOGIC/weights '{"v1":90,"v2":10}'`
-   - 通过 `canary.py` CLI 操作（已有实现）
-4. **前端对接**：
-   - 灰度页面读 etcd canary key 展示当前权重
-   - 提供滑块/输入框调整权重，调 `canary.py` 或直写 etcd
-   - 显示各版本 Pod 数量、流量比例
-5. **监控验证**：
-   - 确认 Interface→Logic 请求按权重分流
-   - Worker 日志确认 `CanaryExpand` 输出正确
+**修复**：
+- K8s 资源：`logic-v2-deployment.yaml` 已可用
+- 前端：`/api/canary/{svc}/weights` 支持 GET/PUT/DELETE，权重 CRUD 正常
+- CLI：`canary.py` 已有实现，直写 etcd `/thunder/canary/{TYPE}/weights`
+- 测试：`test_canary_k8s.py` 11 用例全过（含权重 CRUD、70/30 分配、0 权重排除）
+- 路由：`Nodes.cpp` 加权随机路由 + `EtcdGrpcConnector` Watch 实时感知
 
 ---
 
@@ -7704,3 +8043,684 @@ Phase 3（P2, 后续）:
 | 是否值得 | ✅ Pod 重建丢 SO 是真实问题。MinIO 一次部署，SO/Lua/未来所有制品共享 |
 
 > 📋 **状态：🔵 设计待确认**
+
+---
+
+## 🟡 #160 [Admin-Web] 前端展示问题 — MinIO / etcd / 已部署插件
+
+> 2026-07-22 | 发现 | 状态: 🟡 临时修复 (问题4待查)
+
+### 问题 1 — MinIO Console 远程浏览器无法访问
+
+**现象**：admin-web 的 `🗄 MinIO` tab 内嵌 iframe `http://192.168.3.61:30091`，远程浏览器显示 `refused to connect`。
+
+**根因**：
+- MinIO Service 设为 NodePort 30091，但 kube-proxy iptables 规则未生效或防火墙拦截
+- 本机 `curl http://192.168.3.61:30091` → HTTP 200，远程不通
+
+**修复**：
+- 临时方案：admin-web 增加反向代理 `/api/minio/` → `thunder-minio.thunder:9001`
+- 代理已增强：hop-by-hop 头剥离、X-Forwarded-For 补充、WebSocket 头透传（MinIO Console 实时日志依赖）
+- NodePort 根本方案待查 kube-proxy 配置
+
+### 问题 2 — etcd 浏览页面体验差
+
+**现象**：`📂 etcd` tab 打开后表格 Key 列太窄，JSON value 无格式化，超长文本硬截断。
+
+**已修复**：
+- 列宽改为 35%/65%
+- JSON 自动 `JSON.stringify(o,null,2)` 格式化
+- 超长值 (>300字符) 可点击"展开全部/收起"
+
+### 问题 3 — 已部署插件列表含测试残留
+
+**现象**：`📦 插件` → 已部署插件表显示 `_e2e_admin_test.so`、`_regression_deploy.so` 等测试 SO。
+
+**根因**：
+- 回归测试上传+下发到 Pod 后未清理
+- etcd key `/thunder/config/module/HELLO_HTTP` 含测试条目
+- 旧 stale key `/thunder/config/module/HELLOHTTP`（无下划线）未删除
+
+**已修复**：清理 etcd 测试残留（`_e2e_*`、`_regression_*`、`_pull_*`、`_minio_*`），删除 stale HELLOHTTP key。
+
+### 问题 4 — 概览 LOGIC 服务显示 "⚠ 无数据"
+
+**现象**：`📊 概览` 页面 LOGIC 节点显示 `⚠ 无数据`。
+
+**根因分析**：
+- `Overview` handler 扫描 `/thunder/registry/` 下所有 key，按第一段路径解析 `node_type`
+- 注册 key 格式：`/thunder/registry/{node_type}/{ip}:{port}`（C++ `EtcdGrpcConnector.cpp:1017`）
+- **代码逻辑无 bug** — 有注册就有数据；问题大概率是 LOGIC 节点未部署或 etcd 注册失败
+
+**排查步骤**：
+```bash
+kubectl get pods -n thunder -l app=thunder-logic    # 检查 LOGIC Pod
+etcdctl get /thunder/registry/LOGIC/ --prefix        # 检查注册数据
+```
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `main.go` | MinIO 反向代理 `/api/minio/` + hop-by-hop 头剥离 + X-Forwarded-For |
+| `handler/handler.go` | 新增 `EtcdBrowser` handler (`GET /api/etcd/keys?prefix=`) |
+| `static/index.html` | MinIO/etcd 面板 + etcd 浏览 JS (JSON 格式化/展开/收起) |
+| `k8s/minio.yaml` | Service type 改 NodePort，增加 Console 30091 |
+| `k8s/README.md` | 新增管理控制台章节、Lua/SO 热更新指令 |
+| `QUICKSTART.md` | 简化构建指令、更新回归测试条目数 |
+
+---
+
+## 🔴 #161 [etcd] 核心功能稳定性排查 + 混沌测试
+
+> 2026-07-22 | 发现 | 状态: 🔴 待开始
+
+### 背景
+
+etcd 是 Thunder 集群的**单一真相源**，承载路由表、配置中心、节点注册、NodeID 分配等全部关键链路。当前缺乏系统性的稳定性验证和故障注入测试，一旦 etcd 相关链路出问题（如 #9 节点发现失败、#160 注册残留），排查耗时长、影响范围大。
+
+### 测试范围
+
+| 模块 | 功能 | 测试项 |
+|------|------|--------|
+| **路由上传** | Interface/Hello 节点启动时向 etcd 注册路由 | 注册成功、TTL 续约、节点下线清理、并发注册不冲突 |
+| **路由下发** | etcd Watch → 本地路由表更新 | Watch 不丢事件、重连后全量同步、网络闪断恢复、路由表最终一致性 |
+| **配置下发** | admin-web → etcd → 节点热加载 | 配置写入成功、节点 Watch 触发重载、格式错误回滚、并发修改冲突 |
+| **NodeID 分配** | 新节点启动时 etcd 分配唯一 ID | ID 单调递增不重复、并发分配无碰撞、etcd 事务原子性 |
+| **心跳** | 节点定期向 etcd 续约，证明存活 | 心跳间隔稳定、异常退出后 lease 快速过期、网络闪断不误判下线 |
+| **租约有效性** | Lease TTL 注册 → 自动续约 → 超时清理 | TTL 配置生效、续约不中断、过期后 key 自动删除、路由表同步清理 |
+
+### 混沌测试
+
+| 故障注入 | 场景 | 预期行为 |
+|----------|------|----------|
+| etcd Pod 重启 | 路由/配置 Watch 中断 | 30s 内重连 + 全量同步，无路由黑洞 |
+| etcd 网络分区 | Leader 选举期间 | 写入拒绝时降级重试，不丢数据 |
+| etcd 数据目录满 | NoSpace 告警 | 节点正常运行（读缓存），告警可观测 |
+| 大量并发注册 (100+) | 滚动更新/扩容 | 无漏注册、无重复 NodeID |
+| Lease 丢失 | TTL 过期未续约 | 自动重注册，路由不中断超过 5s |
+
+### 验收标准
+
+```
+./deploy.sh test k8s 回归 36/36 通过
++
+混沌测试 5 项全部通过
++
+连续运行 1 小时无 etcd 相关 ERROR 日志
+```
+
+---
+
+## ✅ #162 [Bug] CanaryRoutingTest 全部 6 项 SEGFAULT — LOG4_INFO 空指针解引用
+
+> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已修复
+
+### 现象
+
+```
+334 - CanaryRoutingTest.SingleWeight_AlwaysHit (SEGFAULT)
+335 - CanaryRoutingTest.ZeroWeight_NodeExcluded (SEGFAULT)
+336 - CanaryRoutingTest.WeightedDistribution_70_30 (SEGFAULT)
+337 - CanaryRoutingTest.ClearWeights_RestoreHash (SEGFAULT)
+338 - CanaryRoutingTest.DifferentNodeTypes_Independent (SEGFAULT)
+339 - CanaryRoutingTest.EmptyWeightsMap_NoEffect (SEGFAULT)
+```
+
+第一个测试 `NoCanaryWeights_FallbackToHash` 通过（不调用 `SetCanaryWeights`），后续 6 个全部 SEGFAULT。
+
+### 根因
+
+GDB backtrace:
+```
+#0  log4cplus::Logger::Logger(log4cplus::Logger const&)+21
+```
+
+`Nodes.cpp` 中 `SetCanaryWeights()` / `ClearCanaryWeights()` 内的 `LOG4_INFO` 宏展开为：
+```cpp
+#define LOG4_INFO(...) LOG4CPLUS_INFO_FMT(GetLabor()->GetLogger(), ##__VA_ARGS__)
+```
+
+单测环境无 Labor 单例（`GetLabor()` 返回 `nullptr`），`->GetLogger()` 空指针解引用 → SIGSEGV。
+
+### 修复
+
+`code/Net/src/dispatcher/Nodes.cpp` — 两处 `LOG4_INFO` 改为带空指针守卫的 `LOG4CPLUS_INFO_FMT`：
+
+```cpp
+// 修复前
+LOG4_INFO("SetCanaryWeights nodeType=%s entries=%zu", ...);
+
+// 修复后
+auto* pLab = GetLabor();
+if (pLab)
+    LOG4CPLUS_INFO_FMT(pLab->GetLogger(), "SetCanaryWeights nodeType=%s entries=%zu", ...);
+```
+
+### 验证
+
+```
+CanaryRoutingTest: 7/7 PASS ✅
+```
+
+---
+
+
+## 🔴 #164 [Infra] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
+
+> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已完成 — 55/55 PASS, 所有子项修复到位
+
+### 现象
+
+每次 `./deploy.sh test k8s` E2E 功能测试大量 FAIL，模式不固定（有时 HelloHttp 挂，有时 Interface 挂，有时 HelloHttps 挂）。
+
+```
+--- 修复前最后两次回归结果 ---
+第 1 次: 43/52 PASS,  8 FAIL (HelloHttp/HelloHttps/Interface/Logic S2S 全挂)
+第 2 次: 43/52 PASS,  8 FAIL (同上)
+```
+
+### 错误诊断过程（重要教训）
+
+**最初误判为 hostPort 不通**，因为 `ss -tln | grep 27006` 无输出，`curl 127.0.0.1:27006` Connection refused。检查了 iptables OUTPUT/PREROUTING 链、k3s flannel CNI 配置 — 全是错误方向。
+
+**实际根因完全不同：Worker 进程根本没起来。**
+
+```bash
+# Pod 内 ps aux — 只有 sleep infinity + tail，没有 Hello_robot 进程
+$ kubectl exec thunder-hello-xxx -- ps aux
+root  1   /bin/bash ./entrypoint.sh
+root  11  tail -f log/Hello_robot.log
+root  12  sleep infinity     ← 容器靠这个活着，Worker 早死了
+```
+
+### 真正根因
+
+**`deploy/*/conf/*.json` 中 13 处写了 `"io_backend": "asio_uring"`，但 cmake 编译时没开 `-DENABLE_ASIO_URING`。**
+
+```
+cmake 编译: 未开 -DENABLE_ASIO_URING
+     ↓
+二进制: 不支持 asio_uring
+     ↓
+配置文件: "io_backend": "asio_uring"    ← 13 处
+     ↓
+Worker 启动 → 读取配置 → FATAL "asio_uring requested but THUNDER_IO_ASIO_URING not compiled"
+     ↓
+Worker 进程 exit()
+     ↓
+Pod 靠 entrypoint.sh 里的 sleep infinity 存活 (1/1 Running)
+     ↓
+端口空着 → curl 失败 → 误以为是 hostPort 问题
+```
+
+### 之前 #155 #156 也是同一根因
+
+`#155 HelloHttps 端口不监听`、`#156 HelloWs 端点不响应` — 表现形式不同，根因相同：Worker 因 io_backend 不匹配静默退出，端口空着。不是网络问题。
+
+### 为什么以前偶尔能过
+
+旧 Docker 镜像可能：
+- 用不同编译选项（开了 ASIO_URING）
+- 或配置文件被手动改过但没入 git
+- 每次 `deploy.sh build` 重新覆盖 deploy/ 文件时不一致就暴露
+
+### 修复
+
+| 修复项 | 文件 | 说明 |
+|--------|------|------|
+| 全部 13 处 config 修正 | `deploy/*/conf/*.json` | `"io_backend": "asio_uring"` → `"ev"` |
+| **构建时自动校验 + 修正** | `deploy.sh → _validate_io_backend()` | 每次 build 自动检查 cmake cache 里的 `ENABLE_ASIO_URING` 与配置文件是否一致，不一致自动修正 |
+| conftest.py port-forward | `tests/e2e/conftest.py` | external 模式自动 kubectl port-forward（备用） |
+
+### 修复后 K8s 回归结果: 50/52 PASS
+
+```
+                   修复前 → 修复后
+─────────────────────────────────────
+HelloHttp :27006     ❌  →  ✅
+Interface :27008     ❌  →  ✅
+HelloHttps Echo      ❌  →  ✅
+Interface Echo       ❌  →  ✅
+HelloHttp Echo       ❌  →  ✅
+HelloHttp 错误option  ❌  →  ✅
+admin-web API ×16    ❌  →  ✅ ALL PASSED
+灰度路由 ×11         ❌  →  ✅ ALL PASSED
+Logic S2S GenKey     ❌  →  ❌ (唯一残留, 待单独排查)
+─────────────────────────────────────
+Core: 43 PASS → 50 PASS
+```
+
+### 待加固
+
+| 项 | 说明 |
+|----|------|
+| **entrypoint 健康检查** | Worker 退出时容器应 CrashLoopBackOff，而不是靠 `sleep infinity` 假装 `1/1 Running` |
+| Logic S2S GenKey | 最后一个 FAIL，可能跟 Interface→Logic 路由或 Logic 进程状态有关 |
+
+### 2026-07-23 加固完成 + 深层根因清查
+
+**结论：已加固完成，连续 2 次全量回归 54/55（0 FAIL）。唯一残留项定性为真实产品 bug（非 infra）。**
+
+本轮在 entrypoint 健康检查之外，又挖出 4 个导致"反复不稳定"的深层根因：
+
+1. **tag 固定 `test` 不触发 rollout（"测的不是新代码"真凶）**：`kubectl set image` 值不变 → pod template 无变化 → 不重建 Pod。修复：tag 改时间戳 `test-$(date +%Y%m%d-%H%M%S)` + 部署后 2.4b 逐个校验 deployment 镜像版本 + import/save 失败 fail-fast。
+2. **线上 deployment 残留 `imagePullPolicy: Always`（ErrImagePull 真凶）**：仓库 yaml 早已改 `IfNotPresent`，但旧脚本只在 deployment 缺失时才 apply，线上 spec 从未被矫正。`Always` + 本地导入镜像 + docker.io 不可达 → Pod 重建必挂。旧流程靠"固定 tag 不重建 Pod"掩盖了它。修复：2.2b 每次运行对存量 deployment 补丁 `imagePullPolicy: IfNotPresent`。
+3. **磁盘 91% > kubelet imageGC 高水位 85%**：GC 每 5 分钟删"未使用"镜像，刚 import 未启动的镜像被删 → ErrImagePull。修复：清理 60GB+ 旧镜像（磁盘→58%）+ 2.4a 检测 ImagePullBackOff 自动重导入兜底 + CLEAN 清理 containerd 旧 test 镜像。
+4. **`set -e` 下测试失败静默退出**：`test_output=$(bash regression-test.sh)` 返回非 0 时脚本直接终止，CLEAN 不执行、残留污染环境。修复：`|| test_ret=$?` 捕获。
+
+其他加固：6 个 entrypoint 改监控循环（Worker 死 → 容器重启，含 daemon fork/setproctitle 启动等待竞态处理）；6 个业务 deployment 加 readinessProbe（pgrep）；`test k8s` 补 `_validate_io_backend`；conftest.py 删重复 `pytest_addoption`（恢复 `--mode` 校验，防止误起本地 compose）；regression-test.sh 补 Logic 健康检查；deploy.sh 汇总解析剥 ANSI。
+
+**残留项定性（非 infra）**：Logic Worker 启动后 ~100ms 在 etcd watch/canary 快照路径**确定性 SIGSEGV**（Manager 已重启 3500+ 次），GenKey/VerifyKey 仅在崩溃间隙的存活窗口能通过——"偶发"的真相。待 gdb 抓栈单独立项修复。
+
+### 2026-07-23 深夜：Logic 崩溃全链路根因 + 一次性修复（第 10 次回归 55/55 全绿）
+
+gdb 抓栈 + 反汇编 + 全面审计后，确认崩溃是 **3 层产品 bug 叠加**，已全部修复：
+
+1. **`static_cast<net::Module*>` 强转纯 Cmd 对象（主因）**：`CmdGetToken`/`CmdHello` 都继承 `net::Cmd`（非 Module），`Worker::LoadSoAndGetCmd` 却强转 `Module*` 写 `m_oModuleConf`（304 字节对象写到偏移 336）→ 越界写必崩。修复：`SetModuleConf`/`IsModule` 提升为 `Cmd` 基类虚函数（**追加在虚表末尾**，插中间会位移全部 vtable 槽位）；`LoadSoAndGetModule` 同款强转加 `IsModule()` 防护，误配拒载不崩。
+2. **SO 热更新下载无校验（崩溃循环放大器）**：etcd `/thunder/config/module/LOGIC` 残留测试写入的 version bump + so_url → Manager 从 minio 拉 .so → 返回 349 字节 AccessDenied XML 错误页 → `DownloadSoFile` 不校验状态/内容直接覆盖本地插件 → 新 Worker dlopen 垃圾文件崩、老 Worker 卡 drain → 请求黑洞。修复：HTTP 200 + ELF 魔数 + 64MB 上限 + 原子替换；配置/Lua 落盘同步改原子写；deploy.sh 阶段 0/4 清 LOGIC module key 残留。
+3. **ABI 不一致温床**：`THUNDER_BUILD_NODE_PLUGINS` 缓存为 OFF 导致 Logic/Interface 插件多年不重编；`code/Net/src/` 与 `code/Net/include/` 双份头文件 7 个漂移（Module/CW/Interface/NetDefine/HttpCodec/RedisStep/StorageOperator）同名类两种布局。修复：开关显式置 ON 写进两条构建路径；7 个头文件全同步（删除死代码 `code/Net/Interface.cpp`）；logic-v2 纳入镜像滚动更新（不再跑 24h 旧镜像）。
+4. **VerifyKey 轮询落空（架构性）**：token 存单个 Logic 节点内存（LogicSession 纯内存），v1/v2 双节点轮询命中另一节点必失败。回归脚本功能测试段缩容 v2 + 删其注册键（确定性），测完恢复并等收敛到 1 pod（`test_deploy_v2_only` 计数依赖）。
+5. **环境**：磁盘清至 56%；旧构建树全清（`build.root-owned-stale` 为 root 所有待 sudo 删）；`GTEST_SRC_DIR` 本地源支持（代理抖动时离线全量构建）。
+
+**验证**：第 10 次 `./deploy.sh test k8s` **55/55 PASS（0 FAIL 0 SKIP）**——Logic 零崩溃、GenKey/VerifyKey 全链路通、admin-web 16 项 + 灰度 11 项全过。
+
+
+## 🔵 #165 [部署] MQTT Broker K8s 部署支持 — Dockerfile + deploy.sh 集成
+
+> 2026-07-24 | 分析 | 状态: 🔵 待实现
+
+### 背景
+
+ModuleMqttBroker 已有完整的 MQTT 3.1.1 Broker 实现（QoS 0/1, Retain, Will, Echo），
+14 个 E2E 测试全部通过。但当前只能在**原生进程**或 **docker-compose** 模式下运行，
+无法部署到 K8s。
+
+### 根因
+
+```
+docker-compose 模式 (能用):           K8s 模式 (不能用):
+  Dockerfile: 基础 Ubuntu              image: localhost:5000/thunder-mqtt-broker
+  volumes: ../:/thunder:rw             无 volume mount
+  → 二进制/配置/.so 从宿主机挂载          → 镜像里没有文件 → CrashLoopBackOff
+```
+
+### 需要做的事
+
+| 项 | 文件 | 说明 |
+|----|------|------|
+| MQTT Dockerfile | `deploy/MqttBroker/Dockerfile` (新) | 基于 `deploy/HelloHttp/Dockerfile` 模式，COPY 二进制/config/.so |
+| deploy.sh 构建 | `deploy.sh` | 新增 `docker build -f deploy/MqttBroker/Dockerfile -t thunder-mqtt:latest .` |
+| deploy.sh 推送 | `deploy.sh` | 新增 docker tag + push 到 `localhost:5000/thunder-mqtt-broker:latest` |
+| K8s deployment | `k8s/mqtt-broker-deployment.yaml` | ✅ 已创建，改用 baked image 后即可部署 |
+| E2E 测试 | `tests/e2e/test_mqtt_broker.py` | --mode=external 连接 K8s NodePort 31883 测试 |
+
+### Dockerfile 模板（参考 HelloHttp）
+
+```dockerfile
+FROM ubuntu:26.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates bash procps libjemalloc2 && rm -rf /var/lib/apt/lists/*
+WORKDIR /thunder/deploy/MqttBroker
+COPY deploy/MqttBroker/bin/Hello ./bin/Hello
+COPY deploy/MqttBroker/conf/MqttBroker.json ./conf/MqttBroker.json
+COPY deploy/MqttBroker/plugins/ ./plugins/
+COPY deploy/MqttBroker/entrypoint.sh ./entrypoint.sh
+COPY deploy/MqttBroker/node.sh ./node.sh
+COPY deploy/MqttBroker/scripts/ ./scripts/
+RUN chmod +x ./bin/Hello ./entrypoint.sh ./node.sh
+CMD ["bash", "./entrypoint.sh"]
+```
+
+
+## 🔵 #166 [工具] 部署流水线优化 — 增量构建 + 智能镜像 + 环境自愈 + Docker Compose 支持
+
+> 2026-07-24 | 分析 | 状态: 🔵 待实现
+
+### 背景
+
+当前 `./deploy.sh test k8s` 每次 11 分钟全量编译+部署+回归，即使只改了
+MQTT Broker 一行注释也要重编所有服务镜像。且 Docker Compose 测试路径与 K8s
+路径代码分离，`--mode=external` 只测原生进程，无法覆盖容器化场景。
+
+### 目标
+
+"有变化才构建，不浪费；有污染能自愈，不残留"
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  增量构建         智能镜像部署          环境自愈             │
+│  ─────────       ────────────          ────────             │
+│  git diff 判断    image digest 比较     端口+进程检测        │
+│  哪些文件变了      同一 digest 跳过      区分 K8s vs 原生    │
+│  → 只编译受影响    → 只推送+部署变化     → 自动清理非 K8s    │
+│    的服务镜像        的镜像              进程+端口           │
+│                                                             │
+│  无损 CLEAN                     Docker Compose 模式          │
+│  ──────────                     ──────────────────           │
+│  只缩容(scale→0)                同一套 PRE-CHECK +           │
+│  keep etcd/Redis/MySQL          TEST + CLEAN 逻辑            │
+│  下次秒级恢复                    适配 compose up/down        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 详细设计
+
+#### P0: 环境自愈 PRE-CHECK (每次 test 前自动跑)
+
+```
+1. 检查测试端口 (27006/27008/21883/...)
+   ├─ 被 K8s Pod 占用 → 跳过 (正常)
+   └─ 被原生进程占用 → kill (上次测试残留)
+
+2. 检查僵尸进程
+   ├─ Hello_robot/Interface_robot/MqttBroker_robot
+   └─ 判断是否在 kubepods cgroup → 是则跳过, 否则 kill
+
+3. 检查资源余量
+   ├─ 磁盘 < 5GB → 警告 (可能 docker build 失败)
+   └─ 内存 < 2GB → 警告 (可能 make -j OOM)
+
+4. 检查残留 etcd 测试键
+   └─ /thunder/config/module/LOGIC → 清掉 (防止旧 .so 下载)
+```
+
+#### P1: 无损 CLEAN (不伤数据)
+
+```
+现在 (有问题):
+  scale→0 + killall + 删所有 docker 镜像 + kubectl delete deployment
+
+改为:
+  # 默认模式: 缩容保留
+  scale→0 (保留 etcd/MySQL/Redis 数据)
+  只杀非 K8s 原生进程 (通过 cgroup 区分)
+
+  # 完全清理模式 (--full-clean):
+  scale→0 + 删 deployment + 清 etcd 测试键 + 清 minio
+
+  # 调试模式 (--keep-running):
+  不缩容, 只清端口冲突, 方便连续多次测试
+```
+
+#### ~~P2: 增量镜像部署~~ (已移除: cmake 自带增量, 不需要)
+<details><summary>原设计 (保留备查)</summary>
+
+```bash
+STATE_FILE=".deploy-state/mirror-digests"  # 各服务上次部署的 image digest
+
+for img in thunder-interface thunder-hello ...; do
+  NEW_DIGEST=$(docker image inspect $img:${tag} --format '{{.ID}}')
+  diff <(echo "$NEW_DIGEST") <(grep "^$img " $STATE_FILE || echo "")
+
+  if [ "$NEW_DIGEST" != "$OLD_DIGEST" ]; then
+    ctr import $img              # 只导入变化的镜像
+    kubectl set image deploy/$img  # 只更新变化的 deployment
+    sed -i "s/^$img .*/$img $NEW_DIGEST/" $STATE_FILE
+  fi
+done
+```
+
+</details>
+
+#### ~~P3: 增量构建检测~~ (已移除: 同上)
+<details><summary>原设计 (保留备查)</summary>
+
+```
+STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commit
+
+每次 test k8s:
+  CHANGED=$(git diff --name-only $(cat STATE_FILE) HEAD)
+
+  变更范围           → 构建范围
+  ─────────         ────────
+  code/Net/          → 全量编译 + 所有镜像重建 (框架改了, 都受影响)
+  code/HelloHttp/    → 只编 Hello 镜像 (thunder-hello + thunder-hello-https/ws/wss)
+  code/Interface/    → 只编 Interface 镜像
+  code/HelloMqttBroker/  → 只编 MQTT 镜像
+  deploy/HelloHttp/  → 只编 Hello 镜像 (Dockerfile/entrypoint 改了)
+  tests/e2e/         → 跳过 BUILD, 直接 DEPLOY + TEST (只改了测试)
+  k8s/               → 跳过 BUILD, 直接 DEPLOY + TEST
+  issus-list.md      → 跳过全部 (纯文档)
+
+  如果 STATE_FILE 不存在 → 全量 BUILD (首次运行)
+```
+
+</details>
+
+#### P4: Docker Compose 模式 (⇦ 剩余待做)
+
+```
+./deploy.sh test compose [--quick]
+
+  PRE-CHECK  = 同 K8s (端口检测 + 进程清理)
+  BUILD      = 同增量逻辑
+  DEPLOY     = docker compose up -d
+               (compose 自带增量 — 只重建 changed services)
+               (如果用 --quick → 跳过 docker compose build)
+  TEST       = pytest --mode=local
+               E2E_HOST=127.0.0.1 (compose 用 host network)
+  CLEAN      = compose stop (默认) 或 compose down --volumes (--full-clean)
+```
+
+### 实施计划 (2026-07-26 修订)
+
+| 优先级 | 项目 | 状态 |
+|:---:|------|:---:|
+| P0 | 环境自愈 PRE-CHECK (端口检测+清理) | ✅ 已做 |
+| P1 | 无损 CLEAN (只缩容, 不删数据) | ✅ 已做 |
+| P2 | K8s 回归测试集成 MQTT | ✅ 已做 (56/56 PASS) |
+| P3 | Docker Compose 一键测试 `./deploy.sh test compose` | 🔵 待做 |
+
+**P2/P3 已移除:**
+- ~~增量镜像部署 (digest 比较)~~ → cmake+Docker 自带增量, 不需要额外做
+- ~~增量构建检测 (git diff + 状态文件)~~ → 同上
+
+
+### 2026-07-26 复盘: 为什么执行不下去
+
+> 本次尝试在 deploy.sh 里新增了 ~200 行代码, 但端到端测试未跑通, 最终回退。
+
+**犯了四个错:**
+
+1. **自造需求** — `_smart_ctr_import` (image digest 比较), `_changed_services` (git diff 增量检测), `set +e`/`set -e` 到处塞。cmake 自带增量编译, Docker 自带层缓存, 不需要这些东西。
+
+2. **跟 bash 较劲** — deploy.sh 顶部有 `set -euo pipefail`, 新增函数中的 docker/kubectl 偶发非零返回值会被它杀死整个脚本。反复加 `set +e`/`set -e` 包围, 越加越乱。
+
+3. **在不稳定的环境上反复试** — K8s 节点磁盘 95% 满载 → Pod 被 Evicted → 部署失败。重试了 5 次以上而不先解决环境问题。
+
+4. **没按计划走** — #166 设计了 P0→P4 四级优先级, 实际实现时跳过了最基础的功能验证, 直接做了 P2/P3 的复杂优化, 然后卡死在集成阶段。
+
+**正确做法:**
+
+| 之前 | 应该 |
+|------|------|
+| 从 digest 比较/增量检测等复杂功能开始 | 从 Docker Compose 入口开始 (最简单, 最快验证) |
+| 函数写完没独立测试就开始集成 | 写完一个函数测一个 (bash -n + 独立调用) |
+| K8s 环境挂了继续硬跑 | 先检查磁盘, 磁盘不够就报出来, 不硬跑 |
+| 200 行一起改 | 10-20 行一个 commit, 每步都能回退 |
+
+**已做出的有效改动:**
+- `tests/e2e/test_mqtt_broker.py`: _self_heal 端口检测 (ss 替代 lsof)
+- Zombie Pod 清理保护 infra (跳过 etcd/mysql/redis)
+- CLEAN 增加 MQTT deployment 清理
+- K8s 回归测试增加 MQTT CONNACK 检查
+
+---
+
+## 🟡 #174 — `docs/architecture/plan/` 重构：从实施计划提取纯设计文档
+
+**当前状态: 🟡 待处理(中)**
+
+### 背景
+
+`docs/architecture/plan/` 下的 22 个文件实际上是**过去实施的计划/工作记录**，不是纯粹的架构设计文档。它们混杂了大量非设计内容：
+
+| 杂质类型 | 示例 | 应移除 |
+|---------|------|:--:|
+| 状态标记 | `🟢 🔴 🟡 ✅ ❌ ⚠️ 📋`, `2026-06-07 final` | ✅ |
+| 日期/版本记录 | `> 2026-06-01`, `更新: 2026-07-06` | ✅ |
+| 任务列表 / TODO | P0/P1/P2/P3 计划, `待做`, `已移除` | ✅ |
+| Issue 引用 | `#109`, `关联 issue：` | ✅ |
+| 提交记录 / commit 信息 | "2026-06-07 final" 改动量统计 | ✅ |
+| 测试/验证记录 | `冒烟测试 --k8s ✅ 12/12`, 验证环境说明 | ✅ |
+| 复盘/经验总结 | "为什么执行不下去", "犯了四个错" | ✅ |
+| 个人笔记/旁白 | "跟 bash 较劲", 自嘲注释 | ✅ |
+| 部署指令 | `etcdctl put`, `kubectl set image` | ✅ |
+| 实施优先级 | `P4: Docker Compose 模式`, `⇦ 剩余待做` | ✅ |
+| 难度标记 | `入门级`, `进阶级`, `专家级`, `🟢🟡🔴` | ✅ |
+
+### 保留内容
+
+每篇文件只保留：
+- **设计架构**（核心结构、数据流、组件关系）
+- **算法/协议描述**（状态机、ABI 契约、序列化格式）
+- **设计决策与权衡**（为什么选 A 不选 B）
+- **性能数据**（benchmark 表格、压测结论、延迟/吞吐对比）
+- **代码级细节**（关键 API 签名、数据结构 layout、伪代码）
+
+### 22 个待重写文件
+
+| # | 原文件 | 行数 | 大小 | 核心设计主题 |
+|---|--------|:---:|:---:|-------------|
+| 00 | `00-overview.md` | 169 | 7KB | Thunder 全景概述、数据流 |
+| 01 | `01-architecture-design.md` | 474 | 23KB | 进程模型、事件循环、C++20 协程 |
+| 02 | `02-etcd-designed.md` | 312 | 11KB | etcd 服务发现与配置同步 |
+| 03 | `03-node-id-allocation.md` | 178 | 10KB | 分布式 node_id 分配算法 |
+| 04 | `04-thunder-on-k8s.md` | 435 | 16KB | Thunder K8s 部署架构 |
+| 05 | `05-graceful-restart.md` | 628 | 21KB | Worker 优雅重启、fd 迁移 |
+| 06 | `06-manager-worker-ipc.md` | 370 | 12KB | Manager↔Worker 进程间通信 |
+| 07 | `07-upstream-route-filter.md` | 337 | 10KB | 上游路由过滤机制 |
+| 08 | `08-so-module-hot-reload-via-etcd.md` | 553 | 19KB | 插件热更新 via etcd |
+| 09 | `09-luajit-module-support.md` | 402 | 19KB | LuaJIT 模块系统 |
+| 10 | `10-coroutine-access-patterns.md` | 385 | 12KB | C++20 协程访问模式 |
+| 11 | `11-lua-send-to-node-type.md` | 196 | 8KB | Lua 按节点类型发送消息 |
+| 12 | `12-work-stealing-threadpool.md` | 956 | 44KB | Work-Stealing 线程池（含性能基准） |
+| 14 | `14-shmringqueue-design.md` | 315 | 12KB | 共享内存环形队列 |
+| 15 | `15-https-codec.md` | 453 | 13KB | HTTPS/TLS 编解码层 |
+| 16 | `16-protocols-overview.md` | 721 | 24KB | 多协议栈全景 |
+| 17 | `17-k8s-canary-routing.md` | 974 | 42KB | K8s 灰度路由（etcd 权重） |
+| 18 | `18-admin-web-redesign.md` | 822 | 33KB | Admin Web 管理后台 |
+| 19 | `19-entrypoint-and-docker-compose-canary.md` | 174 | 6KB | 容器入口点与灰度部署 |
+| 20 | `20-plugin-lua-nfs-storage.md` | 144 | 7KB | Lua 插件 NFS 存储 |
+| 21 | `21-data-plane.md` | 475 | 22KB | 数据面架构 |
+| 22 | `22-operations-internals.md` | 559 | 21KB | 运维内幕（连接管理、插件、性能）|
+
+**总计: 22 文件 → 19 文件（移除 3 篇），~390KB → ~340KB，~10,000 行 → ~8,500 行**
+
+### 目标格式
+
+参考 [docs/architecture/asio-uring-backend.md](docs/architecture/asio-uring-backend.md) 作为范本：
+
+```markdown
+# 标题 — 一句话说明
+
+> 源码: code/xxx/src/...
+> 接口: code/xxx/include/...
+> 配置: "key": "value"
+
+---
+
+## 1. 概念 / 模型
+
+(核心设计思想，用图或代码片段说明)
+
+## 2. 数据结构 / 组件
+
+(核心 struct、class、layout)
+
+## 3. 数据流 / 算法
+
+(数据怎么流动，状态机怎么转)
+
+## 4. 设计权衡
+
+(为什么这么做，不选其他方案)
+
+## 5. 性能数据 (如有)
+
+(实测表格、benchmark 结论)
+
+## 6. 参考
+
+(相关文件/文档链接)
+```
+
+### 输出位置
+
+新文件放入 `docs/architecture/desgin/`（与 `plan/` 同级，保留原 `plan/` 不动）。
+
+文件命名保持一致（`00-overview.md` → `00-overview.md`）。
+
+### 步骤 0：审计 & 移除已废弃文件（先做）✅ 已分析完毕
+
+在重写之前，先识别哪些文件已经不再使用、不需要重写——直接删除或移到 `plan/` 下级归档目录。
+
+**判断标准：**
+- 描述的功能已经砍掉/不再维护
+- 纯操作手册/部署指南，不包含设计内容
+- 属于过时的一期实施计划，当前实现已完全不同
+
+**逐文件分析结论（2026-07-27）：**
+
+| # | 文件 | 行数 | 实际内容 | 结论 |
+|---|------|:---:|----------|:---:|
+| 00 | `00-overview.md` | 169 | 全景概述 + 性能快照 + 设计决策 | ✅ 重写 |
+| 01 | `01-architecture-design.md` | 474 | 进程模型、事件循环、C++20 协程 | ✅ 重写 |
+| 02 | `02-etcd-designed.md` | 312 | gRPC 线程模型、key space 设计 | ✅ 重写 |
+| 03 | `03-node-id-allocation.md` | 178 | L1/L2/L3 分配流、CAS 槽位抢占 | ✅ 重写 |
+| 04 | `04-thunder-on-k8s.md` | 435 | 服务适应性分析、K8s 部署架构 | ✅ 重写 |
+| 05 | `05-graceful-restart.md` | 628 | Worker 状态机、fd 迁移、SO_REUSEPORT | ✅ 重写 |
+| 06 | `06-manager-worker-ipc.md` | 370 | socketpair + shm ring queue + version data | ✅ 重写 |
+| 07 | `07-upstream-route-filter.md` | 337 | 前缀匹配路由过滤算法 | ✅ 重写 |
+| 08 | `08-so-module-hot-reload-via-etcd.md` | 553 | 发布→通知→加载 三步流程、共享存储 | ✅ 重写 |
+| 09 | `09-luajit-module-support.md` | 402 | LuaJIT VM 集成、API 设计、热加载 | ✅ 重写 |
+| 10 | `10-coroutine-access-patterns.md` | 385 | StepCo20、AsyncTask、IoBoolAwaitable | ✅ 重写 |
+| 11 | `11-lua-send-to-node-type.md` | 196 | 跨节点类型发送 API、3 种调用模式 | ✅ 重写 |
+| 12 | `12-work-stealing-threadpool.md` | 956 | Work-Stealing 设计 + 性能基准对比 | ✅ 重写 |
+| 14 | `14-shmringqueue-design.md` | 315 | SPSC 环形队列、lock-free 设计 | ✅ 重写 |
+| 15 | `15-https-codec.md` | 453 | TLS 编解码层、状态机、继承体系 | ✅ 重写 |
+| 16 | `16-protocols-overview.md` | 721 | 全协议栈编解码器体系 | ✅ 重写 |
+| 17 | `17-k8s-canary-routing.md` | 974 | etcd 权重键 + Worker 进程内灰度分流 | ✅ 重写 |
+| 18 | `18-admin-web-redesign.md` | 822 | **纯前端 UI 设计**：CSS 变量、色彩、组件规范、SPA 布局。零后端架构内容 | 🗑 移除 |
+| 19 | `19-entrypoint-and-docker-compose-canary.md` | 174 | **运维操作手册**：entrypoint.sh 逐行解释 + docker-compose 灰度测试步骤 | 🗑 移除 |
+| 20 | `20-plugin-lua-nfs-storage.md` | 144 | **方案已废弃**：K8s NFS 共享 Lua 脚本的一期方案，实际落地后不再使用 | 🗑 移除 |
+| 21 | `21-data-plane.md` | 475 | 网络 I/O 管道、编解码、共享内存路由 | ✅ 重写 |
+| 22 | `22-operations-internals.md` | 559 | 连接管理(ABA 防护)、插件、性能优化 | ✅ 重写 |
+
+**结论：22 → 19（重写 19 篇，移除 3 篇）**
+
+> 移除时同步清理 `plan/00-overview.md` 和 `plan/01-architecture-design.md` 中的交叉引用。
+
+### 实施步骤
+
+| 步骤 | 内容 | 预估 |
+|:---:|------|:--:|
+| 0 | 审计 plan/ 文件，移除已废弃文件，清理交叉引用 | 20 min |
+| 1 | 创建 `desgin/` 目录，复制 `asio-uring-backend.md` 作为格式模板 | 5 min |
+| 2 | 逐文件重写 19 篇（每文件约 15-60 min，按复杂度） | 总计 ~6h |
+| 3 | 更新 `plan/00-overview.md` 中的交叉引用链接 | 30 min |
+| 4 | 检查所有新文件无破损链接、无残留杂质 | 30 min |
+
+### 优先级建议
+
+按文件访问频率和复杂性分为三批：
+
+**第一批（最常用，先做）：**
+- `00-overview.md` — 所有读者的入口
+- `01-architecture-design.md` — 核心架构
+- `05-graceful-restart.md` — 高频查阅
+- `12-work-stealing-threadpool.md` — 含重要性能数据
+- `08-so-module-hot-reload-via-etcd.md` — 热更新核心
+
+**第二批（重要模块）：**
+- `02-etcd-designed.md`, `03-node-id-allocation.md`, `04-thunder-on-k8s.md`
+- `06-manager-worker-ipc.md`, `07-upstream-route-filter.md`
+- `09-luajit-module-support.md`, `10-coroutine-access-patterns.md`
+- `14-shmringqueue-design.md`, `15-https-codec.md`, `16-protocols-overview.md`
+- `17-k8s-canary-routing.md`, `21-data-plane.md`, `22-operations-internals.md`
+
+**第三批（次要 / 不重写）：**
+- `11-lua-send-to-node-type.md` — ✅ 重写（196 行，API 设计文档，小文件低投入）
+- `18-admin-web-redesign.md` — 🗑 移除（纯前端 UI 设计：CSS 变量、色彩、组件规范。非架构文档）
+- `19-entrypoint-and-docker-compose-canary.md` — 🗑 移除（运维操作手册：entrypoint.sh 解释 + 灰度测试步骤。非设计文档）
+- `20-plugin-lua-nfs-storage.md` — 🗑 移除（方案已废弃）

@@ -25,8 +25,8 @@ static auto sLogger = log4cplus::Logger::getInstance("etcd-grpc");
 #define GLOG_WARN(msg)  LOG4CPLUS_WARN(sLogger,  msg)
 #define GLOG_ERROR(msg) LOG4CPLUS_ERROR(sLogger, msg)
 
-static constexpr int      kLeaseTTL           = 30;   // seconds
-static constexpr int      kKeepAliveRefresh   = 10;   // unary keepalive interval
+static constexpr int      kLeaseTTL           = 60;   // seconds (give more tolerance)
+static constexpr int      kKeepAliveRefresh   = 10;   // active keepalive interval (leasekeepalive every 10s, far below 60s TTL)
 static constexpr int      kPollInterval         = 5;    // config poll interval
 static constexpr int      kCanaryPollInterval   = 30;   // canary fallback check interval
 static constexpr int      kWatchHealthTimeout   = 45;   // 没有 Watch 事件的最大容忍时间
@@ -214,41 +214,46 @@ void EtcdGrpcConnector::PostCmd(Cmd cmd)
 
 void EtcdGrpcConnector::GrpcThreadMain()
 {
-    // etcdClient 必须比 m_watcher 活得长：
-    // Stop 时先 Cancel/reset m_watcher（join Watcher::task_），再让 etcdClient 析构。
-    etcd::SyncClient etcdClient(m_endpoint);
-
     auto cancelWatchers = [this] {
         if (m_registryWatcher) { m_registryWatcher->Cancel(); m_registryWatcher.reset(); }
         if (m_canaryWatcher)   { m_canaryWatcher->Cancel();   m_canaryWatcher.reset();   }
     };
 
-    try
+    // #160: 外层重连循环 — gRPC 连接断开/异常后自动重试
+    int  retryDelaySec = 1;
+    const int maxRetryDelaySec = 30;
+    while (m_running)
     {
+        // etcdClient 必须比 m_watcher 活得长：
+        // Stop 时先 Cancel/reset m_watcher（join Watcher::task_），再让 etcdClient 析构。
+        etcd::SyncClient etcdClient(m_endpoint);
 
-    GLOG_INFO("GrpcThread: connected to " << m_endpoint);
+        try
+        {
 
-    etcd::Response leaseResp = etcdClient.leasegrant(kLeaseTTL);
-    if (leaseResp.error_code() != 0)
-    {
-        GLOG_ERROR("GrpcThread: leasegrant failed: " << leaseResp.error_message());
-        CenterEvent ev{};
-        ev.type    = CenterEventType::ConnectionLost;
-        ev.errcode = leaseResp.error_code();
-        ev.errmsg  = leaseResp.error_message();
-        PushEvent(std::move(ev));
-        return;
-    }
-    m_leaseId = leaseResp.value().lease();
-    GLOG_INFO("GrpcThread: lease id=" << m_leaseId);
+        GLOG_INFO("GrpcThread: connected to " << m_endpoint);
 
-    using Clock    = std::chrono::steady_clock;
-    using Seconds  = std::chrono::seconds;
+        etcd::Response leaseResp = etcdClient.leasegrant(kLeaseTTL);
+        if (leaseResp.error_code() != 0)
+        {
+            GLOG_ERROR("GrpcThread: leasegrant failed: " << leaseResp.error_message());
+            CenterEvent ev{};
+            ev.type    = CenterEventType::ConnectionLost;
+            ev.errcode = leaseResp.error_code();
+            ev.errmsg  = leaseResp.error_message();
+            PushEvent(std::move(ev));
+            goto reconnect;  // break to retry loop
+        }
+        m_leaseId = leaseResp.value().lease();
+        GLOG_INFO("GrpcThread: lease id=" << m_leaseId);
 
-    auto lastKeepalive   = Clock::now();
-    auto lastPoll        = Clock::now();
-    auto lastCanaryPoll  = Clock::now();
-    const auto kWaitTick = Seconds(1);
+        using Clock    = std::chrono::steady_clock;
+        using Seconds  = std::chrono::seconds;
+
+        auto lastKeepalive   = Clock::now();
+        auto lastPoll        = Clock::now();
+        auto lastCanaryPoll  = Clock::now();
+        const auto kWaitTick = Seconds(1);
 
     while (true)
     {
@@ -264,16 +269,14 @@ void EtcdGrpcConnector::GrpcThreadMain()
             if (cmd.type == CmdType::Stop)
             {
                 GLOG_INFO("GrpcThread: received Stop");
-                // leaserevoke 优先（快，<1s），确保在 docker stop 10s 超时前完成注销。
-                // cancelWatchers 可能因 gRPC Watch stream 关闭慢而阻塞，放在后面无妨。
-                // etcdClient 仍比 watchers 活得长（return 后才析构）。
                 if (m_leaseId)
                 {
                     etcdClient.leaserevoke(m_leaseId);
                     m_leaseId = 0;
                 }
-                cancelWatchers();   // join Watcher::task_ before etcdClient destroyed
-                return;
+                cancelWatchers();
+                m_running = false;
+                return;  // 正常退出，不走重连循环
             }
 
             if (cmd.type == CmdType::PutConfig)
@@ -432,16 +435,26 @@ void EtcdGrpcConnector::GrpcThreadMain()
         }
     }
 
-    } // try
-    catch (const std::exception& e)
-    {
-        cancelWatchers();   // join Watcher::task_ before etcdClient goes out of scope
-        GLOG_ERROR("GrpcThread: uncaught exception: " << e.what());
-        CenterEvent ev{};
-        ev.type   = CenterEventType::ConnectionLost;
-        ev.errmsg = e.what();
-        PushEvent(std::move(ev));
-    }
+        } // try
+        catch (const std::exception& e)
+        {
+            cancelWatchers();
+            GLOG_ERROR("GrpcThread: uncaught exception: " << e.what()
+                       << " — will reconnect after backoff");
+            CenterEvent ev{};
+            ev.type   = CenterEventType::ConnectionLost;
+            ev.errmsg = e.what();
+            PushEvent(std::move(ev));
+        }
+
+    reconnect:
+        // #160: 指数退避重连 (1s → 2s → 4s → ... → 30s max)
+        if (!m_running) break;
+        GLOG_INFO("GrpcThread: reconnecting in " << retryDelaySec << "s...");
+        std::this_thread::sleep_for(std::chrono::seconds(retryDelaySec));
+        if (retryDelaySec < maxRetryDelaySec)
+            retryDelaySec *= 2;
+    } // while (m_running)
 }
 
 // ============================================================
@@ -654,19 +667,48 @@ void EtcdGrpcConnector::OnCanaryWatchEnded(bool cancelled)
 
 void EtcdGrpcConnector::DoKeepalive(etcd::SyncClient& client)
 {
+    // #160: 增强 keepalive 健壮性
+    //   leasetimetolive 查询 lease 是否存活:
+    //   - 成功 + TTL OK    → 打印日志, 不做操作
+    //   - 成功 + TTL < 半  → grant 新 lease + 重新 PUT key (旧逻辑, 守护)
+    //   - 失败             → lease 丢失, 自动重新注册 (新逻辑)
     auto ttlResp = client.leasetimetolive(m_leaseId);
     if (ttlResp.error_code() != 0)
     {
-        GLOG_WARN("DoKeepalive: leasetimetolive failed: " << ttlResp.error_message());
+        GLOG_WARN("DoKeepalive: lease " << m_leaseId
+                  << " lost (" << ttlResp.error_message() << "), re-registering...");
+
+        auto newLease = client.leasegrant(kLeaseTTL);
+        if (newLease.error_code() != 0)
+        {
+            GLOG_ERROR("DoKeepalive: re-register leasegrant failed: "
+                       << newLease.error_message());
+            return;
+        }
+
+        const int64_t     newLeaseId = newLease.value().lease();
+        const std::string slotKey    = SlotKey(static_cast<int>(m_nodeId));
+        const std::string regKey     = BuildRegistryKey(m_myNodeType, m_myNodeIp, m_myNodePort);
+        const std::string ipPort     = m_myNodeIp + ":" + std::to_string(m_myNodePort);
+        const std::string regValue   = BuildRegistryValue(m_nodeId, m_myNodeType,
+                                                           m_myNodeIp, m_myNodePort, m_myWorkerNum, m_myNodeVersion);
+
+        client.put(slotKey, ipPort,   newLeaseId);
+        client.put(regKey,  regValue, newLeaseId);
+        m_leaseId = newLeaseId;
+
+        GLOG_INFO("DoKeepalive: re-registered lease=" << m_leaseId
+                  << " type=" << m_myNodeType << " addr=" << ipPort);
         return;
     }
 
     const int64_t remainTTL = ttlResp.value().ttl();
-    GLOG_INFO("DoKeepalive: lease=" << m_leaseId << " remainTTL=" << remainTTL);
+    GLOG_INFO("DoKeepalive: lease=" << m_leaseId << " ttl=" << remainTTL);
 
     if (remainTTL > kLeaseTTL / 2)
         return;
 
+    // TTL 低于一半时换新 lease（旧守护逻辑, 防止边界条件）
     auto newLease = client.leasegrant(kLeaseTTL);
     if (newLease.error_code() != 0)
     {

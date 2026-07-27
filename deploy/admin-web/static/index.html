@@ -18,6 +18,8 @@
     <button data-panel="lua">📜 Lua</button>
     <button data-panel="plugins">📦 插件</button>
     <button data-panel="audit">📋 审计</button>
+    <button data-panel="minio">🗄 MinIO</button>
+    <button data-panel="etcd">📂 etcd</button>
   </nav>
 
   <button class="btn btn-ghost btn-sm" id="themeToggle" title="切换主题">🌙</button>
@@ -62,15 +64,24 @@
   </div>
 </section>
 <section id="lua" class="panel">
-  <div class="toolbar">
-    <label>服务<select class="select" id="luaNodeType"><option value="">请选择</option></select></label>
-    <button class="btn btn-primary btn-sm" id="luaLoad">加载</button>
+  <div class="card"><div class="card-header">上传 Lua 脚本</div>
+    <div id="luaDrop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:var(--space-xl);text-align:center;color:var(--text-muted);cursor:pointer">
+      拖拽 .lua 文件到此处 或 点击选择<br><span style="font-size:var(--text-xs)" id="luaFileName"></span>
+      <input type="file" id="luaFile" accept=".lua" style="display:none">
+    </div>
+    <div class="flex gap-sm mt items-center">
+      <label>服务<select class="select" id="luaNodeType"><option value="">请选择</option></select></label>
+      <button class="btn btn-primary btn-sm" id="luaUpload">上传到制品库</button>
+    </div>
   </div>
-  <div id="luaStatus"></div>
-  <div class="card" id="luaListCard" style="display:none">
-    <div class="card-header">Lua 脚本列表 <span class="text-sm text-muted" id="luaCount"></span></div>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">Lua 制品库 <span class="text-sm text-muted" id="luaArtifactRefresh"></span></div>
+    <table class="table"><thead><tr><th>文件名</th><th>服务</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="luaArtifactTable"><tr><td colspan="5" class="text-center text-muted">请先选择服务</td></tr></tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:var(--space)"><div class="card-header">已部署 Lua <span class="text-sm text-muted" id="luaDeployRefresh"></span></div>
     <table class="table"><thead><tr><th>脚本名</th><th>URL</th><th>版本</th><th>大小</th><th>操作</th></tr></thead>
-      <tbody id="luaTable"></tbody>
+      <tbody id="luaDeployTable"><tr><td colspan="5" class="text-center text-muted">请先选择服务</td></tr></tbody>
     </table>
   </div>
   <div class="card" id="luaEditCard" style="display:none;margin-top:var(--space)">
@@ -138,6 +149,21 @@
     </table>
   </div>
 </section>
+	<section id="minio" class="panel">
+	  <div class="hint-bar hint-info" style="margin-bottom:8px">🔑 用户名: <b>minioadmin</b> 密码: <b>minioadmin</b> | <a href="/api/minio/" target="_blank">新窗口打开</a></div>
+	  <iframe src="/api/minio/" style="width:100%;height:calc(100vh - 160px);border:1px solid var(--border-color);border-radius:var(--radius)"></iframe>
+	</section>
+	<section id="etcd" class="panel">
+	  <div class="toolbar">
+	    <label>前缀 <input type="text" id="etcdPrefix" value="/thunder/" style="width:300px"></label>
+	    <button class="btn btn-primary btn-sm" id="etcdBrowse">浏览</button>
+	  </div>
+	  <div class="card" style="overflow-x:auto">
+	    <table class="table" style="table-layout:fixed;width:100%"><colgroup><col style="width:35%"><col style="width:65%"></colgroup><thead><tr><th>Key</th><th>Value</th></tr></thead>
+	      <tbody id="etcdTable"><tr><td colspan="2" class="text-center"><span class="spinner"></span></td></tr></tbody>
+	    </table>
+	  </div>
+	</section>
 </main>
 <script src="js/state.js"></script>
 <script src="js/components.js"></script>
@@ -469,81 +495,127 @@
 
   function loadLua(){
     var nt = document.getElementById("luaNodeType").value;
-    var status = document.getElementById("luaStatus");
-    status.innerHTML = '<div class="loading-block"><span class="spinner"></span></div>';
-    document.getElementById("luaListCard").style.display = "none";
-    document.getElementById("luaEditCard").style.display = "none";
+    if(!nt) return;
+    loadLuaArtifacts(nt);
+    loadLuaDeployed(nt);
+  }
 
+  /* --- Lua 制品库 --- */
+  function loadLuaArtifacts(nt){
+    var tbody = document.getElementById("luaArtifactTable");
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
+    API.request('/lua/' + encodeURIComponent(nt) + '/files').then(function(r){
+      var files = (r.ok && r.data && r.data.files) || [];
+      if(!files.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无 Lua 脚本</td></tr>'; return; }
+      var h = "";
+      files.forEach(function(f){
+        var sz = f.size < 1024 ? f.size+'B' : (f.size/1024).toFixed(1)+'KB';
+        h += '<tr><td><b>'+Components.escapeHtml(f.filename)+'</b></td>';
+        h += '<td><span class="badge badge-default">'+Components.escapeHtml(nt)+'</span></td>';
+        h += '<td>'+sz+'</td><td>'+Components.formatTime(f.mod_time)+'</td>';
+        h += '<td><button class="btn btn-ghost btn-xs" onclick="luaDeployFromArtifact(\''+Components.escapeAttr(nt)+'\',\''+Components.escapeAttr(f.filename)+'\')">下发</button></td></tr>';
+      });
+      tbody.innerHTML = h;
+      document.getElementById("luaArtifactRefresh").textContent = "更新: "+new Date().toLocaleTimeString();
+    }).catch(function(){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">加载失败</td></tr>'; });
+  }
+
+  /* --- 已部署 Lua --- */
+  function loadLuaDeployed(nt){
+    var tbody = document.getElementById("luaDeployTable");
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner"></span></td></tr>';
     API.request('/lua/' + encodeURIComponent(nt)).then(function(r){
-      if(r.data && r.data.scripts){
-        _luaScripts = r.data.scripts;
-        renderLuaList();
-      } else {
-        status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无数据</div>';
+      var scripts = (r.data && r.data.scripts) || [];
+      _luaScripts = scripts;
+      if(!scripts.length){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无已部署脚本</td></tr>'; return; }
+      var h = "";
+      scripts.forEach(function(s){
+        var name = s.script_name || s.name || "-";
+        var url = s.url_path || "-";
+        var ver = s.version || 0;
+        var size = s.script_content ? s.script_content.length + "B" : "0B";
+        h += '<tr><td><b>'+Components.escapeHtml(name)+'</b></td>';
+        h += '<td><code class="text-sm">'+Components.escapeHtml(url)+'</code></td>';
+        h += '<td><span class="badge badge-info">v'+ver+'</span></td>';
+        h += '<td class="text-muted">'+size+'</td>';
+        var idx = scripts.indexOf(s);
+        h += '<td><button class="btn btn-ghost btn-xs" onclick="editLuaScriptByIdx('+idx+')">编辑</button></td></tr>';
+      });
+      tbody.innerHTML = h;
+      document.getElementById("luaDeployRefresh").textContent = "更新: "+new Date().toLocaleTimeString();
+    }).catch(function(){ tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">加载失败</td></tr>'; });
+  }
+
+  /* 从制品库下发 Lua 到 etcd */
+  window.luaDeployFromArtifact = function(nt, filename){
+    var urlPath = prompt("URL Path (e.g. /hello/lua_echo):", "/"+nt.toLowerCase()+"/"+filename.replace(".lua",""));
+    if(!urlPath) return;
+    Components.modal({
+      title: "确认下发 Lua",
+      body: "将 <b>"+Components.escapeHtml(filename)+"</b> 下发到 <b>"+nt+"</b><br>URL: "+Components.escapeHtml(urlPath),
+      confirmText: "下发",
+      onConfirm: function(){
+        API.request('/lua/'+encodeURIComponent(nt)+'/deploy', {method:'POST', body:{filename:filename, url_path:urlPath}}).then(function(r){
+          if(r.ok) { Components.toast("✅ "+filename+" 已下发","success"); loadLuaDeployed(nt); }
+          else Components.toast("❌ "+(r.error||"失败"),"error");
+        }).catch(function(e){ Components.toast("❌ "+e.message,"error") });
       }
-    }).catch(function(){
-      status.innerHTML = '<div class="hint-bar hint-warning">⚠ 无法加载</div>';
     });
-  }
+  };
 
-  function renderLuaList(){
-    document.getElementById("luaStatus").innerHTML = "";
-    document.getElementById("luaListCard").style.display = "";
-    document.getElementById("luaEditCard").style.display = "none";
-    document.getElementById("luaCount").textContent = _luaScripts.length + " 个脚本";
+  /* 拖拽上传 */
+  document.getElementById("luaDrop").addEventListener("click", function(){ document.getElementById("luaFile").click(); });
+  document.getElementById("luaFile").addEventListener("change", function(){
+    var f = this.files[0];
+    if(f) document.getElementById("luaFileName").textContent = "已选择: "+f.name;
+  });
+  document.getElementById("luaUpload").addEventListener("click", function(){
+    var f = document.getElementById("luaFile").files[0];
+    var nt = document.getElementById("luaNodeType").value;
+    if(!f){ Components.toast("请选择文件","warning"); return; }
+    if(!nt){ Components.toast("请选择服务","warning"); return; }
+    Components.toast("上传中...","info");
+    var xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/lua/'+encodeURIComponent(nt)+'/'+encodeURIComponent(f.name));
+    xhr.onload = function(){
+      try { var r = JSON.parse(xhr.responseText);
+        if(r.ok) { Components.toast("✅ "+f.name+" 已上传","success"); loadLuaArtifacts(nt); }
+        else Components.toast("❌ "+(r.error||"失败"),"error");
+      } catch(e) { Components.toast("❌ "+e.message,"error"); }
+    };
+    xhr.onerror = function(){ Components.toast("❌ 网络错误","error"); };
+    xhr.send(f);
+  });
 
-    var html = "";
-    _luaScripts.forEach(function(s){
-      var name = s.script_name || s.name || "-";
-      var url = s.url_path || "-";
-      var ver = s.version || 0;
-      var size = s.script_content ? s.script_content.length + "B" : "0B";
-      html += '<tr>';
-      html += '<td><b>' + Components.escapeHtml(name) + '</b></td>';
-      html += '<td><code class="text-sm">' + Components.escapeHtml(url) + '</code></td>';
-      html += '<td><span class="badge badge-info">v' + ver + '</span></td>';
-      html += '<td class="text-muted">' + size + '</td>';
-      var idx = _luaScripts.indexOf(s);
-      html += '<td><button class="btn btn-ghost btn-xs" onclick="editLuaScriptByIdx(' + idx + ')">编辑</button></td>';
-      html += '</tr>';
-    });
-    document.getElementById("luaTable").innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">暂无脚本</td></tr>';
-  }
-
+  /* 部署列表编辑功能 (保留) */
   window.editLuaScriptByIdx = function(idx){
     var s = _luaScripts[idx];
     if(!s) return;
     _luaCurrent = s;
-    document.getElementById("luaListCard").style.display = "none";
     document.getElementById("luaEditCard").style.display = "";
     document.getElementById("luaEditName").textContent = s.script_name || s.name;
     document.getElementById("luaEditMeta").textContent = "v" + (s.version||0) + "  " + (s.url_path||"");
     document.getElementById("luaEditor").value = s.script_content || "";
   };
 
-  document.getElementById("luaLoad").addEventListener("click", loadLua);
-  document.getElementById("luaCancel").addEventListener("click", renderLuaList);
+  document.getElementById("luaNodeType").addEventListener("change", loadLua);
+  document.getElementById("luaCancel").addEventListener("click", function(){
+    document.getElementById("luaEditCard").style.display = "none";
+  });
   document.getElementById("luaSave").addEventListener("click", function(){
     if(!_luaCurrent) return;
     var nt = document.getElementById("luaNodeType").value;
     var name = _luaCurrent.script_name || _luaCurrent.name;
     var content = document.getElementById("luaEditor").value;
-
-    var body = {
-      url_path: _luaCurrent.url_path || "",
-      script_content: content,
-    };
-
     Components.modal({
       title: "确认更新 Lua 脚本",
-      body: "将上传 <b>" + Components.escapeHtml(name) + "</b> 到 <b>" + nt + "</b><br><br><pre style=\"font-size:11px;max-height:120px;overflow:auto;background:var(--border-light);padding:8px\">" + Components.escapeHtml(content.substring(0,200)) + "…</pre>",
+      body: "将上传 <b>"+Components.escapeHtml(name)+"</b> 到 <b>"+nt+"</b><br><br><pre style=\"font-size:11px;max-height:120px;overflow:auto;background:var(--border-light);padding:8px\">"+Components.escapeHtml(content.substring(0,200))+"…</pre>",
       confirmText: "保存",
       onConfirm: function(){
-        API.request('/lua/' + encodeURIComponent(nt), {
-          method: 'POST',
-          body: body
+        API.request('/lua/'+encodeURIComponent(nt), {
+          method: 'POST', body: {url_path: _luaCurrent.url_path||"", script_content: content}
         }).then(function(r){
-          if(r.data) Components.toast("脚本已保存 v" + r.data.version,"success");
+          if(r.data) Components.toast("脚本已保存 v"+r.data.version,"success");
           else Components.toast("保存失败: "+(r.error||""),"error");
           loadLua();
         }).catch(function(e){ Components.toast(String(e),"error") });
@@ -676,6 +748,42 @@
       API.request('/plugins/'+type+'/deploy',{method:'POST',body:{filename:filename}}).then(function(r){if(r.ok){Components.toast("\u2705 "+filename+" \u5DF2\u4E0B\u53D1","success");loadDeployed(type)}else Components.toast("\u274C \u4E0B\u53D1\u5931\u8D25: "+(r.error||r.status),"error")}).catch(function(e){Components.toast("\u274C \u7F51\u7EDC\u9519\u8BEF: "+e.message,"error")});
     }});
   };
+
+  /* etcd browser */
+  function tryPrettyJson(s){
+    try{ var o=JSON.parse(s); return JSON.stringify(o,null,2); }catch(e){ return s; }
+  }
+  function browseEtcd(){
+    var prefix=document.getElementById("etcdPrefix").value.trim()||"/thunder/";
+    var tbody=document.getElementById("etcdTable");
+    tbody.innerHTML='<tr><td colspan="2" class="text-center"><span class="spinner"></span> 加载中...</td></tr>';
+    API.request('/etcd/keys?prefix='+encodeURIComponent(prefix)).then(function(r){
+      if(!r.ok){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-danger">'+Components.escapeHtml(r.error||"error")+'</td></tr>'; return; }
+      var entries=r.data.entries||[];
+      if(entries.length===0){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-muted">无匹配 key</td></tr>'; return; }
+      var h='';
+      for(var i=0;i<entries.length;i++){
+        var e=entries[i];
+        var raw=e.value||'';
+        var pretty=tryPrettyJson(raw);
+        var shortKey=e.key.length>80?e.key.substring(0,77)+'...':e.key;
+        var id='_etcd_'+i;
+        var truncated=pretty.length>300?pretty.substring(0,300)+'\n...':pretty;
+        h+='<tr><td style="width:35%;word-break:break-all;font-family:monospace;font-size:12px;vertical-align:top;padding:8px"><b>'+Components.escapeHtml(shortKey)+'</b></td>';
+        h+='<td style="padding:4px 8px;vertical-align:top">';
+        h+='<pre id="'+id+'_pre" style="max-height:120px;overflow:auto;font-size:11px;line-height:1.4;margin:0;background:var(--bg-secondary);padding:6px;border-radius:4px;white-space:pre-wrap;word-break:break-all">'+Components.escapeHtml(truncated)+'</pre>';
+        if(pretty.length>300){
+          h+='<button class="btn btn-ghost btn-xs" onclick="var p=document.getElementById(\''+id+'_pre\');var full='+JSON.stringify(pretty)+';if(p.textContent.length<400){p.textContent=full.substring(0,300)+\'\\n...\';this.textContent=\'展开全部\'}else{p.textContent=full;this.textContent=\'收起\'}" style="margin-top:2px">展开全部</button>';
+        }
+        h+='</td></tr>';
+      }
+      tbody.innerHTML=h;
+    }).catch(function(e){ tbody.innerHTML='<tr><td colspan="2" class="text-center text-danger">网络错误: '+e.message+'</td></tr>'; });
+  }
+  document.getElementById("etcdBrowse").addEventListener("click",browseEtcd);
+  browseEtcd();
+    document.getElementById("etcdPrefix").addEventListener("keydown",function(ev){ if(ev.key==="Enter")browseEtcd(); });
+  browseEtcd(); // 首次打开自动加载
 
   /* plugins events */
   document.getElementById("plugDrop").addEventListener("click",function(){document.getElementById("plugFile").click()});

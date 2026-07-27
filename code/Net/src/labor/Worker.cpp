@@ -39,6 +39,7 @@
 #include "codec/CodecWebSocketPbApp.hpp"
 #include "codec/CodecCustom.hpp"
 #include "codec/AppMsgCodec.hpp"
+#include "codec/CodecMqtt.hpp"
 #include "step/Step.hpp"
 #include "step/RedisStep.hpp"
 #include "step/StepAuthRedis.hpp"
@@ -57,6 +58,7 @@
 #include "cmd/sys_cmd/CmdReloadModule.hpp"
 #include "cmd/sys_cmd/CmdReloadCustom.hpp"
 #include "cmd/sys_cmd/CmdReloadLua.hpp"
+
 #include "storage/RedisOperator.hpp"
 
 namespace net
@@ -306,13 +308,15 @@ void Worker::Run()
         {
             if (IsDrainComplete())
             {
-                LOG4_INFO("Worker %d drain complete, exiting", iWorkerIndex);
+                LOG4_INFO("Worker %d drain complete, transferring all fds and exiting", iWorkerIndex);
+                TransferAllFds();
                 break;
             }
             if (time(nullptr) - m_drainStartTime > DRAIN_GRACE_PERIOD)
             {
-                LOG4_WARN("Worker %d drain timeout %ds, force exit",
+                LOG4_WARN("Worker %d drain timeout %ds, force transfer all fds and exit",
                           iWorkerIndex, DRAIN_GRACE_PERIOD);
+                TransferAllFds();
                 break;
             }
         }
@@ -697,8 +701,8 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                 }
                 pCodec = codec_iter->second.get();
             }
-            while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
-                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+            while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS || pConn->eCodecType == util::CODEC_MQTT) && pConn->pRecvBuff->ReadableBytes() > 0)
+                    || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->eCodecType != util::CODEC_MQTT && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
             {
                 oInMsgHead.Clear();
                 oInMsgBody.Clear();
@@ -1359,8 +1363,8 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
     }
     ThunderCodec* pCodec = codec_iter->second.get();
 
-    while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS) && pConn->pRecvBuff->ReadableBytes() > 0)
-            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
+    while (((pConn->eCodecType == util::CODEC_HTTPS || pConn->eCodecType == util::CODEC_WSS || pConn->eCodecType == util::CODEC_MQTT) && pConn->pRecvBuff->ReadableBytes() > 0)
+            || (pConn->eCodecType != util::CODEC_HTTPS && pConn->eCodecType != util::CODEC_WSS && pConn->eCodecType != util::CODEC_MQTT && pConn->pRecvBuff->ReadableBytes() >= gc_uiAppMsgHeadSize))
     {
         oInMsgHead.Clear();
         oInMsgBody.Clear();
@@ -2555,6 +2559,7 @@ bool Worker::Init(util::CJsonObject& oJsonConf)
 	mapCodec.insert(std::make_pair(util::CODEC_TEST, std::make_unique<CodecCustom>(util::CODEC_TEST)));
 	mapCodec.insert(std::make_pair(util::CODEC_APP, std::make_unique<AppMsgCodec>(util::CODEC_APP)));
 	mapCodec.insert(std::make_pair(util::CODEC_WEBSOCKET_EX_PB_APP, std::make_unique<CodecWebSocketPbApp>(util::CODEC_WEBSOCKET_EX_PB_APP)));
+	mapCodec.insert(std::make_pair(util::CODEC_MQTT, std::make_unique<CodecMqtt>(util::CODEC_MQTT)));
 
     bool bCpuAffinity = false;
 	oJsonConf.Get("cpu_affinity", bCpuAffinity);
@@ -5212,6 +5217,16 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
         dlclose(pHandle);
         return(pSo);
     }
+    // ABI 握手: 无版本符号(握手前的旧 .so)或版本不符 → 拒载, 防新旧 .so/二进制混布崩溃
+    int (*pfnAbiVersion)() = (int(*)())dlsym(pHandle, "thunder_abi_version");
+    if (!pfnAbiVersion || pfnAbiVersion() != THUNDER_PLUGIN_ABI_VERSION)
+    {
+        LOG4_FATAL("%s ABI 版本不符 (框架期望 %d, 插件%s), 拒绝加载 — 插件必须与框架同批重编",
+                strSoPath.c_str(), THUNDER_PLUGIN_ABI_VERSION,
+                pfnAbiVersion ? "版本过旧" : "无 thunder_abi_version 符号");
+        dlclose(pHandle);
+        return(pSo);
+    }
     Cmd* pCmd = pCreateCmd();
     LOG4_TRACE("%s() strSoPath:%s pHandle:%p pCreateCmd:%p pCmd:%p",__FUNCTION__,strSoPath.c_str(),pHandle,pCreateCmd,pCmd);
     if (pCmd != nullptr)
@@ -5226,10 +5241,9 @@ tagSo* Worker::LoadSoAndGetCmd(int iCmd, const std::string& strSoPath, const std
             pSo->iVersion = iVersion;
             pSo->pCmd->SetCmd(iCmd);
             if (pConf) {
-                // dynamic_cast 跨 SO 边界在某些编译器/链接器组合下会失败，
-                // 但 create() 返回的必定是 Module 子类，用 static_cast 即可
-                net::Module* pMod = static_cast<net::Module*>(pCmd);
-                if (pMod) pMod->SetModuleConf(*pConf);
+                // SetModuleConf 是 Cmd 虚函数: Module 子类存配置, 纯 Cmd (如 CmdGetToken) 安全忽略.
+                // 严禁 static_cast<net::Module*> 强转——纯 Cmd 对象更小, 越界写 m_oModuleConf 必崩.
+                pSo->pCmd->SetModuleConf(*pConf);
             }
             if (!pSo->pCmd->Init())
             {
@@ -5424,7 +5438,25 @@ tagModule* Worker::LoadSoAndGetModule(const std::string& strModulePath, const st
         LOG4_FATAL("dlsym error %s!" , dlsym_error);
         return(pSo);
     }
-    Module* pModule = (Module*)pCreateModule();
+    // ABI 握手: 无版本符号(握手前的旧 .so)或版本不符 → 拒载, 防新旧 .so/二进制混布崩溃
+    int (*pfnAbiVersion)() = (int(*)())dlsym(pHandle, "thunder_abi_version");
+    if (!pfnAbiVersion || pfnAbiVersion() != THUNDER_PLUGIN_ABI_VERSION)
+    {
+        LOG4_FATAL("%s ABI 版本不符 (框架期望 %d, 插件%s), 拒绝加载 — 插件必须与框架同批重编",
+                strSoPath.c_str(), THUNDER_PLUGIN_ABI_VERSION,
+                pfnAbiVersion ? "版本过旧" : "无 thunder_abi_version 符号");
+        return(pSo);
+    }
+    Cmd* pCmdBase = pCreateModule();
+    if (pCmdBase != nullptr && !pCmdBase->IsModule())
+    {
+        // url_path 模块必须是 net::Module 派生类; 纯 Cmd 插件被误配成 module 时
+        // 直接 C 强转 Module* 会越界写 (对象更小) → 拒载, 不崩
+        LOG4_FATAL("%s 不是 net::Module 派生类, 拒绝作为 module 加载 (url_path 插件必须是 Module 子类)", strSoPath.c_str());
+        delete pCmdBase;
+        return nullptr;
+    }
+    Module* pModule = static_cast<Module*>(pCmdBase);
     LOG4_TRACE("%s() strSoPath:%s pHandle:%p pCreateModule:%p pModule:%p",
             __FUNCTION__,strSoPath.c_str(),pHandle,pCreateModule,pModule);
     if (pModule != nullptr)
@@ -6222,15 +6254,58 @@ void Worker::EnterDrainMode()
     m_bAccepting = false;
     m_drainStartTime = time(nullptr);
 
-    // 设计说明 (issus #2/#3): 进入排空后不主动关闭或转移任何已有连接。
+    // 排空策略:
     //   - 新连接: Manager 已先拉起新 Worker, SO_REUSEPORT 下内核把新连接分发给它
     //     (AcceptClientConn 在 m_bDraining 时不再 accept), 本 Worker 不再接新活。
-    //   - 在途请求: 已有连接上正在处理的请求 (含协程挂起等 DB/S2S 的) 留在本 Worker
-    //     跑完并把响应发出去, 不被打断。
-    //   - 为何不"关空闲连接": 仅凭收发缓冲是否为空无法区分"真空闲"与"请求已读完、
-    //     协程挂起、响应尚未生成"——后者缓冲也为空, 误关会丢在途请求 (响应发不出去)。
-    //   交由 Run() 主循环的 IsDrainComplete (缓冲空 + 无活跃 Step + 无 pending HTTP)
-    //   + DRAIN_GRACE_PERIOD 兜底自然排空, 排空/超时后在 Run() 末尾 Destroy() 统一关闭。
+    //   - 在途请求: 留在本 Worker 跑完并把响应发出去, 由 IsDrainComplete +
+    //     DRAIN_GRACE_PERIOD(20s) 兜底, 超时强制退出。
+    //   - fd 迁移: 不在此处做部分迁移, 避免部分抽离资源影响在途请求现场。
+    //     等排空完成或超时后, 由 TransferAllFds() 一次性迁移所有 fd。
+}
+
+void Worker::TransferAllFds()
+{
+    if (!m_pDrainMigrate || !m_pDrainMigrate->load(std::memory_order_acquire))
+    {
+        return;  // 非热更新场景 (k8s 缩容/手动 stop), 不迁移直接退出
+    }
+
+    int transferred = 0;
+    for (auto it = mapFdAttr.begin(); it != mapFdAttr.end(); )
+    {
+        int fd = it->first;
+        if (fd == m_iC2SListenFd || fd == iManagerControlFd || fd == iManagerDataFd
+            || it->second->eCodecType == util::CODEC_PB_INTERNAL)
+        {
+            ++it;
+            continue;
+        }
+
+        tagConnectionAttr* pConn = it->second.get();
+        int ret = send_fd_with_attr(iManagerDataFd, fd,
+                      const_cast<char*>(static_cast<const char*>(pConn->szRemoteAddr)),
+                      32,
+                      static_cast<int>(pConn->eCodecType));
+        if (ret >= 0)
+        {
+            LOG4_TRACE("Worker %d transferred fd %d (%s) to Manager",
+                       iWorkerIndex, fd, pConn->szRemoteAddr);
+            m_pIoBackend->CloseFd(fd);
+            it = mapFdAttr.erase(it);
+            ++transferred;
+        }
+        else
+        {
+            LOG4_WARN("Worker %d transfer fd %d failed errno=%d",
+                      iWorkerIndex, fd, ret);
+            ++it;
+        }
+    }
+    if (transferred > 0)
+    {
+        LOG4_INFO("Worker %d drain: transferred %d connections to new Worker",
+                  iWorkerIndex, transferred);
+    }
 }
 
 bool Worker::IsDrainComplete()

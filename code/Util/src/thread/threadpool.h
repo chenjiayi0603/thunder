@@ -206,13 +206,19 @@ private:
 					}
 
 					// 队列空 → 检查是否应退出
-					if (_excessThreads.load(std::memory_order_acquire) > 0)
 					{
-						// resize 缩小：空闲 worker 退出，不影响已有请求
-						_excessThreads.fetch_sub(1, std::memory_order_relaxed);
-						_totalExited++;
-						_idlThrNum--;
-						return;
+						int e = _excessThreads.load(std::memory_order_acquire);
+						while (e > 0)
+						{
+							if (_excessThreads.compare_exchange_weak(e, e - 1,
+									std::memory_order_acq_rel, std::memory_order_relaxed))
+							{
+								// resize 缩小：空闲 worker 退出，不影响已有请求
+								_totalExited++;
+								_idlThrNum--;
+								return;
+							}
+						}
 					}
 					if (!_run.load(std::memory_order_acquire))
 					{

@@ -82,7 +82,7 @@ docs/
 | [10 协程访问模式](architecture/10-coroutine-access-patterns.md) | C++20 协程访问模式 | 🔴 |
 | [11 Lua 跨节点发送](architecture/11-lua-send-to-node-type.md) | Lua 跨节点类型发送 | 🟡 |
 | [12 Work-Stealing 线程池](architecture/12-work-stealing-threadpool.md) | 工作窃取线程池设计 | 🔴 |
-| [13 io_uring 后端设计](architecture/13-asio-uring-design.md) | AsioUring 详细设计 + 两套实现对比 | 🔴 |
+| [13 io_uring 后端设计](architecture/asio-uring-backend.md) | AsioUring 详细设计 + 两套实现对比 | 🔴 |
 | [14 ShmRingQueue 设计](architecture/14-shmringqueue-design.md) | 共享内存无锁环形队列 | 🔴 |
 | [15 HTTPS Codec](architecture/15-https-codec.md) | HTTPS 编解码器实现与运维 | 🟡 |
 | [16 协议全景](architecture/16-protocols-overview.md) | 协议编解码器全景分析 | 🟢 |
@@ -101,7 +101,7 @@ docs/
 | [11 IoBackend 四后端对比](performance/11-io-backend-comparison.md) | 四种 IO 后端横向对比 — 选型参考 |
 
 > 其他基准数据已合并到对应设计文档末尾（附录 A/B）：
-> picohttpparser → [16 协议全景](architecture/16-protocols-overview.md) · 线程池队列 + Work-Stealing → [12 线程池](architecture/12-work-stealing-threadpool.md) · uring 对比 → [13 io_uring](architecture/13-asio-uring-design.md) · ShmRingQueue → [14 共享内存](architecture/14-shmringqueue-design.md) · TCP/WS 连接 → [21 数据面](architecture/21-data-plane.md)
+> picohttpparser → [16 协议全景](architecture/16-protocols-overview.md) · 线程池队列 + Work-Stealing → [12 线程池](architecture/12-work-stealing-threadpool.md) · uring 对比 → [13 io_uring](architecture/asio-uring-backend.md) · ShmRingQueue → [14 共享内存](architecture/14-shmringqueue-design.md) · TCP/WS 连接 → [21 数据面](architecture/21-data-plane.md)
 
 ## Quality — 质量验证
 

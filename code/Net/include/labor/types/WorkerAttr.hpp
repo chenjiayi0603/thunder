@@ -7,6 +7,7 @@
 #define SRC_LABOR_TYPES_WORKER_ATTR_HPP_
 
 #include <time.h>
+#include <atomic>
 #include "libev/ev.h"
 #include "NetDefine.hpp"
 
@@ -31,6 +32,10 @@ struct tagWorkerAttr
     ShmRingQueue* pWorkerToMgrQueue = nullptr;   ///< Worker → Manager 消息队列
     int           iMgrToWorkerEventFd = -1;       ///< 通知 Worker 的 eventfd
     int           iWorkerToMgrEventFd = -1;       ///< 通知 Manager 的 eventfd
+
+    // 共享内存原子标志：Manager 置位 → Worker 排空结束时迁移 fd（热更新场景）
+    // MAP_SHARED | MAP_ANONYMOUS，fork 后父子进程共享，替代 CMD_WORKER_DRAIN 消息
+    std::atomic<bool>* pDrainMigrate = nullptr;
 
     tagWorkerAttr() = default;
     tagWorkerAttr(const tagWorkerAttr&) = default;

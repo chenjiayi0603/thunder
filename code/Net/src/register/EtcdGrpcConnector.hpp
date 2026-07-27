@@ -179,6 +179,7 @@ private:
 
     std::thread       m_grpcThread;
     std::atomic<bool> m_stopFlag{false};
+    std::atomic<bool> m_running{true};   // #160: 重连循环控制标志
 
     // ---- 注册状态 ----
 

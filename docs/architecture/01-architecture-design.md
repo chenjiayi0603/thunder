@@ -1,22 +1,7 @@
 # Thunder 核心架构 — 进程模型 · 事件循环 · C++20 协程
 
-> 原 [`01-architecture-design.md`](01-architecture-design.md) 第 1-5 章独立拆分。适合已读完 [00-overview](00-overview.md) 的读者深入理解框架内核。
-
----
-
-
-1. [项目概述](#1-项目概述)
-2. [整体架构](#2-整体架构)
-3. [进程模型与 IPC](#3-进程模型与-ipc)
-4. [事件循环与并发模型](#4-事件循环与并发模型)
-5. [C++20 协程系统](#5-c20-协程系统)
-6. [网络 I/O 与编解码管道](#6-网络-io-与编解码管道)
-7. [Raft 共识与分布式协调](#7-raft-共识与分布式协调)
-8. [共享内存路由/配置同步](#8-共享内存路由配置同步)
-9. [连接管理](#9-连接管理)
-10. [插件系统](#10-插件系统)
-11. [性能分析](#11-性能分析)
-12. [优化建议](#12-优化建议)
+> 源码: `code/Net/src/labor/` (Manager/Worker), `code/Net/include/coro/` (协程)
+> 续篇: [21-data-plane.md](21-data-plane.md) (网络I/O + 共享内存路由), [22-operations-internals.md](22-operations-internals.md) (连接管理 + 插件)
 
 ---
 
@@ -275,7 +260,7 @@ ev_async* m_pPendingAsyncWatcher;
 - 使用 `ev_async_send` 唤醒事件循环
 - 线程安全由 mutex 保证
 
-### 4.4 全局线程池（辅助）
+### 4.4 全局线程池
 
 ```
 Worker 进程内全局 std::threadpool
@@ -464,11 +449,3 @@ struct IoBoolAwaitable {
     }
 };
 ```
-
----
-
-
----
-
-> 📖 下一篇: [21 数据面 — 网络 I/O · Raft · 共享内存路由](21-data-plane.md)  
-> 📖 回到全景: [00 架构全景](00-overview.md)

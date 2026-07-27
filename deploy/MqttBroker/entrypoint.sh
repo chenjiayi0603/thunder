@@ -1,0 +1,20 @@
+#!/bin/bash
+
+PORT="${INNER_PORT:-21884}"
+[ -n "$INNER_PORT" ] && sed -i "s/\"inner_port\": [0-9]*/\"inner_port\": $INNER_PORT/" ./conf/MqttBroker.json
+MY_IP="${POD_IP:-$(hostname -i 2>/dev/null || echo '0.0.0.0')}"
+[ "$MY_IP" != "0.0.0.0" ] && sed -i "s/\"inner_host\": \"0.0.0.0\"/\"inner_host\": \"$MY_IP\"/" ./conf/MqttBroker.json
+[ -n "$ETCD_ENDPOINT" ] && sed -i "s|\"etcd_endpoints\": \"[^\"]*\"|\"etcd_endpoints\": \"$ETCD_ENDPOINT\"|" ./conf/MqttBroker.json
+echo "Starting MqttBroker on $MY_IP:$PORT..."
+./bin/Hello ./conf/MqttBroker.json || true
+echo "MqttBroker daemonized; wait for worker..."
+# wait for worker daemon to appear (Manager forks Worker then exits)
+for _i in $(seq 1 30); do pgrep -f 'MqttBroker_robot_' >/dev/null 2>&1 && break; sleep 1; done
+if ! pgrep -f 'MqttBroker_robot_' >/dev/null 2>&1; then
+    echo "FATAL: MqttBroker_robot never started"
+    exit 1
+fi
+echo "Worker ready, monitoring..."
+while pgrep -f 'MqttBroker_robot_' >/dev/null 2>&1; do sleep 5; done
+echo "FATAL: MqttBroker_robot exited, container will restart"
+exit 1

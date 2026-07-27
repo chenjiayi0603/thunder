@@ -69,17 +69,10 @@ Result run_once(int workers, long long total_tasks, int task_us)
     // 单生产者：事件循环线程顺序 commit，队列满时背压重试
     for (long long j = 0; j < total_tasks; ++j)
     {
-        while (true) {
-            try {
-                pool.commit([&done, task_us]{
-                    if (task_us > 0) spin_us(task_us);
-                    done.fetch_add(1, std::memory_order_relaxed);
-                });
-                break;
-            } catch (const std::runtime_error&) {
-                std::this_thread::yield();
-            }
-        }
+        pool.commit([&done, task_us]{
+            if (task_us > 0) spin_us(task_us);
+            done.fetch_add(1, std::memory_order_relaxed);
+        });
     }
 
     while (done.load(std::memory_order_acquire) < total_tasks)

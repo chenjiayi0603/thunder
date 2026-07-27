@@ -40,7 +40,7 @@
             "version": 1
         }
     ],
-    "io_backend": "asio_uring",
+    "io_backend": "ev",
     "so\u0000tom": [
         {
             "url_path": "/hello/shake",
