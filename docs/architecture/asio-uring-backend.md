@@ -51,6 +51,67 @@ CQE = 内核的回执 (做完了, 结果是什么)
 业务数据不经过 SQ/CQ, 直接走内核缓冲区 ↔ buf
 ```
 
+### 两层缓存：Ring 管控制，Buffer 管数据
+
+io_uring 把"指挥系统"和"货运系统"拆成了两条完全独立的通道：
+
+```
+                    io_uring 两条数据通道
+
+控制面 (metadata)                    数据面 (payload)
+─────────────────                    ─────────────────
+
+SQ Ring (共享内存)                    用户态 CBuffer
+┌──────────────────┐                 ┌──────────────────┐
+│ SQE[0]: op=READ  │──── 指针 ─────→│ "GET / HTTP/1.1" │
+│   fd=42          │                 │  用户真正的数据   │
+│   addr=0x7f... ──┘                 └──────────────────┘
+│   len=8192       │
+│ SQE[1]: op=WRITE │──── 指针 ─────→ 另一个 CBuffer
+│   fd=42          │
+│   addr=0x7f... ──┘
+└──────────────────┘
+
+CQ Ring (共享内存)
+┌──────────────────┐
+│ CQE[0]: res=8192 │  ← 只告诉你 "读了 8192 字节"
+│   user_data=ptr  │  ← 带回 PendingOp*, 用来找到对应的 CBuffer
+└──────────────────┘
+```
+
+| | SQ/CQ Ring | CBuffer (用户 buffer) |
+|---|---|---|
+| **存什么** | 指令 + 结果 (元数据) | 真正的业务数据 |
+| **条目大小** | SQE=64B, CQE=16B (固定) | 8KB~64KB+ (可变) |
+| **内存来源** | `io_uring_setup` → `mmap` 内核分配 | `new`/`malloc` 用户分配 |
+| **谁写** | SQ: 用户写, 内核读 / CQ: 内核写, 用户读 | 读: 内核 DMA→buffer / 写: buffer→内核 DMA |
+| **共享方式** | 内核+用户态映射同一物理页 | 用户分配后, **指针**传给内核 (SQE.addr) |
+| **syscall 替代** | Ring 让提交和收割零 syscall | 数据本身永远不经过 Ring |
+
+**为什么要分开：**
+
+SQ/CQ Ring 是固定大小的环形队列，每个条目只有几十字节，设计目标是极低延迟的元数据传递。如果把 4KB 的 HTTP 响应也塞进去，一个条目就占满几十个 slot，ring 瞬间打满，且读写同一块内存导致缓存行竞争。
+
+所以 io_uring 只传指针：`SQE.addr = buf->GetRawWriteBuffer()`。内核拿到指针后，通过 DMA 直接把数据写到用户 buffer，不经过 SQ/CQ Ring。
+
+```
+一次 SubmitRead 的全路径:
+
+  ① 写 SQE 到 SQ ring          ← 控制面, 64B write, 零 syscall
+      SQE.addr = buf 指针       ← 只传指针, 数据不动
+
+  ② io_uring_enter 通知内核    ← 唯一 syscall
+
+  ③ 内核: 读 SQE → DMA 数据到 buf.addr  ← 数据面, 内核直写用户 buffer
+
+  ④ 内核: 写 CQE 到 CQ ring    ← 控制面, 16B write
+
+  ⑤ CQE 收割: res=8192
+     → buf->AdvanceWriteIndex(8192)     ← 数据已经在 buffer 里了
+```
+
+**这就是 io_uring 批量提交能省掉 N-1 次 syscall 的根本原因：** 控制面走 Ring 共享内存（极快，零 syscall），数据面走 DMA（也快），两者互不阻塞。唯一需要 syscall 的就剩 `io_uring_enter` 通知内核"有新指令了"这一次。
+
 ### 为什么要 io_uring
 
 Thunder 是游戏网关: 高并发(数万连接) + 低延迟(毫秒级) + 大流量(GB/s)。

@@ -8544,3 +8544,183 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 - Zombie Pod 清理保护 infra (跳过 etcd/mysql/redis)
 - CLEAN 增加 MQTT deployment 清理
 - K8s 回归测试增加 MQTT CONNACK 检查
+
+---
+
+## 🟡 #174 — `docs/architecture/plan/` 重构：从实施计划提取纯设计文档
+
+**当前状态: 🟡 待处理(中)**
+
+### 背景
+
+`docs/architecture/plan/` 下的 22 个文件实际上是**过去实施的计划/工作记录**，不是纯粹的架构设计文档。它们混杂了大量非设计内容：
+
+| 杂质类型 | 示例 | 应移除 |
+|---------|------|:--:|
+| 状态标记 | `🟢 🔴 🟡 ✅ ❌ ⚠️ 📋`, `2026-06-07 final` | ✅ |
+| 日期/版本记录 | `> 2026-06-01`, `更新: 2026-07-06` | ✅ |
+| 任务列表 / TODO | P0/P1/P2/P3 计划, `待做`, `已移除` | ✅ |
+| Issue 引用 | `#109`, `关联 issue：` | ✅ |
+| 提交记录 / commit 信息 | "2026-06-07 final" 改动量统计 | ✅ |
+| 测试/验证记录 | `冒烟测试 --k8s ✅ 12/12`, 验证环境说明 | ✅ |
+| 复盘/经验总结 | "为什么执行不下去", "犯了四个错" | ✅ |
+| 个人笔记/旁白 | "跟 bash 较劲", 自嘲注释 | ✅ |
+| 部署指令 | `etcdctl put`, `kubectl set image` | ✅ |
+| 实施优先级 | `P4: Docker Compose 模式`, `⇦ 剩余待做` | ✅ |
+| 难度标记 | `入门级`, `进阶级`, `专家级`, `🟢🟡🔴` | ✅ |
+
+### 保留内容
+
+每篇文件只保留：
+- **设计架构**（核心结构、数据流、组件关系）
+- **算法/协议描述**（状态机、ABI 契约、序列化格式）
+- **设计决策与权衡**（为什么选 A 不选 B）
+- **性能数据**（benchmark 表格、压测结论、延迟/吞吐对比）
+- **代码级细节**（关键 API 签名、数据结构 layout、伪代码）
+
+### 22 个待重写文件
+
+| # | 原文件 | 行数 | 大小 | 核心设计主题 |
+|---|--------|:---:|:---:|-------------|
+| 00 | `00-overview.md` | 169 | 7KB | Thunder 全景概述、数据流 |
+| 01 | `01-architecture-design.md` | 474 | 23KB | 进程模型、事件循环、C++20 协程 |
+| 02 | `02-etcd-designed.md` | 312 | 11KB | etcd 服务发现与配置同步 |
+| 03 | `03-node-id-allocation.md` | 178 | 10KB | 分布式 node_id 分配算法 |
+| 04 | `04-thunder-on-k8s.md` | 435 | 16KB | Thunder K8s 部署架构 |
+| 05 | `05-graceful-restart.md` | 628 | 21KB | Worker 优雅重启、fd 迁移 |
+| 06 | `06-manager-worker-ipc.md` | 370 | 12KB | Manager↔Worker 进程间通信 |
+| 07 | `07-upstream-route-filter.md` | 337 | 10KB | 上游路由过滤机制 |
+| 08 | `08-so-module-hot-reload-via-etcd.md` | 553 | 19KB | 插件热更新 via etcd |
+| 09 | `09-luajit-module-support.md` | 402 | 19KB | LuaJIT 模块系统 |
+| 10 | `10-coroutine-access-patterns.md` | 385 | 12KB | C++20 协程访问模式 |
+| 11 | `11-lua-send-to-node-type.md` | 196 | 8KB | Lua 按节点类型发送消息 |
+| 12 | `12-work-stealing-threadpool.md` | 956 | 44KB | Work-Stealing 线程池（含性能基准） |
+| 14 | `14-shmringqueue-design.md` | 315 | 12KB | 共享内存环形队列 |
+| 15 | `15-https-codec.md` | 453 | 13KB | HTTPS/TLS 编解码层 |
+| 16 | `16-protocols-overview.md` | 721 | 24KB | 多协议栈全景 |
+| 17 | `17-k8s-canary-routing.md` | 974 | 42KB | K8s 灰度路由（etcd 权重） |
+| 18 | `18-admin-web-redesign.md` | 822 | 33KB | Admin Web 管理后台 |
+| 19 | `19-entrypoint-and-docker-compose-canary.md` | 174 | 6KB | 容器入口点与灰度部署 |
+| 20 | `20-plugin-lua-nfs-storage.md` | 144 | 7KB | Lua 插件 NFS 存储 |
+| 21 | `21-data-plane.md` | 475 | 22KB | 数据面架构 |
+| 22 | `22-operations-internals.md` | 559 | 21KB | 运维内幕（连接管理、插件、性能）|
+
+**总计: 22 文件 → 19 文件（移除 3 篇），~390KB → ~340KB，~10,000 行 → ~8,500 行**
+
+### 目标格式
+
+参考 [docs/architecture/asio-uring-backend.md](docs/architecture/asio-uring-backend.md) 作为范本：
+
+```markdown
+# 标题 — 一句话说明
+
+> 源码: code/xxx/src/...
+> 接口: code/xxx/include/...
+> 配置: "key": "value"
+
+---
+
+## 1. 概念 / 模型
+
+(核心设计思想，用图或代码片段说明)
+
+## 2. 数据结构 / 组件
+
+(核心 struct、class、layout)
+
+## 3. 数据流 / 算法
+
+(数据怎么流动，状态机怎么转)
+
+## 4. 设计权衡
+
+(为什么这么做，不选其他方案)
+
+## 5. 性能数据 (如有)
+
+(实测表格、benchmark 结论)
+
+## 6. 参考
+
+(相关文件/文档链接)
+```
+
+### 输出位置
+
+新文件放入 `docs/architecture/desgin/`（与 `plan/` 同级，保留原 `plan/` 不动）。
+
+文件命名保持一致（`00-overview.md` → `00-overview.md`）。
+
+### 步骤 0：审计 & 移除已废弃文件（先做）✅ 已分析完毕
+
+在重写之前，先识别哪些文件已经不再使用、不需要重写——直接删除或移到 `plan/` 下级归档目录。
+
+**判断标准：**
+- 描述的功能已经砍掉/不再维护
+- 纯操作手册/部署指南，不包含设计内容
+- 属于过时的一期实施计划，当前实现已完全不同
+
+**逐文件分析结论（2026-07-27）：**
+
+| # | 文件 | 行数 | 实际内容 | 结论 |
+|---|------|:---:|----------|:---:|
+| 00 | `00-overview.md` | 169 | 全景概述 + 性能快照 + 设计决策 | ✅ 重写 |
+| 01 | `01-architecture-design.md` | 474 | 进程模型、事件循环、C++20 协程 | ✅ 重写 |
+| 02 | `02-etcd-designed.md` | 312 | gRPC 线程模型、key space 设计 | ✅ 重写 |
+| 03 | `03-node-id-allocation.md` | 178 | L1/L2/L3 分配流、CAS 槽位抢占 | ✅ 重写 |
+| 04 | `04-thunder-on-k8s.md` | 435 | 服务适应性分析、K8s 部署架构 | ✅ 重写 |
+| 05 | `05-graceful-restart.md` | 628 | Worker 状态机、fd 迁移、SO_REUSEPORT | ✅ 重写 |
+| 06 | `06-manager-worker-ipc.md` | 370 | socketpair + shm ring queue + version data | ✅ 重写 |
+| 07 | `07-upstream-route-filter.md` | 337 | 前缀匹配路由过滤算法 | ✅ 重写 |
+| 08 | `08-so-module-hot-reload-via-etcd.md` | 553 | 发布→通知→加载 三步流程、共享存储 | ✅ 重写 |
+| 09 | `09-luajit-module-support.md` | 402 | LuaJIT VM 集成、API 设计、热加载 | ✅ 重写 |
+| 10 | `10-coroutine-access-patterns.md` | 385 | StepCo20、AsyncTask、IoBoolAwaitable | ✅ 重写 |
+| 11 | `11-lua-send-to-node-type.md` | 196 | 跨节点类型发送 API、3 种调用模式 | ✅ 重写 |
+| 12 | `12-work-stealing-threadpool.md` | 956 | Work-Stealing 设计 + 性能基准对比 | ✅ 重写 |
+| 14 | `14-shmringqueue-design.md` | 315 | SPSC 环形队列、lock-free 设计 | ✅ 重写 |
+| 15 | `15-https-codec.md` | 453 | TLS 编解码层、状态机、继承体系 | ✅ 重写 |
+| 16 | `16-protocols-overview.md` | 721 | 全协议栈编解码器体系 | ✅ 重写 |
+| 17 | `17-k8s-canary-routing.md` | 974 | etcd 权重键 + Worker 进程内灰度分流 | ✅ 重写 |
+| 18 | `18-admin-web-redesign.md` | 822 | **纯前端 UI 设计**：CSS 变量、色彩、组件规范、SPA 布局。零后端架构内容 | 🗑 移除 |
+| 19 | `19-entrypoint-and-docker-compose-canary.md` | 174 | **运维操作手册**：entrypoint.sh 逐行解释 + docker-compose 灰度测试步骤 | 🗑 移除 |
+| 20 | `20-plugin-lua-nfs-storage.md` | 144 | **方案已废弃**：K8s NFS 共享 Lua 脚本的一期方案，实际落地后不再使用 | 🗑 移除 |
+| 21 | `21-data-plane.md` | 475 | 网络 I/O 管道、编解码、共享内存路由 | ✅ 重写 |
+| 22 | `22-operations-internals.md` | 559 | 连接管理(ABA 防护)、插件、性能优化 | ✅ 重写 |
+
+**结论：22 → 19（重写 19 篇，移除 3 篇）**
+
+> 移除时同步清理 `plan/00-overview.md` 和 `plan/01-architecture-design.md` 中的交叉引用。
+
+### 实施步骤
+
+| 步骤 | 内容 | 预估 |
+|:---:|------|:--:|
+| 0 | 审计 plan/ 文件，移除已废弃文件，清理交叉引用 | 20 min |
+| 1 | 创建 `desgin/` 目录，复制 `asio-uring-backend.md` 作为格式模板 | 5 min |
+| 2 | 逐文件重写 19 篇（每文件约 15-60 min，按复杂度） | 总计 ~6h |
+| 3 | 更新 `plan/00-overview.md` 中的交叉引用链接 | 30 min |
+| 4 | 检查所有新文件无破损链接、无残留杂质 | 30 min |
+
+### 优先级建议
+
+按文件访问频率和复杂性分为三批：
+
+**第一批（最常用，先做）：**
+- `00-overview.md` — 所有读者的入口
+- `01-architecture-design.md` — 核心架构
+- `05-graceful-restart.md` — 高频查阅
+- `12-work-stealing-threadpool.md` — 含重要性能数据
+- `08-so-module-hot-reload-via-etcd.md` — 热更新核心
+
+**第二批（重要模块）：**
+- `02-etcd-designed.md`, `03-node-id-allocation.md`, `04-thunder-on-k8s.md`
+- `06-manager-worker-ipc.md`, `07-upstream-route-filter.md`
+- `09-luajit-module-support.md`, `10-coroutine-access-patterns.md`
+- `14-shmringqueue-design.md`, `15-https-codec.md`, `16-protocols-overview.md`
+- `17-k8s-canary-routing.md`, `21-data-plane.md`, `22-operations-internals.md`
+
+**第三批（次要 / 不重写）：**
+- `11-lua-send-to-node-type.md` — ✅ 重写（196 行，API 设计文档，小文件低投入）
+- `18-admin-web-redesign.md` — 🗑 移除（纯前端 UI 设计：CSS 变量、色彩、组件规范。非架构文档）
+- `19-entrypoint-and-docker-compose-canary.md` — 🗑 移除（运维操作手册：entrypoint.sh 解释 + 灰度测试步骤。非设计文档）
+- `20-plugin-lua-nfs-storage.md` — 🗑 移除（方案已废弃）

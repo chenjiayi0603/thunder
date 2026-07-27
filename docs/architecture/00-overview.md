@@ -1,7 +1,6 @@
 # Thunder 架构全景
 
-> 🟢 **入门级** — 读完这篇你就能画出 Thunder 的完整数据流。
-> 适合：刚跑通 Quick Start，想理解"这个框架到底怎么工作的"。
+读完这篇你就能画出 Thunder 的完整数据流。
 
 ---
 
@@ -56,12 +55,12 @@ Thunder 帮你搞定网络 IO、协议解析、服务发现、热更新。
 ```
 客户端 → TCP recv
        → picohttpparser (SSE4.2 SIMD 解析 HTTP 头)
-       → 前缀匹配 "/hello/echo" ✅
+       → 前缀匹配 "/hello/echo"
        → 跳过 Protobuf 解码
        → 你的插件 AnyMessage()
        → yyjson 构造响应
        → TCP send
-       
+
   耗时: ~220 μs (64B payload, asio_uring)
   QPS:  ~235k / core
 ```
@@ -79,8 +78,6 @@ Thunder 帮你搞定网络 IO、协议解析、服务发现、热更新。
   QPS: ~162k / core
 ```
 
-> 📖 深度阅读：[protocols-overview.md](16-protocols-overview.md) · [picohttpparser 分析](../architecture/16-protocols-overview.md#附录性能基准数据)
-
 ---
 
 ## 核心设计决策
@@ -95,8 +92,6 @@ Thunder 帮你搞定网络 IO、协议解析、服务发现、热更新。
 | **hostNetwork (非 NodePort)** | 数据面零 K8s 组件 | Pod 不能漂移 |
 | **dlopen SO 热更新** | 不重启进程，连接不断 | SO 需兼容 ABI |
 
-> 📖 深度阅读：[FAQ.md](../FAQ.md) · [架构设计](01-architecture-design.md) · [io_uring 设计](asio-uring-backend.md)
-
 ---
 
 ## IO 后端一览
@@ -109,8 +104,6 @@ Thunder 支持插拔式 IO 后端，编译时选择：
 | `asio_uring` | io_uring | 批量提交，延迟最低 | 大 payload，TLS 密集 |
 | `native_uring` | io_uring 原始接口 | 无批量优势，演示用 | 学习/对比 |
 | `dpdk` | 内核旁路 | 计划中 | 极低延迟场景 |
-
-> 📖 深度阅读：[IoBackend 对比](../performance/11-io-backend-comparison.md) · [AsioUring 设计](asio-uring-backend.md)
 
 ---
 
@@ -133,37 +126,29 @@ Worker 进程
 | 适用 | 高性能路径、复杂协议解析 | 业务逻辑、频繁变更 |
 | 部署 | NFS 共享 / Docker 镜像内 | etcd 存储，push 即生效 |
 
-> 📖 深度阅读：[SO 热更新](08-so-module-hot-reload-via-etcd.md) · [Lua 模块](09-luajit-module-support.md) · [NFS 存储](20-plugin-lua-nfs-storage.md)
-
 ---
 
 ## 性能快照
 
-| 指标 | Thunder | Nginx / 旧方案 |
+| 指标 | Thunder | Nginx |
 |:---|:---:|:---:|
-| HTTP 1KB RPS (单核) | **232k** | Nginx 191k (+21%) |
-| HTTP 64B 延迟 | **220 μs** | Nginx 466 μs |
-| HTTPS 4KB 延迟 | **247 μs** | Nginx 824 μs |
+| HTTP 1KB RPS (单核) | **232k** | 191k (+21%) |
+| HTTP 64B 延迟 | **220 μs** | 466 μs |
+| HTTPS 4KB 延迟 | **247 μs** | 824 μs |
 | 协程切换开销 | 纳秒级 | 线程微秒级 |
 | Work-stealing 加速比 | **543 ns/op** | 旧单队列线程池 1374 ns/op |
 
-> 📖 完整数据：[Thunder vs Nginx](../performance/10-vs-nginx-benchmark-20260610.md) · [性能总览](../performance/)
-
 ---
 
-## 阅读下一步
+## 阅读索引
 
 | 你想... | 读这篇 |
 |:---|:---|
-| 深入理解整体架构 | [01-architecture-design.md](01-architecture-design.md) 🔴 |
-| 理解 etcd 怎么用 | [02-etcd-designed.md](02-etcd-designed.md) 🟡 |
-| 部署到 K8s | [04-thunder-on-k8s.md](04-thunder-on-k8s.md) 🟡 |
-| 理解协程怎么写 | [10-coroutine-access-patterns.md](10-coroutine-access-patterns.md) 🔴 |
-| 理解 io_uring 怎么接 | [asio-uring-backend.md](asio-uring-backend.md) 🔴 |
-| 理解热更新机制 | [08-so-module-hot-reload-via-etcd.md](08-so-module-hot-reload-via-etcd.md) 🟡 |
-| 看性能测试数据 | [../performance/](../performance/) 🟢 |
-| 看设计 FAQ | [../FAQ.md](../FAQ.md) 🟢 |
-
----
-
-> 🟢 = 入门级 · 🟡 = 进阶级 · 🔴 = 专家级
+| 深入理解整体架构 | [01-architecture-design.md](01-architecture-design.md) |
+| 理解 etcd 怎么用 | [02-etcd-designed.md](02-etcd-designed.md) |
+| 部署到 K8s | [04-thunder-on-k8s.md](04-thunder-on-k8s.md) |
+| 理解协程怎么写 | [10-coroutine-access-patterns.md](10-coroutine-access-patterns.md) |
+| 理解 io_uring 怎么接 | [asio-uring-backend.md](../asio-uring-backend.md) |
+| 理解热更新机制 | [08-so-module-hot-reload-via-etcd.md](08-so-module-hot-reload-via-etcd.md) |
+| 看性能测试数据 | [../performance/](../performance/) |
+| 看设计 FAQ | [../FAQ.md](../FAQ.md) |
