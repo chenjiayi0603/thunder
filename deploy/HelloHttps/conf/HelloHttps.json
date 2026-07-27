@@ -45,7 +45,7 @@
         }
     },
     "so": [],
-    "io_backend": "ev",
+    "io_backend": "asio_uring",
     "https": {
         "server_cert": "conf/certs/server.crt",
         "server_key": "conf/certs/server.key",

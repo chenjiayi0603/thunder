@@ -1,0 +1,63 @@
+{
+  "node_type": "HELLO",
+  "access_host": "0.0.0.0",
+  "access_port": 27443,
+  "access_codec": 11,
+  "inner_host": "0.0.0.0",
+  "inner_port": 27444,
+  "center": {
+    "connector": "etcd",
+    "etcd_endpoints": "http://127.0.0.1:12379"
+  },
+  "server_name": "Hello_https_robot",
+  "process_num": 1,
+  "worker_capacity": 1000000,
+  "config_path": "conf/",
+  "log_path": "log/",
+  "max_log_file_num": 10,
+  "max_log_file_size": 20480000,
+  "permission": {
+    "addr_permit": {
+      "stat_interval": 1.0,
+      "permit_num": 500
+    },
+    "uin_permit": {
+      "stat_interval": 1.0,
+      "permit_num": 500
+    }
+  },
+  "io_timeout": 300.0,
+  "step_timeout": 5.0,
+  "log_level": "DEBUG",
+  "load_so_interval": 60.0,
+  "custom": {
+    "https": {
+      "server": {
+        "cert_file": "conf/certs/server.crt",
+        "key_file": "conf/certs/server.key",
+        "ca_file": "conf/certs/ca.crt",
+        "verify_client": false
+      },
+      "client": {
+        "ca_file": "conf/certs/ca.crt",
+        "verify_peer": true
+      }
+    }
+  },
+  "so": [],
+  "module": [
+    {
+      "url_path": "/hello/hello",
+      "so_path": "plugins/ModuleHello.so",
+      "entrance_symbol": "create",
+      "load": true,
+      "version": 1
+    }
+  ],
+  "io_backend": "asio_uring",
+  "https": {
+    "server_cert": "conf/certs/server.crt",
+    "server_key": "conf/certs/server.key",
+    "verify_client": false
+  }
+}

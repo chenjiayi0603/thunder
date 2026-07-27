@@ -4154,7 +4154,9 @@ Watch 断流
 
 ---
 
-## ✅ #115 [需求] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
+## ✅ #115 [已完成] etcd 注册 → 路由下发 → 下线剔除 全链路稳定性测试
+
+> 2026-07-27 | 状态: ✅ 已完成 | 56/56 回归通过。GenKey S2S 超时根因为 CodecMqtt 未编入 libNet.so 导致 Logic 无 cmd handler。修复后全链路通。
 
 > 2026-06-20 | 需求 | 状态: ✅ 已完成（S1–S6 全部通过，S6 5分钟长跑无租约丢失）
 > 2026-06-25 | 复测 | S1/S2/S3/S5 单独跑通（4/4 passed，3m14s）；Watch 专项 3/3 通过（PUT/DELETE/断流重建，1m30s）；S4 kill-9 / S6 长跑（slow 标记）未纳入本次
@@ -6122,9 +6124,9 @@ OpenIM 全场统一 `replicas: 2`（含 infra 和 11 个业务服务），带来
 
 ---
 
-## 🔵 #150 [分析] IoT 协议支持可行性 — MQTT
+## ✅ #150 [已完成] IoT 协议支持可行性 — MQTT
 
-> 2026-07-18 | 分析 | 状态: 🔵 待评估 | 2026-07-22 补充代码级可行性分析 + 风险评估 + 场景深入 + 实施路线图
+> 2026-07-18 | 2026-07-27 完成 | 状态: ✅ 已完成 | MQTT 3.1.1 Broker 已实现 + K8s 部署 + 56/56 回归通过
 
 ### 背景
 
@@ -8206,9 +8208,14 @@ CanaryRoutingTest: 7/7 PASS ✅
 ---
 
 
-## 🔴 #164 [Infra] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
+## ✅ #164 [已完成] K8s 回归测试反复不稳定 — io_backend 配置与编译不一致
 
-> 2026-07-22 | 发现 & 修复 | 状态: ✅ 已完成 — 55/55 PASS, 所有子项修复到位
+> 2026-07-22 | 2026-07-27 验证 | 状态: ✅ 已完成 — 56/56 PASS
+>
+> **根因 & 修复**:
+> 1. 所有服务配置 `"io_backend": "ev"` 但编译时 `THUNDER_IO_ASIO_URING=ON` → 代码无视配置强制 asio_uring。修复: 全部配置改为 `"io_backend": "asio_uring"`，`Labor.cpp` 默认 asio_uring 前加 `strBackend.empty() || strBackend == "asio_uring"` 判断
+> 2. `CodecMqtt.cpp` 未加入 `LIBNET_SOURCES` → CmdGetToken.so dlopen 失败 → Interface→Logic GenKey 超时。修复: CMakeLists.txt 加 `list(APPEND LIBNET_SOURCES "${NET_SRC}/codec/CodecMqtt.cpp")`
+> 3. MQTT Deployment 的 `cp Hello.json MqttBroker.json` 覆盖配置 + 使用错误镜像。修复: 去掉 cp 行，镜像改为 `thunder-mqtt-broker`
 
 ### 现象
 
@@ -8326,9 +8333,9 @@ gdb 抓栈 + 反汇编 + 全面审计后，确认崩溃是 **3 层产品 bug 叠
 **验证**：第 10 次 `./deploy.sh test k8s` **55/55 PASS（0 FAIL 0 SKIP）**——Logic 零崩溃、GenKey/VerifyKey 全链路通、admin-web 16 项 + 灰度 11 项全过。
 
 
-## 🔵 #165 [部署] MQTT Broker K8s 部署支持 — Dockerfile + deploy.sh 集成
+## ✅ #165 [已完成] MQTT Broker K8s 部署支持 — Dockerfile + deploy.sh 集成
 
-> 2026-07-24 | 分析 | 状态: 🔵 待实现
+> 2026-07-24 | 2026-07-27 完成 | 状态: ✅ 已完成 | MQTT Broker K8s 部署 + 镜像构建 + 56/56 回归通过
 
 ### 背景
 
@@ -8547,9 +8554,9 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🟡 #174 — `docs/architecture/plan/` 重构：从实施计划提取纯设计文档
+## ✅ #174 [已完成] `docs/architecture/plan/` 重构：从实施计划提取纯设计文档
 
-**当前状态: 🟡 待处理(中)**
+> 2026-07-27 完成 | 状态: ✅ 已完成 | 22→19 篇, 10,000→2,676 行 (-73%), 390KB→99KB (-75%)
 
 ### 背景
 
