@@ -22,4 +22,3 @@ private:
     int m_iFuncRef = LUA_NOREF;
     std::string m_strScriptPath;
 };
-extern "C" { net::Module* create(); }

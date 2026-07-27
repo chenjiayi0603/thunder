@@ -407,4 +407,4 @@ bool ModuleLua::ReloadScript() {
     return true;
 }
 
-extern "C" net::Module* create() { return new ModuleLua(); }
+MUDULE_CREATE(ModuleLua)
