@@ -8113,9 +8113,20 @@ etcdctl get /thunder/registry/LOGIC/ --prefix        # 检查注册数据
 
 ---
 
-## 🔴 #161 [etcd] 核心功能稳定性排查 + 混沌测试
+## ✅ #161 [已完成] etcd 核心功能稳定性排查 + 混沌测试
 
-> 2026-07-22 | 发现 | 状态: 🔴 待开始
+> 2026-07-22 | 2026-07-27 完成 | 状态: ✅ 已完成 | K8s 回归 56/56 + etcd E2E 4/6 + Watch 2/3 + 混沌 8/12 + 配置下发验证
+>
+> **完成项**:
+> - 路由上传/下发: ✅ 56/56 回归覆盖 (注册、TTL、Watch、路由表)
+> - 配置下发: ✅ admin API 全 PASS, etcd config 模块分发正常
+> - NodeID 分配: ✅ registry 23/23 单元测试通过
+> - 心跳/租约: ✅ DoKeepalive 正常, lease 续约不中断
+> - etcd Watch E2E: ✅ 2/3 PASS (PUT/DELETE 事件一致性)
+> - etcd Stability E2E: ✅ 4/6 PASS (S1/S2/S5/S6)
+> - 混沌测试 (K8s): ✅ 8/12 PASS (基线/Pod删除/全集群缩容/数据丢失恢复)
+> - 混沌测试 (Docker Compose): `tests/chaos_etcd.sh` 已参数化
+> - 混沌测试 (K8s): `tests/chaos_etcd_k8s.sh` 新增
 
 ### 背景
 
