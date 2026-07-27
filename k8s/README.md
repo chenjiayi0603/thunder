@@ -1,461 +1,518 @@
-# Thunder k8s 部署配置
+# Thunder K8s 部署指南
 
-## 文件清单
-
-| 文件 | 内容 | 类型 |
-|------|------|------|
-| `namespace.yaml` | thunder namespace | 基础设施 |
-| `etcd-local.yaml` | etcd Deployment (单节点, hostPath, 测试用) | 基础设施 |
-| `etcd-statefulset.yaml` | etcd StatefulSet (3节点, PVC, 生产用) | 基础设施 |
-| `redis.yaml` | Redis Deployment + ClusterIP Service | 基础设施 |
-| `mysql.yaml` | MariaDB Deployment + ClusterIP Service | 基础设施 |
-| `logic-deployment.yaml` | Logic Deployment (1 replica) | 业务 |
-| `interface-deployment.yaml` | Interface Deployment + NodePort Service | 业务 |
-| `hello-deployment.yaml` | Hello Deployment + NodePort Service | 业务 |
-| `hello-ws-deployment.yaml` | HelloWS Deployment + NodePort Service | 业务 |
-| `hello-https-deployment.yaml` | HelloHTTPS Deployment + NodePort Service | 业务 |
-| `minio.yaml` | MinIO 制品库 (PV+PVC+Secret+Deployment+Service, #159) | 基础设施 |
-| `admin-web-deployment.yaml` | Admin-Web 管理后台 Deployment + NodePort Service | 业务 |
-| `admin-web-pvc.yaml` | Admin-Web 持久化存储 PV+PVC | 基础设施 |
-| `admin-web-rbac.yaml` | Admin-Web ServiceAccount + RBAC | 运维 |
-| `logic-hpa.yaml` | Logic Horizontal Pod Autoscaler | 运维 |
-| `conf/` | k8s 环境专属配置文件（与 `deploy/` 独立） | 配置 |
-| `regression-test.sh` | K8s 回归测试统一入口 (`--quick`/`--full`/`--all`) | 测试 |
+> 版本: v0.9.7 | 最后更新: 2026-07-27
 
 ---
 
-## 架构设计
+## 目录
 
-### 拓扑结构
+- [1. 架构设计](#1-架构设计)
+- [2. 部署流程图](#2-部署流程图)
+- [3. etcd Key 设计](#3-etcd-key-设计)
+- [4. 运维指令](#4-运维指令)
+- [5. 文件清单](#5-文件清单)
+
+---
+
+## 1. 架构设计
+
+### 1.1 拓扑结构
 
 ```
-                          ┌──────────────────────────────────────────────┐
-                          │                 k8s Cluster                  │
-                          │                                              │
-   外部客户端 ──────────►  │  NodePort :30006 ──► Hello Pod (27006)       │
-                          │  NodePort :30008 ──► Interface Pod (27008)   │
-                          │  NodePort :30010 ──► HelloWS Pod (27010)     │
-                          │  NodePort :30043 ──► HelloHTTPS Pod (27443)  │
-                          │                                              │
-                          │  ┌──────────────── 内部 S2S ──────────────┐ │
-                          │  │  Interface ──► Logic (16068)            │ │
-                          │  │  Hello ──► Logic (16068)               │ │
-                          │  │  HelloWS ──► Logic (16068)             │ │
-                          │  └────────────────────────────────────────┘ │
-                          │                    │                         │
-                          │                    ▼                         │
-                          │           ┌──────────────┐                   │
-                          │           │     etcd     │ 服务发现 & 路由     │
-                          │           │  (2379)      │                   │
-                          │           └──────┬───────┘                   │
-                          │                  │                           │
-                          │     ┌────────────┼────────────┐              │
-                          │     ▼            ▼            ▼              │
-                          │  ┌──────┐  ┌─────────┐  ┌─────────┐         │
-                          │  │Redis │  │  MySQL  │  │  Logic  │         │
-                          │  │:6379 │  │  :3306  │  │ (多副本) │         │
-                          │  └──────┘  └─────────┘  └─────────┘         │
-                          └──────────────────────────────────────────────┘
+                         ┌──────────────────────────────────────────────────┐
+                         │                  K8s Cluster (ns: thunder)        │
+                         │                                                  │
+  外部客户端 ──────────►  │  NodePort :30006 ──► HelloHttp Pod      :27006   │
+                         │  NodePort :30008 ──► Interface Pod       :27008   │
+                         │  NodePort :30010 ──► HelloWS Pod         :27010   │
+                         │  NodePort :30043 ──► HelloHTTPS Pod      :27443   │
+                         │  NodePort :30090 ──► Admin-Web Pod       :8080    │
+                         │                                                  │
+                         │  ┌──────────── 内部 S2S ──────────────┐           │
+                         │  │  Interface ──► Logic (16068)        │           │
+                         │  │  Hello    ──► Logic (16068)        │           │
+                         │  │  HelloWS  ──► Logic (16068)        │           │
+                         │  │  HelloHTTPS ─► Logic (16068)       │           │
+                         │  └────────────────────────────────────┘           │
+                         │                    │                              │
+                         │        ┌───────────┼───────────┐                  │
+                         │        ▼           ▼           ▼                  │
+                         │  ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+                         │  │   etcd   │ │  Redis   │ │  MySQL   │          │
+                         │  │  (2379)  │ │  (6379)  │ │  (3306)  │          │
+                         │  └──────────┘ └──────────┘ └────┬─────┘          │
+                         │                                │                 │
+                         │                      ┌─────────▼──────────┐      │
+                         │                      │  MinIO 制品库       │      │
+                         │                      │  (9000/9001)       │      │
+                         │                      └────────────────────┘      │
+                         └──────────────────────────────────────────────────┘
 ```
 
-### 节点类型与端口规划
+### 1.2 节点类型与端口规划
 
 | 节点 | 类型 | access_host | access_port | inner_host | inner_port | 说明 |
 |------|------|-------------|-------------|------------|------------|------|
-| Hello | HELLO | `$POD_IP` | 27006 | `$POD_IP` | 27007 | HTTP 对外服务 (NodePort 30006) |
-| HelloWS | HELLO | `$POD_IP` | 27010 | `$POD_IP` | 27011 | WebSocket 对外服务 (NodePort 30010) |
-| HelloHTTPS | HELLO | `$POD_IP` | 27443 | `$POD_IP` | 27444 | HTTPS 对外服务 (NodePort 30043) |
+| HelloHttp | HELLO | `$POD_IP` | 27006 | `$POD_IP` | 27007 | HTTP 对外 (NodePort 30006) |
+| HelloWS | HELLO | `$POD_IP` | 27010 | `$POD_IP` | 27011 | WebSocket 对外 (NodePort 30010) |
+| HelloHTTPS | HELLO | `$POD_IP` | 27443 | `$POD_IP` | 27444 | HTTPS 对外 (NodePort 30043) |
 | Interface | INTERFACE | `$POD_IP` | 27008 | `$POD_IP` | 27009 | API 网关 (NodePort 30008) |
-| Logic | LOGIC | — | — | `$POD_IP` | 16068 | 纯后端，仅内网 S2S 通信 |
+| Logic | LOGIC | — | — | `$POD_IP` | 16068 | 纯后端 S2S (无对外端口) |
 
-- **access_port**: 对外服务端口，Worker 进程绑定，暴露 NodePort
-- **inner_port**: S2S 内部通信端口，Manager 进程绑定（Logic 只有一个 inner_port）
+- **access_port**: Worker 绑定，对外服务
+- **inner_port**: Manager 绑定，S2S 内部通信
+
+### 1.3 Manager-Worker 进程模型
+
+```
+┌────────────── Pod ──────────────────────────────┐
+│                                                  │
+│  ┌──────────┐   ShmRingQueue   ┌──────────────┐ │
+│  │  Manager  │ ◄──────────────► │   Worker     │ │
+│  │          │                   │              │ │
+│  │  · etcd  │                   │  · accept    │ │
+│  │  · watch │                   │  · I/O       │ │
+│  │  · 路由表│                   │  · 业务逻辑   │ │
+│  │  · SO热更│                  │              │ │
+│  │  · 注册  │                   │              │ │
+│  │  inner   │                   │  access/     │ │
+│  │  _port   │                   │  inner_port  │ │
+│  └──────────┘                   └──────────────┘ │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+Manager 负责控制面（etcd 注册/监听、路由表维护、SO/Lua 热更新），Worker 负责数据面（网络 I/O、业务处理），两者通过共享内存（ShmRingQueue）同步路由表。
 
 ---
 
-## 服务发现与路由
+## 2. 部署流程图
 
-### etcd 注册流程
+### 2.1 启动与注册
 
 ```
-   Pod 启动
+  kubectl apply -f k8s/
       │
       ▼
-   node.sh → sed 替换 0.0.0.0 → $POD_IP
+  Pod 启动 → entrypoint.sh:
+    cp k8s/conf/{Type}.json → /tmp/conf/
+    sed 's/0.0.0.0/'$POD_IP'/g' /tmp/conf/*.json
+    export THUNDER_CONF_DIR=/tmp/conf
       │
       ▼
-   Manager 进程启动
+  ./node.sh → Hello 二进制启动
       │
       ▼
-   EtcdCenterConnector::Init()
-      │  连接 etcd (thunder-etcd.thunder:2379)
-      │  申请 Lease (TTL=10s, 3s keepalive)
+  Manager::Init()
+      │
+      ├─► ① LeaseGrant(TTL=30s) → m_leaseId
+      │
+      ├─► ② DoRegister()
+      │     PUT /thunder/registry/{TYPE}/{IP}:{PORT}
+      │     Value: {node_id, node_type, node_ip, node_port,
+      │             worker_num, access_ip, access_port, resume}
+      │
+      ├─► ③ StartKeepAlive (每 10s leasekeepalive 续约)
+      │
+      ├─► ④ Watch /thunder/registry/ (prefix → 路由表)
+      │
+      ├─► ⑤ Watch /thunder/canary/   (prefix → 灰度权重)
+      │
+      └─► ⑥ Watch /thunder/config/  (prefix → SO/Lua 热更新)
+      │
       ▼
-   DoRegister()
-      │  PUT /thunder/registry/{TYPE}/{POD_IP}:{inner_port}
-      │  value: {node_id, node_type, node_ip, node_port, worker_num}
-      ▼
-   Watch 启动
-      │  prefix watch /thunder/registry/
-      │  全量 snapshot → 增量 watch
-      ▼
-   路由表更新 → 共享内存 → Worker 读取
+  Manager ── ShmRingQueue(路由表) ──► Worker → accept() 开始服务
 ```
 
-### etcd Key 设计
+### 2.2 跨节点 S2S 路由
 
 ```
-/thunder/registry/
-  ├── LOGIC/
-  │     ├── 10.42.0.100:16068  →  {"node_id":1, "node_type":"LOGIC", ...}
-  │     └── 10.42.0.101:16068  →  {"node_id":2, "node_type":"LOGIC", ...}
-  ├── INTERFACE/
-  │     └── 10.42.0.102:27009  →  {"node_id":3, "node_type":"INTERFACE", ...}
-  └── HELLO/
-        ├── 10.42.0.103:27007  →  {"node_id":4, "node_type":"HELLO", ...}
-        └── 10.42.0.104:27011  →  {"node_id":5, "node_type":"HELLO", ...}
+  Interface Worker 收到客户端请求
+      │
+      ▼
+  SendToInternalByNodeTypeAsync("LOGIC")
+      │
+      ▼
+  NodesMgr::GetNodesByType("LOGIC")   ← 共享内存路由表
+      │
+      ▼
+  一致性哈希选取目标 Logic 节点
+      │
+      ▼
+  TCP → Logic Pod IP:16068 (inner_port)
+      │   Manager 接收 → 转发 Worker
+      ▼
+  Logic Worker 处理 → 返回响应
 ```
 
-- Key 格式: `/thunder/registry/{TYPE}/{IP}:{PORT}`
-- 类型前缀使路由按需下发成为可能（#38 upstream_types 过滤）
+### 2.3 SO 热更新 (Pull 模式)
 
-### etcd 地址发现 (业务节点如何知道 etcd 在哪)
+```
+  ┌──────────┐     ① PUT .so        ┌──────────┐
+  │ admin-web │ ───────────────────► │  MinIO   │
+  │ CLI / CI  │     (制品存储)       │ (制品库)  │
+  └────┬─────┘                      └──────────┘
+       │  ② PUT /thunder/config/module/{TYPE}
+       │     {so_url, size, md5, version++, load: true}
+       ▼
+  ┌──────────┐
+  │   etcd   │ ──── Watch 事件 ────► 所有 Manager (3~5s 感知)
+  └──────────┘
+                                        │
+                                        ▼
+                                 ③ HTTP GET MinIO
+                                   下载 .so → /app/plugins/
+                                        │
+                                        ▼
+                                 ④ GracefulRestart Worker
+                                    (Drain 旧 Worker → fork 新 Worker)
+                                        │
+                                        ▼
+                                  Worker 加载新 .so → 热更新完成
+```
 
-业务节点通过配置文件中的 `center.etcd_endpoints` 获知 etcd 地址，不同环境使用不同来源：
+### 2.4 Lua 热更新
+
+```
+  ┌──────────┐  ① PUT /thunder/config/module/{TYPE}
+  │ admin-web │ ──── {script_content, load: true, version++}
+  │ CLI / CI  │
+  └──────────┘
+       │
+       ▼
+  ┌──────────┐ ──── Watch 事件 ────► 所有 Manager
+  └──────────┘
+                                        │
+                                        ▼
+                                  解析 script_content
+                                        │
+                                        ▼
+                                  ShmRingQueue → Worker
+                                        │
+                                        ▼
+                                  Worker 热加载 Lua 脚本
+                                  (无需重启进程)
+```
+
+### 2.5 etcd Watch 健康自愈
+
+```
+  Manager Watch Loop:
+      │
+      ▼
+  Watch /thunder/registry/ (prefix)
+      │
+      ├─► 收到事件 → 更新路由表 → 重置健康计时器
+      │
+      └─► 45s 无事件?
+              │
+              ▼
+           重建 Watcher: 全量 Get → snapshot → 增量 Watch
+              │
+              ▼
+           路由表完整刷新
+```
+
+### 2.6 Lease KeepAlive 与故障检测
+
+```
+  时间线 ──────────────────────────────────────────►
+
+  0s    LeaseGrant(TTL=30s) → m_leaseId
+  3s    首次 leasekeepalive
+  10s   leasekeepalive (每 10s 续约)
+  ...
+
+  若 Pod 宕机:
+  最后一次 keepalive + 30s → Lease 过期
+      → etcd 自动删除该节点所有 Key
+      → 其他节点 Watch 到 DELETE
+      → 路由表中移除该节点
+
+  若 lease 意外丢失 (keepalive 失败):
+    Manager 检测 → 自动 DoRegister() 重新注册
+```
+
+---
+
+## 3. etcd Key 设计
+
+### 3.1 Key 空间
+
+```
+/thunder/
+├── registry/                    # 服务注册 (Lease 绑定)
+│   ├── LOGIC/
+│   │   ├── 10.42.0.10:16068    →  {node_id, node_type, node_ip, node_port, ...}
+│   │   └── 10.42.0.11:16068
+│   ├── INTERFACE/
+│   │   └── 10.42.0.20:27009
+│   └── HELLO/
+│       ├── 10.42.0.30:27007
+│       └── 10.42.0.31:27011
+│
+├── canary/                      # 灰度路由权重
+│   └── {SERVICE}/weights        →  {v1: 80, v2: 20}
+│
+├── config/                      # 配置下发 (SO/Lua 热更新)
+│   └── module/
+│       ├── HELLO_HTTP           →  [{so_path, version, so_url, load, ...}]
+│       ├── HELLO_HTTPS
+│       ├── INTERFACE
+│       └── LOGIC
+│
+└── slot/                        # 节点 ID 分配 (全局自增)
+    ├── 1                        →  {node_type: "LOGIC", ...}
+    └── 2                        →  {node_type: "INTERFACE", ...}
+```
+
+### 3.2 注册 Key: `/thunder/registry/{TYPE}/{IP}:{PORT}`
 
 ```json
-// 每个节点的 JSON 配置中
 {
-  "center": {
-    "connector": "etcd",
-    "etcd_endpoints": "http://thunder-etcd.thunder:2379"
-  }
+  "node_id":     1,
+  "node_type":   "LOGIC",
+  "node_ip":     "10.42.0.10",
+  "node_port":   16068,
+  "worker_num":  4,
+  "access_ip":   "",
+  "access_port": 0,
+  "resume":      true
 }
 ```
 
-**k8s 环境 — 依赖 k8s Service DNS**：
-
-```
-  kubectl apply -f etcd-local.yaml
-       │
-       ▼
-  k8s 创建 Service "thunder-etcd" (ClusterIP: 10.43.76.197)
-       │
-       ▼
-  CoreDNS 自动注册:
-    thunder-etcd.thunder.svc.cluster.local → 10.43.76.197
-       │
-       ▼
-  业务 Pod DNS 解析:
-    thunder-etcd.thunder → 10.43.76.197:2379 → etcd Pod
-```
-
-- 无需额外服务发现组件，k8s Service 创建后 DNS 自动生效
-- 配置中写死域名 `thunder-etcd.thunder`，Pod 内 DNS 自动解析到 ClusterIP
-- 格式: `<service-name>.<namespace>` (短域名, k8s 自动补全 `svc.cluster.local`)
-
-**docker-compose 环境 — 直连宿主机端口**：
-
-```
-  network_mode: host
-  etcd 监听 127.0.0.1:2379
-  业务容器直接连 127.0.0.1:2379
-```
-
-| 环境 | etcd_endpoints 值 | 解析方式 |
-|------|------------------|---------|
-| k8s | `thunder-etcd.thunder:2379` | k8s CoreDNS → ClusterIP |
-| docker-compose | `127.0.0.1:2379` | 本地回环 (host 网络) |
-| 裸机多 etcd | `host1:2379,host2:2379` | DNS / hosts 文件 + 自动故障转移 |
-
-### 跨节点 S2S 路由
-
-```
-  Interface Worker 收到 GenKey 请求
-      │
-      ▼
-  StepCo20Func: co_await SendToInternalByNodeTypeAsync("LOGIC")
-      │
-      ▼
-  NodesMgr::GetNodeByType("LOGIC")  ← 从共享内存路由表查找
-      │
-      ▼
-  TCP 连接 → Logic Pod IP:16068
-      │
-      ▼
-  Logic Worker 处理 → 返回 token+key
-```
-
-- Interface 配置 `upstream_types: ["LOGIC"]` 仅订阅 LOGIC 类型路由
-- 路由表通过共享内存 (ShmRingQueue) 从 Manager 同步到 Worker
-
----
-
-## 配置注入机制
-
-### 设计原则
-
-配置文件中的 IP 地址使用 `0.0.0.0` 占位符，运行时由启动脚本替换为实际 IP。
-
-```
-  源文件 (k8s/conf/*.json)           运行时 (/tmp/conf/*.json)
-  ┌─────────────────────────┐       ┌──────────────────────────────┐
-  │ "access_host": "0.0.0.0" │  sed  │ "access_host": "10.42.0.103" │
-  │ "inner_host": "0.0.0.0"  │ ────► │ "inner_host": "10.42.0.103"  │
-  │ "etcd_endpoints":        │       │ "etcd_endpoints":            │
-  │   "http://thunder-etcd   │       │   "http://thunder-etcd       │
-  │    .thunder:2379"        │       │    .thunder:2379"            │
-  └─────────────────────────┘       └──────────────────────────────┘
-```
-
-### 启动脚本逻辑
-
-```bash
-# 1. 复制配置到临时目录（避免修改 hostPath 共享文件）
-mkdir -p /tmp/conf
-cp /thunder/k8s/conf/Hello.json /tmp/conf/Hello.json
-
-# 2. 替换占位符为 Pod IP
-sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/Hello.json
-
-# 3. 通过环境变量注入配置目录
-export THUNDER_CONF_DIR=/tmp/conf
-./node.sh start
-```
-
-### 为什么用 /tmp/conf 而不是直接修改 deploy/？
-
-| 方式 | 问题 |
+| 字段 | 说明 |
 |------|------|
-| 直接 sed deploy/ | hostPath 多 Pod 共享 → sed 互相覆盖，IP 错乱 |
-| cp + sed /tmp/conf | 每个 Pod 独立副本，容器重启自动消失，安全隔离 ✅ |
+| node_id | 全局唯一节点 ID (/thunder/slot/ 分配) |
+| node_type | LOGIC / INTERFACE / HELLO |
+| node_ip | Pod IP (inner_host) |
+| node_port | inner_port, S2S 通信 |
+| worker_num | Worker 进程数 |
+| access_ip | access_host (对外节点) |
+| access_port | access_port (对外节点) |
+| resume | true=正常, false=Drain 中 |
 
----
+- **生命周期**: 绑定 Lease (TTL=30s), Manager 每 10s keepalive
+- **过期**: Pod 宕机 30s 后 Key 自动删除, Watch 通知其他节点剔除路由
 
-## 网络设计
+### 3.3 配置 Key: `/thunder/config/module/{NODE_TYPE}`
 
-### 为什么 NodePort？
-
-| Service 类型 | 适用场景 | Thunder 选择 |
-|-------------|---------|-------------|
-| ClusterIP | 集群内部通信 | etcd, Redis, MySQL, Logic |
-| NodePort | 外部测试/调试 | Hello, Interface, HelloWS, HelloHTTPS |
-| LoadBalancer | 生产对外 | 生产环境建议 |
-
-NodePort 映射:
-```
-  宿主机 IP:30006  ──►  Hello Pod:27006
-  宿主机 IP:30008  ──►  Interface Pod:27008
-  宿主机 IP:30010  ──►  HelloWS Pod:27010
-  宿主机 IP:30043  ──►  HelloHTTPS Pod:27443
-```
-
-### k8s vs docker-compose 网络对比
-
-| 项 | docker-compose | k8s |
-|----|---------------|-----|
-| 网络模式 | `network_mode: host` | Pod 独立 IP (CNI/flannel) |
-| 目标 IP | `127.0.0.1` / `192.168.x.x` | Pod IP (`10.42.0.x`) |
-| 外部访问 | 直接 localhost:port | NodePort (`{nodeIP}:300xx`) |
-| 服务发现 | 本地 etcd (`127.0.0.1:2379`) | k8s DNS (`thunder-etcd.thunder:2379`) |
-| 配置注入 | `hostname -I` + sed → `/tmp/conf` | `$POD_IP` env + sed → `/tmp/conf` |
-| 端口暴露 | 直接监听宿主机 | NodePort Service |
-| 冒烟测试 | `pytest --mode=external` (127.0.0.1) | NodePort 或 port-forward |
-
----
-
-## 管理控制台
-
-| 服务 | 地址 | 用途 |
-|------|------|------|
-| **admin-web** | `http://192.168.3.61:30090` | 节点拓扑、插件管理、配置下发、Lua 脚本、灰度路由、etcd 浏览 |
-| **MinIO Console** | `http://192.168.3.61:30091` | 制品库文件浏览（bucket: `artifacts`） |
-| **etcd 浏览** | admin-web → `📂 etcd` tab | 按前缀浏览 etcd key/value |
-
-### MinIO Console 登录
-
-```
-用户名: minioadmin
-密码:   minioadmin
+```json
+[
+  {
+    "so_path":         "plugins/HelloHttp_ModuleHello.so",
+    "entrance_symbol": "create",
+    "load":            true,
+    "version":         42,
+    "so_url":          "http://thunder-minio.thunder:9000/artifacts/HelloHttp/ModuleHello.so",
+    "size":            204800,
+    "md5":             "d41d8cd98f00b204e9800998ecf8427e",
+    "script_content":  ""
+  }
+]
 ```
 
-> 凭据定义在 `k8s/minio.yaml` 的 `minio-credentials` Secret 中。
-
-### SO 制品下发（#159 Pull 模式）
-
-```
-admin-web PUT SO  ──→  MinIO bucket (thunder-minio.thunder:9000)
-                ──→  etcd so_url + version bump
-
-Manager Poll (5s) ──→  检测 etcd version 变化
-                ──→  HTTP GET MinIO → 下载 /app/plugins/
-                ──→  GracefulRestart Worker
-
-Pod 重启        ──→  Manager 启动 → Poll 重拉 SO（不丢文件）
-```
-
----
-
-## SO 模块部署 (NFS 共享存储) — 已废弃
-
-> ⚠️ 自 #159 起，SO 下发改用 Pull 模式（MinIO 存储 + Manager HTTP GET），
-> NFS 共享存储方案已废弃。保留此节仅作历史参考。
-
-所有 Pod 共用同一份 SO 文件，通过 NFS PersistentVolume 挂载。
-
-**部署步骤**:
-
-```bash
-# 1. 先确认 NFS 服务器就绪, 修改 plugins-pv.yaml 中的 server IP
-# 2. 创建 PV/PVC
-kubectl apply -f k8s/plugins-pv.yaml
-
-# 3. 在 deployment.yaml 的 containers 下加:
-#    volumeMounts:
-#    - name: plugins
-#      mountPath: /data/thunder/plugins
-#    volumes:
-#    - name: plugins
-#      persistentVolumeClaim:
-#        claimName: thunder-plugins
-
-# 4. 在 Pod 启动脚本中加 symlink:
-#    ln -sf /data/thunder/plugins/HelloHttp deploy/HelloHttp/plugins
-```
-
-**文件**: `k8s/plugins-pv.yaml`
-
-| 资源 | 说明 |
+| 字段 | 说明 |
 |------|------|
-| PV | NFS ReadOnlyMany, 10Gi, server 改实际 IP |
-| PVC | thunder namespace, 绑定 PV |
+| so_path | 插件在 /app/plugins/ 下的路径 |
+| entrance_symbol | SO 入口函数 (create) |
+| load | true=加载, false=卸载 |
+| version | 单调递增, Manager 对比此字段触发 ReloadSo |
+| so_url | MinIO 下载地址 (SO 模块) |
+| size | 文件大小 (字节) |
+| md5 | 文件校验 |
+| script_content | Lua 脚本内容 (Lua 模块, 内联) |
 
-详见 `docs/architecture/08-so-module-hot-reload-via-etcd.md`
+### 3.4 灰度 Key: `/thunder/canary/{SERVICE}/weights`
+
+```json
+{"v1": 80, "v2": 20}
+```
+
+Interface Manager Watch 此 Key, 变更后下发 Worker, 按权重分流到不同版本的 Logic 节点。
 
 ---
 
-## 部署顺序
+## 4. 运维指令
 
-### 启动依赖链
-
-```
-  etcd ────► Logic ────► Interface
-    │           │
-    ├──► Redis ─┤
-    │           │
-    └──► MySQL ─┘
-                  │
-                  └──► Hello / HelloWS / HelloHTTPS
-```
-
-1. **基础设施**: namespace → etcd → redis → mysql
-2. **核心服务**: Logic (最先，S2S 路由依赖)
-3. **业务服务**: Interface → Hello / HelloWS / HelloHTTPS
-
-Logic 必须先于 Interface 启动，否则 Interface 路由表为空，GenKey 失败。
-
-### 冒烟测试
+### 4.1 构建与测试
 
 ```bash
-# k8s 环境
-./tests/test_smoke.sh --k8s
+# === 构建 ===
+./deploy.sh build                          # cmake configure + build
 
-# 或直接 pytest (需先 port-forward 或 NodePort 可达)
-cd tests/e2e
-python3 -m pytest . -m smoke -v --mode=external
+# === 测试 (从快到慢) ===
+./deploy.sh test unit                      # C++ gtest + Python unit (~45s)
+./deploy.sh test                           # unit + Docker E2E (~3min)
+./deploy.sh test e2e                       # Docker 集成测试
+./deploy.sh test smoke                     # 冒烟: 核心链路 + etcd
+./deploy.sh test regression                # 全量回归 (提交前必跑)
+./deploy.sh test k8s                       # K8s 全量回归
+./deploy.sh test perf                      # wrk 压测
+
+# === Docker Compose 本地 ===
+./deploy.sh up / down / restart / status
+
+# === K8s 回归 ===
+bash k8s/regression-test.sh --quick        # 52项核心 (~30s)
+bash k8s/regression-test.sh --full         # + admin API + canary (~5min)
+bash k8s/regression-test.sh --all          # + 扩缩容/稳定性 (~10min)
 ```
 
----
-
-## 已知限制
-
-| 限制 | 影响 | 解决方案 |
-|------|------|---------|
-| etcd 单节点 (local) | 无高可用 | 生产用 `etcd-statefulset.yaml` (3副本) |
-| NodePort 端口固定 | 多实例冲突 | 生产用 LoadBalancer / Ingress |
-| hostPath 持久化配置 | 多 Pod 共享冲突 | 已解决：cp → /tmp/conf + THUNDER_CONF_DIR |
-| certs 需预生成 | HTTPS 首次需手动 | 已内置 gen_self_signed_https_cert.sh |
-| etcd 多端点仅取首 | 无故障转移 | #40 — 生产用 k8s Service LB
-
----
-
-## Lua 热更新
-
-### 方式一：`lua_deploy.py` CLI 工具（推荐，对标 SO 的 build_and_deploy.py）
+### 4.2 K8s 部署
 
 ```bash
-# 上传 + 下发
-python3 tools/lua_deploy.py --file deploy/HelloHttp/scripts/echo.lua --type HELLO_HTTP
-python3 tools/lua_deploy.py --file deploy/Logic/scripts/logic_v1.lua  --type LOGIC
+# === 部署 ===
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/etcd-statefulset.yaml
+kubectl apply -f k8s/redis.yaml mysql.yaml minio.yaml
+kubectl apply -f k8s/logic-deployment.yaml          # Logic 必须最先进
+kubectl apply -f k8s/interface-deployment.yaml
+kubectl apply -f k8s/hello-deployment.yaml
+kubectl apply -f k8s/hello-https-deployment.yaml
+kubectl apply -f k8s/hello-ws-deployment.yaml
+kubectl apply -f k8s/admin-web-deployment.yaml admin-web-rbac.yaml
+kubectl apply -f k8s/node-tuner-daemonset.yaml
 
-# 只上传不下发
-python3 tools/lua_deploy.py --file echo.lua --type HELLO_HTTP --no-deploy
-
-# 下发已有制品库文件
-python3 tools/lua_deploy.py --deploy echo.lua --type HELLO_HTTP
-
-# 查看
-python3 tools/lua_deploy.py --type HELLO_HTTP --list           # 制品库
-python3 tools/lua_deploy.py --type HELLO_HTTP --list-deployed  # 已部署
-
-# 指定 url_path (默认自动推导: HELLO_HTTP → /hello/)
-python3 tools/lua_deploy.py --file echo.lua --type HELLO_HTTP --url /hello/my_echo
+# === 启停 / 扩缩 ===
+kubectl scale deploy -n thunder thunder-logic --replicas=3
+kubectl rollout restart deploy -n thunder thunder-logic
+kubectl -n thunder get pods -o wide
+kubectl -n thunder logs -f deploy/thunder-logic
 ```
 
-### 方式二：admin-web 页面
-
-`http://192.168.3.61:30090` → `📜 Lua` tab：
-- 拖拽上传 .lua 到制品库 → 点「下发」→ 触发热重载
-- 已部署表中点「编辑」→ 在线修改 → 保存
-
-### 方式三：K8s 直写 etcd（适合脚本/CI，跳过 admin-web）
+### 4.3 SO 热更新
 
 ```bash
-ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
+# 一键: CMake 编译 → 上传 MinIO → 下发所有 Pod
+python3 tools/build_and_deploy.py \
+  --target ModuleHelloHttp --type HelloHttp --admin http://192.168.3.61:30090
 
-# 1. 写新 Lua 脚本到 etcd
-kubectl exec -n thunder "$ETCD_POD" -- etcdctl \
-  put /thunder/config/module/HELLO_HTTP \
-  '{"module":[{"url_path":"/hello/lua_echo","so_path":"plugins/HelloHttp_ModuleLua.so","entrance_symbol":"create","load":true,"version":99,"script_content":"function handle_request(msg)\n  SendToClientFast('"'"'{\"code\":0,\"msg\":\"HOTRELOAD\"}'"'"')\n  return true\nend"}]}'
+# 上传已有 .so 跳过构建
+python3 tools/build_and_deploy.py \
+  --so ./ModuleHello.so --type HelloHttp --admin http://192.168.3.61:30090
 
-# 2. 验证
-curl -s -X POST http://192.168.3.61:27006/hello/lua_echo -d 'test'
-# → {"code":0,"msg":"HOTRELOAD"}
-```
-
-## SO 热更新（#159 Pull 模式）
-
-### 方式一：`build_and_deploy.py` 一键工具（推荐）
-
-```bash
-# 全流程: CMake 编译 → 上传 MinIO → 下发到 Pod 触发热重载
-python3 tools/build_and_deploy.py --target CmdGetToken     --type Logic     --admin http://192.168.3.61:30090
-python3 tools/build_and_deploy.py --target ModuleHelloHttp  --type HelloHttp --admin http://192.168.3.61:30090
-python3 tools/build_and_deploy.py --target ModuleLuaHttp    --type HelloHttp --admin http://192.168.3.61:30090
-python3 tools/build_and_deploy.py --target ModuleRawHttp    --type HelloHttp --admin http://192.168.3.61:30090
-
-# 只构建+上传 (不下发)
-python3 tools/build_and_deploy.py --target ModuleHelloHttp --type HelloHttp --no-deploy
-
-# 上传已有 .so 文件 (跳过构建)
-python3 tools/build_and_deploy.py --so ./path/to/xxx.so --type HelloHttp --admin http://192.168.3.61:30090
-
-# 查看已部署插件
-python3 tools/build_and_deploy.py --type Logic     --list --admin http://192.168.3.61:30090
+# 查看已部署
 python3 tools/build_and_deploy.py --type HelloHttp --list --admin http://192.168.3.61:30090
-```
 
-### 方式二：curl 手动调用 (适合 CI/脚本)
-
-```bash
-# 1. 上传 .so 到 admin-web 制品库（→ MinIO + 本地 PVC）
+# curl 手动
 curl -X PUT --data-binary @ModuleHello.so \
   http://192.168.3.61:30090/api/plugins/HelloHttp/ModuleHello.so
-
-# 2. 下发 → etcd 写 version + so_url → Manager 自动 Pull 下载
 curl -X POST -H "Content-Type: application/json" \
   -d '{"filename":"ModuleHello.so"}' \
   http://192.168.3.61:30090/api/plugins/HelloHttp/deploy
 ```
 
-**全链路**: admin-web PUT → MinIO bucket + etcd `so_url` → Manager Poll (5s) 检测 version 变化 → HTTP GET MinIO 下载到 `/app/plugins/` → GracefulRestart Worker。Push 模式 (exec+tar) 已废弃保留回滚。
+### 4.4 Lua 热更新
+
+```bash
+# CLI 一键
+python3 tools/lua_deploy.py --file echo.lua --type HELLO_HTTP
+
+# 查看
+python3 tools/lua_deploy.py --type HELLO_HTTP --list
+
+# K8s 直写 etcd
+ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n thunder "$ETCD_POD" -- etcdctl \
+  put /thunder/config/module/HELLO_HTTP \
+  '{"module":[{"url_path":"/hello/lua_echo",
+    "so_path":"plugins/HelloHttp_ModuleLua.so",
+    "load":true,"version":99,
+    "script_content":"function handle_request(msg)\n  ...\nend"}]}'
+```
+
+### 4.5 健康检查
+
+```bash
+# 服务连通
+curl -s -X POST http://192.168.3.61:30006/hello/hello \
+  -H "Content-Type: application/json" -d '{"option":"Echo","size":5}'
+curl -s http://192.168.3.61:30008/Interface/gentoken
+
+# etcd 注册表
+ETCD_POD=$(kubectl get pods -n thunder -l app=thunder-etcd -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n thunder "$ETCD_POD" -- etcdctl get /thunder/registry/ --prefix --keys-only
+
+# Worker 日志
+kubectl -n thunder exec deploy/thunder-logic -- tail -f /app/log/worker_0.log
+```
+
+### 4.6 故障排查
+
+```bash
+# Pod 状态
+kubectl -n thunder describe pod <pod-name>
+
+# etcd 健康
+kubectl -n thunder exec deploy/thunder-logic -- curl -s http://thunder-etcd.thunder:2379/health
+
+# 路由表检查 (Logic 是否注册)
+kubectl exec -n thunder "$ETCD_POD" -- etcdctl get /thunder/registry/ --prefix
+
+# 强制重新注册
+kubectl exec -n thunder "$ETCD_POD" -- etcdctl del /thunder/registry/ --prefix
+
+# Worker 进程
+kubectl -n thunder exec deploy/thunder-logic -- pgrep -a Hello
+```
+
+### 4.7 Node 性能初始化
+
+```bash
+# 新 Node 加入后运行一次
+sudo bash k8s/init-k8s-node.sh               # 完整初始化
+sudo bash k8s/init-k8s-node.sh --dry-run     # 仅检查
+
+# DaemonSet 自动化
+kubectl apply -f k8s/node-tuner-daemonset.yaml
+```
+
+初始化项: CPU Manager static / NUMA 绑核 / TCP buffer sysctl / CPU governor=performance / THP=madvise / KeepAlive 优化。
+
+### 4.8 管理控制台
+
+| 服务 | 地址 |
+|------|------|
+| admin-web | `http://192.168.3.61:30090` |
+| MinIO Console | `http://192.168.3.61:30091` (minioadmin/minioadmin) |
+
+---
+
+## 5. 文件清单
+
+### 基础设施
+
+| 文件 | 说明 |
+|------|------|
+| `namespace.yaml` | thunder namespace |
+| `etcd-statefulset.yaml` | etcd StatefulSet (3 节点, PVC) |
+| `etcd-pv.yaml` | etcd PV |
+| `redis.yaml` | Redis Deployment+Service |
+| `mysql.yaml` | MariaDB Deployment+Service |
+| `minio.yaml` | MinIO 制品库 (PV+PVC+Secret+Deployment+Service) |
+
+### 业务服务
+
+| 文件 | 说明 |
+|------|------|
+| `logic-deployment.yaml` | Logic (纯后端 S2S) |
+| `logic-v2-deployment.yaml` | Logic v2 (灰度测试) |
+| `interface-deployment.yaml` | Interface (API 网关, NodePort) |
+| `hello-deployment.yaml` | HelloHttp (NodePort 30006) |
+| `hello-https-deployment.yaml` | HelloHTTPS (NodePort 30043) |
+| `hello-ws-deployment.yaml` | HelloWS (NodePort 30010) |
+| `hello-wss-deployment.yaml` | HelloWSS (WebSocket Secure) |
+| `mqtt-broker-deployment.yaml` | MQTT Broker |
+| `admin-web-deployment.yaml` | Admin-Web |
+| `admin-web-pvc.yaml` | Admin-Web 持久化存储 |
+| `admin-web-rbac.yaml` | Admin-Web RBAC |
+
+### 运维
+
+| 文件 | 说明 |
+|------|------|
+| `logic-hpa.yaml` | Logic HPA |
+| `node-tuner-daemonset.yaml` | Node 性能调优 DaemonSet |
+| `init-k8s-node.sh` | 新 Node 初始化脚本 |
+| `regression-test.sh` | K8s 回归测试入口 |

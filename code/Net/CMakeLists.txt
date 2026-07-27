@@ -28,6 +28,7 @@ set(PAHO_MQTT_SOURCES
   "${THUNDER_3PARTY}/paho-mqtt-c/src/OsWrapper.c")
 list(APPEND LIBNET_SOURCES ${PAHO_MQTT_SOURCES})
 list(APPEND LIBNET_SOURCES "${NET_SRC}/codec/PahoOsStubs.cpp")
+list(APPEND LIBNET_SOURCES "${NET_SRC}/codec/CodecMqtt.cpp")
 
 file(GLOB_RECURSE NET_ALL_SOURCES CONFIGURE_DEPENDS
   "${NET_SRC}/*.cpp"

@@ -512,9 +512,12 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
     }
 
     // 默认: asio_uring, 失败 FATAL 退出 (不 fallback)
-#ifdef THUNDER_IO_ASIO_URING
+    // 仅在未配置或明确指定 asio_uring 时走默认；若配置了其他后端则跳过
+    if (strBackend.empty() || strBackend == "asio_uring")
     {
-        AsioUringIoBackend* pBackend = new AsioUringIoBackend();
+#ifdef THUNDER_IO_ASIO_URING
+        {
+            AsioUringIoBackend* pBackend = new AsioUringIoBackend();
         bool bOk = false;
         std::string errMsg;
         try {
@@ -537,6 +540,7 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
         exit(1);
     }
 #endif
+    }  // if (strBackend.empty() || strBackend == "asio_uring")
 
     // 不应到达 (asio_uring 未编译时)
     EvIoBackend* pBackend = new EvIoBackend();
