@@ -115,7 +115,7 @@ docs/
 
 | 文档 | 主题 |
 |------|------|
-| [01 Sanitizer 验证](reference/01-asan-lsan.md) | ASan / LSan 编译选项功能验证 |
+| [01 Sanitizer 构建](quality/06-sanitizer-builds.md) | ASan / TSan / UBSan 完整指南 (原 01-asan-lsan 已合并) |
 | [网关部署](reference/gateway-deployment.md) | hostNetwork vs NodePort 深度分析 |
 
 ---
