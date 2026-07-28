@@ -42,12 +42,36 @@ Manager 进程
     用途:  node_id 槽位占位。崩溃后 lease 过期自动释放。
 
 /thunder/registry/{node_type}/{ip:port}
-    value: {"node_id":87,"node_type":"HELLO_HTTP",...}
+    value: {"node_id":87,"node_type":"HELLO_HTTP","node_ip":"0.0.0.0",
+            "node_port":27007,"worker_num":1}
     用途:  在线表。Watch 前缀感知节点上下线。绑定同一 lease。
 
 /thunder/config/module/{node_type}
     value: JSON 配置内容
     用途:  动态配置下发。5s 轮询感知变更。
+
+/thunder/canary/{node_type}/weights
+    value: {"v1":90,"v2":10}
+    用途:  灰度权重。Worker 进程内读共享内存做加权分流。
+```
+
+### NodeID 分配
+
+slot 和 registry 通过 **同一个 etcd txn** 原子写入，绑定同一个 lease：
+
+```
+┌─ /thunder/slot/208 ─────────────┐  ┌─ /thunder/registry/LOGIC/10.244.0.59:16068 ─┐
+│ value: "10.244.0.59:16068"      │  │ value: {"node_id":208,"node_type":"LOGIC",   │
+│ lease: 9219606906552152395      │  │         "node_ip":"10.244.0.59",              │
+│                                 │  │         "node_port":16068,"worker_num":1}     │
+│                                 │  │ lease: 9219606906552152395                    │
+└─────────────────────────────────┘  └──────────────────────────────────────────────┘
+         ↑ 同一个 txn 原子写入 ↑              ↑ 绑定同一个 lease ↑
+```
+
+**一致性约束**：slot/N 的 value = registry 的 key 后缀 (ip:port)；registry 的 node_id 必须 = N；两个 key 的 lease 必须相同。
+
+**分配算法**：`hash(ip:port) % 255 + 1` 计算起始槽位，从该位置轮询扫描，用 etcd txn `compare create_revision==0` 抢占空槽。重启时若 lease 未过期则直接复用原 node_id（Fresh 路径），过期则重新抢占（Claim 路径）。
 ```
 
 ---
