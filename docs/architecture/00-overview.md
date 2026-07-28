@@ -149,6 +149,6 @@ Worker 进程
 | 部署到 K8s | [04-thunder-on-k8s.md](04-thunder-on-k8s.md) |
 | 理解协程怎么写 | [10-coroutine-access-patterns.md](10-coroutine-access-patterns.md) |
 | 理解 io_uring 怎么接 | [asio-uring-backend.md](../asio-uring-backend.md) |
-| 理解热更新机制 | [08-so-module-hot-reload-via-etcd.md](08-so-module-hot-reload-via-etcd.md) |
+| 理解热更新机制 | [02-etcd-designed.md](02-etcd-designed.md#配置-key-完整结构--solua-热更新) |
 | 看性能测试数据 | [../performance/](../performance/) |
 | 看设计 FAQ | [../FAQ.md](../FAQ.md) |
