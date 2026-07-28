@@ -649,7 +649,7 @@ cmd_test_compose() {
     local compose_dir="${PROJECT_DIR}/docker"
     local compose_file="${compose_dir}/docker-compose.yml"
     local quick=false
-    [[ " $* " =~ " --quick " ]] && quick=true
+    for arg in "$@"; do [[ "$arg" == "--quick" ]] && quick=true; done
 
     echo ""
     echo -e "${BOLD}============================================${NC}"
@@ -1403,8 +1403,8 @@ case "${CMD}" in
         cmd_build
         ;;
     test)
-        # 如果不需要 E2E, 先 build
-        if [[ "${SKIP_BUILD}" != "true" ]]; then
+        # 如果不需要 E2E, 先 build (compose/k8s 自己管理构建)
+        if [[ "${SKIP_BUILD}" != "true" && "${2:-}" != "compose" && "${2:-}" != "k8s" ]]; then
             cmd_build
         fi
 
@@ -1429,7 +1429,7 @@ case "${CMD}" in
                 cmd_test_k8s
                 ;;
             compose)
-                cmd_test_compose
+                cmd_test_compose "${@:3}"
                 ;;
             *)
                 # 全部: unit + e2e
