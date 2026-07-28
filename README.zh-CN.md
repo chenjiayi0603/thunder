@@ -1,135 +1,151 @@
 # Thunder ⚡
 
-**高性能 C++20 网关框架。异步为核，运行时可扩展。**
+**C++20 高性能异步网关框架 — 单核 235k RPS，P50 延迟 220μs，热更新不丢连接。**
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Commercial-blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-%2300599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
 [![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-orange)](https://kernel.org)
 
-```
-HTTP / HTTPS / WebSocket → picohttpparser + io_uring → Protobuf RPC → 后端逻辑
+---
 
-  单核 235k RPS · P50 延迟 220 μs · work-stealing 543 ns/op（旧队列 1374 ns）
+## 一句话：Thunder 是什么
+
+Thunder 是一个**单线程事件循环 + 多进程 + C++20 协程**的网关框架。你可以用 `.so` 插件或 Lua 脚本把它变成 API 网关、游戏接入层、IoT Broker——Thunder 负责网络 IO、协议解析、服务发现、热更新。
+
 ```
+你的代码 (.so / Lua) 跑在 Thunder Worker 里，
+Thunder 负责高性能 IO、分布式路由、零停机更新。
+```
+
+对标：如果你用过 Nginx + OpenResty + Lua，Thunder 把这三者做成了一个 C++20 原生的统一框架。
 
 ---
 
-## ⚡ 快速开始
+## 🚀 15 秒快速开始
 
 ```bash
-# 构建
-git submodule update --init --recursive
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build --target thirdparty_deploy -j1
-cmake --build build -j1 && cmake --install build
+git clone --recurse-submodules https://github.com/chenjiayi0603/thunder.git
+cd thunder
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_ASIO_URING=ON
+cmake --build build -j$(nproc) && cmake --install build
 
-# 运行（Docker Compose）
-./deploy.sh up
-curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
-# → {"code":0,"msg":"ok","data":"hi"}
+# Docker Compose 一键启动
+./deploy.sh test compose --quick
 
 # 测试
-./deploy.sh test unit       # C++ gtest + Python pytest（~45s）
-./deploy.sh test e2e        # 全量集成测试（~3 min）
+curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
+# → {"code":0,"msg":"ok"}
 ```
 
-> 📖 **刚接触 Thunder？** 从 [`QUICKSTART.md`](QUICKSTART.md) 开始 — 涵盖灰度部署、Lua & SO 热加载、K8s 环境搭建。
+---
+
+## 🧬 架构一览
+
+```
+                              ┌─────────────────┐
+                              │   etcd 集群 ×3   │  ← 服务注册 · 配置 · 灰度权重
+                              └────────┬────────┘
+                                       │ Watch (毫秒级推送)
+              ┌────────────────────────┼────────────────────────┐
+              │                        │                        │
+    ┌─────────▼─────────┐    ┌────────▼────────┐    ┌─────────▼─────────┐
+    │   Manager 进程     │    │   Manager 进程   │    │   Manager 进程     │
+    │  (守护 + 热更新)   │    │  (守护 + 热更新) │    │  (守护 + 热更新)   │
+    └──┬─────────────┬──┘    └──┬────────────┬──┘    └──┬─────────────┬──┘
+       │fork         │fork      │fork         │fork     │fork         │fork
+  ┌────▼───┐   ┌────▼───┐  ┌───▼────┐  ┌───▼────┐  ┌──▼────┐  ┌───▼────┐
+  │Worker 0│   │Worker 1│  │Worker 0│  │Worker 1│  │Worker0│  │Worker 1│
+  │epoll/  │   │epoll/  │  │epoll/  │  │epoll/  │  │epoll/ │  │epoll/  │
+  │io_uring│   │io_uring│  │io_uring│  │io_uring│  │iouring│  │io_uring│
+  └───┬────┘   └───┬────┘  └───┬────┘  └───┬────┘  └──┬────┘  └───┬────┘
+      │            │           │           │          │           │
+      └────────────┼───────────┼───────────┼──────────┼───────────┘
+                   │           │           │          │
+          ┌────────▼───────────▼───────────▼──────────▼────────┐
+          │              客户端请求 (hostNetwork)              │
+          │      HTTP · HTTPS · WebSocket · WSS · Protobuf    │
+          └───────────────────────────────────────────────────┘
+```
+
+**一条请求的完整路径：**
+
+```
+客户端 → TCP → picohttpparser(SIMD) → 前缀匹配 → 插件 AnyMessage() → yyjson → TCP
+         └─ Fast Path (~4.3μs CPU) ─┘              └─ Normal Path (Protobuf 编解码) ─┘
+```
 
 ---
 
-## 🎯 为什么选择 Thunder？
+## 🎯 架构设计决策
 
-Thunder 专为**延迟敏感、不能停机**的场景设计 — API 网关、游戏后端、实时代理。
-
-| 设计选择 | 取舍之道 |
-|:---|:---|
-| **每 Worker 单线程事件循环** | 无锁、无竞态。多核通过多进程实现。 |
-| **C++20 协程（`co_await`）** | 异步代码像同步一样写。单线程支持 100 万+ 并发协程。 |
-| **io_uring 批量提交** | N 次 I/O 操作 → 1 次 `io_uring_enter` 系统调用。TLS 延迟从 803μs 降至 402μs。 |
-| **K8s HostNetwork** | 零 kube-proxy 跳转。客户端直达 Worker 进程。 |
-| **优雅排空 + dlopen 热切换** | 更新 `.so` 插件不丢一个连接。 |
-| **etcd 原生服务网格** | 实时配置推送、灰度路由、版本化回滚 — 不需要 ConfigMap 重启。 |
-
-> 🧠 **深入阅读**：性能数据 → [`docs/performance/`](docs/performance/) · 架构设计 → [`docs/architecture/01-architecture-design.md`](docs/architecture/01-architecture-design.md) · 常见问题 → [`docs/README.md#核心设计问答`](docs/README.md#核心设计问答)
+| 决策 | 为什么 | 代价 |
+|:---|:---|:---|
+| **单线程事件循环** | 零锁、零竞争、极简 | 单核 CPU（多进程补偿）|
+| **多进程 (1 Manager + N Worker)** | 利用多核 + 故障隔离（插件崩只崩一个 Worker）| 进程间需 IPC |
+| **C++20 协程 (`co_await`)** | 异步代码线性化，告别回调地狱 | 学习曲线 |
+| **io_uring 批量提交** | N 次 IO → 1 次 syscall，TLS 延迟砍半 | Linux 5.1+ |
+| **hostNetwork (非 NodePort)** | 数据面零 K8s 组件 | Pod 不能漂移 |
+| **etcd (非 K8s DNS)** | 热配置推送 + 灰度权重 + 秒级回滚 | 需维护 etcd 集群 |
+| **dlopen SO 热更新** | 不重启进程，连接不断 | SO 需兼容 ABI |
+| **Work-Stealing 线程池** | 每 Worker 独立队列，空闲偷取 | 比旧单队列快 2.5x |
 
 ---
 
-## 🚀 功能
+## 📊 性能快照
 
-| 分类 | 能力 |
-|:---|:---|
-| **协议** | HTTP/1.1 · HTTPS (TLS 1.3) · WebSocket · WSS · 内部 Protobuf RPC |
-| **I/O 后端** | `ev` (epoll) · `asio_uring` · `native_uring` · DPDK（规划中） |
-| **解析器** | picohttpparser（SSE4.2 SIMD，比 http_parser +49% RPS）· yyjson arena 分配器 |
-| **协程** | `co_await` Redis · `co_await` MySQL · `co_await` 跨节点 RPC |
-| **线程池** | Work-stealing（Go LRQ 风格）· 无锁 MPMC 队列 · 动态扩缩 |
-| **脚本** | 每 Worker 独立 LuaJIT VM · Lua 热加载（不重启进程） |
-| **插件** | `.so` 动态加载 · etcd 触发优雅切换 · NFS 共享制品 |
-| **服务网格** | etcd 注册中心 · lease 心跳 · CAS 槽位分配 |
-| **灰度** | 加权路由（`v1=70% v2=30%`）· 一行回滚 · 按节点类型控制 |
-| **管理后台** | Web 控制台 → 插件管理 · 节点拓扑 · etcd 浏览器 |
-| **部署** | Docker Compose · 裸金属 · Kubernetes（hostNetwork + StatefulSet etcd） |
-
----
-
-## 📊 性能
-
-*单核绑核，`wrk -t4 -c100 -d10s`，i9-12900H。完整报告 → [`docs/performance/`](docs/performance/)*
+*i9-12900H, Linux 7.0, `wrk -t4 -c100 -d10s`, 单核绑 P-core*
 
 ### HTTP — Thunder vs Nginx
 
-| 载荷 | Thunder ev | Thunder asio_uring | Nginx 1w | 提升 |
-|----:|:---:|:---:|:---:|:---:|
-| 1 KB | 229k RPS | **232k RPS** | 191k RPS | **+21%** |
-| 4 KB | 216k RPS | **223k RPS** | 184k RPS | **+21%** |
-| 64 B | 232k RPS | **235k RPS** | 214k RPS | **+10%** |
+| 载荷 | Thunder asio_uring | Nginx 1w | 提升 |
+|----:|:---:|:---:|:---:|
+| 64 B | **235k RPS** | 214k RPS | **+10%** |
+| 1 KB | **232k RPS** | 191k RPS | **+21%** |
+| 4 KB | **223k RPS** | 184k RPS | **+21%** |
 
-| 载荷 | Thunder asio_uring | Nginx |
+| 载荷 | Thunder | Nginx |
 |----:|:---:|:---:|
 | 64 B | **220 μs** | 466 μs |
 | 4 KB | **332 μs** | 543 μs |
 
-### HTTPS — TLS + io_uring 批量提交
+### HTTPS (TLS + io_uring 批量提交)
 
 | 载荷 | Thunder uring | Nginx SSL |
 |----:|:---:|:---:|
 | 64 B | **402 μs** | 752 μs |
 | 4 KB | **247 μs** | 824 μs |
 
-### WebSocket Echo（长连接）
+### Work-Stealing 线程池
 
-| 载荷 | 连接数 | RPS | P50 | P99 |
-|----:|:---:|:---:|:---:|:---:|
-| 64 B | 10 | 46k | 192 μs | 549 μs |
-| 1 KB | 10 | 15k | 564 μs | 1.7 ms |
+| 配置 | 旧单队列 | Work-Stealing | 加速 |
+|:---|:---:|:---:|:--:|
+| 1P-4C (典型) | 1,373 ns/op | **543 ns/op** | **2.53x** |
 
----
-
-## 🧬 架构
-
-```
- Manager（fork/重启 Worker，监听 etcd 配置变更）
-   ├── Worker 0 ──── io_uring / epoll 事件循环
-   │    ├── HTTP Fast Path（picohttpparser + 前缀匹配 → 零拷贝）
-   │    ├── .so 模块（动态 dlopen，热切换）
-   │    ├── Lua VM（LuaJIT，每 Worker 独立，脚本热加载）
-   │    └── 协程（co_await MySQL / Redis / 跨节点 RPC）
-   ├── Worker N ──── ...
-   └── Work-stealing 线程池（卸载 CPU 密集型任务）
-
- etcd 集群（3 节点）
-   ├── 服务注册 + lease 心跳
-   ├── 配置存储（推送到 Manager → 优雅重启 Worker）
-   └── 灰度权重（加权路由，即时回滚）
-```
-
-**设计原则**：无共享 Worker · 零拷贝快速路径 · 故障隔离（插件崩溃 → 仅 1 个 Worker 重启）· 运行时可扩展（Lua + .so + etcd 配置）
+> 📖 完整报告：[`docs/performance/`](docs/performance/)
 
 ---
 
-## 🔌 部署插件
+## 🚀 功能矩阵
 
-Thunder 支持**双模式部署**：Push（exec+tar）+ Pull（Manager 从 admin-web HTTP GET）。Push 是旧链路，Pull 自 #159 起为默认。
+| 分类 | 能力 |
+|:---|:---|
+| **协议** | HTTP/1.1 · HTTPS (TLS 1.3) · WebSocket · WSS · 内部 Protobuf RPC · MQTT 3.1.1 |
+| **I/O 后端** | `ev` (epoll) · `asio_uring` (io_uring 批量提交) · `native_uring` |
+| **HTTP 解析** | picohttpparser（SSE4.2 SIMD, vs http_parser **+49% RPS**）|
+| **协程** | `co_await` Redis · `co_await` MySQL · `co_await` 跨节点 RPC · `co_await` 线程池卸载 |
+| **线程池** | Work-Stealing（Go LRQ 风格）· 每 Worker 独立队列 · 空闲偷取 · 三级分发 |
+| **脚本** | 每 Worker 独立 LuaJIT VM · Lua 热加载 (<1ms, 不重启进程) |
+| **插件** | `.so` 动态加载 · etcd 触发优雅切换 · ABI 版本校验 |
+| **服务发现** | etcd 注册中心 · lease 心跳 · CAS 槽位分配 · Watch 实时推送 |
+| **灰度** | 加权路由 (`v1=70% v2=30%`) · etcd 权重键 · 不杀 Pod 秒级回滚 |
+| **健康检查** | `GET /health` → `{"status":"ok"}` · K8s httpGet probe |
+| **管理后台** | Web 控制台 → 插件管理 · 节点拓扑 · etcd 浏览器 |
+| **部署** | Docker Compose · 裸金属 · Kubernetes (hostNetwork + StatefulSet) |
+| **可观测** | `/metrics` 端点 (Prometheus) · 分级日志 (TRACE→FATAL) |
+
+---
+
+## 🔌 插件 — 一行宏注册
 
 ```cpp
 // code/HelloHttp/src/ModuleHello/ModuleHello.cpp
@@ -137,35 +153,19 @@ Thunder 支持**双模式部署**：Push（exec+tar）+ Pull（Manager 从 admin
 
 class ModuleHello : public net::Module {
     bool AnyMessage(const net::tagMsgShell& shell, const HttpMsg& msg) override {
-        net::SendToClient(shell, msg, R"({"code":0,"msg":"hello from plugin"})");
+        net::SendToClient(shell, msg, R"({"code":0,"msg":"hello"})");
         return true;
     }
 };
-MUDULE_CREATE(core::ModuleHello);
+MUDULE_CREATE(core::ModuleHello);  // ← 自动导出 ABI 版本 + create()
 ```
 
 ```bash
-# 1. 构建所有 SO 模块 → deploy/{type}/plugins/
-./deploy.sh build
-
-# 2. 上传 .so 到 admin-web 制品库（→ MinIO / PVC）
-curl -X PUT --data-binary @ModuleHello.so \
-  http://192.168.3.61:30090/api/plugins/HelloHttp/ModuleHello.so
-
-# 3. 下发 — 写 etcd version + so_url → Manager Pull 下载 + 优雅重启
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"filename":"ModuleHello.so"}' \
-  http://192.168.3.61:30090/api/plugins/HelloHttp/deploy
-
-# → 不重启。不丢连接。新连接使用更新后的 .so。
+cmake --build build && cmake --install build
+# .so 已部署到 deploy/HelloHttp/plugins/
 ```
 
-| 步骤 | Push 模式（旧，#2） | Pull 模式（默认，#159） |
-|------|------|------|
-| 上传 | → 本地 PVC | → 本地 PVC + MinIO |
-| 下发 | exec+tar 推每个 Pod | etcd bump（version + so_url） |
-| Pod 接收 | kubectl cp 通过 K8s API | Manager 轮询 → HTTP GET admin-web → 下载 |
-| Pod 重启 | ❌ SO 丢失 | ✅ Manager 启动时自动重新下载 |
+**热更新**：修改代码 → 重编 `.so` → `curl PUT` 上传 → etcd 版本号 +1 → Worker 优雅重启 → 新连接用新 `.so`，旧连接排空不丢。
 
 ---
 
@@ -174,14 +174,14 @@ curl -X POST -H "Content-Type: application/json" \
 ```
 code/Net/          核心：Manager、Worker、I/O 后端、编解码器、协程
 code/HelloHttp/    HTTP 网关 + 插件 + Lua 模块
-code/HelloHttps/   HTTPS 网关
-code/HelloWs/      WebSocket 网关
+code/HelloMqttBroker/  MQTT 3.1.1 Broker
 code/Interface/    Protobuf API 网关 → Logic 后端
 code/Logic/        业务逻辑节点
 deploy/            构建产物、配置文件、Dockerfile
-docs/              设计文档、性能基准、常见问题
+docs/architecture/ 设计文档（etcd · 协程 · io_uring · work-stealing…）
+docs/performance/  可复现基准（Thunder vs Nginx · I/O 后端对比）
 k8s/               Kubernetes 清单 + 运维手册
-tests/             pytest 端到端、冒烟、混沌测试
+tests/             pytest E2E · 混沌测试 · 冒烟测试
 ```
 
 ---
@@ -191,12 +191,12 @@ tests/             pytest 端到端、冒烟、混沌测试
 | 章节 | 适合 |
 |:---|:---|
 | [`QUICKSTART.md`](QUICKSTART.md) | 构建、部署、灰度、热加载 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境、代码风格、PR 流程、提交规范 |
-| [`docs/README.md`](docs/README.md) | 架构 FAQ、设计索引、阅读路径 |
-| [`docs/architecture/`](docs/architecture/) | 子系统深入（etcd、协程、io_uring、work-stealing…） |
-| [`docs/performance/`](docs/performance/) | 可复现性能基准（Thunder vs Nginx，I/O 后端对比） |
-| [`k8s/k8s-manual.md`](k8s/k8s-manual.md) | K8s 集群搭建、CNI、HPA、多数据中心 |
-| [`k8s/comparison-openim.md`](k8s/comparison-openim.md) | 与 OpenIM 的部署策略对比 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境、代码风格、PR 流程 |
+| [`docs/architecture/00-overview.md`](docs/architecture/00-overview.md) | 架构全景，读完能画出完整数据流 |
+| [`docs/architecture/01-architecture-design.md`](docs/architecture/01-architecture-design.md) | 进程模型 · 事件循环 · C++20 协程 |
+| [`docs/architecture/02-etcd-designed.md`](docs/architecture/02-etcd-designed.md) | etcd 服务发现 · NodeID 分配 · vs CoreDNS 对比 |
+| [`docs/performance/10-vs-nginx-benchmark.md`](docs/performance/10-vs-nginx-benchmark.md) | Thunder vs Nginx 完整基准 |
+| [`docs/api.md`](docs/api.md) | HTTP API 接口文档 |
 
 ---
 
@@ -208,10 +208,8 @@ tests/             pytest 端到端、冒烟、混沌测试
 | 闭源商业产品 | [Commercial](LICENSE.COMMERCIAL) | 付费 |
 | SaaS / 云服务 | [Commercial](LICENSE.COMMERCIAL) | 付费 |
 
-> 商业授权咨询 → 联系作者。
-
 ---
 
 <p align="center">
-  <sub>基于 C++20、libev、io_uring 构建，对延迟极致追求。</sub>
+  <sub>C++20 · 14 万行代码 · 单核 235k RPS · 零停机热更新</sub>
 </p>
