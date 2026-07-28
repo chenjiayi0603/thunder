@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [dev, main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '*.md'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ---- 依赖安装 ----
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            cmake g++ make pkg-config \
+            libev-dev \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            liblog4cplus-dev \
+            libjemalloc-dev \
+            libluajit-5.1-dev \
+            libmariadb-dev \
+            libhiredis-dev \
+            zlib1g-dev \
+            protobuf-compiler libprotobuf-dev \
+            python3 python3-pytest python3-requests
+
+      # ---- CMake 配置 ----
+      - name: CMake configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DTHUNDER_BUILD_TESTS=ON \
+            -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+            -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+            -DTHUNDER_DEPLOY_AUTO=OFF \
+            -DTHUNDER_IO_ASIO_URING=ON
+
+      # ---- 编译 ----
+      - name: CMake build
+        run: cmake --build build -j$(nproc)
+
+      # ---- C++ gtest (ctest) ----
+      - name: C++ unit tests (ctest)
+        run: cd build/code/test && ctest --output-on-failure -j$(nproc)
+
+      # ---- Python pytest ----
+      - name: Python unit tests (pytest)
+        run: python3 -m pytest tests/unit/ -v --tb=short

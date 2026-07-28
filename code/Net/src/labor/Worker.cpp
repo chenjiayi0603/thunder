@@ -684,6 +684,23 @@ bool Worker::RecvDataAndDispose(tagIoWatcherData* pData, struct ev_io* watcher)
                         // 请求不完整, 回退到正常 decode 流程继续读
                     }
                 }
+
+                // === /health Fast-Path (GET, 不需要 body) ===
+                static const char kHealthPrefix[] = "GET /health ";
+                if (rawLen > sizeof(kHealthPrefix) - 1
+                    && memcmp(raw, kHealthPrefix, sizeof(kHealthPrefix) - 1) == 0)
+                {
+                    const char* hdrEnd = static_cast<const char*>(memmem(raw, rawLen, "\r\n\r\n", 4));
+                    if (hdrEnd != nullptr)
+                    {
+                        static const char kHealthBody[] = "{\"status\":\"ok\"}";
+                        tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                        SendToClientFast(stMsgShell, kHealthBody, sizeof(kHealthBody) - 1);
+                        pConn->pRecvBuff->AdvanceReadIndex(
+                            static_cast<size_t>(hdrEnd - raw) + 4);
+                        goto read_again;
+                    }
+                }
             }
             // === Receive Fast-Path End ===
 
@@ -1348,6 +1365,34 @@ bool Worker::HandleIoReadComplete(tagConnectionAttr* pConn, int result)
                     return true;
                 }
                 // 请求不完整, 回退到正常 decode 流程
+            }
+
+            // === /health Fast-Path (GET, 不需要 body, IoBackend 路径) ===
+            static const char kHealthPrefix2[] = "GET /health ";
+            if (rawLen > sizeof(kHealthPrefix2) - 1
+                && memcmp(raw, kHealthPrefix2, sizeof(kHealthPrefix2) - 1) == 0)
+            {
+                const char* hdrEnd = static_cast<const char*>(memmem(raw, rawLen, "\r\n\r\n", 4));
+                if (hdrEnd != nullptr)
+                {
+                    static const char kHealthBody[] = "{\"status\":\"ok\"}";
+                    pConn->pRecvBuff->AdvanceReadIndex(
+                        static_cast<size_t>(hdrEnd - raw) + 4);
+                    tagMsgShell stMsgShell(pConn->iFd, pConn->ulSeq);
+                    SendToClientFast(stMsgShell, kHealthBody, sizeof(kHealthBody) - 1);
+                    if (m_pIoBackend)
+                    {
+                        auto recheck = mapFdAttr.find(iFd);
+                        if (recheck != mapFdAttr.end() && recheck->second->ulSeq == ulSeq
+                            && !m_pIoBackend->HasPending(iFd))
+                        {
+                            pConn->pRecvBuff->Compact(8192);
+                            pConn->pRecvBuff->EnsureWritableBytes(8192);
+                            m_pIoBackend->SubmitRead(iFd, pConn->pRecvBuff, ulSeq);
+                        }
+                    }
+                    return true;
+                }
             }
         }
     }

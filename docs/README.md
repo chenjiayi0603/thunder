@@ -77,7 +77,7 @@ docs/
 | [05 优雅重启](architecture/05-graceful-restart.md) | Worker SIGTERM 排空与自动重启 | 🟡 |
 | [06 Manager-Worker IPC](architecture/06-manager-worker-ipc.md) | 多进程交互机制 | 🟡 |
 | [07 路由下发](architecture/07-upstream-route-filter.md) | 路由按需下发设计 | 🟡 |
-| [08 SO 热更新](architecture/08-so-module-hot-reload-via-etcd.md) | SO 模块经 etcd 热更新 | 🟡 |
+| [08 SO/Lua 热更新](architecture/02-etcd-designed.md#配置-key-完整结构--solua-热更新) | SO/Lua 模块 via etcd 热更新 (已合并至 02) | 🟢 |
 | [09 LuaJIT 支持](architecture/09-luajit-module-support.md) | LuaJIT 模块支持 | 🟡 |
 | [10 协程访问模式](architecture/10-coroutine-access-patterns.md) | C++20 协程访问模式 | 🔴 |
 | [11 Lua 跨节点发送](architecture/11-lua-send-to-node-type.md) | Lua 跨节点类型发送 | 🟡 |
@@ -115,7 +115,7 @@ docs/
 
 | 文档 | 主题 |
 |------|------|
-| [01 Sanitizer 验证](reference/01-asan-lsan.md) | ASan / LSan 编译选项功能验证 |
+| [01 Sanitizer 构建](quality/06-sanitizer-builds.md) | ASan / TSan / UBSan 完整指南 (原 01-asan-lsan 已合并) |
 | [网关部署](reference/gateway-deployment.md) | hostNetwork vs NodePort 深度分析 |
 
 ---

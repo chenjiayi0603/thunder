@@ -283,6 +283,7 @@ cmd_build() {
         -DTHUNDER_BUILD_TESTS=ON \
         -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
         -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+        -DTHUNDER_IO_ASIO_URING=ON \
         ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
         "${CMAKE_OPENSSL_ARGS[@]}"
 
@@ -324,23 +325,19 @@ _validate_io_backend() {
         else
             # cmake 没开 asio_uring → 配置不能用 asio_uring
             if echo "$content" | grep -q '"io_backend": "asio_uring"'; then
-                mismatch+=("$file:$line 期望 ev 实际 asio_uring (二进制不支持)")
+                # 仅警告，不自动改 — 配置开发者控制
+                warn "$file:$line: io_backend=asio_uring 但二进制未编译 (忽略, 运行时 FALLBACK 到 ev)"
             fi
         fi
     done < <(grep -rn '"io_backend"' "${PROJECT_DIR}/deploy/" --include="*.json" 2>/dev/null)
     if [[ ${#mismatch[@]} -gt 0 ]]; then
+        # 不自动修正 — 配置由开发者控制，pre-commit hook 保证默认 asio_uring
         err "io_backend 配置与 cmake 编译选项不一致！"
         for m in "${mismatch[@]}"; do
             err "  $m"
         done
-        err "修复: deploy.sh build 会自动修正, 或手动改 deploy/*/conf/*.json"
-        # Auto-fix: align configs with cmake
-        if $asio_enabled; then
-            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "ev"/"io_backend": "asio_uring"/' {} \;
-        else
-            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "asio_uring"/"io_backend": "ev"/' {} \;
-        fi
-        ok "io_backend 已自动修正"
+        err "修复: 手动改 deploy/*/conf/*.json 或 cmake 加 -DTHUNDER_IO_ASIO_URING=ON"
+        # 不自动修改文件 (避免 build 过程静默覆盖配置)
     fi
 }
 
@@ -649,7 +646,7 @@ cmd_test_compose() {
     local compose_dir="${PROJECT_DIR}/docker"
     local compose_file="${compose_dir}/docker-compose.yml"
     local quick=false
-    [[ " $* " =~ " --quick " ]] && quick=true
+    for arg in "$@"; do [[ "$arg" == "--quick" ]] && quick=true; done
 
     echo ""
     echo -e "${BOLD}============================================${NC}"
@@ -670,6 +667,7 @@ cmd_test_compose() {
         cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
             -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+            -DTHUNDER_IO_ASIO_URING=ON \
             "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
             err "cmake configure 失败"; return 1
         }
@@ -823,6 +821,7 @@ cmd_test_k8s() {
             -DTHUNDER_BUILD_TESTS=ON \
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
             -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+            -DTHUNDER_IO_ASIO_URING=ON \
             ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
             "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
             err "cmake configure 失败"
@@ -1403,8 +1402,8 @@ case "${CMD}" in
         cmd_build
         ;;
     test)
-        # 如果不需要 E2E, 先 build
-        if [[ "${SKIP_BUILD}" != "true" ]]; then
+        # 如果不需要 E2E, 先 build (compose/k8s 自己管理构建)
+        if [[ "${SKIP_BUILD}" != "true" && "${2:-}" != "compose" && "${2:-}" != "k8s" ]]; then
             cmd_build
         fi
 
@@ -1429,7 +1428,7 @@ case "${CMD}" in
                 cmd_test_k8s
                 ;;
             compose)
-                cmd_test_compose
+                cmd_test_compose "${@:3}"
                 ;;
             *)
                 # 全部: unit + e2e
