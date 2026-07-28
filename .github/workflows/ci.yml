@@ -39,6 +39,7 @@ jobs:
             libmariadb-dev \
             libhiredis-dev \
             zlib1g-dev \
+            liburing-dev \
             protobuf-compiler libprotobuf-dev \
             python3 python3-pytest python3-requests
 
