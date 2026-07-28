@@ -126,7 +126,7 @@ Watch 断流:
 ## 租约参数
 
 ```
-kLeaseTTL         = 30s   // 租约 TTL
+kLeaseTTL         = 60s   // 租约 TTL (崩溃后 ~75s 自动剔除)
 kKeepAliveRefresh = 10s   // keepalive 检查间隔
 kPollInterval     = 5s    // config 轮询间隔
 kMaxSlot          = 255   // node_id 最大槽位数
