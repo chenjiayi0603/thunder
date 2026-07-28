@@ -24,21 +24,20 @@ jobs:
         with:
           submodules: recursive
 
-      # ---- 依赖安装 ----
+      # ---- 依赖安装 (libev/liburing/hiredis 由 Thunder submodule 自建) ----
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             cmake g++ make pkg-config \
-            libev-dev libssl-dev libcurl4-openssl-dev \
-            libjemalloc-dev libhiredis-dev zlib1g-dev \
+            libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
             protobuf-compiler libprotobuf-dev \
             python3 python3-pytest python3-requests
-          # 可选 (Thunder submodule 自建)
+          # 可选: 若系统有则用系统库, 否则 submodule 自建
           sudo apt-get install -y -qq --no-install-recommends \
-            liblog4cplus-dev libluajit-5.1-dev libmariadb-dev liburing-dev 2>/dev/null || true
+            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev 2>/dev/null || true
 
-      # ---- CMake 配置 (CI 不测 asio_uring — K8s 回测中验证) ----
+      # ---- CMake 配置 ----
       - name: CMake configure
         run: |
           cmake -S . -B build \
@@ -47,7 +46,7 @@ jobs:
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
             -DTHUNDER_BUILD_NODE_PLUGINS=ON \
             -DTHUNDER_DEPLOY_AUTO=OFF \
-            -DTHUNDER_IO_ASIO_URING=OFF
+            -DTHUNDER_IO_ASIO_URING=ON
 
       # ---- 编译 ----
       - name: CMake build
