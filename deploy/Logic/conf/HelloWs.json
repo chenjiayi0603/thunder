@@ -49,5 +49,5 @@
             "version": 1
         }
     ],
-    "io_backend": "ev"
+    "io_backend": "asio_uring"
 }

@@ -31,7 +31,7 @@
     "log_level": "INFO",
     "load_so_interval": 60.0,
     "so": [],
-    "io_backend": "ev",
+    "io_backend": "asio_uring",
     "https": {
         "server_cert": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.crt",
         "server_key": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key",
