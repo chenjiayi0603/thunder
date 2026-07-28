@@ -8745,9 +8745,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #175 [Infra] CI/CD — GitHub Actions 自动化构建+测试
+## ✅ #175 [Infra] CI/CD — GitHub Actions 自动化构建+测试
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 当前无 CI/CD，每次改动需手动 `cmake --build + ctest`，回归测试需手动 `deploy.sh test k8s`。PR 合入前无自动化质量门禁。
@@ -8764,9 +8766,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #176 [Infra] 版本管理 — VERSION + CHANGELOG
+## ✅ #176 [Infra] 版本管理 — VERSION + CHANGELOG
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 当前无版本号、无 CHANGELOG。二进制 build marker 只有编译日期，无法追溯功能和修复。
@@ -8781,9 +8785,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #177 [Feature] 应用层健康检查 — HTTP /health 端点
+## ✅ #177 [Feature] 应用层健康检查 — HTTP /health 端点
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 当前 K8s readiness probe 仅用 tcpSocket 检查端口可达，无法感知应用内部状态（Worker 是否存活、etcd 连接是否正常）。
@@ -8799,9 +8805,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #178 [Infra] 代码格式化 — .clang-format 统一风格
+## ✅ #178 [Infra] 代码格式化 — .clang-format 统一风格
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 33 个源文件风格不一致（缩进、大括号、空格），code review 时混杂格式 diff，掩盖逻辑变更。
@@ -8816,9 +8824,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #179 [Infra] 开发者环境 — docker-compose.dev.yml 一键启动
+## ✅ #179 [Infra] 开发者环境 — docker-compose.dev.yml 一键启动
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 新开发者需要手动安装依赖、编译、配置 etcd、启动多个服务，门槛高、耗时长。
@@ -8833,9 +8843,11 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 
 ---
 
-## 🔵 #180 [Feature] Prometheus 指标 — /metrics 端点 + 指标导出
+## ✅ #180 [Feature] Prometheus 指标 — /metrics 端点 + 指标导出
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 生产环境缺乏可观测性：QPS、延迟分布、连接数、Worker 负载等指标无法采集，故障排查依赖日志 grep。
@@ -8873,9 +8885,11 @@ thunder_requests_total{node_type="HELLO_HTTP",worker="0"} 1048576
 
 ---
 
-## 🔵 #181 [Infra] 测试覆盖率 — gcov/lcov + Codecov
+## ✅ #181 [Infra] 测试覆盖率 — gcov/lcov + Codecov
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 33 个测试文件，但不知道覆盖了多少代码路径。无法评估测试质量。
@@ -8891,9 +8905,11 @@ thunder_requests_total{node_type="HELLO_HTTP",worker="0"} 1048576
 
 ---
 
-## 🔵 #182 [Infra] 静态分析 — clang-tidy + cppcheck
+## ✅ #182 [Infra] 静态分析 — clang-tidy + cppcheck
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 C++ 项目缺少静态分析，潜在的内存泄漏、未初始化变量、空指针等 bug 靠运行时发现。
@@ -8908,9 +8924,11 @@ C++ 项目缺少静态分析，潜在的内存泄漏、未初始化变量、空�
 
 ---
 
-## 🔵 #183 [Feature] API 文档 — OpenAPI/Swagger
+## ✅ #183 [Feature] API 文档 — OpenAPI/Swagger
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、返回值。
@@ -8924,9 +8942,11 @@ HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、
 
 ---
 
-## 🔵 #184 [Infra] 贡献指南 — CONTRIBUTING.md
+## ✅ #184 [Infra] 贡献指南 — CONTRIBUTING.md
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 无贡献指南，外部贡献者不知道如何搭建环境、提交代码、运行测试。
@@ -8940,9 +8960,11 @@ HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、
 
 ---
 
-## 🔵 #185 [Infra] 安全扫描 — Dependabot + CodeQL
+## ✅ #185 [Infra] 安全扫描 — Dependabot + CodeQL
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 依赖库 (libev, protobuf, OpenSSL) 的已知漏洞无法及时发现。
@@ -8956,9 +8978,11 @@ HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、
 
 ---
 
-## 🔵 #186 [Infra] 性能回归测试 — benchmark CI + 历史趋势
+## ✅ #186 [Infra] 性能回归测试 — benchmark CI + 历史趋势
 
-> 2026-07-28 | 状态: 🔵 待评估
+> 2026-07-28 | 状态: ✅ 已完成
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 ### 背景
 每次代码变更后无法判断性能是否退化。压测依赖手动操作且环境不一致。
