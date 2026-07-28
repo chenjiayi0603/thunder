@@ -8742,3 +8742,209 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 - `18-admin-web-redesign.md` — 🗑 移除（纯前端 UI 设计：CSS 变量、色彩、组件规范。非架构文档）
 - `19-entrypoint-and-docker-compose-canary.md` — 🗑 移除（运维操作手册：entrypoint.sh 解释 + 灰度测试步骤。非设计文档）
 - `20-plugin-lua-nfs-storage.md` — 🗑 移除（方案已废弃）
+
+---
+
+## 🔵 #175 [Infra] CI/CD — GitHub Actions 自动化构建+测试
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+当前无 CI/CD，每次改动需手动 `cmake --build + ctest`，回归测试需手动 `deploy.sh test k8s`。PR 合入前无自动化质量门禁。
+
+### 目标
+- push/PR 触发自动编译 (cmake build)
+- 自动运行 ctest (gtest 单元测试)
+- 自动运行 pytest (Python 单元测试)
+- 失败时 PR 标注 ❌
+
+### 预估
+- 工作量: 小 (~2h)
+- 文件: `.github/workflows/ci.yml`
+
+---
+
+## 🔵 #176 [Infra] 版本管理 — VERSION + CHANGELOG
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+当前无版本号、无 CHANGELOG。二进制 build marker 只有编译日期，无法追溯功能和修复。
+
+### 目标
+- 根目录 `VERSION` 文件 (语义化版本 `v1.0.0`)
+- cmake 读取 VERSION 写入二进制
+- `CHANGELOG.md` 记录每个版本的变更
+
+### 预估
+- 工作量: 小 (~1h)
+
+---
+
+## 🔵 #177 [Feature] 应用层健康检查 — HTTP /health 端点
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+当前 K8s readiness probe 仅用 tcpSocket 检查端口可达，无法感知应用内部状态（Worker 是否存活、etcd 连接是否正常）。
+
+### 目标
+- 每个节点暴露 HTTP `/health` 端点
+- 返回 JSON: `{"status":"ok","worker_count":1,"etcd_connected":true}`
+- K8s readiness probe 改为 httpGet
+
+### 预估
+- 工作量: 中 (~4h)
+- 文件: Worker.cpp 新增 health handler
+
+---
+
+## 🔵 #178 [Infra] 代码格式化 — .clang-format 统一风格
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+33 个源文件风格不一致（缩进、大括号、空格），code review 时混杂格式 diff，掩盖逻辑变更。
+
+### 目标
+- 根目录 `.clang-format` (基于 Google/LLVM 风格定制)
+- CI 中 `clang-format --dry-run --Werror` 强制检查
+- 一次性全量格式化提交
+
+### 预估
+- 工作量: 小 (~1h 配置 + 一次性格式化)
+
+---
+
+## 🔵 #179 [Infra] 开发者环境 — docker-compose.dev.yml 一键启动
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+新开发者需要手动安装依赖、编译、配置 etcd、启动多个服务，门槛高、耗时长。
+
+### 目标
+- `docker-compose.dev.yml` 一键启动全部服务
+- 预配置 etcd + 热加载 + 日志挂载
+- README 中 `docker compose -f docker-compose.dev.yml up -d` 即可
+
+### 预估
+- 工作量: 中 (~3h)
+
+---
+
+## 🔵 #180 [Feature] Prometheus 指标 — /metrics 端点 + 指标导出
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+生产环境缺乏可观测性：QPS、延迟分布、连接数、Worker 负载等指标无法采集，故障排查依赖日志 grep。
+
+### 目标
+- HTTP `/metrics` 端点 (Prometheus text format)
+- 指标: `thunder_requests_total`, `thunder_request_duration_seconds`, `thunder_connections_active`, `thunder_worker_load`
+- Grafana dashboard 模板
+
+### 预估
+- 工作量: 大 (~2 天)
+- 依赖: 需引入 prometheus-cpp 或手写 text format
+
+---
+
+## 🔵 #181 [Infra] 测试覆盖率 — gcov/lcov + Codecov
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+33 个测试文件，但不知道覆盖了多少代码路径。无法评估测试质量。
+
+### 目标
+- cmake 添加 `-DCODE_COVERAGE=ON` 选项
+- ctest 后生成 lcov 报告
+- CI 中上报 Codecov
+
+### 预估
+- 工作量: 中 (~3h)
+- 文件: cmake/CodeCoverage.cmake + CI workflow
+
+---
+
+## 🔵 #182 [Infra] 静态分析 — clang-tidy + cppcheck
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+C++ 项目缺少静态分析，潜在的内存泄漏、未初始化变量、空指针等 bug 靠运行时发现。
+
+### 目标
+- `.clang-tidy` 配置文件
+- CI 中 `clang-tidy` 检查关键模块
+- 可选: cppcheck 补充检查
+
+### 预估
+- 工作量: 中 (~4h 配置 + 修复已有 warning)
+
+---
+
+## 🔵 #183 [Feature] API 文档 — OpenAPI/Swagger
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、返回值。
+
+### 目标
+- 每个 HTTP 端点生成 OpenAPI 3.0 描述
+- `/api-docs` 端点提供 Swagger UI
+
+### 预估
+- 工作量: 大 (~2 天)
+
+---
+
+## 🔵 #184 [Infra] 贡献指南 — CONTRIBUTING.md
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+无贡献指南，外部贡献者不知道如何搭建环境、提交代码、运行测试。
+
+### 目标
+- `CONTRIBUTING.md`: 环境搭建 + 编码规范 + 提交规范 + PR 流程
+- 引用 `docker-compose.dev.yml` 快速开始
+
+### 预估
+- 工作量: 小 (~1h)
+
+---
+
+## 🔵 #185 [Infra] 安全扫描 — Dependabot + CodeQL
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+依赖库 (libev, protobuf, OpenSSL) 的已知漏洞无法及时发现。
+
+### 目标
+- Dependabot: 自动检测依赖更新 + CVE
+- CodeQL: 自动扫描 C++ 代码安全漏洞
+
+### 预估
+- 工作量: 小 (~30min 配置)
+
+---
+
+## 🔵 #186 [Infra] 性能回归测试 — benchmark CI + 历史趋势
+
+> 2026-07-28 | 状态: 🔵 待评估
+
+### 背景
+每次代码变更后无法判断性能是否退化。压测依赖手动操作且环境不一致。
+
+### 目标
+- CI 中运行 benchmark 二进制 (`thunder_bench_*`)
+- 对比上一次结果，超过 5% 退化则告警
+- GitHub Pages 展示历史趋势
+
+### 预估
+- 工作量: 大 (~3 天)
