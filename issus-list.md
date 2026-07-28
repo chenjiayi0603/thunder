@@ -8840,14 +8840,36 @@ STATE_FILE=".deploy-state/test-k8s-last-ok"  # 记录通过全量测试的 commi
 ### 背景
 生产环境缺乏可观测性：QPS、延迟分布、连接数、Worker 负载等指标无法采集，故障排查依赖日志 grep。
 
+### 实现方案（仅第一步，不需要 Prometheus/Grafana）
+
+在**现有 HTTP 端口**上加 `/metrics` 路径，不需要新端口：
+- `HelloHttp` → `curl 192.168.3.61:27006/metrics`
+- `HelloHttps` → `curl 192.168.3.61:27443/metrics`
+- `Interface` → `curl 192.168.3.61:27008/metrics`
+- Logic/S2S 节点不需要（无 HTTP 端口）
+
+返回 Prometheus text format，直接可读：
+```
+$ curl http://192.168.3.61:27006/metrics
+# HELP thunder_connections_active Current active connections
+# TYPE thunder_connections_active gauge
+thunder_connections_active{node_type="HELLO_HTTP",worker="0"} 3
+# HELP thunder_requests_total Total requests processed
+# TYPE thunder_requests_total counter
+thunder_requests_total{node_type="HELLO_HTTP",worker="0"} 1048576
+```
+
+数据来源：Worker 每 10s 上报的心跳数据已包含 `recv_num/recv_byte/send_num/send_byte/connect/client`，读取这些计数器拼成文本即可。
+
+**后续**（不在本次范围）：部署 Prometheus 每 15s 拉取 → Grafana 画 QPS/延迟/连接数曲线。
+
 ### 目标
-- HTTP `/metrics` 端点 (Prometheus text format)
-- 指标: `thunder_requests_total`, `thunder_request_duration_seconds`, `thunder_connections_active`, `thunder_worker_load`
-- Grafana dashboard 模板
+- 在现有 HTTP router 注册 `/metrics` handler
+- 指标: `thunder_requests_total`, `thunder_connections_active`, `thunder_send_bytes_total`, `thunder_recv_bytes_total`, `thunder_worker_load`
 
 ### 预估
-- 工作量: 大 (~2 天)
-- 依赖: 需引入 prometheus-cpp 或手写 text format
+- 工作量: 中 (~4h, 手写 text format 无需第三方库)
+- 文件: Worker.cpp 新增 MetricsHandler, HTTP router 注册路径
 
 ---
 
