@@ -40,6 +40,6 @@
             "version": 1
         }
     ],
-    "io_backend": "asio_uring",
+    "io_backend": "ev",
     "module": []
 }
