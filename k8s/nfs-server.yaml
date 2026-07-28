@@ -1,3 +1,8 @@
+# DEPRECATED — #155 移除 NFS, SO 热更新改为 admin-web kubectl cp 直推 Pod
+# 保留此文件仅供回滚参考, 新部署不再需要 NFS server
+#
+# NFS Server — K8s 原生 Pod (hostNetwork), 替代 apt nfs-kernel-server
+# PV 用 server: 192.168.3.61 不变, 此 Pod 接管 2049 端口
 apiVersion: v1
 kind: Pod
 metadata:
@@ -6,6 +11,8 @@ metadata:
   labels:
     app: nfs-server
 spec:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
   containers:
   - name: nfs
     image: itsthenetwork/nfs-server-alpine:latest
@@ -15,6 +22,7 @@ spec:
       value: /exports
     ports:
     - containerPort: 2049
+      hostPort: 2049
     securityContext:
       privileged: true
     volumeMounts:

@@ -63,6 +63,8 @@ public:
         return(m_strModulePath);
     }
 
+    bool IsModule() const override {return(true);}
+
     void SetModulePath(const std::string& strModulePaht)
     {
         m_strModulePath = strModulePaht;
@@ -73,7 +75,7 @@ public:
         return(m_oModuleConf);
     }
 
-    void SetModuleConf(const util::CJsonObject& oConf)
+    void SetModuleConf(const util::CJsonObject& oConf) override
     {
         m_oModuleConf = oConf;
     }

@@ -1,35 +1,20 @@
-# SO 模块共享存储 — PersistentVolume
+# DEPRECATED — #155 移除 NFS, SO 热更新改为 admin-web kubectl cp 直推 Pod
+# 保留此文件仅供回滚参考, 新部署不再需要 plugins PV/PVC
 #
-# 生产环境: 使用 NFS (注释掉 hostPath, 启用 nfs 段)
-#   前置: kubectl apply -f k8s/nfs-server.yaml
-#   nfs: server: nfs-server.thunder, path: /exports
-#
-# 开发/离线环境: 使用 hostPath (注释掉 nfs 段, 启用 hostPath 段)
-#   前置: mkdir -p /data/thunder/plugins
-#
-# 目录结构:
-#   /data/thunder/plugins/
-#   ├── HelloHttp/ModuleHello_v1.so, ModuleHello_v2.so
-#   ├── Logic/CmdGetToken_v2.so, CmdGetToken_v3.so
-#   └── Interface/ModuleInterface_v1.so
-
----
+# PV + PVC — NFSv4 共享存储
+# nfs-server Pod (hostNetwork) 提供 NFS 服务
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: thunder-plugins
+  name: pv-thunder-plugins
 spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteMany
+  accessModes: [ReadWriteMany]
+  capacity: {storage: 10Gi}
+  mountOptions: [nfsvers=4]
+  nfs:
+    server: 192.168.3.61
+    path: /
   persistentVolumeReclaimPolicy: Retain
-  hostPath:                          # 开发/离线环境
-    path: /data/thunder/plugins
-  # nfs:                             # 生产环境
-  #   server: nfs-server.thunder
-  #   path: /exports
-
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -37,8 +22,6 @@ metadata:
   name: thunder-plugins
   namespace: thunder
 spec:
-  accessModes:
-    - ReadOnlyMany
-  resources:
-    requests:
-      storage: 10Gi
+  accessModes: [ReadWriteMany]
+  resources: {requests: {storage: 10Gi}}
+  volumeName: pv-thunder-plugins

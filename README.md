@@ -1,350 +1,217 @@
-# Thunder
+# Thunder ⚡
 
-Thunder is a high-performance C++20 gateway and distributed service framework.
-It handles HTTP, HTTPS, and WebSocket traffic, routes requests to backend Logic nodes via Protobuf RPC,
-and extends behavior at runtime through hot-reloadable Lua scripts and `.so` plugins —
-all within a single-threaded event loop, **230,000+ requests/second per core**.
+**A high-performance C++20 gateway framework. Asynchronous by design, extensible at runtime.**
+
+[![License](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Commercial-blue)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-%2300599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-orange)](https://kernel.org)
 
 ```
-Client (HTTP / HTTPS / WS)
-        │
-        ▼
-   Worker (event loop + .so plugins + Lua VM)
-        │  io_uring / epoll
-        ▼
-   etcd Service Mesh
-        │
-   ┌────┴────┐
- LOGIC     LOGIC     (C++20 coroutines, horizontal scale)
+HTTP / HTTPS / WebSocket → picohttpparser + io_uring → Protobuf RPC → Backend Logic
+
+  235k RPS per core · 220 μs P50 latency · work-stealing 543 ns/op (旧队列 1374 ns)
 ```
 
 ---
 
-## Building Thunder
-
-**Requirements**: CMake ≥ 3.20, GCC 12+ or Clang 15+, OpenSSL headers, Docker + Compose
+## ⚡ Quick Start
 
 ```bash
+# Build
 git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build --target thirdparty_deploy -j1   # third-party libs, ~10–20 min first time
-cmake --build build -j1
-cmake --install build                                 # installs to deploy/
-```
-
-> `-j1` is required — parallel builds stall on disk I/O during third-party compilation.
-
-Subsequent builds (third-party already built):
-
-```bash
+cmake --build build --target thirdparty_deploy -j1
 cmake --build build -j1 && cmake --install build
-```
 
-Optional flags:
-
-```bash
--DTHUNDER_IO_ASIO_URING=ON    # enable asio io_uring backend (Linux 5.1+)
--DTHUNDER_LUAJIT=ON           # enable LuaJIT scripting
-```
-
----
-
-## Running Thunder
-
-```bash
-./deploy.sh up          # start Docker cluster (3-node etcd + MySQL + Redis + all services)
-./deploy.sh status      # container status + listening ports
-./deploy.sh down        # stop and clean up
-```
-
-Wait ~15 seconds for all services to become healthy, then:
-
-```bash
+# Run (Docker Compose)
+./deploy.sh up
 curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo","data":"hi"}'
 # → {"code":0,"msg":"ok","data":"hi"}
+
+# Test
+./deploy.sh test unit       # C++ gtest + Python pytest (~45s)
+./deploy.sh test e2e        # Full integration (~3 min)
 ```
 
-**Service ports:**
-
-| Service     | Protocol  | Port  |
-|-------------|-----------|-------|
-| HelloHttp   | HTTP      | 27006 |
-| HelloHttps  | HTTPS     | 27443 |
-| HelloWs     | WebSocket | 27010 |
-| Interface   | HTTP      | 27008 |
-| Logic       | Internal  | 16068 |
-| Admin       | HTTP      | 8090  |
-| etcd        | HTTP      | 2379  |
-| Redis       | TCP       | 6379  |
-| MySQL       | TCP       | 3306  |
+> 📖 **New to Thunder?** Start with [`QUICKSTART.md`](QUICKSTART.md) — covers canary deployments, Lua & SO hot-reload, and K8s setup.
 
 ---
 
-## Testing
+## 🎯 Why Thunder?
 
-```bash
-./deploy.sh test unit      # C++ gtest (382 cases) + Python pytest, no external deps, ~45s
-./deploy.sh test e2e       # Docker E2E: compose up → 25+ pytest cases → compose down, ~3 min
-./deploy.sh test           # unit + e2e
-./deploy.sh clean          # remove build artifacts + Docker state
-```
+Thunder was built for scenarios where **latency matters** and **downtime is unacceptable** — API gateways, game backends, real-time proxies.
 
-Smoke test (requires cluster already running):
+| Design Choice | Trade-Off |
+|:---|:---|
+| **Single-threaded event loop per worker** | No locks, no races. Multi-core via multi-process. |
+| **C++20 coroutines (`co_await`)** | Async code reads like sync. 1M+ concurrent coroutines per thread. |
+| **io_uring batch submission** | N I/O operations → 1 `io_uring_enter` syscall. Drops TLS latency from 803μs to 402μs. |
+| **HostNetwork on K8s** | Zero kube-proxy hops. Client hits worker process directly. |
+| **Graceful drain + dlopen hot-swap** | Update `.so` plugins without dropping a single connection. |
+| **etcd-native service mesh** | Real-time config push, canary routing, versioned rollback — no ConfigMap restarts. |
 
-```bash
-./tests/test_smoke.sh      # HTTP / HTTPS / WS / Interface→Logic / etcd, 9 checks
-```
-
----
-
-## Performance
-
-Benchmarked on i9-12900H, 1 worker, `wrk -t4 -c100 -d10s`, INFO log, P-cores pinned.
-Full report: [`docs/performance/10-vs-nginx-benchmark-20260610.md`](docs/performance/10-vs-nginx-benchmark-20260610.md)
-
-### HTTP throughput vs Nginx 1.x
-
-| Payload | Thunder ev | Thunder asio_uring | Nginx 1w  | Delta       |
-|--------:|:----------:|:------------------:|:---------:|:-----------:|
-| 64 B    | 232k RPS   | **235k RPS**       | 214k RPS  | **+9–10%**  |
-| 1 KB    | 229k RPS   | 232k RPS           | 191k RPS  | **+20–21%** |
-| 4 KB    | 216k RPS   | 223k RPS           | 184k RPS  | **+17–21%** |
-
-### HTTP latency (asio_uring backend)
-
-| Payload | Thunder ev | Thunder asio_uring | Nginx 1w | vs Nginx    |
-|--------:|:----------:|:------------------:|:--------:|:-----------:|
-| 64 B    | 424 µs     | **220 µs**         | 466 µs   | **2.1× lower** |
-| 4 KB    | 457 µs     | **332 µs**         | 543 µs   | **1.6× lower** |
-
-### HTTPS latency (TLS)
-
-| Payload | Thunder ev | Thunder uring | Nginx SSL | vs Nginx       |
-|--------:|:----------:|:-------------:|:---------:|:--------------:|
-| 64 B    | 803 µs     | **402 µs**    | 752 µs    | **1.9× lower** |
-| 4 KB    | 1.23 ms    | **247 µs**    | 824 µs    | **3.3× lower** |
-
-> HTTPS throughput is SSL-CPU bound; Thunder uring wins on latency because `io_uring` batches all
-> OpenSSL BIO calls into a single `io_uring_enter` instead of one syscall per BIO read/write.
-
-### WebSocket echo (persistent connections)
-
-| Payload | 10 conns | p50    | p99    |
-|--------:|:--------:|:------:|:------:|
-| 64 B    | 46,765   | 192 µs | 549 µs |
-| 1 KB    | 15,888   | 564 µs | 1.7 ms |
-| 4 KB    |  4,881   | 1.8 ms | 5.9 ms |
+> 🧠 **Deeper dive**: performance data → [`docs/performance/`](docs/performance/) · architecture → [`docs/architecture/01-architecture-design.md`](docs/architecture/01-architecture-design.md) · FAQ → [`docs/README.md#核心设计问答`](docs/README.md#核心设计问答)
 
 ---
 
-## Why Thunder Is Fast
+## 🚀 Features
 
-### Zero-Copy Fast Path
-
-Requests matching known route prefixes skip Protobuf + JSON decode entirely:
-
-```
-Normal path:  recv → parse → pb decode → handler → pb encode → send   (~162k RPS)
-Fast path:    recv → prefix match → handler → memcpy template → send   (~236k RPS)
-```
-
-### picohttpparser — SIMD HTTP Parsing
-
-Replaced `http_parser` with `picohttpparser`, a single-header SSE4.2-accelerated parser
-that scans 16 bytes per cycle instead of one. **Measured gain: +49% RPS.**
-
-### Pluggable I/O Backends
-
-| Backend        | Strength                        | Notes                              |
-|----------------|---------------------------------|------------------------------------|
-| `ev` (epoll)   | Default, lowest overhead        | Best for small-medium payloads     |
-| `asio_uring`   | Latency-sensitive, large payload| Batch submit: N I/Os → 1 syscall   |
-| `native_uring` | Raw io_uring                    | Demo backend; no batch advantage   |
-| `dpdk`         | Planned                         | Kernel bypass                      |
-
-### Multi-Process Worker Model
-
-Each Worker is an independent OS process. A crashing plugin takes down only that worker;
-Manager restarts it transparently. Graceful restart drains in-flight connections before
-killing the old worker.
-
-### Work-Stealing Thread Pool
-
-Coroutines offload blocking work (disk I/O, CPU-heavy compute) to a custom work-stealing pool
-(Go LRQ style). Each worker holds two SPMC ring buffers (256 slots): `_submit_deques` receive
-committed tasks via Power of Two Choices, `_local_deques` buffer stolen tasks. Idle workers
-steal half the victim's queue in a single CAS (`steal_into`). A global MPMC queue catches overflow.
-
-| Metric                | Old (single MPMC queue) | New (work-stealing) |
-|-----------------------|------------------------:|--------------------:|
-| Throughput (4 workers)|              1,373 ns/op|         **543 ns/op**|
-| Speedup               |                        —|            **2.53×** |
-| E2E latency (avg)     |              1,394 ns   |         **700 ns**  |
-| E2E latency (P50)     |              1,586 ns   |       **1,227 ns**  |
-| Payload 64B advantage |                        —|            **2.58×** |
-
-Design doc: [`docs/architecture/23-work-stealing-threadpool.md`](docs/architecture/23-work-stealing-threadpool.md)  
-Benchmark: [`docs/performance/04-work-stealing-bench.md`](docs/performance/04-work-stealing-bench.md)
-
-### C++20 Coroutines
-
-All async I/O — MySQL, Redis, cross-node RPC — written as `co_await`:
-
-```cpp
-net::AsyncTask HandleRequest(net::StepCo20& step) {
-    auto rows = co_await db.Query("SELECT * FROM orders WHERE user_id=?", userId);
-    bool cached = co_await cache.Set("orders:" + id, rows.toJson(), 300);
-    co_await step.SendToInternalByNodeTypeAsync("LOGIC", head, body);
-    step.Response(200, buildResponse(rows));
-}
-```
+| Category | Capabilities |
+|:---|:---|
+| **Protocols** | HTTP/1.1 · HTTPS (TLS 1.3) · WebSocket · WSS · Internal Protobuf RPC |
+| **I/O Backends** | `ev` (epoll) · `asio_uring` · `native_uring` · DPDK *(planned)* |
+| **Parsing** | picohttpparser (SSE4.2 SIMD, +49% RPS vs http_parser) · yyjson arena allocator |
+| **Coroutines** | `co_await` Redis · `co_await` MySQL · `co_await` cross-node RPC |
+| **Thread Pool** | Work-stealing (Go LRQ style) · lock-free MPMC queue · dynamic resize |
+| **Scripting** | LuaJIT VM per worker · Lua hot-reload (no process restart) |
+| **Plugins** | `.so` dynamic load · etcd-triggered graceful swap · NFS-shared artifacts |
+| **Service Mesh** | etcd registry · lease heartbeat · CAS slot allocation |
+| **Canary** | Weighted routing (`v1=70% v2=30%`) · one-line rollback · per-node-type control |
+| **Admin** | Web dashboard → plugin management · node topology · etcd browser |
+| **Deploy** | Docker Compose · bare-metal · Kubernetes (hostNetwork + StatefulSet etcd) |
 
 ---
 
-## Features
+## 📊 Performance
 
-| Feature                    | Notes                                                     |
-|----------------------------|-----------------------------------------------------------|
-| HTTP/1.1                   | picohttpparser, keep-alive, chunked transfer              |
-| HTTPS / TLS                | OpenSSL, SNI                                              |
-| WebSocket (WS / WSS)       | Upgrade, ping/pong, fragmentation, TLS variant            |
-| Internal Protobuf RPC      | Node-to-node binary transport                             |
-| MySQL client               | `co_await db.Query(...)` — non-blocking, event loop safe  |
-| Redis client               | `co_await cache.Get/Set/HSet(...)` — async hiredis        |
-| Work-stealing thread pool  | Go LRQ style, dual SPMC deques, P2C dispatch, 2.53× faster |
-| Lua scripting              | LuaJIT, hot-reload, per-worker VM                         |
-| `.so` plugin hot-swap      | Zero-downtime deploy via etcd watch + graceful restart    |
-| etcd service mesh          | Registration, discovery, config push, TTL health          |
-| Admin web UI               | Plugin management, node topology, etcd browser            |
+*Single-core P-pinned, `wrk -t4 -c100 -d10s`, i9-12900H. Full report → [`docs/performance/`](docs/performance/)*
 
----
+### HTTP — Thunder vs Nginx
 
-## Architecture
+| Payload | Thunder ev | Thunder asio_uring | Nginx 1w | Delta |
+|----:|:---:|:---:|:---:|:---:|
+| 1 KB | 229k RPS | **232k RPS** | 191k RPS | **+21%** |
+| 4 KB | 216k RPS | **223k RPS** | 184k RPS | **+21%** |
+| 64 B | 232k RPS | **235k RPS** | 214k RPS | **+10%** |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Gateway Nodes                           │
-│                                                                 │
-│  Manager                                                        │
-│    ├── fork / restart Workers                                   │
-│    ├── receive plugin updates from etcd                         │
-│    └── graceful drain + hot-swap                                │
-│                                                                 │
-│  Worker 0..N  (one event loop each)                             │
-│    ├── I/O Backend: ev / asio_uring / native_uring              │
-│    ├── HTTP Fast Path (picohttpparser + prefix match)           │
-│    ├── Codec chain: HTTP → Protobuf → response                  │
-│    ├── .so Modules (dynamically loaded)                         │
-│    ├── Lua VM (LuaJIT, per worker)                              │
-│    └── C++20 Coroutine Steps                                    │
-│         ├── co_await MySQL / Redis                              │
-│         ├── co_await HTTP upstream                              │
-│         └── co_await cross-node PB RPC                          │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Internal Protobuf (TCP)
-┌───────────────────────────▼─────────────────────────────────────┐
-│                        Logic Nodes                              │
-│  Same Worker architecture; scaled horizontally via etcd.        │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                     etcd Cluster (3 nodes)                      │
-│       Service registry · config store · leader election          │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Payload | Thunder asio_uring | Nginx |
+|----:|:---:|:---:|
+| 64 B | **220 μs** | 466 μs |
+| 4 KB | **332 μs** | 543 μs |
 
-| Principle              | Implementation                                           |
-|------------------------|----------------------------------------------------------|
-| Share nothing          | One process per worker, no inter-worker locks            |
-| No blocking            | `co_await` for all I/O; thread pool for CPU-bound tasks  |
-| Zero-copy where possible | Fast Path + yyjson arena allocator                     |
-| Fault isolation        | Plugin crash kills one worker; Manager restarts it       |
-| Runtime extensibility  | Lua for logic; `.so` for hot paths; etcd for config      |
+### HTTPS — TLS with io_uring batching
+
+| Payload | Thunder uring | Nginx SSL |
+|----:|:---:|:---:|
+| 64 B | **402 μs** | 752 μs |
+| 4 KB | **247 μs** | 824 μs |
+
+### WebSocket Echo (persistent)
+
+| Payload | Conns | RPS | P50 | P99 |
+|----:|:---:|:---:|:---:|:---:|
+| 64 B | 10 | 46k | 192 μs | 549 μs |
+| 1 KB | 10 | 15k | 564 μs | 1.7 ms |
 
 ---
 
-## Writing a Plugin
+## 🧬 Architecture
+
+```
+ Manager (fork/restart workers, watch etcd config changes)
+   ├── Worker 0 ──── io_uring / epoll loop
+   │    ├── HTTP Fast Path (picohttpparser + prefix match → zero-copy)
+   │    ├── .so Modules (dynamic dlopen, hot-swap)
+   │    ├── Lua VM (LuaJIT, per-worker, script hot-reload)
+   │    └── Coroutines (co_await MySQL / Redis / cross-node RPC)
+   ├── Worker N ──── ...
+   └── Work-stealing thread pool (offload CPU tasks)
+
+ etcd Cluster (3 nodes)
+   ├── Service registry + lease heartbeat
+   ├── Config store (push to Manager → graceful worker restart)
+   └── Canary weights (weighted routing, instant rollback)
+```
+
+**Principles**: Share-nothing workers · zero-copy fast path · fault isolation (plugin crash → 1 worker restarts) · runtime-extensible (Lua + .so + etcd config)
+
+---
+
+## 🔌 Deploying a Plugin
+
+Thunder supports **dual-mode deployment**: Push (exec+tar) + Pull (Manager HTTP GET from admin-web). Push is the legacy path, Pull is the default since #159.
 
 ```cpp
 // code/HelloHttp/src/ModuleHello/ModuleHello.cpp
 #include "cmd/Module.hpp"
-#include "util/CJsonObject.hpp"
 
 class ModuleHello : public net::Module {
-public:
-    bool AnyMessage(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg) override {
-        util::CJsonObject req(oInHttpMsg.body());
-        std::string action;
-        req.Get("option", action);
-
-        util::CJsonObject rsp;
-        rsp.Add("code", 0);
-        rsp.Add("action", action);
-        net::SendToClient(stMsgShell, oInHttpMsg, rsp.ToString());
+    bool AnyMessage(const net::tagMsgShell& shell, const HttpMsg& msg) override {
+        net::SendToClient(shell, msg, R"({"code":0,"msg":"hello from plugin"})");
         return true;
     }
 };
-
 MUDULE_CREATE(core::ModuleHello);
 ```
 
-Build and deploy:
-
 ```bash
-./deploy.sh build-so HelloHttp_ModuleHello
+# 1. Build all SO modules + deploy to deploy/{type}/plugins/
+./deploy.sh build
 
-# Extract to workers via Admin API (triggers graceful hot-swap)
-curl -X POST http://localhost:8090/api/so-extract -F "file=ModuleOrder.so"
+# 2. Upload .so to admin-web artifact store (→ MinIO / PVC)
+curl -X PUT --data-binary @ModuleHello.so \
+  http://192.168.3.61:30090/api/plugins/HelloHttp/ModuleHello.so
+
+# 3. Deploy — bumps etcd version + so_url → Manager Pull downloads + graceful restart
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"filename":"ModuleHello.so"}' \
+  http://192.168.3.61:30090/api/plugins/HelloHttp/deploy
+
+# → no restart. no dropped connections. new connections use updated .so.
+```
+
+| Step | Push mode (legacy, #2) | Pull mode (default, #159) |
+|------|------|------|
+| Upload | → local PVC | → local PVC + MinIO |
+| Deploy | exec+tar to each pod | etcd bump (version + so_url) |
+| Pod receives | kubectl cp via K8s API | Manager Poll → HTTP GET admin-web → download |
+| Pod restart | ❌ SO lost | ✅ Manager re-downloads on startup |
+
+---
+
+## 📂 Repository
+
+```
+code/Net/          Core: Manager, Worker, I/O backends, codec, coroutines
+code/HelloHttp/    HTTP gateway + plugins + Lua modules
+code/HelloHttps/   HTTPS gateway
+code/HelloWs/      WebSocket gateway
+code/Interface/    Protobuf API gateway → Logic backend
+code/Logic/        Business logic node
+deploy/            Built binaries, configs, Dockerfiles
+docs/              Design docs, benchmarks, FAQ
+k8s/               Kubernetes manifests + ops manual
+tests/             pytest E2E, smoke, chaos tests
 ```
 
 ---
 
-## Kubernetes
+## 📖 Docs
 
-```bash
-kubectl apply -f k8s/
-kubectl -n thunder rollout status deployment --timeout=120s
-
-# NodePorts: HTTP=30006  Interface=30008  HTTPS=30043  WS=30010  Admin=30090
-```
-
----
-
-## Repository Layout
-
-```
-code/
-├── Net/          # Core: Manager, Worker, I/O backends, codec, coroutines
-├── Center/       # Cluster coordination (legacy, etcd replaces in deployment)
-├── Logic/        # Example logic node
-├── HelloHttp/    # HTTP gateway node + example plugins + Lua modules
-├── HelloHttps/   # HTTPS gateway node
-├── HelloWs/      # WebSocket gateway node
-├── Interface/    # Protobuf gateway node
-├── Proto/        # .proto definitions
-└── Util/         # JSON (yyjson), logging, DB helpers
-
-deploy/           # Built binaries, node configs, start scripts
-docs/             # See docs/README.md for the full index
-├── architecture/ # Design docs and deep-dives
-├── performance/  # Benchmark reports
-├── quality/      # Memory-safety and unit-test verification
-└── reference/    # Tooling, dependency analysis, project FAQ
-k8s/              # Kubernetes manifests
-tests/            # pytest E2E, smoke scripts, benchmark scripts
-```
+| Section | For |
+|:---|:---|
+| [`QUICKSTART.md`](QUICKSTART.md) | Build, deploy, canary, hot-reload |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev setup, code style, PR process, commit conventions |
+| [`docs/README.md`](docs/README.md) | Architecture FAQ, design index, reading paths |
+| [`docs/architecture/`](docs/architecture/) | Subsystem deep-dives (etcd, coroutines, io_uring, work-stealing…) |
+| [`docs/performance/`](docs/performance/) | Reproducible benchmarks (Thunder vs Nginx, I/O backends comparison) |
+| [`k8s/k8s-manual.md`](k8s/k8s-manual.md) | K8s cluster setup, CNI, HPA, multi-datacenter |
+| [`k8s/comparison-openim.md`](k8s/comparison-openim.md) | Deployment strategy comparison with OpenIM |
 
 ---
 
-## License
+## 📜 License
 
-Thunder 采用 **双重许可**：
+| Use Case | License | Cost |
+|:---|:---|:---:|
+| Open-source, learning, internal tools | [AGPL v3](LICENSE.AGPL) | Free |
+| Closed-source commercial products | [Commercial](LICENSE.COMMERCIAL) | Paid |
+| SaaS / cloud services | [Commercial](LICENSE.COMMERCIAL) | Paid |
 
-| 使用场景 | 许可 | 费用 |
-|---------|------|:--:|
-| 个人学习、开源项目 | [AGPL v3](LICENSE.AGPL) | 免费 |
-| 公司内部工具、测试环境 | [AGPL v3](LICENSE.AGPL) | 免费 |
-| **闭源商业产品** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
-| **SaaS / 云服务** | **[商业许可](LICENSE.COMMERCIAL)** | **付费** |
+> Commercial inquiries → contact the author.
 
-> 详细条款见 [`LICENSE`](LICENSE)。商业许可咨询请联系作者。
+---
+
+<p align="center">
+  <sub>Built with C++20, libev, io_uring, and a relentless focus on latency.</sub>
+</p>

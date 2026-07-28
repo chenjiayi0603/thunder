@@ -462,6 +462,9 @@ public:     // Worker相关设置（由Cmd类或Step类调用这些方法完成�
      * @param strIdentify 连接标识符
      */
     virtual void AddNodeIdentify(const std::string& strNodeType, const std::string& strIdentify){}
+    virtual void SetCanaryWeights(const std::string& strNodeType,
+                                   const std::map<std::string, int32_t>& mapWeights){}
+    virtual void ClearCanaryWeights(const std::string& strNodeType = ""){}
     /**
      * @brief 删除标识的节点类型属性
      * @note 删除标识的节点类型属性，当一个节点下线，框架层会自动调用此函数删除标识 的节点类型属性。

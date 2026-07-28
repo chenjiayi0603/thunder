@@ -119,18 +119,18 @@ services:
       retries: 30
       start_period: 35s
 
-  # 3 节点 etcd Raft 集群（Phase C）
-  # - 客户端端口: etcd1=2379, etcd2=2381, etcd3=2383
+  # 3 节点 etcd Raft 集群
+  # - 客户端端口: etcd1=12379, etcd2=12381, etcd3=12383
   # - Peer 端口:  etcd1=2380, etcd2=2382, etcd3=2384
-  # - Thunder 服务连接 etcd1 (port 2379)；集群内部自动转发到 leader
+  # - Thunder 服务连接 etcd1 (port 12379)；集群内部自动转发到 leader
   # - 初次启动前务必清空旧数据: rm -rf docker/data/etcd{1,2,3}
   etcd1:
     <<: *etcd-common
     environment:
       ETCD_NAME: etcd1
       ETCD_DATA_DIR: /etcd-data
-      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2379
-      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2379
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:12379
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:12379
       ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2380
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2380
       ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
@@ -144,7 +144,7 @@ services:
     # etcd distroless 镜像无 shell，用 etcdctl CMD 形式。
     # endpoint health 需要集群 quorum，三节点全部加入后才 healthy。
     healthcheck:
-      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:12379", "endpoint", "health"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -155,8 +155,8 @@ services:
     environment:
       ETCD_NAME: etcd2
       ETCD_DATA_DIR: /etcd-data
-      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2381
-      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2381
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:12381
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:12381
       ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2382
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2382
       ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
@@ -168,7 +168,7 @@ services:
     volumes:
       - ./data/etcd2:/etcd-data
     healthcheck:
-      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2381", "endpoint", "health"]
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:12381", "endpoint", "health"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -179,8 +179,8 @@ services:
     environment:
       ETCD_NAME: etcd3
       ETCD_DATA_DIR: /etcd-data
-      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:2383
-      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2383
+      ETCD_LISTEN_CLIENT_URLS: http://127.0.0.1:12383
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:12383
       ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2384
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2384
       ETCD_INITIAL_CLUSTER: "etcd1=http://127.0.0.1:2380,etcd2=http://127.0.0.1:2382,etcd3=http://127.0.0.1:2384"
@@ -192,7 +192,7 @@ services:
     volumes:
       - ./data/etcd3:/etcd-data
     healthcheck:
-      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2383", "endpoint", "health"]
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:12383", "endpoint", "health"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -202,6 +202,10 @@ services:
   logic:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Logic
+    environment:
+      NODE_VERSION: v1
+      INNER_PORT: "16068"
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -216,7 +220,7 @@ services:
       - |
         set -e
         chmod +x ./node.sh 2>/dev/null || true
-        ./node.sh start
+        ./node.sh start all
         trap './node.sh stop --yes' TERM INT
         tail -f /dev/null &
         wait $! || true
@@ -234,9 +238,53 @@ services:
       retries: 20
       start_period: 20s
 
+  # Logic v2 — 灰度发布目标版本，与 logic (v1) 共享同一套代码，
+  # 仅通过 NODE_VERSION 环境变量区分，注册到 etcd 时自动带 node_version=v2。
+  # Canary 权重路由时 Manager 按 version 自动分组，无需改代码。
+  logic-v2:
+    <<: [*thunder-node, *thunder-ulimits]
+    working_dir: /thunder/deploy/Logic_v2
+    environment:
+      NODE_VERSION: v2
+      INNER_PORT: "16069"        # 与 logic v1 的 16068 不冲突
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      etcd1:
+        condition: service_healthy
+    stop_grace_period: 30s
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start all
+        trap './node.sh stop --yes' TERM INT
+        tail -f /dev/null &
+        wait $! || true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':16069 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
   hello:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttp
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -266,6 +314,8 @@ services:
   hello_ws:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloWs
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -301,6 +351,8 @@ services:
   hello_https:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/HelloHttps
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       redis:
         condition: service_healthy
@@ -337,6 +389,8 @@ services:
   interface:
     <<: [*thunder-node, *thunder-ulimits]
     working_dir: /thunder/deploy/Interface
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
     depends_on:
       logic:
         condition: service_healthy
@@ -360,6 +414,40 @@ services:
           memory: 1G
         reservations:
           memory: 128M
+
+  # MQTT Broker — IoT 设备接入 (MQTT 3.1.1, port 21883)
+  mqtt-broker:
+    <<: [*thunder-node, *thunder-ulimits]
+    working_dir: /thunder/deploy/MqttBroker
+    environment:
+      ETCD_ENDPOINT: "http://127.0.0.1:12379"
+    depends_on:
+      etcd1:
+        condition: service_healthy
+    stop_grace_period: 30s
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        chmod +x ./node.sh 2>/dev/null || true
+        ./node.sh start
+        trap './node.sh stop' TERM INT
+        tail -f /dev/null &
+        wait $! || true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -q ':21883 '"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
   # Admin Web — 管理后台 + Lua/SO 热更新 API
   admin-web:

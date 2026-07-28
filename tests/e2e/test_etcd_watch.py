@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -23,7 +24,7 @@ import pytest
 import requests
 
 # ── 常量 ────────────────────────────────────────────────────────────────────
-_ETCD_HOST = "127.0.0.1"
+_ETCD_HOST = os.environ.get("ETCD_HOST", "127.0.0.1")
 ETCD_URL   = f"http://{_ETCD_HOST}:2379"
 HELLO_URL  = "http://127.0.0.1:27006"
 IFACE_URL  = "http://127.0.0.1:27008"

@@ -28,6 +28,10 @@
 #include "google/protobuf/message_lite.h"
 #include "google/protobuf/repeated_field.h"  // IWYU pragma: export
 #include "google/protobuf/extension_set.h"  // IWYU pragma: export
+#include "google/protobuf/map.h"  // IWYU pragma: export
+#include "google/protobuf/map_type_handler.h"  // IWYU pragma: export
+#include "google/protobuf/map_entry.h"
+#include "google/protobuf/map_field.h"
 #include "google/protobuf/unknown_field_set.h"
 // @@protoc_insertion_point(includes)
 
@@ -68,6 +72,10 @@ class NodeNotice;
 struct NodeNoticeDefaultTypeInternal;
 extern NodeNoticeDefaultTypeInternal _NodeNotice_default_instance_;
 extern const ::google::protobuf::internal::ClassDataFull NodeNotice_class_data_;
+class NodeNotice_CanaryWeightsEntry_DoNotUse;
+struct NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal;
+extern NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal _NodeNotice_CanaryWeightsEntry_DoNotUse_default_instance_;
+extern const ::google::protobuf::internal::ClassDataFull NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_;
 class NodeReport;
 struct NodeReportDefaultTypeInternal;
 extern NodeReportDefaultTypeInternal _NodeReport_default_instance_;
@@ -805,7 +813,7 @@ class TraceLog final : public ::google::protobuf::Message
     return *reinterpret_cast<const TraceLog*>(
         &_TraceLog_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 11;
+  static constexpr int kIndexInFileMessages = 12;
   friend void swap(TraceLog& a, TraceLog& b) { a.Swap(&b); }
   inline void Swap(TraceLog* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1114,7 +1122,7 @@ class TargetWorker final : public ::google::protobuf::Message
     return *reinterpret_cast<const TargetWorker*>(
         &_TargetWorker_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 8;
+  static constexpr int kIndexInFileMessages = 9;
   friend void swap(TargetWorker& a, TargetWorker& b) { a.Swap(&b); }
   inline void Swap(TargetWorker* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1824,6 +1832,45 @@ class NodeReport_Node final : public ::google::protobuf::Message
 extern const ::google::protobuf::internal::ClassDataFull NodeReport_Node_class_data_;
 // -------------------------------------------------------------------
 
+class NodeNotice_CanaryWeightsEntry_DoNotUse final
+    : public ::google::protobuf::internal::MapEntry<::std::string, ::int32_t,
+                             ::google::protobuf::internal::WireFormatLite::TYPE_STRING,
+                             ::google::protobuf::internal::WireFormatLite::TYPE_INT32> {
+ public:
+  using SuperType =
+      ::google::protobuf::internal::MapEntry<::std::string, ::int32_t,
+                      ::google::protobuf::internal::WireFormatLite::TYPE_STRING,
+                      ::google::protobuf::internal::WireFormatLite::TYPE_INT32>;
+  NodeNotice_CanaryWeightsEntry_DoNotUse();
+  template <typename = void>
+  explicit PROTOBUF_CONSTEXPR NodeNotice_CanaryWeightsEntry_DoNotUse(::google::protobuf::internal::ConstantInitialized);
+  explicit NodeNotice_CanaryWeightsEntry_DoNotUse(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr const void* PROTOBUF_NONNULL internal_default_instance() {
+    return &_NodeNotice_CanaryWeightsEntry_DoNotUse_default_instance_;
+  }
+
+
+  static constexpr auto InternalGenerateClassData_();
+
+ private:
+  friend class ::google::protobuf::MessageLite;
+  friend struct ::TableStruct_oss_5fsys_2eproto;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<1, 2,
+                                   0, 41,
+                                   2>
+      _table_;
+
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+};
+extern const ::google::protobuf::internal::ClassDataFull NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_;
+// -------------------------------------------------------------------
+
 class LogLevel final : public ::google::protobuf::Message
 /* @@protoc_insertion_point(class_definition:LogLevel) */ {
  public:
@@ -1879,7 +1926,7 @@ class LogLevel final : public ::google::protobuf::Message
     return *reinterpret_cast<const LogLevel*>(
         &_LogLevel_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 9;
+  static constexpr int kIndexInFileMessages = 10;
   friend void swap(LogLevel& a, LogLevel& b) { a.Swap(&b); }
   inline void Swap(LogLevel* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2069,7 +2116,7 @@ class ConnectWorker final : public ::google::protobuf::Message
     return *reinterpret_cast<const ConnectWorker*>(
         &_ConnectWorker_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 7;
+  static constexpr int kIndexInFileMessages = 8;
   friend void swap(ConnectWorker& a, ConnectWorker& b) { a.Swap(&b); }
   inline void Swap(ConnectWorker* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2259,7 +2306,7 @@ class ConfigInfo final : public ::google::protobuf::Message
     return *reinterpret_cast<const ConfigInfo*>(
         &_ConfigInfo_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 10;
+  static constexpr int kIndexInFileMessages = 11;
   friend void swap(ConfigInfo& a, ConfigInfo& b) { a.Swap(&b); }
   inline void Swap(ConfigInfo* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2581,6 +2628,7 @@ class NodeReport final : public ::google::protobuf::Message
     kNodeTypeFieldNumber = 1,
     kNodeIpFieldNumber = 3,
     kAccessIpFieldNumber = 5,
+    kNodeVersionFieldNumber = 11,
     kNodeFieldNumber = 9,
     kNodeIdFieldNumber = 2,
     kNodePortFieldNumber = 4,
@@ -2648,6 +2696,21 @@ class NodeReport final : public ::google::protobuf::Message
   const ::std::string& _internal_access_ip() const;
   PROTOBUF_ALWAYS_INLINE void _internal_set_access_ip(const ::std::string& value);
   ::std::string* PROTOBUF_NONNULL _internal_mutable_access_ip();
+
+  public:
+  // string node_version = 11;
+  void clear_node_version() ;
+  const ::std::string& node_version() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_node_version(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_node_version();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_node_version();
+  void set_allocated_node_version(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_node_version() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_node_version(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_node_version();
 
   public:
   // .NodeReport.Node node = 9;
@@ -2719,8 +2782,8 @@ class NodeReport final : public ::google::protobuf::Message
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<4, 10,
-                                   2, 52,
+  static const ::google::protobuf::internal::TcParseTable<4, 11,
+                                   2, 64,
                                    2>
       _table_;
 
@@ -2745,6 +2808,7 @@ class NodeReport final : public ::google::protobuf::Message
     ::google::protobuf::internal::ArenaStringPtr node_type_;
     ::google::protobuf::internal::ArenaStringPtr node_ip_;
     ::google::protobuf::internal::ArenaStringPtr access_ip_;
+    ::google::protobuf::internal::ArenaStringPtr node_version_;
     ::NodeReport_Node* PROTOBUF_NULLABLE node_;
     ::uint32_t node_id_;
     ::uint32_t node_port_;
@@ -2815,7 +2879,7 @@ class NodeNotice final : public ::google::protobuf::Message
     return *reinterpret_cast<const NodeNotice*>(
         &_NodeNotice_default_instance_);
   }
-  static constexpr int kIndexInFileMessages = 6;
+  static constexpr int kIndexInFileMessages = 7;
   friend void swap(NodeNotice& a, NodeNotice& b) { a.Swap(&b); }
   inline void Swap(NodeNotice* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2904,6 +2968,7 @@ class NodeNotice final : public ::google::protobuf::Message
   enum : int {
     kNodeArryRegFieldNumber = 1,
     kNodeArryExitFieldNumber = 2,
+    kCanaryWeightsFieldNumber = 3,
   };
   // repeated .NodeReport node_arry_reg = 1;
   int node_arry_reg_size() const;
@@ -2939,12 +3004,27 @@ class NodeNotice final : public ::google::protobuf::Message
   const ::NodeReport& node_arry_exit(int index) const;
   ::NodeReport* PROTOBUF_NONNULL add_node_arry_exit();
   const ::google::protobuf::RepeatedPtrField<::NodeReport>& node_arry_exit() const;
+  // map<string, int32> canary_weights = 3;
+  int canary_weights_size() const;
+  private:
+  int _internal_canary_weights_size() const;
+
+  public:
+  void clear_canary_weights() ;
+  const ::google::protobuf::Map<::std::string, ::int32_t>& canary_weights() const;
+  ::google::protobuf::Map<::std::string, ::int32_t>* PROTOBUF_NONNULL mutable_canary_weights();
+
+  private:
+  const ::google::protobuf::Map<::std::string, ::int32_t>& _internal_canary_weights() const;
+  ::google::protobuf::Map<::std::string, ::int32_t>* PROTOBUF_NONNULL _internal_mutable_canary_weights();
+
+  public:
   // @@protoc_insertion_point(class_scope:NodeNotice)
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<1, 2,
-                                   2, 0,
+  static const ::google::protobuf::internal::TcParseTable<1, 3,
+                                   3, 33,
                                    2>
       _table_;
 
@@ -2967,6 +3047,10 @@ class NodeNotice final : public ::google::protobuf::Message
     ::google::protobuf::internal::CachedSize _cached_size_;
     ::google::protobuf::RepeatedPtrField< ::NodeReport > node_arry_reg_;
     ::google::protobuf::RepeatedPtrField< ::NodeReport > node_arry_exit_;
+    ::google::protobuf::internal::MapField<NodeNotice_CanaryWeightsEntry_DoNotUse, ::std::string, ::int32_t,
+                      ::google::protobuf::internal::WireFormatLite::TYPE_STRING,
+                      ::google::protobuf::internal::WireFormatLite::TYPE_INT32>
+        canary_weights_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -4590,7 +4674,7 @@ inline void NodeReport::clear_node_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.node_id_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000020U);
+                  0x00000040U);
 }
 inline ::uint32_t NodeReport::node_id() const {
   // @@protoc_insertion_point(field_get:NodeReport.node_id)
@@ -4598,7 +4682,7 @@ inline ::uint32_t NodeReport::node_id() const {
 }
 inline void NodeReport::set_node_id(::uint32_t value) {
   _internal_set_node_id(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
   // @@protoc_insertion_point(field_set:NodeReport.node_id)
 }
 inline ::uint32_t NodeReport::_internal_node_id() const {
@@ -4680,7 +4764,7 @@ inline void NodeReport::clear_node_port() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.node_port_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000040U);
+                  0x00000080U);
 }
 inline ::uint32_t NodeReport::node_port() const {
   // @@protoc_insertion_point(field_get:NodeReport.node_port)
@@ -4688,7 +4772,7 @@ inline ::uint32_t NodeReport::node_port() const {
 }
 inline void NodeReport::set_node_port(::uint32_t value) {
   _internal_set_node_port(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000080U);
   // @@protoc_insertion_point(field_set:NodeReport.node_port)
 }
 inline ::uint32_t NodeReport::_internal_node_port() const {
@@ -4770,7 +4854,7 @@ inline void NodeReport::clear_access_port() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.access_port_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000080U);
+                  0x00000100U);
 }
 inline ::uint32_t NodeReport::access_port() const {
   // @@protoc_insertion_point(field_get:NodeReport.access_port)
@@ -4778,7 +4862,7 @@ inline ::uint32_t NodeReport::access_port() const {
 }
 inline void NodeReport::set_access_port(::uint32_t value) {
   _internal_set_access_port(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000080U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000100U);
   // @@protoc_insertion_point(field_set:NodeReport.access_port)
 }
 inline ::uint32_t NodeReport::_internal_access_port() const {
@@ -4795,7 +4879,7 @@ inline void NodeReport::clear_worker_num() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.worker_num_ = 0u;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000100U);
+                  0x00000200U);
 }
 inline ::uint32_t NodeReport::worker_num() const {
   // @@protoc_insertion_point(field_get:NodeReport.worker_num)
@@ -4803,7 +4887,7 @@ inline ::uint32_t NodeReport::worker_num() const {
 }
 inline void NodeReport::set_worker_num(::uint32_t value) {
   _internal_set_worker_num(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000100U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000200U);
   // @@protoc_insertion_point(field_set:NodeReport.worker_num)
 }
 inline ::uint32_t NodeReport::_internal_worker_num() const {
@@ -4820,7 +4904,7 @@ inline void NodeReport::clear_active_time() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.active_time_ = 0;
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000200U);
+                  0x00000400U);
 }
 inline double NodeReport::active_time() const {
   // @@protoc_insertion_point(field_get:NodeReport.active_time)
@@ -4828,7 +4912,7 @@ inline double NodeReport::active_time() const {
 }
 inline void NodeReport::set_active_time(double value) {
   _internal_set_active_time(value);
-  SetHasBit(_impl_._has_bits_[0], 0x00000200U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000400U);
   // @@protoc_insertion_point(field_set:NodeReport.active_time)
 }
 inline double NodeReport::_internal_active_time() const {
@@ -4842,7 +4926,7 @@ inline void NodeReport::_internal_set_active_time(double value) {
 
 // .NodeReport.Node node = 9;
 inline bool NodeReport::has_node() const {
-  bool value = CheckHasBit(_impl_._has_bits_[0], 0x00000010U);
+  bool value = CheckHasBit(_impl_._has_bits_[0], 0x00000020U);
   PROTOBUF_ASSUME(!value || _impl_.node_ != nullptr);
   return value;
 }
@@ -4850,7 +4934,7 @@ inline void NodeReport::clear_node() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   if (_impl_.node_ != nullptr) _impl_.node_->Clear();
   ClearHasBit(_impl_._has_bits_[0],
-                  0x00000010U);
+                  0x00000020U);
 }
 inline const ::NodeReport_Node& NodeReport::_internal_node() const {
   ::google::protobuf::internal::TSanRead(&_impl_);
@@ -4869,16 +4953,16 @@ inline void NodeReport::unsafe_arena_set_allocated_node(
   }
   _impl_.node_ = reinterpret_cast<::NodeReport_Node*>(value);
   if (value != nullptr) {
-    SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+    SetHasBit(_impl_._has_bits_[0], 0x00000020U);
   } else {
-    ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+    ClearHasBit(_impl_._has_bits_[0], 0x00000020U);
   }
   // @@protoc_insertion_point(field_unsafe_arena_set_allocated:NodeReport.node)
 }
 inline ::NodeReport_Node* PROTOBUF_NULLABLE NodeReport::release_node() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
 
-  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+  ClearHasBit(_impl_._has_bits_[0], 0x00000020U);
   ::NodeReport_Node* released = _impl_.node_;
   _impl_.node_ = nullptr;
   if (::google::protobuf::internal::DebugHardenForceCopyInRelease()) {
@@ -4898,7 +4982,7 @@ inline ::NodeReport_Node* PROTOBUF_NULLABLE NodeReport::unsafe_arena_release_nod
   ::google::protobuf::internal::TSanWrite(&_impl_);
   // @@protoc_insertion_point(field_release:NodeReport.node)
 
-  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+  ClearHasBit(_impl_._has_bits_[0], 0x00000020U);
   ::NodeReport_Node* temp = _impl_.node_;
   _impl_.node_ = nullptr;
   return temp;
@@ -4913,7 +4997,7 @@ inline ::NodeReport_Node* PROTOBUF_NONNULL NodeReport::_internal_mutable_node() 
 }
 inline ::NodeReport_Node* PROTOBUF_NONNULL NodeReport::mutable_node()
     ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
   ::NodeReport_Node* _msg = _internal_mutable_node();
   // @@protoc_insertion_point(field_mutable:NodeReport.node)
   return _msg;
@@ -4930,9 +5014,9 @@ inline void NodeReport::set_allocated_node(::NodeReport_Node* PROTOBUF_NULLABLE 
     if (message_arena != submessage_arena) {
       value = ::google::protobuf::internal::GetOwnedMessage(message_arena, value, submessage_arena);
     }
-    SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+    SetHasBit(_impl_._has_bits_[0], 0x00000020U);
   } else {
-    ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+    ClearHasBit(_impl_._has_bits_[0], 0x00000020U);
   }
 
   _impl_.node_ = reinterpret_cast<::NodeReport_Node*>(value);
@@ -4993,6 +5077,71 @@ inline ::google::protobuf::RepeatedPtrField<::NodeReport_Worker>* PROTOBUF_NONNU
 NodeReport::_internal_mutable_workers() {
   ::google::protobuf::internal::TSanRead(&_impl_);
   return &_impl_.workers_;
+}
+
+// string node_version = 11;
+inline void NodeReport::clear_node_version() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_version_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0],
+                  0x00000010U);
+}
+inline const ::std::string& NodeReport::node_version() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:NodeReport.node_version)
+  return _internal_node_version();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void NodeReport::set_node_version(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  _impl_.node_version_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:NodeReport.node_version)
+}
+inline ::std::string* PROTOBUF_NONNULL NodeReport::mutable_node_version()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  ::std::string* _s = _internal_mutable_node_version();
+  // @@protoc_insertion_point(field_mutable:NodeReport.node_version)
+  return _s;
+}
+inline const ::std::string& NodeReport::_internal_node_version() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.node_version_.Get();
+}
+inline void NodeReport::_internal_set_node_version(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.node_version_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL NodeReport::_internal_mutable_node_version() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.node_version_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE NodeReport::release_node_version() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:NodeReport.node_version)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000010U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+  auto* released = _impl_.node_version_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.node_version_.Set("", GetArena());
+  }
+  return released;
+}
+inline void NodeReport::set_allocated_node_version(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+  }
+  _impl_.node_version_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.node_version_.IsDefault()) {
+    _impl_.node_version_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:NodeReport.node_version)
 }
 
 // -------------------------------------------------------------------
@@ -5240,6 +5389,8 @@ inline void NodeReportRsp::set_allocated_subscribed_route_snapshot(::NodeNotice*
 
 // -------------------------------------------------------------------
 
+// -------------------------------------------------------------------
+
 // NodeNotice
 
 // repeated .NodeReport node_arry_reg = 1;
@@ -5352,6 +5503,38 @@ inline ::google::protobuf::RepeatedPtrField<::NodeReport>* PROTOBUF_NONNULL
 NodeNotice::_internal_mutable_node_arry_exit() {
   ::google::protobuf::internal::TSanRead(&_impl_);
   return &_impl_.node_arry_exit_;
+}
+
+// map<string, int32> canary_weights = 3;
+inline int NodeNotice::_internal_canary_weights_size() const {
+  return _internal_canary_weights().size();
+}
+inline int NodeNotice::canary_weights_size() const {
+  return _internal_canary_weights_size();
+}
+inline void NodeNotice::clear_canary_weights() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.canary_weights_.Clear();
+  ClearHasBitForRepeated(_impl_._has_bits_[0],
+                  0x00000004U);
+}
+inline const ::google::protobuf::Map<::std::string, ::int32_t>& NodeNotice::_internal_canary_weights() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.canary_weights_.GetMap();
+}
+inline const ::google::protobuf::Map<::std::string, ::int32_t>& NodeNotice::canary_weights() const ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_map:NodeNotice.canary_weights)
+  return _internal_canary_weights();
+}
+inline ::google::protobuf::Map<::std::string, ::int32_t>* PROTOBUF_NONNULL NodeNotice::_internal_mutable_canary_weights() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.canary_weights_.MutableMap();
+}
+inline ::google::protobuf::Map<::std::string, ::int32_t>* PROTOBUF_NONNULL NodeNotice::mutable_canary_weights()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBitForRepeated(_impl_._has_bits_[0], 0x00000004U);
+  // @@protoc_insertion_point(field_mutable_map:NodeNotice.canary_weights)
+  return _internal_mutable_canary_weights();
 }
 
 // -------------------------------------------------------------------

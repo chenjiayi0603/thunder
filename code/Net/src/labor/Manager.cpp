@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <memory>
 #include <string>
 #include "protocol/oss_sys.pb.h"
@@ -30,7 +31,7 @@
 #include "cmd/sys_cmd/CmdMgrServerConfig.hpp"
 
 // #45 SO download — forward declaration (defined at end of file)
-static bool DownloadSoFile(const std::string& url, const std::string& outPath);
+static bool DownloadSoFile(const std::string& url, const std::string& outPath, bool bCheckElf);
 
 namespace net
 {
@@ -357,7 +358,9 @@ bool Manager::RecvFdFromWorker(int workerFd)
             {
                 LOG4_TRACE("forward client fd %d from old worker %d to new worker %d",
                            clientFd, sendingPid, lc.newPid);
-                send_fd_with_attr(newIt->second.iDataFd, clientFd, remoteAddr, 32, codecType);
+                // addr_len 必须是 16: Worker 侧 recv_fd_with_attr 按 16 读地址再读 attr,
+                // 发 32 会导致 Worker 把地址中段当 codecType (读到 0 → "no codec found")
+                send_fd_with_attr(newIt->second.iDataFd, clientFd, remoteAddr, 16, codecType);
             }
             close(clientFd);  // Manager 不持有
             return true;
@@ -1418,6 +1421,19 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
     int iMgrToWorkerEfd = ShmRingQueue::CreateEventFd();
     int iWorkerToMgrEfd = ShmRingQueue::CreateEventFd();
 
+    // 创建共享内存原子标志: Manager 置位 → Worker 排空结束时迁移 fd (替代 CMD_WORKER_DRAIN 消息)
+    auto* pDrainMigrate = static_cast<std::atomic<bool>*>(mmap(
+        nullptr, sizeof(std::atomic<bool>), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+    if (pDrainMigrate != MAP_FAILED)
+    {
+        new (pDrainMigrate) std::atomic<bool>(false);
+    }
+    else
+    {
+        pDrainMigrate = nullptr;
+        LOG4_ERROR("mmap pDrainMigrate failed");
+    }
+
     auto* pLoaderMM = GetLoaderConfigVersionData().GetLoaderConfigVersionMM();
     auto* pRouteMM  = GetRouteNoticeVersionData().GetRouteNoticeVersionMM();
     auto* pCustMM   = GetCustomConfigVersionData().GetCustomConfigVersionMM();
@@ -1439,6 +1455,7 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         pWorker->GetLoaderConfigVersionData().SetLoaderConfigVersionMM(pLoaderMM);
         pWorker->GetRouteNoticeVersionData().SetRouteNoticeVersionMM(pRouteMM);
         pWorker->GetCustomConfigVersionData().SetCustomConfigVersionMM(pCustMM);
+        pWorker->SetDrainMigrateFlag(pDrainMigrate);
         pWorker->Run();
         LOG4_FATAL("Worker terminated");
         delete pWorker;
@@ -1458,6 +1475,7 @@ pid_t Manager::SpawnSingleWorker(int workerIndex, tagWorkerAttr& outAttr)
         outAttr.pWorkerToMgrQueue = pWorkerToMgr;
         outAttr.iMgrToWorkerEventFd = iMgrToWorkerEfd;
         outAttr.iWorkerToMgrEventFd = iWorkerToMgrEfd;
+        outAttr.pDrainMigrate = pDrainMigrate;
         return iPid;
     }
     else
@@ -1570,6 +1588,10 @@ bool Manager::RestartWorker(int iDeathPid)
         }
         ShmRingQueue::CloseEventFd(oldAttr.iMgrToWorkerEventFd);
         ShmRingQueue::CloseEventFd(oldAttr.iWorkerToMgrEventFd);
+        if (oldAttr.pDrainMigrate)
+        {
+            munmap(oldAttr.pDrainMigrate, sizeof(std::atomic<bool>));
+        }
 
         m_mapWorker.erase(worker_iter);
 
@@ -1949,6 +1971,7 @@ bool Manager::CheckWorker()
     {
         return(true);
     }
+    std::vector<int> deadWorkers;
     // 必须按引用遍历: 下方 drain 处理心跳会更新 map 内的 dBeatTime,
     // 按值拷贝会让超时判定读到 drain 之前的过期快照 (#70)
     for (auto& worker_iter:m_mapWorker)
@@ -1984,8 +2007,24 @@ bool Manager::CheckWorker()
         if ((ev_now(m_loop) - worker_iter.second.dBeatTime) > m_iWorkerBeat)
         {
             LOG4_INFO( "worker_%d pid %d is unresponsive, terminate it.", worker_iter.second.iWorkerIndex, worker_iter.first);
-            kill(worker_iter.first, SIGKILL);
-//            RestartWorker(worker_iter->first);
+            deadWorkers.push_back(worker_iter.first);
+        }
+    }
+    // 循环外重启, 避免迭代器失效 + 避免重复 kill 已消失的 PID
+    for (int pid : deadWorkers)
+    {
+        RestartWorker(pid);
+    }
+    // drain 看门狗: old Worker 超时未退出则强杀
+    // (覆盖旧二进制收不到 SIGTERM/drain 卡住等 Worker 侧失效场景; Worker 侧自身 grace 为 30s)
+    for (auto& [idx, lc] : m_workerLifecycle)
+    {
+        if (lc.state == WorkerLifecycle::DRAINING && lc.oldPid > 0
+            && lc.drainStartTime > 0 && time(nullptr) - lc.drainStartTime > 60)
+        {
+            LOG4_WARN("old worker %d drain 超过 60s 未退出, SIGKILL 强杀", lc.oldPid);
+            kill(lc.oldPid, SIGKILL);
+            lc.drainStartTime = time(nullptr);  // 同一 PID 每分钟最多强杀一次, 等 waitpid 收尾
         }
     }
     return(true);
@@ -2488,6 +2527,17 @@ bool Manager::DisposeDataFromWorker(const MsgHead& oInMsgHead, const MsgBody& oI
 							wit->second.dBeatTime = ev_now(m_loop);
 						LOG4_INFO("new worker %d ready, signaling old worker %d to drain",
 								  lc.newPid, lc.oldPid);
+						// 热更新排空: 置位共享内存原子标志, 通知旧 Worker 排空结束时迁移 fd。
+						// 单纯关停无此置位 → 旧 Worker drain 不迁移 fd, 直接退出。
+						auto oldIt = m_mapWorker.find(lc.oldPid);
+						if (oldIt != m_mapWorker.end())
+						{
+							tagWorkerAttr& oldAttr = oldIt->second;
+							if (oldAttr.pDrainMigrate)
+							{
+								oldAttr.pDrainMigrate->store(true, std::memory_order_release);
+							}
+						}
 						kill(lc.oldPid, SIGTERM);
 						break;
 					}
@@ -2651,7 +2701,8 @@ std::unique_ptr<CenterConnector> Manager::CreateCenterConnector()
         return std::make_unique<net::EtcdGrpcConnector>(centerConf);
     }
 
-    LOG4_WARN("unknown center.connector '%s', fallback to tcp", connectorType.c_str());
+    // tcp 是老 Center 协议，etcd-grpc 已在上面处理；其余均为非法配置
+    LOG4_ERROR("unknown center.connector '%s', only 'etcd-grpc' supported. fallback to tcp (legacy)", connectorType.c_str());
     auto p = std::make_unique<TcpCenterConnector>(m_oCurrentConf["center"]);
     auto* tcp = static_cast<TcpCenterConnector*>(p.get());
     tcp->SetNodeInfo(m_strNodeType,
@@ -2822,14 +2873,54 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
                 if (newConf.Get("so",     tmp)) m_oCurrentConf.Replace("so",     tmp);
             }
 
-            // 4. 先写文件 (Worker 重启时从文件加载新配置)
+            // 4. 先写文件 (Worker 重启时从文件加载新配置) — 临时文件 + rename 原子替换, 防半截配置
             {
-                std::ofstream fout(m_strConfFile, std::ios::out | std::ios::trunc);
+                std::string tmpFile = m_strConfFile + ".tmp";
+                std::ofstream fout(tmpFile, std::ios::out | std::ios::trunc);
                 if (fout) {
                     fout << m_oCurrentConf.ToFormattedString();
-                    LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
+                    fout.close();
+                    if (rename(tmpFile.c_str(), m_strConfFile.c_str()) == 0) {
+                        LOG4_INFO("ConfigUpdated: config persisted to %s", m_strConfFile.c_str());
+                    } else {
+                        remove(tmpFile.c_str());
+                        LOG4_ERROR("ConfigUpdated: cannot rename config file %s", m_strConfFile.c_str());
+                    }
                 } else {
                     LOG4_ERROR("ConfigUpdated: cannot write config file %s", m_strConfFile.c_str());
+                }
+            }
+
+            // #159 Step 4: Persist Lua script_content to local files (Worker fallback)
+            {
+                auto modArr = m_oCurrentConf["module"];
+                for (int i = 0; i < modArr.GetArraySize(); ++i) {
+                    std::string scriptContent;
+                    modArr[i].Get("script_content", scriptContent);
+                    if (!scriptContent.empty()) {
+                        std::string urlPath;
+                        modArr[i].Get("url_path", urlPath);
+                        std::string scriptName = urlPath;
+                        auto lastSlash = scriptName.rfind('/');
+                        if (lastSlash != std::string::npos) scriptName = scriptName.substr(lastSlash + 1);
+                        std::string scriptPath = "scripts/" + scriptName + ".lua";
+                        // Ensure scripts directory exists
+                        mkdir("scripts", 0755);
+                        std::string tmpScript = scriptPath + ".tmp";
+                        std::ofstream fout(tmpScript, std::ios::out | std::ios::trunc);
+                        if (fout) {
+                            fout << scriptContent;
+                            fout.close();
+                            if (rename(tmpScript.c_str(), scriptPath.c_str()) == 0) {
+                                LOG4_INFO("ConfigUpdated: Lua script persisted to %s", scriptPath.c_str());
+                            } else {
+                                remove(tmpScript.c_str());
+                                LOG4_ERROR("ConfigUpdated: cannot rename Lua script %s", scriptPath.c_str());
+                            }
+                        } else {
+                            LOG4_ERROR("ConfigUpdated: cannot write Lua script %s", scriptPath.c_str());
+                        }
+                    }
                 }
             }
 
@@ -2841,35 +2932,95 @@ void Manager::OnCenterEvent(const CenterEvent& ev)
             }
 
             // 6. SO/module 版本变化 → 下载 SO + 优雅重启 (Lua/custom 热更新不重启)
-            if (soOrModuleChanged) {
-                LOG4_INFO("ConfigUpdated: so/module version changed, trigger graceful restart");
-                auto newModArr = newConf["module"];
+            // #159: Also downloads missing SO files (Pod restart recovery) and script_url LUA files
+            {
+                auto newModArr = m_oCurrentConf["module"];
                 bool downloadOk = true;
+                bool anyDownloaded = false;
+
                 for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+                    // Download SO from so_url when version changed OR file missing (Pod restart)
                     std::string soUrl;
                     if (newModArr[i].Get("so_url", soUrl) && !soUrl.empty()) {
                         std::string soPath;
                         newModArr[i].Get("so_path", soPath);
                         if (!soPath.empty()) {
-                            std::string outPath = "deploy/" + m_strNodeType + "/" + soPath;
-                            if (DownloadSoFile(soUrl, outPath)) {
-                                LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
-                            } else {
-                                LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
-                                downloadOk = false;
+                            std::string outPath = m_strWorkPath + "/" + soPath;
+                            // #159: Download if version changed OR file doesn't exist (Pod restart recovery)
+                            bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
+                            if (needDownload) {
+                                if (DownloadSoFile(soUrl, outPath, true)) {
+                                    LOG4_INFO("SO downloaded: %s -> %s", soUrl.c_str(), outPath.c_str());
+                                    anyDownloaded = true;
+                                } else {
+                                    LOG4_ERROR("SO download failed: %s -> %s", soUrl.c_str(), outPath.c_str());
+                                    downloadOk = false;
+                                }
+                            }
+                        }
+                    }
+
+                    // #159 Step 6: Download Lua scripts from script_url (MinIO for large scripts)
+                    std::string scriptUrl;
+                    if (newModArr[i].Get("script_url", scriptUrl) && !scriptUrl.empty()) {
+                        std::string urlPath;
+                        newModArr[i].Get("url_path", urlPath);
+                        if (!urlPath.empty()) {
+                            std::string scriptName = urlPath;
+                            auto lastSlash = scriptName.rfind('/');
+                            if (lastSlash != std::string::npos) scriptName = scriptName.substr(lastSlash + 1);
+                            std::string outPath = "scripts/" + scriptName + ".lua";
+                            bool needDownload = soOrModuleChanged || (access(outPath.c_str(), F_OK) != 0);
+                            if (needDownload) {
+                                if (DownloadSoFile(scriptUrl, outPath, false)) {
+                                    LOG4_INFO("Lua script downloaded: %s -> %s", scriptUrl.c_str(), outPath.c_str());
+                                    anyDownloaded = true;
+                                } else {
+                                    LOG4_ERROR("Lua script download failed: %s", scriptUrl.c_str());
+                                }
                             }
                         }
                     }
                 }
-                if (downloadOk) {
-                    bool anyBusy = false;
-                    for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
-                        if (!GracefulRestartWorker(i)) anyBusy = true;
+
+                // #159 Step 5: Save .manifest for version tracking (Worker restart acceleration)
+                if (anyDownloaded || soOrModuleChanged) {
+                    util::CJsonObject manifest;
+                    for (int i = 0; i < newModArr.GetArraySize(); ++i) {
+                        std::string soPath; int version = 0;
+                        newModArr[i].Get("so_path", soPath);
+                        newModArr[i].Get("version", version);
+                        if (!soPath.empty()) {
+                            auto lastSlash = soPath.rfind('/');
+                            std::string soName = (lastSlash != std::string::npos) ? soPath.substr(lastSlash + 1) : soPath;
+                            manifest["so"].Add(soName, version);
+                        }
+                        std::string urlPath;
+                        newModArr[i].Get("url_path", urlPath);
+                        if (!urlPath.empty()) {
+                            auto lastSlash = urlPath.rfind('/');
+                            std::string luaName = (lastSlash != std::string::npos) ? urlPath.substr(lastSlash + 1) : urlPath;
+                            manifest["lua"].Add(luaName + ".lua", version);
+                        }
                     }
-                    if (anyBusy) {
-                        // #79: Worker 忙，配置已写文件+内存，等全部空闲后补触发重启
-                        m_bPendingRestart = true;
-                        LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
+                    std::ofstream mout(".manifest", std::ios::out | std::ios::trunc);
+                    if (mout) {
+                        mout << manifest.ToFormattedString();
+                        LOG4_INFO("ConfigUpdated: .manifest saved");
+                    }
+                }
+
+                if (soOrModuleChanged) {
+                    if (downloadOk) {
+                        bool anyBusy = false;
+                        for (unsigned int i = 0; i < m_uiWorkerNum; ++i) {
+                            if (!GracefulRestartWorker(i)) anyBusy = true;
+                        }
+                        if (anyBusy) {
+                            // #79: Worker 忙，配置已写文件+内存，等全部空闲后补触发重启
+                            m_bPendingRestart = true;
+                            LOG4_WARN("ConfigUpdated: workers busy, restart queued (pending)");
+                        }
                     }
                 }
             }
@@ -2965,7 +3116,7 @@ bool Manager::GracefulRestartWorker(int iWorkerIndex)
 } /* namespace net */
 
 // #45 SO download — HTTP GET SO file from URL, write to disk
-static bool DownloadSoFile(const std::string& url, const std::string& outPath)
+static bool DownloadSoFile(const std::string& url, const std::string& outPath, bool bCheckElf)
 {
     auto p = url.find("://");
     std::string r = (p != std::string::npos) ? url.substr(p + 3) : url;
@@ -2986,14 +3137,38 @@ static bool DownloadSoFile(const std::string& url, const std::string& outPath)
     std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
     send(fd, req.c_str(), req.size(), MSG_NOSIGNAL);
     std::string resp; char buf[65536]; ssize_t n;
-    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0) resp.append(buf, n);
+    const size_t kMaxResp = 64 * 1024 * 1024;  // 64MB 上限, 防异常响应内存耗尽
+    while ((n = recv(fd, buf, sizeof(buf), 0)) > 0)
+    {
+        resp.append(buf, n);
+        if (resp.size() > kMaxResp) { close(fd); return false; }
+    }
     close(fd);
     auto h = resp.find("\r\n\r\n");
     if (h == std::string::npos) return false;
+    // 非 200 响应 (如 minio AccessDenied XML 错误页) 不能覆盖插件文件
+    if ((resp.compare(0, 9, "HTTP/1.0 ") == 0 || resp.compare(0, 9, "HTTP/1.1 ") == 0)
+        && resp.compare(9, 3, "200") != 0)
+    {
+        return false;
+    }
     std::string body = resp.substr(h + 4);
-    FILE* fp = fopen(outPath.c_str(), "wb");
+    if (body.empty()) return false;
+    // .so 必须是 ELF, 拦截 XML/JSON 错误页等垃圾内容
+    if (bCheckElf && (body.size() < 4 || body.compare(0, 4, "\x7f" "ELF") != 0))
+    {
+        return false;
+    }
+    // 原子替换: 先写临时文件再 rename, 避免半截文件直接覆盖可用插件
+    std::string tmpPath = outPath + ".tmp";
+    FILE* fp = fopen(tmpPath.c_str(), "wb");
     if (!fp) return false;
     size_t written = fwrite(body.data(), 1, body.size(), fp);
     fclose(fp);
-    return written == body.size();
+    if (written != body.size())
+    {
+        remove(tmpPath.c_str());
+        return false;
+    }
+    return rename(tmpPath.c_str(), outPath.c_str()) == 0;
 }

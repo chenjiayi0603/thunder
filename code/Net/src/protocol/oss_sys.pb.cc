@@ -255,6 +255,24 @@ struct NodeReport_NodeDefaultTypeInternal {
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 NodeReport_NodeDefaultTypeInternal _NodeReport_Node_default_instance_;
+template <typename>
+PROTOBUF_CONSTEXPR NodeNotice_CanaryWeightsEntry_DoNotUse::NodeNotice_CanaryWeightsEntry_DoNotUse(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : NodeNotice_CanaryWeightsEntry_DoNotUse::MapEntry(NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.base()){}
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : NodeNotice_CanaryWeightsEntry_DoNotUse::MapEntry() {
+}
+#endif  // PROTOBUF_CUSTOM_VTABLE
+struct NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal() {}
+  union {
+    NodeNotice_CanaryWeightsEntry_DoNotUse _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 NodeNotice_CanaryWeightsEntry_DoNotUseDefaultTypeInternal _NodeNotice_CanaryWeightsEntry_DoNotUse_default_instance_;
 
 inline constexpr LogLevel::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -352,6 +370,9 @@ inline constexpr NodeReport::Impl_::Impl_(
         access_ip_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
+        node_version_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
         node_{nullptr},
         node_id_{0u},
         node_port_{0u},
@@ -383,7 +404,8 @@ inline constexpr NodeNotice::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
         node_arry_reg_{},
-        node_arry_exit_{} {}
+        node_arry_exit_{},
+        canary_weights_{} {}
 
 template <typename>
 PROTOBUF_CONSTEXPR NodeNotice::NodeNotice(::_pbi::ConstantInitialized)
@@ -522,7 +544,7 @@ const ::uint32_t
         6,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_._has_bits_),
-        13, // hasbit index offset
+        14, // hasbit index offset
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.node_type_),
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.node_id_),
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.node_ip_),
@@ -533,16 +555,18 @@ const ::uint32_t
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.active_time_),
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.node_),
         PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.workers_),
+        PROTOBUF_FIELD_OFFSET(::NodeReport, _impl_.node_version_),
         1,
-        5,
-        2,
         6,
-        3,
+        2,
         7,
+        3,
         8,
         9,
-        4,
+        10,
+        5,
         0,
+        4,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::NodeReportRsp, _impl_._has_bits_),
         8, // hasbit index offset
@@ -557,12 +581,21 @@ const ::uint32_t
         4,
         1,
         0x081, // bitmap
-        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_._has_bits_),
+        PROTOBUF_FIELD_OFFSET(::NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_._has_bits_),
         5, // hasbit index offset
-        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_.node_arry_reg_),
-        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_.node_arry_exit_),
+        PROTOBUF_FIELD_OFFSET(::NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.key_),
+        PROTOBUF_FIELD_OFFSET(::NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.value_),
         0,
         1,
+        0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_._has_bits_),
+        6, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_.node_arry_reg_),
+        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_.node_arry_exit_),
+        PROTOBUF_FIELD_OFFSET(::NodeNotice, _impl_.canary_weights_),
+        0,
+        1,
+        2,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::ConnectWorker, _impl_._has_bits_),
         4, // hasbit index offset
@@ -621,13 +654,14 @@ static const ::_pbi::MigrationSchema
         {44, sizeof(::NodeReport_Node)},
         {61, sizeof(::NodeReport_Worker)},
         {78, sizeof(::NodeReport)},
-        {101, sizeof(::NodeReportRsp)},
-        {114, sizeof(::NodeNotice)},
-        {121, sizeof(::ConnectWorker)},
-        {126, sizeof(::TargetWorker)},
-        {137, sizeof(::LogLevel)},
-        {142, sizeof(::ConfigInfo)},
-        {151, sizeof(::TraceLog)},
+        {103, sizeof(::NodeReportRsp)},
+        {116, sizeof(::NodeNotice_CanaryWeightsEntry_DoNotUse)},
+        {123, sizeof(::NodeNotice)},
+        {132, sizeof(::ConnectWorker)},
+        {137, sizeof(::TargetWorker)},
+        {148, sizeof(::LogLevel)},
+        {153, sizeof(::ConfigInfo)},
+        {162, sizeof(::TraceLog)},
 };
 static const ::_pb::Message* PROTOBUF_NONNULL const file_default_instances[] = {
     &::_user_basic_default_instance_._instance,
@@ -636,6 +670,7 @@ static const ::_pb::Message* PROTOBUF_NONNULL const file_default_instances[] = {
     &::_NodeReport_Worker_default_instance_._instance,
     &::_NodeReport_default_instance_._instance,
     &::_NodeReportRsp_default_instance_._instance,
+    &::_NodeNotice_CanaryWeightsEntry_DoNotUse_default_instance_._instance,
     &::_NodeNotice_default_instance_._instance,
     &::_ConnectWorker_default_instance_._instance,
     &::_TargetWorker_default_instance_._instance,
@@ -655,48 +690,51 @@ const char descriptor_table_protodef_oss_5fsys_2eproto[] ABSL_ATTRIBUTE_SECTION_
     "\026\n\016client_version\030\017 \001(\t\022\017\n\007app_key\030\020 \001(\t"
     "\"_\n\013server_data\022\022\n\nroot_msgid\030\001 \001(\t\022\024\n\014p"
     "arent_msgid\030\002 \001(\t\022\021\n\tcur_msgid\030\003 \001(\t\022\023\n\013"
-    "child_msgid\030\004 \001(\t\"\357\003\n\nNodeReport\022\021\n\tnode"
+    "child_msgid\030\004 \001(\t\"\205\004\n\nNodeReport\022\021\n\tnode"
     "_type\030\001 \001(\t\022\017\n\007node_id\030\002 \001(\r\022\017\n\007node_ip\030"
     "\003 \001(\t\022\021\n\tnode_port\030\004 \001(\r\022\021\n\taccess_ip\030\005 "
     "\001(\t\022\023\n\013access_port\030\006 \001(\r\022\022\n\nworker_num\030\007"
     " \001(\r\022\023\n\013active_time\030\010 \001(\001\022\036\n\004node\030\t \001(\0132"
     "\020.NodeReport.Node\022#\n\007workers\030\n \003(\0132\022.Nod"
-    "eReport.Worker\032\177\n\004Node\022\014\n\004load\030\001 \001(\r\022\017\n\007"
-    "connect\030\002 \001(\r\022\020\n\010recv_num\030\003 \001(\r\022\021\n\trecv_"
-    "byte\030\004 \001(\r\022\020\n\010send_num\030\005 \001(\r\022\021\n\tsend_byt"
-    "e\030\006 \001(\r\022\016\n\006client\030\007 \001(\r\032\201\001\n\006Worker\022\014\n\004lo"
-    "ad\030\001 \001(\r\022\017\n\007connect\030\002 \001(\r\022\020\n\010recv_num\030\003 "
-    "\001(\r\022\021\n\trecv_byte\030\004 \001(\r\022\020\n\010send_num\030\005 \001(\r"
-    "\022\021\n\tsend_byte\030\006 \001(\r\022\016\n\006client\030\007 \001(\r\"\225\001\n\r"
-    "NodeReportRsp\022\017\n\007errcode\030\001 \001(\r\022\017\n\007node_i"
-    "d\030\002 \001(\r\022\037\n\027current_leader_identify\030\003 \001(\t"
-    "\022\021\n\traft_term\030\004 \001(\004\022.\n\031subscribed_route_"
-    "snapshot\030\005 \001(\0132\013.NodeNotice\"U\n\nNodeNotic"
-    "e\022\"\n\rnode_arry_reg\030\001 \003(\0132\013.NodeReport\022#\n"
-    "\016node_arry_exit\030\002 \003(\0132\013.NodeReport\"%\n\rCo"
-    "nnectWorker\022\024\n\014worker_index\030\001 \001(\005\"[\n\014Tar"
-    "getWorker\022\016\n\006err_no\030\001 \001(\005\022\027\n\017worker_iden"
-    "tify\030\002 \001(\t\022\021\n\tnode_type\030\003 \001(\t\022\017\n\007err_msg"
-    "\030\004 \001(\t\"\035\n\010LogLevel\022\021\n\tlog_level\030\001 \001(\005\"H\n"
-    "\nConfigInfo\022\021\n\tfile_name\030\001 \001(\t\022\024\n\014file_c"
-    "ontent\030\002 \001(\t\022\021\n\tfile_path\030\003 \001(\t\"\265\001\n\010Trac"
-    "eLog\022\020\n\010log_time\030\001 \001(\t\022\021\n\tnode_type\030\002 \001("
-    "\t\022\025\n\rnode_identify\030\003 \001(\t\022\021\n\tlog_level\030\004 "
-    "\001(\t\022\026\n\016code_file_name\030\005 \001(\t\022\026\n\016code_file"
-    "_line\030\006 \001(\r\022\025\n\rcode_function\030\007 \001(\t\022\023\n\013lo"
-    "g_content\030\010 \001(\014b\006proto3"
+    "eReport.Worker\022\024\n\014node_version\030\013 \001(\t\032\177\n\004"
+    "Node\022\014\n\004load\030\001 \001(\r\022\017\n\007connect\030\002 \001(\r\022\020\n\010r"
+    "ecv_num\030\003 \001(\r\022\021\n\trecv_byte\030\004 \001(\r\022\020\n\010send"
+    "_num\030\005 \001(\r\022\021\n\tsend_byte\030\006 \001(\r\022\016\n\006client\030"
+    "\007 \001(\r\032\201\001\n\006Worker\022\014\n\004load\030\001 \001(\r\022\017\n\007connec"
+    "t\030\002 \001(\r\022\020\n\010recv_num\030\003 \001(\r\022\021\n\trecv_byte\030\004"
+    " \001(\r\022\020\n\010send_num\030\005 \001(\r\022\021\n\tsend_byte\030\006 \001("
+    "\r\022\016\n\006client\030\007 \001(\r\"\225\001\n\rNodeReportRsp\022\017\n\007e"
+    "rrcode\030\001 \001(\r\022\017\n\007node_id\030\002 \001(\r\022\037\n\027current"
+    "_leader_identify\030\003 \001(\t\022\021\n\traft_term\030\004 \001("
+    "\004\022.\n\031subscribed_route_snapshot\030\005 \001(\0132\013.N"
+    "odeNotice\"\303\001\n\nNodeNotice\022\"\n\rnode_arry_re"
+    "g\030\001 \003(\0132\013.NodeReport\022#\n\016node_arry_exit\030\002"
+    " \003(\0132\013.NodeReport\0226\n\016canary_weights\030\003 \003("
+    "\0132\036.NodeNotice.CanaryWeightsEntry\0324\n\022Can"
+    "aryWeightsEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 "
+    "\001(\005:\0028\001\"%\n\rConnectWorker\022\024\n\014worker_index"
+    "\030\001 \001(\005\"[\n\014TargetWorker\022\016\n\006err_no\030\001 \001(\005\022\027"
+    "\n\017worker_identify\030\002 \001(\t\022\021\n\tnode_type\030\003 \001"
+    "(\t\022\017\n\007err_msg\030\004 \001(\t\"\035\n\010LogLevel\022\021\n\tlog_l"
+    "evel\030\001 \001(\005\"H\n\nConfigInfo\022\021\n\tfile_name\030\001 "
+    "\001(\t\022\024\n\014file_content\030\002 \001(\t\022\021\n\tfile_path\030\003"
+    " \001(\t\"\265\001\n\010TraceLog\022\020\n\010log_time\030\001 \001(\t\022\021\n\tn"
+    "ode_type\030\002 \001(\t\022\025\n\rnode_identify\030\003 \001(\t\022\021\n"
+    "\tlog_level\030\004 \001(\t\022\026\n\016code_file_name\030\005 \001(\t"
+    "\022\026\n\016code_file_line\030\006 \001(\r\022\025\n\rcode_functio"
+    "n\030\007 \001(\t\022\023\n\013log_content\030\010 \001(\014b\006proto3"
 };
 static ::absl::once_flag descriptor_table_oss_5fsys_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_oss_5fsys_2eproto = {
     false,
     false,
-    1583,
+    1716,
     descriptor_table_protodef_oss_5fsys_2eproto,
     "oss_sys.proto",
     &descriptor_table_oss_5fsys_2eproto_once,
     nullptr,
     0,
-    12,
+    13,
     schemas,
     file_default_instances,
     TableStruct_oss_5fsys_2eproto::offsets,
@@ -2752,7 +2790,8 @@ PROTOBUF_NDEBUG_INLINE NodeReport::Impl_::Impl_(
         workers_{visibility, arena, from.workers_},
         node_type_(arena, from.node_type_),
         node_ip_(arena, from.node_ip_),
-        access_ip_(arena, from.access_ip_) {}
+        access_ip_(arena, from.access_ip_),
+        node_version_(arena, from.node_version_) {}
 
 NodeReport::NodeReport(
     ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
@@ -2768,7 +2807,7 @@ NodeReport::NodeReport(
       from._internal_metadata_);
   new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
   ::uint32_t cached_has_bits = _impl_._has_bits_[0];
-  _impl_.node_ = (CheckHasBit(cached_has_bits, 0x00000010U))
+  _impl_.node_ = (CheckHasBit(cached_has_bits, 0x00000020U))
                 ? ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.node_)
                 : nullptr;
   ::memcpy(reinterpret_cast<char*>(&_impl_) +
@@ -2788,7 +2827,8 @@ PROTOBUF_NDEBUG_INLINE NodeReport::Impl_::Impl_(
         workers_{visibility, arena},
         node_type_(arena),
         node_ip_(arena),
-        access_ip_(arena) {}
+        access_ip_(arena),
+        node_version_(arena) {}
 
 inline void NodeReport::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
@@ -2813,6 +2853,7 @@ inline void NodeReport::SharedDtor(MessageLite& self) {
   this_._impl_.node_type_.Destroy();
   this_._impl_.node_ip_.Destroy();
   this_._impl_.access_ip_.Destroy();
+  this_._impl_.node_version_.Destroy();
   delete this_._impl_.node_;
   this_._impl_.~Impl_();
 }
@@ -2872,16 +2913,16 @@ NodeReport::GetClassData() const {
   return NodeReport_class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<4, 10, 2, 52, 2>
+const ::_pbi::TcParseTable<4, 11, 2, 64, 2>
 NodeReport::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(NodeReport, _impl_._has_bits_),
     0, // no _extensions_
-    10, 120,  // max_field_number, fast_idx_mask
+    11, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294966272,  // skipmap
+    4294965248,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    10,  // num_field_entries
+    11,  // num_field_entries
     2,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     NodeReport_class_data_.base(),
@@ -2897,42 +2938,45 @@ NodeReport::_table_ = {
      {10, 1, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_type_)}},
     // uint32 node_id = 2;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.node_id_), 5>(),
-     {16, 5, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.node_id_), 6>(),
+     {16, 6, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_id_)}},
     // string node_ip = 3;
     {::_pbi::TcParser::FastUS1,
      {26, 2, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_ip_)}},
     // uint32 node_port = 4;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.node_port_), 6>(),
-     {32, 6, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.node_port_), 7>(),
+     {32, 7, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_port_)}},
     // string access_ip = 5;
     {::_pbi::TcParser::FastUS1,
      {42, 3, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.access_ip_)}},
     // uint32 access_port = 6;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.access_port_), 7>(),
-     {48, 7, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.access_port_), 8>(),
+     {48, 8, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.access_port_)}},
     // uint32 worker_num = 7;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.worker_num_), 8>(),
-     {56, 8, 0,
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeReport, _impl_.worker_num_), 9>(),
+     {56, 9, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.worker_num_)}},
     // double active_time = 8;
     {::_pbi::TcParser::FastF64S1,
-     {65, 9, 0,
+     {65, 10, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.active_time_)}},
     // .NodeReport.Node node = 9;
     {::_pbi::TcParser::FastMtS1,
-     {74, 4, 0,
+     {74, 5, 0,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_)}},
     // repeated .NodeReport.Worker workers = 10;
     {::_pbi::TcParser::FastMtR1,
      {82, 0, 1,
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.workers_)}},
-    {::_pbi::TcParser::MiniParse, {}},
+    // string node_version = 11;
+    {::_pbi::TcParser::FastUS1,
+     {90, 4, 0,
+      PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_version_)}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
@@ -2943,34 +2987,37 @@ NodeReport::_table_ = {
     // string node_type = 1;
     {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_type_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
     // uint32 node_id = 2;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_id_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_id_), _Internal::kHasBitsOffset + 6, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // string node_ip = 3;
     {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_ip_), _Internal::kHasBitsOffset + 2, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
     // uint32 node_port = 4;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_port_), _Internal::kHasBitsOffset + 6, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_port_), _Internal::kHasBitsOffset + 7, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // string access_ip = 5;
     {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.access_ip_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
     // uint32 access_port = 6;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.access_port_), _Internal::kHasBitsOffset + 7, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.access_port_), _Internal::kHasBitsOffset + 8, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // uint32 worker_num = 7;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.worker_num_), _Internal::kHasBitsOffset + 8, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.worker_num_), _Internal::kHasBitsOffset + 9, 0, (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // double active_time = 8;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.active_time_), _Internal::kHasBitsOffset + 9, 0, (0 | ::_fl::kFcOptional | ::_fl::kDouble)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.active_time_), _Internal::kHasBitsOffset + 10, 0, (0 | ::_fl::kFcOptional | ::_fl::kDouble)},
     // .NodeReport.Node node = 9;
-    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
     // repeated .NodeReport.Worker workers = 10;
     {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.workers_), _Internal::kHasBitsOffset + 0, 1, (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
+    // string node_version = 11;
+    {PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.node_version_), _Internal::kHasBitsOffset + 4, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
   }},
   {{
       {::_pbi::TcParser::GetTable<::NodeReport_Node>()},
       {::_pbi::TcParser::GetTable<::NodeReport_Worker>()},
   }},
   {{
-    "\12\11\0\7\0\11\0\0\0\0\0\0\0\0\0\0"
+    "\12\11\0\7\0\11\0\0\0\0\0\14\0\0\0\0"
     "NodeReport"
     "node_type"
     "node_ip"
     "access_ip"
+    "node_version"
   }},
 };
 PROTOBUF_NOINLINE void NodeReport::Clear() {
@@ -2981,7 +3028,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   (void) cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x0000001fU)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
     if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
       _impl_.workers_.Clear();
     }
@@ -2995,19 +3042,22 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
       _impl_.access_ip_.ClearNonDefaultToEmpty();
     }
     if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      _impl_.node_version_.ClearNonDefaultToEmpty();
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
       ABSL_DCHECK(_impl_.node_ != nullptr);
       _impl_.node_->Clear();
     }
   }
-  if (BatchCheckHasBit(cached_has_bits, 0x000000e0U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x000000c0U)) {
     ::memset(&_impl_.node_id_, 0, static_cast<::size_t>(
-        reinterpret_cast<char*>(&_impl_.access_port_) -
-        reinterpret_cast<char*>(&_impl_.node_id_)) + sizeof(_impl_.access_port_));
+        reinterpret_cast<char*>(&_impl_.node_port_) -
+        reinterpret_cast<char*>(&_impl_.node_id_)) + sizeof(_impl_.node_port_));
   }
-  if (BatchCheckHasBit(cached_has_bits, 0x00000300U)) {
-    ::memset(&_impl_.worker_num_, 0, static_cast<::size_t>(
+  if (BatchCheckHasBit(cached_has_bits, 0x00000700U)) {
+    ::memset(&_impl_.access_port_, 0, static_cast<::size_t>(
         reinterpret_cast<char*>(&_impl_.active_time_) -
-        reinterpret_cast<char*>(&_impl_.worker_num_)) + sizeof(_impl_.active_time_));
+        reinterpret_cast<char*>(&_impl_.access_port_)) + sizeof(_impl_.active_time_));
   }
   _impl_._has_bits_.Clear();
   _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
@@ -3043,7 +3093,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // uint32 node_id = 2;
-  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000040U)) {
     if (this_._internal_node_id() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
@@ -3062,7 +3112,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // uint32 node_port = 4;
-  if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000080U)) {
     if (this_._internal_node_port() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
@@ -3081,7 +3131,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // uint32 access_port = 6;
-  if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000100U)) {
     if (this_._internal_access_port() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
@@ -3090,7 +3140,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // uint32 worker_num = 7;
-  if (CheckHasBit(cached_has_bits, 0x00000100U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000200U)) {
     if (this_._internal_worker_num() != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
@@ -3099,7 +3149,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // double active_time = 8;
-  if (CheckHasBit(cached_has_bits, 0x00000200U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000400U)) {
     if (::absl::bit_cast<::uint64_t>(this_._internal_active_time()) != 0) {
       target = stream->EnsureSpace(target);
       target = ::_pbi::WireFormatLite::WriteDoubleToArray(
@@ -3108,7 +3158,7 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
   }
 
   // .NodeReport.Node node = 9;
-  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+  if (CheckHasBit(cached_has_bits, 0x00000020U)) {
     target = ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
         9, *this_._impl_.node_, this_._impl_.node_->GetCachedSize(), target,
         stream);
@@ -3124,6 +3174,16 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
           ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
               10, repfield, repfield.GetCachedSize(),
               target, stream);
+    }
+  }
+
+  // string node_version = 11;
+  if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+    if (!this_._internal_node_version().empty()) {
+      const ::std::string& _s = this_._internal_node_version();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "NodeReport.node_version");
+      target = stream->WriteStringMaybeAliased(11, _s, target);
     }
   }
 
@@ -3181,43 +3241,50 @@ PROTOBUF_NOINLINE void NodeReport::Clear() {
                                         this_._internal_access_ip());
       }
     }
-    // .NodeReport.Node node = 9;
+    // string node_version = 11;
     if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (!this_._internal_node_version().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_node_version());
+      }
+    }
+    // .NodeReport.Node node = 9;
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
       total_size += 1 +
                     ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.node_);
     }
     // uint32 node_id = 2;
-    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
       if (this_._internal_node_id() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_node_id());
       }
     }
     // uint32 node_port = 4;
-    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
       if (this_._internal_node_port() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_node_port());
       }
     }
+  }
+  if (BatchCheckHasBit(cached_has_bits, 0x00000700U)) {
     // uint32 access_port = 6;
-    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000100U)) {
       if (this_._internal_access_port() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_access_port());
       }
     }
-  }
-  if (BatchCheckHasBit(cached_has_bits, 0x00000300U)) {
     // uint32 worker_num = 7;
-    if (CheckHasBit(cached_has_bits, 0x00000100U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000200U)) {
       if (this_._internal_worker_num() != 0) {
         total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
             this_._internal_worker_num());
       }
     }
     // double active_time = 8;
-    if (CheckHasBit(cached_has_bits, 0x00000200U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000400U)) {
       if (::absl::bit_cast<::uint64_t>(this_._internal_active_time()) != 0) {
         total_size += 9;
       }
@@ -3276,6 +3343,15 @@ void NodeReport::MergeImpl(::google::protobuf::MessageLite& to_msg,
       }
     }
     if (CheckHasBit(cached_has_bits, 0x00000010U)) {
+      if (!from._internal_node_version().empty()) {
+        _this->_internal_set_node_version(from._internal_node_version());
+      } else {
+        if (_this->_impl_.node_version_.IsDefault()) {
+          _this->_internal_set_node_version("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
       ABSL_DCHECK(from._impl_.node_ != nullptr);
       if (_this->_impl_.node_ == nullptr) {
         _this->_impl_.node_ = ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.node_);
@@ -3283,29 +3359,29 @@ void NodeReport::MergeImpl(::google::protobuf::MessageLite& to_msg,
         _this->_impl_.node_->MergeFrom(*from._impl_.node_);
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000020U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
       if (from._internal_node_id() != 0) {
         _this->_impl_.node_id_ = from._impl_.node_id_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
       if (from._internal_node_port() != 0) {
         _this->_impl_.node_port_ = from._impl_.node_port_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000080U)) {
+  }
+  if (BatchCheckHasBit(cached_has_bits, 0x00000700U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000100U)) {
       if (from._internal_access_port() != 0) {
         _this->_impl_.access_port_ = from._impl_.access_port_;
       }
     }
-  }
-  if (BatchCheckHasBit(cached_has_bits, 0x00000300U)) {
-    if (CheckHasBit(cached_has_bits, 0x00000100U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000200U)) {
       if (from._internal_worker_num() != 0) {
         _this->_impl_.worker_num_ = from._impl_.worker_num_;
       }
     }
-    if (CheckHasBit(cached_has_bits, 0x00000200U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000400U)) {
       if (::absl::bit_cast<::uint64_t>(from._internal_active_time()) != 0) {
         _this->_impl_.active_time_ = from._impl_.active_time_;
       }
@@ -3334,6 +3410,7 @@ void NodeReport::InternalSwap(NodeReport* PROTOBUF_RESTRICT PROTOBUF_NONNULL oth
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.node_type_, &other->_impl_.node_type_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.node_ip_, &other->_impl_.node_ip_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.access_ip_, &other->_impl_.access_ip_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.node_version_, &other->_impl_.node_version_, arena);
   ::google::protobuf::internal::memswap<
       PROTOBUF_FIELD_OFFSET(NodeReport, _impl_.active_time_)
       + sizeof(NodeReport::_impl_.active_time_)
@@ -3773,6 +3850,103 @@ void NodeReportRsp::InternalSwap(NodeReportRsp* PROTOBUF_RESTRICT PROTOBUF_NONNU
 }
 // ===================================================================
 
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+NodeNotice_CanaryWeightsEntry_DoNotUse::NodeNotice_CanaryWeightsEntry_DoNotUse()
+    : SuperType(NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.base()) {}
+NodeNotice_CanaryWeightsEntry_DoNotUse::NodeNotice_CanaryWeightsEntry_DoNotUse(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+    : SuperType(arena, NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.base()) {}
+#else   // PROTOBUF_CUSTOM_VTABLE
+NodeNotice_CanaryWeightsEntry_DoNotUse::NodeNotice_CanaryWeightsEntry_DoNotUse() : SuperType() {}
+NodeNotice_CanaryWeightsEntry_DoNotUse::NodeNotice_CanaryWeightsEntry_DoNotUse(::google::protobuf::Arena* PROTOBUF_NULLABLE arena) : SuperType(arena) {}
+#endif  // PROTOBUF_CUSTOM_VTABLE
+inline void* PROTOBUF_NONNULL NodeNotice_CanaryWeightsEntry_DoNotUse::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) NodeNotice_CanaryWeightsEntry_DoNotUse(arena);
+}
+constexpr auto NodeNotice_CanaryWeightsEntry_DoNotUse::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(NodeNotice_CanaryWeightsEntry_DoNotUse),
+                                            alignof(NodeNotice_CanaryWeightsEntry_DoNotUse));
+}
+constexpr auto NodeNotice_CanaryWeightsEntry_DoNotUse::InternalGenerateClassData_() {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &_NodeNotice_CanaryWeightsEntry_DoNotUse_default_instance_._instance,
+          &_table_.header,
+          nullptr,  // OnDemandRegisterArenaDtor
+          nullptr,  // IsInitialized
+          &NodeNotice_CanaryWeightsEntry_DoNotUse::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<NodeNotice_CanaryWeightsEntry_DoNotUse>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &NodeNotice_CanaryWeightsEntry_DoNotUse::SharedDtor,
+          static_cast<void (::google::protobuf::MessageLite::*)()>(&NodeNotice_CanaryWeightsEntry_DoNotUse::ClearImpl),
+              ::google::protobuf::Message::ByteSizeLongImpl, ::google::protobuf::Message::_InternalSerializeImpl
+              ,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_._cached_size_),
+          false,
+      },
+      &NodeNotice_CanaryWeightsEntry_DoNotUse::kDescriptorMethods,
+      &descriptor_table_oss_5fsys_2eproto,
+      nullptr,  // tracker
+  };
+}
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_ =
+        NodeNotice_CanaryWeightsEntry_DoNotUse::InternalGenerateClassData_();
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+NodeNotice_CanaryWeightsEntry_DoNotUse::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.tc_table);
+  return NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<1, 2, 0, 41, 2>
+NodeNotice_CanaryWeightsEntry_DoNotUse::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_._has_bits_),
+    0, // no _extensions_
+    2, 8,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967292,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    2,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    NodeNotice_CanaryWeightsEntry_DoNotUse_class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::DiscardEverythingFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::NodeNotice_CanaryWeightsEntry_DoNotUse>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    // int32 value = 2;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.value_), 1>(),
+     {16, 1, 0,
+      PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.value_)}},
+    // string key = 1;
+    {::_pbi::TcParser::FastUS1,
+     {10, 0, 0,
+      PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.key_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // string key = 1;
+    {PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.key_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // int32 value = 2;
+    {PROTOBUF_FIELD_OFFSET(NodeNotice_CanaryWeightsEntry_DoNotUse, _impl_.value_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kInt32)},
+  }},
+  // no aux_entries
+  {{
+    "\35\3\0\0\0\0\0\0"
+    "NodeNotice.CanaryWeightsEntry"
+    "key"
+  }},
+};
+// ===================================================================
+
 class NodeNotice::_Internal {
  public:
   using HasBits =
@@ -3797,7 +3971,8 @@ PROTOBUF_NDEBUG_INLINE NodeNotice::Impl_::Impl_(
       : _has_bits_{from._has_bits_},
         _cached_size_{0},
         node_arry_reg_{visibility, arena, from.node_arry_reg_},
-        node_arry_exit_{visibility, arena, from.node_arry_exit_} {}
+        node_arry_exit_{visibility, arena, from.node_arry_exit_},
+        canary_weights_{visibility, arena, from.canary_weights_} {}
 
 NodeNotice::NodeNotice(
     ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
@@ -3820,7 +3995,8 @@ PROTOBUF_NDEBUG_INLINE NodeNotice::Impl_::Impl_(
     [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
       : _cached_size_{0},
         node_arry_reg_{visibility, arena},
-        node_arry_exit_{visibility, arena} {}
+        node_arry_exit_{visibility, arena},
+        canary_weights_{visibility, arena} {}
 
 inline void NodeNotice::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
@@ -3854,9 +4030,13 @@ constexpr auto NodeNotice::InternalNewImpl_() {
           decltype(NodeNotice::_impl_.node_arry_exit_)::
               InternalGetArenaOffset(
                   ::google::protobuf::Message::internal_visibility()),
+      PROTOBUF_FIELD_OFFSET(NodeNotice, _impl_.canary_weights_) +
+          decltype(NodeNotice::_impl_.canary_weights_)::
+              InternalGetArenaOffset(
+                  ::google::protobuf::Message::internal_visibility()),
   });
   if (arena_bits.has_value()) {
-    return ::google::protobuf::internal::MessageCreator::ZeroInit(
+    return ::google::protobuf::internal::MessageCreator::CopyInit(
         sizeof(NodeNotice), alignof(NodeNotice), *arena_bits);
   } else {
     return ::google::protobuf::internal::MessageCreator(&NodeNotice::PlacementNew_,
@@ -3898,17 +4078,17 @@ NodeNotice::GetClassData() const {
   return NodeNotice_class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<1, 2, 2, 0, 2>
+const ::_pbi::TcParseTable<1, 3, 3, 33, 2>
 NodeNotice::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(NodeNotice, _impl_._has_bits_),
     0, // no _extensions_
-    2, 8,  // max_field_number, fast_idx_mask
+    3, 8,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967292,  // skipmap
+    4294967288,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    2,  // num_field_entries
-    2,  // num_aux_entries
+    3,  // num_field_entries
+    3,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     NodeNotice_class_data_.base(),
     nullptr,  // post_loop_handler
@@ -3932,12 +4112,19 @@ NodeNotice::_table_ = {
     {PROTOBUF_FIELD_OFFSET(NodeNotice, _impl_.node_arry_reg_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
     // repeated .NodeReport node_arry_exit = 2;
     {PROTOBUF_FIELD_OFFSET(NodeNotice, _impl_.node_arry_exit_), _Internal::kHasBitsOffset + 1, 1, (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
+    // map<string, int32> canary_weights = 3;
+    {PROTOBUF_FIELD_OFFSET(NodeNotice, _impl_.canary_weights_), _Internal::kHasBitsOffset + 2, 2, (0 | ::_fl::kFcRepeated | ::_fl::kMap)},
   }},
   {{
       {::_pbi::TcParser::GetTable<::NodeReport>()},
       {::_pbi::TcParser::GetTable<::NodeReport>()},
+      {::_pbi::TcParser::GetMapAuxInfo(
+          1, 0, 9, 5, 0)},
   }},
   {{
+    "\12\0\0\16\0\0\0\0"
+    "NodeNotice"
+    "canary_weights"
   }},
 };
 PROTOBUF_NOINLINE void NodeNotice::Clear() {
@@ -3948,12 +4135,15 @@ PROTOBUF_NOINLINE void NodeNotice::Clear() {
   (void) cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
     if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
       _impl_.node_arry_reg_.Clear();
     }
     if (CheckHasBitForRepeated(cached_has_bits, 0x00000002U)) {
       _impl_.node_arry_exit_.Clear();
+    }
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000004U)) {
+      _impl_.canary_weights_.Clear();
     }
   }
   _impl_._has_bits_.Clear();
@@ -4005,6 +4195,35 @@ PROTOBUF_NOINLINE void NodeNotice::Clear() {
     }
   }
 
+  // map<string, int32> canary_weights = 3;
+  if (CheckHasBitForRepeated(cached_has_bits, 0x00000004U)) {
+    if (!this_._internal_canary_weights().empty()) {
+      using MapType = ::google::protobuf::Map<::std::string, ::int32_t>;
+      using WireHelper = _pbi::MapEntryFuncs<::std::string, ::int32_t,
+                                     _pbi::WireFormatLite::TYPE_STRING,
+                                     _pbi::WireFormatLite::TYPE_INT32>;
+      const auto& field = this_._internal_canary_weights();
+
+      if (stream->IsSerializationDeterministic() && field.size() > 1) {
+        for (const auto& entry : ::google::protobuf::internal::MapSorterPtr<MapType>(field)) {
+          target = WireHelper::InternalSerialize(
+              3, entry.first, entry.second, target, stream);
+          ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+              entry.first.data(), static_cast<int>(entry.first.length()),
+ ::google::protobuf::internal::WireFormatLite::SERIALIZE, "NodeNotice.canary_weights");
+        }
+      } else {
+        for (const auto& entry : field) {
+          target = WireHelper::InternalSerialize(
+              3, entry.first, entry.second, target, stream);
+          ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+              entry.first.data(), static_cast<int>(entry.first.length()),
+ ::google::protobuf::internal::WireFormatLite::SERIALIZE, "NodeNotice.canary_weights");
+        }
+      }
+    }
+  }
+
   if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
     target =
         ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
@@ -4030,7 +4249,7 @@ PROTOBUF_NOINLINE void NodeNotice::Clear() {
 
   ::_pbi::Prefetch5LinesFrom7Lines(&this_);
   cached_has_bits = this_._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
     // repeated .NodeReport node_arry_reg = 1;
     if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
       total_size += 1UL * this_._internal_node_arry_reg_size();
@@ -4043,6 +4262,16 @@ PROTOBUF_NOINLINE void NodeNotice::Clear() {
       total_size += 1UL * this_._internal_node_arry_exit_size();
       for (const auto& msg : this_._internal_node_arry_exit()) {
         total_size += ::google::protobuf::internal::WireFormatLite::MessageSize(msg);
+      }
+    }
+    // map<string, int32> canary_weights = 3;
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000004U)) {
+      total_size +=
+          1 * ::google::protobuf::internal::FromIntSize(this_._internal_canary_weights_size());
+      for (const auto& entry : this_._internal_canary_weights()) {
+        total_size += _pbi::MapEntryFuncs<::std::string, ::int32_t,
+                                       _pbi::WireFormatLite::TYPE_STRING,
+                                       _pbi::WireFormatLite::TYPE_INT32>::ByteSizeLong(entry.first, entry.second);
       }
     }
   }
@@ -4065,7 +4294,7 @@ void NodeNotice::MergeImpl(::google::protobuf::MessageLite& to_msg,
   (void)cached_has_bits;
 
   cached_has_bits = from._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x00000007U)) {
     if (CheckHasBitForRepeated(cached_has_bits, 0x00000001U)) {
       _this->_internal_mutable_node_arry_reg()->InternalMergeFromWithArena(
           ::google::protobuf::MessageLite::internal_visibility(), arena,
@@ -4075,6 +4304,9 @@ void NodeNotice::MergeImpl(::google::protobuf::MessageLite& to_msg,
       _this->_internal_mutable_node_arry_exit()->InternalMergeFromWithArena(
           ::google::protobuf::MessageLite::internal_visibility(), arena,
           from._internal_node_arry_exit());
+    }
+    if (CheckHasBitForRepeated(cached_has_bits, 0x00000004U)) {
+      _this->_impl_.canary_weights_.MergeFrom(from._impl_.canary_weights_);
     }
   }
   _this->_impl_._has_bits_[0] |= cached_has_bits;
@@ -4096,6 +4328,7 @@ void NodeNotice::InternalSwap(NodeNotice* PROTOBUF_RESTRICT PROTOBUF_NONNULL oth
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
   _impl_.node_arry_reg_.InternalSwap(&other->_impl_.node_arry_reg_);
   _impl_.node_arry_exit_.InternalSwap(&other->_impl_.node_arry_exit_);
+  _impl_.canary_weights_.InternalSwap(&other->_impl_.canary_weights_);
 }
 
 ::google::protobuf::Metadata NodeNotice::GetMetadata() const {

@@ -222,8 +222,29 @@ def service_readiness(mode: str, docker_stack: object) -> None:
     依赖 docker_stack：保证 compose 起来后才轮询端口。
     - 端口来自 tests/ports.env（THUNDER_HELLO_HTTP_PORT / THUNDER_INTERFACE_PORT / THUNDER_HELLO_HTTPS_PORT）。
     - local 额外等 6379（Redis）、3306（MySQL），与 compose 内依赖一致。
+    - external/K8s 模式：启动 kubectl port-forward 映射 hostPort → localhost。
     """
     del docker_stack  # 仅用于声明 fixture 顺序
+
+    _k8s_pf_pids: list[int] = []
+
+    def _start_k8s_port_forward(name: str, local_port: int, remote_port: int) -> None:
+        """为 external/K8s 模式创建 kubectl port-forward，解决 hostPort 在单节点 K8s 不可达的问题。"""
+        import subprocess as _sp
+        try:
+            proc = _sp.Popen(
+                ["kubectl", "port-forward", "-n", "thunder", f"deploy/{name}", f"{local_port}:{remote_port}"],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+            _k8s_pf_pids.append(proc.pid)
+        except Exception:
+            pass
+
+    # external 模式：尝试用 kubectl port-forward 打通端口
+    if mode == "external":
+        _start_k8s_port_forward("thunder-hello", HELLO_HTTP_PORT, 27006)
+        _start_k8s_port_forward("thunder-interface", INTERFACE_PORT, 27008)
+        _start_k8s_port_forward("thunder-hello-https", HELLO_HTTPS_PORT, 27443)
 
     # 检测宿主机 IP（Docker host network 模式下端口可能绑定在宿主机 IP 上）
     host_ips = []
@@ -257,6 +278,15 @@ def service_readiness(mode: str, docker_stack: object) -> None:
         _wait_cluster_route_ready(timeout_s=90.0)
     _phase("端口就绪，开始跑用例")
 
+    # 注册 teardown：杀 kubectl port-forward 子进程
+    yield
+    import signal as _signal
+    for pid in _k8s_pf_pids:
+        try:
+            os.kill(pid, _signal.SIGTERM)
+        except OSError:
+            pass
+
 
 @pytest.fixture(scope="session")
 def https_verify() -> str | bool:
@@ -283,3 +313,4 @@ def http_session() -> requests.Session:
     # 强制忽略 HTTP(S)_PROXY / ALL_PROXY
     s.trust_env = False
     return s
+

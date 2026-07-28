@@ -3,10 +3,11 @@ kind: Deployment
 metadata:
   name: thunder-hello
   namespace: thunder
-  labels:
-    app: thunder-hello
 spec:
   replicas: 1
+  # --- Recreate: hostNetwork pod 无法滚动更新 (端口冲突) (#154) ---
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: thunder-hello
@@ -15,37 +16,40 @@ spec:
       labels:
         app: thunder-hello
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # sysctls 不能与 hostNetwork 同时使用 (K8s 限制)
+      # TCP buffer 优化由 Node 级 sysctl (k8s/init-k8s-node.sh) 统一管理
       containers:
-      - name: hello
-        image: ubuntu:26.04
-        workingDir: /thunder/deploy/HelloHttp
-        command: ["bash", "-c", "apt-get update -qq && apt-get install -y -qq libjemalloc2 curl && cp /thunder/code/3party/lib/*.so* /usr/lib/x86_64-linux-gnu/ 2>/dev/null && cp /thunder/deploy/HelloHttp/libluajit-5.1.so.2 /usr/lib/x86_64-linux-gnu/ 2>/dev/null && ldconfig; export LD_LIBRARY_PATH=/thunder/deploy/lib:/thunder/code/3party/lib:/thunder/deploy/3lib:/thunder/deploy/HelloHttp:${LD_LIBRARY_PATH}; sed -i 's|127.0.0.1:2379,127.0.0.1:2381,127.0.0.1:2383|thunder-etcd-0.thunder-etcd.thunder.svc.cluster.local:2379|' /thunder/deploy/HelloHttp/conf/Hello.json; ./node.sh start; tail -f /dev/null"]
+      - name: app
+        image: localhost:5000/thunder-hello-http:latest
+        imagePullPolicy: IfNotPresent
+        # Worker daemon 死亡即 NotReady (#164); 进程名 <server_name>_Loader/_W<n>
+        readinessProbe:
+          exec:
+            command: ["pgrep", "-f", "Hello_robot_"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        env:
+        - name: NODE_VERSION
+          value: "v1"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: ETCD_ENDPOINT
+          value: "http://thunder-etcd.thunder:2379"
+        # --- io_uring 需要 memlock (#154) ---
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        # --- Burstable QoS — 内存不封顶, CPU 保证 ---
+        resources:
+          requests:
+            cpu: "1"
+            memory: "128Mi"
+          limits:
+            cpu: "1"
         ports:
         - containerPort: 27006
-        volumeMounts:
-        - name: thunder-repo
-          mountPath: /thunder
-        - name: nfs-plugins
-          mountPath: /thunder/deploy/HelloHttp/plugins
-          subPath: HelloHttp
-      volumes:
-      - name: thunder-repo
-        hostPath:
-          path: /thunder
-      - name: nfs-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: thunder-hello
-  namespace: thunder
-spec:
-  type: NodePort
-  selector:
-    app: thunder-hello
-  ports:
-  - port: 27006
-    targetPort: 27006
-    nodePort: 30006
+        - containerPort: 27007

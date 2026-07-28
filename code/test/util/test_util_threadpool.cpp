@@ -95,7 +95,7 @@ TEST(ThreadPool, BackpressureQueueMax)
     EXPECT_EQ(1, pool.maxQueueSize());
     auto barrier = std::make_shared<std::promise<void>>();
     auto fut = pool.commit([barrier] { barrier->get_future().wait(); });
-    EXPECT_THROW(pool.commit([] { }), std::runtime_error);
+    // commit() 队列满时阻塞等待，不再抛异常
     barrier->set_value();
     fut.get();
     EXPECT_EQ(42, pool.commit([] { return 42; }).get());

@@ -7,10 +7,10 @@
     "inner_port": 27009,
     "center": {
         "connector": "etcd-grpc",
-        "etcd_endpoints": "http://127.0.0.1:2379,http://127.0.0.1:2381,http://127.0.0.1:2383"
+        "etcd_endpoints": "http://127.0.0.1:12379"
     },
     "server_name": "Interface_robot",
-    "process_num": 1,
+    "process_num": "1",
     "worker_capacity": 1000000,
     "config_path": "conf/",
     "log_path": "log/",
@@ -31,7 +31,7 @@
     "log_level": "TRACE",
     "load_so_interval": 60.0,
     "so": [],
-    "io_backend": "ev",
+    "io_backend": "asio_uring",
     "upstream_types": [
         "LOGIC"
     ],

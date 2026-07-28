@@ -10,6 +10,7 @@
 #ifndef SRC_STEP_REDISSTEP_HPP_
 #define SRC_STEP_REDISSTEP_HPP_
 #include <memory>
+#include <set>
 #include <list>
 #include "dbi/redis/RedisCmd.hpp"
 #include "Step.hpp"

@@ -1,0 +1,54 @@
+#!/bin/bash
+# Thunder pre-commit check — 拦截常见人为失误 (耗时 < 0.5s)
+set -e
+errors=0
+
+# === 1. JSON 语法检查 ===
+for f in $(git diff --cached --name-only --diff-filter=ACMR -- '*.json' 2>/dev/null); do
+    if python3 -m json.tool "$f" > /dev/null 2>&1; then
+        echo "  ✅ JSON valid: $f"
+    else
+        echo "  ❌ JSON 格式错误: $f"
+        python3 -m json.tool "$f" 2>&1 | tail -3
+        errors=$((errors + 1))
+    fi
+done
+
+# === 2. etcd_endpoints 检查 ===
+# 标准值: 单端点 http://127.0.0.1:12379 或多端点 http://127.0.0.1:12379,http://127.0.0.1:12381,http://127.0.0.1:12383
+if git diff --cached -U0 | grep -E '^\+.*"etcd_endpoints"' | grep -v -E '127.0.0.1:12379' > /tmp/etcd_check.txt 2>/dev/null; then
+    if [ -s /tmp/etcd_check.txt ]; then
+        echo "  ❌ etcd_endpoints 被修改为非标准值:"
+        cat /tmp/etcd_check.txt
+        echo "  允许值: http://127.0.0.1:12379 或 http://127.0.0.1:12379,http://127.0.0.1:12381,http://127.0.0.1:12383"
+        errors=$((errors + 1))
+    fi
+fi
+rm -f /tmp/etcd_check.txt
+
+# === 3. 新增 LOG4_INFO 检查 ===
+if git diff --cached -U0 | grep -E '^\+.*LOG4_INFO' | grep -v 'LOG4_INFO("try to load' > /tmp/log_check.txt 2>/dev/null; then
+    if [ -s /tmp/log_check.txt ]; then
+        echo "  ⚠️  新增 LOG4_INFO (调试残留?):"
+        cat /tmp/log_check.txt
+    fi
+fi
+rm -f /tmp/log_check.txt
+
+# === 3. io_backend 检查 ===
+# 主配置必须 asio_uring, _ev.json 备选允许 ev
+if git diff --cached -U0 -- 'deploy/*/conf/*.json' | grep -E '^\+.*"io_backend": "ev"' | grep -v '_ev.json' > /tmp/io_check.txt 2>/dev/null; then
+    if [ -s /tmp/io_check.txt ]; then
+        echo "  ❌ io_backend 被改为 ev:"
+        cat /tmp/io_check.txt
+        echo "  默认值: asio_uring (允许 _ev.json 备选保留 ev)"
+        errors=$((errors + 1))
+    fi
+fi
+rm -f /tmp/io_check.txt
+
+if [ $errors -gt 0 ]; then
+    echo "❌ $errors 个错误，提交被拦截。"
+    exit 1
+fi
+echo "✅ pre-commit 检查通过"

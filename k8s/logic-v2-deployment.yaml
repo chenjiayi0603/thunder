@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thunder-logic-v2
+  namespace: thunder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thunder-logic
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: thunder-logic
+        version: v2
+    spec:
+      containers:
+      - name: app
+        image: localhost:5000/thunder-logic:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NODE_VERSION
+          value: "v2"
+        - name: INNER_PORT
+          value: "16069"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: ETCD_ENDPOINT
+          value: "http://thunder-etcd.thunder:2379"
+        # --- io_uring 需要 memlock (#154) ---
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        # --- Burstable QoS — 内存不封顶, CPU 保证 ---
+        resources:
+          requests:
+            cpu: "2"
+            memory: "128Mi"
+          limits:
+            cpu: "2"
+        ports:
+        - containerPort: 16069

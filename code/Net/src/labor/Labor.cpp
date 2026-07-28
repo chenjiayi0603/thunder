@@ -24,10 +24,6 @@
 #ifdef THUNDER_IO_ASIO_URING
 #include "labor/io/AsioUringIoBackend.hpp"
 #endif
-#ifdef THUNDER_IO_DPDK
-#include "labor/io/DpdkIoBackend.hpp"
-#endif
-
 //每个进程只有一个labor，使用单例模式
 net::Labor* g_pLabor = nullptr;
 net::Labor* GetLabor() {return g_pLabor;}
@@ -359,7 +355,7 @@ bool Labor::InitLogger(const util::CJsonObject& oJsonConf)
         file_append->setName(strLogname);
         std::unique_ptr<log4cplus::Layout> layout(new log4cplus::PatternLayout(strParttern));
         file_append->setLayout(std::move(layout));
-        //log4cplus::Logger::getRoot().addAppender(file_append);
+        log4cplus::Logger::getRoot().addAppender(file_append);
         m_oLogger = log4cplus::Logger::getInstance(strLogname);
         m_oLogger.setLogLevel(iLogLevel);
         m_oLogger.addAppender(file_append);
@@ -466,16 +462,30 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
     {
 #ifdef THUNDER_IO_ASIO_URING
         AsioUringIoBackend* pBackend = new AsioUringIoBackend();
-        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+        bool bOk = false;
+        std::string errMsg;
+        try {
+            bOk = pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this));
+        } catch (const std::exception& e) {
+            errMsg = e.what();
+        } catch (...) {
+            errMsg = "unknown exception";
+        }
+        if (bOk)
         {
             m_pIoBackend = pBackend;
             LOG4_INFO("IoBackend: asio_uring initialized successfully");
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: asio_uring init failed, falling back to ev");
+        if (errMsg.empty()) errMsg = "init returned false";
+        LOG4_FATAL((std::string("IoBackend: asio_uring init FAILED — ") + errMsg).c_str());
+        std::cerr << "FATAL: asio_uring init failed: " << errMsg << std::endl;
+        exit(1);
 #else
-        LOG4_WARN("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled, falling back to ev");
+        LOG4_FATAL("IoBackend: asio_uring requested but THUNDER_IO_ASIO_URING not compiled");
+        std::cerr << "FATAL: asio_uring not compiled" << std::endl;
+        exit(1);
 #endif
     }
 
@@ -501,24 +511,38 @@ bool Labor::InitIoBackend(const util::CJsonObject& oJsonConf, IoCompletionCallba
         LOG4_WARN("IoBackend: \"uring\" backend has been removed, falling back to ev");
     }
 
-    if (strBackend == "dpdk")
+    // 默认: asio_uring, 失败 FATAL 退出 (不 fallback)
+    // 仅在未配置或明确指定 asio_uring 时走默认；若配置了其他后端则跳过
+    if (strBackend.empty() || strBackend == "asio_uring")
     {
-#ifdef THUNDER_IO_DPDK
-        DpdkIoBackend* pBackend = new DpdkIoBackend();
-        if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
+#ifdef THUNDER_IO_ASIO_URING
+        {
+            AsioUringIoBackend* pBackend = new AsioUringIoBackend();
+        bool bOk = false;
+        std::string errMsg;
+        try {
+            bOk = pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this));
+        } catch (const std::exception& e) {
+            errMsg = e.what();
+        } catch (...) {
+            errMsg = "unknown exception";
+        }
+        if (bOk)
         {
             m_pIoBackend = pBackend;
-            LOG4_INFO("IoBackend: dpdk initialized successfully");
+            LOG4_INFO("IoBackend: asio_uring initialized successfully (default)");
             return true;
         }
         delete pBackend;
-        LOG4_WARN("IoBackend: dpdk init failed, falling back to ev");
-#else
-        LOG4_WARN("IoBackend: dpdk requested but THUNDER_IO_DPDK not compiled, falling back to ev");
-#endif
+        if (errMsg.empty()) errMsg = "init returned false";
+        LOG4_FATAL((std::string("IoBackend: asio_uring init FAILED — ") + errMsg).c_str());
+        std::cerr << "FATAL: asio_uring init failed: " << errMsg << std::endl;
+        exit(1);
     }
+#endif
+    }  // if (strBackend.empty() || strBackend == "asio_uring")
 
-    // 默认使用 ev 后端
+    // 不应到达 (asio_uring 未编译时)
     EvIoBackend* pBackend = new EvIoBackend();
     if (pBackend && pBackend->Init(m_loop, callback, static_cast<void*>(this)))
     {

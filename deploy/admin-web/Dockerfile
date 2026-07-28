@@ -1,14 +1,8 @@
-# Thunder Admin Web — 管理后台 + SO 上传服务
-FROM python:3.12-alpine
-
-RUN pip install docker -q
-
+FROM ubuntu:26.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-COPY index.html .
-COPY server.py .
-RUN mkdir -p plugins
-
+COPY admin-web /app/admin-web
+COPY static/ /app/static/
+COPY lua_scripts/ /app/lua_scripts/
 EXPOSE 8090
-
-CMD ["python3", "server.py", "--port", "8090"]
+CMD ["/app/admin-web"]

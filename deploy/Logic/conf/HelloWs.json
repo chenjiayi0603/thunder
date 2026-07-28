@@ -7,7 +7,7 @@
     "inner_port": 27011,
     "center": {
         "connector": "etcd",
-        "etcd_endpoints": "http://127.0.0.1:2379"
+        "etcd_endpoints": "http://127.0.0.1:12379"
     },
     "server_name": "Hello_ws_robot",
     "process_num": 1,
@@ -49,5 +49,5 @@
             "version": 1
         }
     ],
-    "io_backend": "ev"
+    "io_backend": "asio_uring"
 }

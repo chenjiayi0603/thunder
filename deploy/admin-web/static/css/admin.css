@@ -1,0 +1,336 @@
+/* ============================================================
+   Thunder Admin — 设计系统
+   对标 Nacos 管理后台视觉标准
+   继承 Center Admin CSS 变量体系
+   ============================================================ */
+
+/* ---------- 1. CSS 变量 ---------- */
+:root {
+  /* 主色 — 与 Center Admin 一致 */
+  --primary:        #1677ff;
+  --primary-hover:  #4096ff;
+  --primary-active: #0958d9;
+  --primary-bg:     #e6f4ff;
+  --primary-border: #91caff;
+
+  /* 中性色 */
+  --bg:             #f0f2f5;
+  --bg-elevated:    #ffffff;
+  --border:         #e8e8e8;
+  --border-light:   #f0f0f0;
+
+  /* 文字 */
+  --text:           #1f1f1f;
+  --text-secondary: #666666;
+  --text-muted:     #999999;
+  --text-inverse:   #ffffff;
+
+  /* 状态色 */
+  --success:        #52c41a;
+  --success-bg:     #f6ffed;
+  --success-border: #b7eb8f;
+  --warning:        #faad14;
+  --warning-bg:     #fffbe6;
+  --warning-border: #ffe58f;
+  --error:          #ff4d4f;
+  --error-bg:       #fff2f0;
+  --error-border:   #ffccc7;
+  --info:           #1677ff;
+  --info-bg:        #e6f4ff;
+  --info-border:    #91caff;
+
+  /* 排版 */
+  --radius-sm:      6px;
+  --radius:         8px;
+  --radius-lg:      12px;
+  --shadow-sm:      0 1px 2px rgba(0,0,0,.04);
+  --shadow:         0 2px 8px rgba(0,0,0,.08);
+  --shadow-lg:      0 4px 16px rgba(0,0,0,.12);
+
+  /* 间距 */
+  --space-xs:       4px;
+  --space-sm:       8px;
+  --space:          12px;
+  --space-md:       16px;
+  --space-lg:       24px;
+  --space-xl:       32px;
+
+  /* 字阶 */
+  --text-xs:        11px;
+  --text-sm:        13px;
+  --text-base:      14px;
+  --text-lg:        16px;
+  --text-xl:        20px;
+
+  /* 布局 */
+  --max-width:      1200px;
+  --header-h:       48px;
+  --nav-h:          40px;
+
+  /* 动效 */
+  --transition:     0.2s ease;
+}
+
+/* ---------- 2. Reset & Base ---------- */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { color: var(--primary-hover); }
+img { max-width: 100%; }
+code { font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace; font-size: .9em; background: var(--border-light); padding: 1px 5px; border-radius: 4px; }
+pre { font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace; }
+
+/* ---------- 3. Layout ---------- */
+.app-header {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  height: var(--header-h);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-md);
+  position: sticky; top: 0; z-index: 100;
+}
+.app-header h1 { font-size: var(--text-lg); font-weight: 600; letter-spacing: .02em; }
+
+.app-main { max-width: var(--max-width); margin: 0 auto; padding: var(--space-md) var(--space-md) var(--space-xl); }
+
+/* ---------- 4. Tab Navigation ---------- */
+.nav-tabs { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
+.nav-tabs button {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  padding: 6px 16px; border-radius: var(--radius);
+  cursor: pointer; font-size: var(--text-base);
+  color: var(--text-secondary);
+  transition: all var(--transition);
+}
+.nav-tabs button:hover { color: var(--primary); border-color: var(--primary-border); }
+.nav-tabs button.active {
+  background: var(--primary); color: var(--text-inverse);
+  border-color: var(--primary);
+}
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ---------- 5. Card ---------- */
+.card {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: var(--space-md);
+  margin-bottom: var(--space);
+  box-shadow: var(--shadow-sm);
+}
+.card-header {
+  font-size: var(--text-base); font-weight: 600;
+  margin-bottom: var(--space);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-body { }
+.card-stat { padding: var(--space); text-align: center; }
+.card-stat .num { font-size: var(--text-xl); font-weight: 700; color: var(--primary); }
+.card-stat .label { font-size: var(--text-sm); color: var(--text-muted); margin-top: 2px; }
+
+/* ---------- 6. Button ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  padding: 6px 16px; font-size: var(--text-base); line-height: 1.4;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-elevated); color: var(--text);
+  cursor: pointer; transition: all var(--transition);
+  white-space: nowrap; user-select: none;
+}
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+.btn-primary { background: var(--primary); color: var(--text-inverse); border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--text-inverse); }
+
+.btn-ghost { background: transparent; border-color: var(--border); color: var(--text-secondary); }
+.btn-ghost:hover { color: var(--primary); border-color: var(--primary-border); background: var(--primary-bg); }
+
+.btn-danger { background: var(--error); color: #fff; border-color: var(--error); }
+.btn-danger:hover { filter: brightness(1.1); }
+
+.btn-sm { padding: 3px 10px; font-size: var(--text-sm); }
+.btn-xs { padding: 2px 8px; font-size: var(--text-xs); }
+
+/* ---------- 7. Form ---------- */
+.input, .select, .textarea {
+  padding: 6px 10px; font-size: var(--text-base);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-elevated); color: var(--text);
+  transition: border-color var(--transition);
+  outline: none;
+}
+.input:focus, .select:focus, .textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-bg); }
+.input { min-width: 180px; }
+.textarea { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: var(--text-sm); resize: vertical; }
+
+/* ---------- 8. Table ---------- */
+.table { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
+.table th, .table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.table th { background: #fafafa; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.table tbody tr:hover { background: #fafafa; }
+
+/* ---------- 9. Badge ---------- */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; font-size: var(--text-xs); font-weight: 500;
+  border-radius: 10px; line-height: 1.6;
+}
+.badge-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.badge-error   { background: var(--error-bg);   color: var(--error);   border: 1px solid var(--error-border); }
+.badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.badge-info    { background: var(--info-bg);    color: var(--info);    border: 1px solid var(--info-border); }
+.badge-default { background: var(--border-light); color: var(--text-secondary); }
+
+/* ---------- 10. Status Dot ---------- */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.dot-online  { background: var(--success); }
+.dot-offline { background: var(--error); }
+
+/* ---------- 11. Toast ---------- */
+.toast-container {
+  position: fixed; top: calc(var(--header-h) + 12px); left: 50%; transform: translateX(-50%);
+  z-index: 1000; display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 20px; border-radius: var(--radius); font-size: var(--text-base);
+  box-shadow: var(--shadow); pointer-events: auto;
+  animation: toastIn .25s ease, toastOut .25s ease 2.75s forwards;
+  max-width: 400px;
+}
+.toast-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.toast-error   { background: var(--error-bg);   color: var(--error);   border: 1px solid var(--error-border); }
+.toast-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.toast-info    { background: var(--info-bg);    color: var(--info);    border: 1px solid var(--info-border); }
+@keyframes toastIn  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---------- 12. Modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 500; display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .2s ease;
+}
+.modal {
+  background: var(--bg-elevated); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); max-width: 520px; width: 90vw;
+  max-height: 80vh; overflow: auto; animation: scaleIn .2s ease;
+}
+.modal-header { padding: var(--space-md) var(--space-md) var(--space-sm); font-weight: 600; font-size: var(--text-lg); }
+.modal-body   { padding: var(--space-sm) var(--space-md); }
+.modal-footer { padding: var(--space-sm) var(--space-md) var(--space-md); display: flex; justify-content: flex-end; gap: var(--space-sm); }
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+
+/* ---------- 13. Loading ---------- */
+.spinner {
+  display: inline-block; width: 20px; height: 20px;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-block { text-align: center; padding: var(--space-xl); color: var(--text-muted); }
+
+/* ---------- 14. Hint Bar ---------- */
+.hint-bar {
+  font-size: var(--text-sm); color: var(--text-secondary);
+  margin-bottom: var(--space); padding: 8px 12px;
+  border-radius: var(--radius); line-height: 1.5;
+}
+.hint-bar code { font-size: .85em; background: rgba(255,255,255,.6); padding: 0 4px; }
+.hint-info    { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--primary); }
+.hint-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); }
+.hint-warning { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning); }
+
+/* ---------- 15. Toolbar ---------- */
+.toolbar { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space); flex-wrap: wrap; }
+.toolbar label { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--text-base); color: var(--text-secondary); }
+
+/* ---------- 16. Node Card ---------- */
+.node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space);
+}
+.node-card {
+  background: var(--bg-elevated); border-radius: var(--radius);
+  border: 1px solid var(--border); padding: var(--space);
+  transition: box-shadow var(--transition);
+}
+.node-card:hover { box-shadow: var(--shadow); }
+.node-card .node-card-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);
+}
+.node-card .node-card-body { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.7; }
+.node-card .node-card-footer { margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; }
+
+/* ---------- 17. Slider (灰度) ---------- */
+.slider-group { margin-bottom: var(--space); }
+.slider-group label { display: flex; justify-content: space-between; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 4px; }
+.slider-group input[type=range] { width: 100%; accent-color: var(--primary); }
+
+/* ---------- 18. Diff View ---------- */
+.diff-view { font-size: var(--text-sm); font-family: ui-monospace, monospace; }
+.diff-view .diff-del { color: var(--error); background: var(--error-bg); }
+.diff-view .diff-add { color: var(--success); background: var(--success-bg); }
+
+/* ---------- 19. Dark Theme ---------- */
+[data-theme="dark"] {
+  --bg:             #141414;
+  --bg-elevated:    #1f1f1f;
+  --border:         #303030;
+  --border-light:   #262626;
+  --text:           #e0e0e0;
+  --text-secondary: #999;
+  --text-muted:     #666;
+  --primary-bg:     #111d2c;
+  --primary-border: #15325b;
+}
+[data-theme="dark"] .table th { background: #262626; }
+[data-theme="dark"] .table tbody tr:hover { background: #262626; }
+[data-theme="dark"] .diff-view .diff-del { background: #2c1618; }
+[data-theme="dark"] .diff-view .diff-add { background: #162312; }
+
+/* ---------- 20. Utility ---------- */
+.flex { display: flex; }               .flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }        .flex-1 { flex: 1; }
+.items-center { align-items: center; } .justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; } .justify-end { justify-content: flex-end; }
+.gap-xs { gap: var(--space-xs); }      .gap-sm { gap: var(--space-sm); }
+.gap { gap: var(--space); }            .gap-md { gap: var(--space-md); }
+.gap-lg { gap: var(--space-lg); }
+
+.m-0 { margin: 0; }  .mt { margin-top: var(--space); }  .mb { margin-bottom: var(--space); }
+.p-sm { padding: var(--space-sm); }  .p { padding: var(--space); }  .p-md { padding: var(--space-md); }
+
+.text-sm { font-size: var(--text-sm); }    .text-xs { font-size: var(--text-xs); }
+.text-muted { color: var(--text-muted); }  .text-error { color: var(--error); }
+.text-success { color: var(--success); }    .text-center { text-align: center; }
+.font-mono { font-family: ui-monospace, monospace; }
+.font-bold { font-weight: 600; }
+
+.hidden { display: none !important; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-full { width: 100%; }
+
+/* ---------- 21. Empty State ---------- */
+.empty-state {
+  text-align: center; padding: var(--space-xl) var(--space);
+  color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 36px; margin-bottom: var(--space-sm); }
+

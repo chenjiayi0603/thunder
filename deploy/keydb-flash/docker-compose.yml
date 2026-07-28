@@ -1,0 +1,57 @@
+# KeyDB-Flash 本地测试 (无需 K8s)
+#
+# 启动:
+#   cd deploy/keydb-flash && docker compose up -d
+#
+# 验证:
+#   docker compose exec keydb-flash keydb-cli -p 6380 PING      # → PONG
+#   docker compose exec keydb-flash keydb-cli -p 6380 INFO storage
+#     # → storage_provider:flash  表示 flash 已启用
+#
+# 压测:
+#   docker compose exec keydb-flash keydb-benchmark -p 6380 -t set,get -n 100000 -q
+#
+# 停止:
+#   docker compose down
+#   # 数据保留在 ./flash-data/ 目录
+services:
+  keydb-flash:
+    build:
+      context: ../..              # 仓库根目录
+      dockerfile: deploy/keydb-flash/Dockerfile
+    image: thunder-keydb-flash:latest
+    ports:
+      - "6380:6380"
+    volumes:
+      - ./flash-data:/data/flash  # flash 数据持久化到宿主机
+    command:
+      - keydb-server
+      - --port
+      - "6380"
+      - --bind
+      - "0.0.0.0"
+      - --protected-mode
+      - "no"
+      # Flash/RocksDB (bloom/compression/block_cache 已在源码 DefaultRocksDBOptions 中配置)
+      - --storage-provider
+      - flash
+      - /data/flash
+      # 内存缓存 (测试用小内存)
+      - --maxmemory
+      - "2gb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+      # 线程
+      - --server-threads
+      - "2"
+      # 关闭 AOF/RDB (RocksDB 负责持久化)
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "keydb-cli", "-p", "6380", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

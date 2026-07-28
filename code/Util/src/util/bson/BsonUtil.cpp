@@ -278,9 +278,10 @@ bool CBsonObject::GetArray(const std::string& strKey, std::string& strValue)cons
 bool CBsonObject::GetKeys(std::vector<std::string> &keys)const
 {
 	bson_iter_t iter;
+	if (!bson_iter_init(&iter, m_bson)) return false;
 	const char *key;
-	while (bson_iter_next (&iter)) {
-	      key = bson_iter_key (&iter);
+	while (bson_iter_next(&iter)) {
+	      key = bson_iter_key(&iter);
 	      keys.push_back(key);
 	}
 	return true;

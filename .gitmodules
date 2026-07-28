@@ -71,3 +71,13 @@
 	path = code/3party/liburing
 	url = https://github.com/axboe/liburing.git
 	branch = e3d35ea59d3ba09075ed4d7751e4bb9049cce64a
+# KeyDB — 多线程 Redis 分支, 可选 Flash (RocksDB) 存储后端
+# 编译: ENABLE_FLASH=yes USE_SYSTEM_ROCKSDB=yes (见 deploy/keydb-flash/Dockerfile)
+[submodule "code/3party/keydb"]
+	path = code/3party/keydb
+	url = https://github.com/chenjiayi0603/KeyDB.git
+	branch = dev
+
+[submodule "code/3party/paho-mqtt-c"]
+	path = code/3party/paho-mqtt-c
+	url = https://github.com/eclipse-paho/paho.mqtt.c.git

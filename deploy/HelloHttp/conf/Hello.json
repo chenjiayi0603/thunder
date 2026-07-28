@@ -7,7 +7,7 @@
     "inner_port": 27007,
     "center": {
         "connector": "etcd-grpc",
-        "etcd_endpoints": "http://thunder-etcd-0.thunder-etcd.thunder.svc.cluster.local:2379"
+        "etcd_endpoints": "http://127.0.0.1:12379"
     },
     "server_name": "Hello_robot",
     "process_num": "1",
@@ -31,28 +31,11 @@
     "log_level": "INFO",
     "load_so_interval": 60.0,
     "so": [],
-    "io_backend": "ev",
+    "io_backend": "asio_uring",
     "https": {
         "server_cert": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.crt",
         "server_key": "/home/tommychen/thunder/deploy/HelloHttp/conf/certs/server.key",
         "verify_client": false
-    },
-    "dpdk": {
-        "_comment": "DPDK + F-Stack 用户态 TCP 配置 (需要编译 THUNDER_IO_DPDK=ON)",
-        "eal_args": "--no-pci -l 0 -n 1",
-        "vdevs": [
-            "net_af_packet0,iface=lo"
-        ],
-        "pmd_plugins": [
-            "dpdk/pmds-26.0/librte_mempool_ring.so",
-            "dpdk/pmds-26.0/librte_net_af_packet.so"
-        ],
-        "port_id": 0,
-        "lcore_id": 0,
-        "max_concurrency": 100000,
-        "rcv_buf_size": 8192,
-        "snd_buf_size": 8192,
-        "tcp_timeout": 30
     },
     "module": [
         {
@@ -67,8 +50,15 @@
             "so_path": "plugins/HelloHttp_ModuleLua.so",
             "entrance_symbol": "create",
             "load": true,
-            "version": 10,
-            "script_content": "function handle_request(msg)\n  SendToClientFast(\"{\\\"code\\\":0,\\\"msg\\\":\\\"K8S_E2E_OK\\\"}\")\n  return true\nend"
+            "version": 12,
+            "script_content": "function handle_request(msg)\n  local body = '{\"genkey\":\"1\",\"token\":\"canary_test_token\",\"key\":\"canary_test_key\",\"address\":\"192.168.3.61\"}'\n  local function on_response(resp_body)\n    -- 直接返回 Logic 的响应给客户端（不通过 SendToClientFast，避免双重发送）\n    return resp_body\n  end\n  local ok = SendToNodeType(\"LOGIC\", 10001, body, 5, on_response)\n  if not ok then\n    return false -- 让框架返回 500\n  end\n  return true\nend\n"
+        },
+        {
+            "url_path": "/hello/raw",
+            "so_path": "plugins/HelloHttp_ModuleRaw.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
         }
     ]
 }

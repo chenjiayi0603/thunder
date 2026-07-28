@@ -1,0 +1,33 @@
+# admin-web RBAC — pods list + exec for SO hot-deploy via kubectl cp (#155)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: thunder-admin-web
+  namespace: thunder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: thunder-admin-web
+subjects:
+- kind: ServiceAccount
+  name: thunder-admin-web
+  namespace: thunder

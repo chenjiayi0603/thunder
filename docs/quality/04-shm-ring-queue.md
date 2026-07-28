@@ -1,7 +1,7 @@
 # 共享内存 IPC — ShmRingQueue + LoaderConfigVersionData
 
-> 详细设计: `docs/architecture/31-shmringqueue-design.md`
-> 完整基准: `docs/performance/09-shmringqueue-benchmark.md`
+> 详细设计: `docs/architecture/14-shmringqueue-design.md`
+> 完整基准: `docs/architecture/14-shmringqueue-design.md#附录性能基准数据`
 > 代码: `code/Net/include/labor/types/ShmRingQueue.hpp`
 >       `code/Net/include/labor/types/LoaderConfigVersionData.hpp`
 

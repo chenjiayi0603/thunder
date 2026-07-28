@@ -118,6 +118,8 @@ private:
                         const std::string& nodeType, uint32_t workerNum);
     void DoInitialSnapshot(etcd::SyncClient& client);
     void DoStartWatch(etcd::SyncClient& client);
+    void DoCanarySnapshot(etcd::SyncClient& client);
+    void DoStartCanaryWatch(etcd::SyncClient& client);
     void DoKeepalive(etcd::SyncClient& client);
     void DoPollConfig(etcd::SyncClient& client);
 
@@ -125,6 +127,7 @@ private:
 
     void OnWatchEvent(etcd::Response resp);
     void OnWatchEnded(bool cancelled);
+    void OnCanaryWatchEnded(bool cancelled);
 
     // ---- 路由组装（调用方须持有 m_registryMutex 或确保无并发） ----
 
@@ -144,7 +147,8 @@ private:
     static std::string BuildRegistryKey(const std::string& nodeType,
                                         const std::string& ip, uint32_t port);
     static std::string BuildRegistryValue(uint32_t nodeId, const std::string& nodeType,
-                                          const std::string& ip, uint32_t port, uint32_t workerNum);
+                                          const std::string& ip, uint32_t port, uint32_t workerNum,
+                                          const std::string& nodeVersion = "");
     static std::string SlotKey(int slot);
 
     // ---- 配置 ----
@@ -175,6 +179,7 @@ private:
 
     std::thread       m_grpcThread;
     std::atomic<bool> m_stopFlag{false};
+    std::atomic<bool> m_running{true};   // #160: 重连循环控制标志
 
     // ---- 注册状态 ----
 
@@ -186,6 +191,7 @@ private:
     uint32_t    m_nodeId{0};
     std::string m_myNodeType;
     std::string m_myNodeIp;
+    std::string m_myNodeVersion;    ///< 本节点版本标识（NODE_VERSION env），用于灰度分组
     uint32_t    m_myNodePort{0};
     uint32_t    m_myWorkerNum{0};
 
@@ -194,11 +200,20 @@ private:
     std::mutex                          m_registryMutex;
     std::map<std::string, std::string>  m_nodeRegistry;  ///< ip:port → JSON value
 
-    // ---- Watch 状态（GrpcThread 读写；m_watchEnded 由 Watcher 线程写） ----
+    // ---- Watch 状态（GrpcThread 读写；m_watchEnded / m_lastWatchEventSec 由 Watcher 线程写） ----
 
-    std::unique_ptr<etcd::Watcher> m_watcher;
+    std::unique_ptr<etcd::Watcher> m_registryWatcher;
+    std::unique_ptr<etcd::Watcher> m_canaryWatcher;
     std::atomic<bool>              m_watchEnded{false};
-    int64_t                        m_watchRevision{0};  ///< ls 快照时拿到的 revision
+    std::atomic<int64_t>           m_lastWatchEventSec{0};   ///< 上次 Watch 事件时间（unix秒），用于健康检查
+    int64_t                        m_lastWatchRebuildSec{0}; ///< 上次重建时间（gRPC 线程独占）
+    int64_t                        m_watchRevision{0};       ///< ls 快照时拿到的 revision
+    int64_t                        m_canaryWatchRevision{0};
+
+    // ---- Canary 权重（m_canaryMutex 保护，GrpcThread 和 Watcher 线程均访问） ----
+
+    std::mutex                           m_canaryMutex;
+    std::map<std::string, std::string>   m_canaryWeights;  ///< NODE_TYPE → JSON 权重键值
 
     // ---- 配置轮询状态（仅 gRPC 线程） ----
 

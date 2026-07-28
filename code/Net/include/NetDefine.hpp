@@ -68,8 +68,16 @@
 #define ENABLE_DATA_LOG
 #endif
 
+// 插件 ABI 版本: Cmd/Module 类布局、虚函数表、框架交互结构变化时必须 +1。
+// 加载时框架校验该版本, 不一致拒绝加载 (防止新旧 .so 与二进制混布导致越界/虚表错位崩溃)。
+#define THUNDER_PLUGIN_ABI_VERSION 2
+
 #define MUDULE_CREATE(Module) \
 extern "C" { \
+int thunder_abi_version() \
+{\
+    return THUNDER_PLUGIN_ABI_VERSION;\
+}\
 net::Cmd* create() \
 {\
     return new Module();\

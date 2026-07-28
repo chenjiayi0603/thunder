@@ -5,6 +5,9 @@ metadata:
   namespace: thunder
 spec:
   replicas: 1
+  # --- Recreate: hostNetwork pod 无法滚动更新 (端口冲突) (#154) ---
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: thunder-hello-https
@@ -13,55 +16,40 @@ spec:
       labels:
         app: thunder-hello-https
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # sysctls 不能与 hostNetwork 同时使用 (K8s 限制)
+      # TCP buffer 优化由 Node 级 sysctl (k8s/init-k8s-node.sh) 统一管理
       containers:
       - name: app
-        image: ubuntu:26.04
+        image: localhost:5000/thunder-hello-https:latest
         imagePullPolicy: IfNotPresent
-        workingDir: /thunder/deploy/HelloHttps
+        # Worker daemon 死亡即 NotReady (#164); 进程名 <server_name>_Loader/_W<n>
+        readinessProbe:
+          exec:
+            command: ["pgrep", "-f", "Hello_https_robot_"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
         env:
+        - name: NODE_VERSION
+          value: "v1"
         - name: POD_IP
           valueFrom:
             fieldRef:
-              fieldPath: status.podIP
-        - name: LD_LIBRARY_PATH
-          value: "/thunder/build/lib:/thunder/deploy/3lib:/thunder/code/3party/lib"
-        - name: DEBIAN_FRONTEND
-          value: noninteractive
-        command:
-        - bash
-        - -c
-        - |
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates net-tools procps iproute2 libjemalloc2 libbrotli1 libsnappy1v5 liburing2 2>/dev/null
-          chmod +x ./node.sh 2>/dev/null || true
-          ./scripts/gen_self_signed_https_cert.sh 2>/dev/null || true
-          mkdir -p /tmp/conf && cp /thunder/k8s/conf/HelloHttps.json /tmp/conf/HelloHttps.json && sed -i "s|0.0.0.0|$POD_IP|g" /tmp/conf/HelloHttps.json
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH bin/HelloHttps /tmp/conf/HelloHttps.json
-          exec tail -f /dev/null
+              fieldPath: status.hostIP
+        - name: ETCD_ENDPOINT
+          value: "http://thunder-etcd.thunder:2379"
+        # --- io_uring 需要 memlock (#154) ---
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        # --- Burstable QoS — 内存不封顶, CPU 保证 ---
+        resources:
+          requests:
+            cpu: "1"
+            memory: "128Mi"
+          limits:
+            cpu: "1"
         ports:
         - containerPort: 27443
-        volumeMounts:
-        - name: thunder-repo
-          mountPath: /thunder
-        - name: thunder-plugins
-          mountPath: /thunder/deploy/*/plugins
-          readOnly: true
-      volumes:
-      - name: thunder-repo
-        hostPath:
-          path: /home/tommychen/thunder
-      - name: thunder-plugins
-        persistentVolumeClaim:
-          claimName: thunder-plugins
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: thunder-hello-https
-  namespace: thunder
-spec:
-  type: NodePort
-  ports:
-  - port: 27443
-    nodePort: 30043
-  selector:
-    app: thunder-hello-https
+        - containerPort: 27444

@@ -24,15 +24,18 @@ deploy/HelloHttp/bin/
 *.log
 *.pid
 deploy/Logic/bin/Logic
-build_asan/
 build-asan/
-core.*
+build-tsan/
+build-ubsan/
+build_release/
+build_asan/
+build_tsan/
+build_ubsan/
+build-agent/
 deploy/include/gmock/
 deploy/include/gtest/
 *.a
 deploy/lib/
-build-agent/cmake_install.cmake
-build-agent/
 deploy/HelloWs/bin/HelloWs
 __pycache__/
 *.pyc
@@ -50,6 +53,7 @@ claude-cli/
 code/3party/
 !code/3party/etcd-cpp-apiv3
 !code/3party/grpc
+!code/3party/keydb
 !code/3party/liburing
 code/3party/lib
 deploy/Center/plugins
@@ -108,3 +112,26 @@ rocksdb_bench.sh
 # 本地文件（不提交）
 TEST_STATUS.md
 issus-list.md
+deploy/Logic/bin/Logic.bak
+deploy/3lib/readme.txt
+deploy/Logic_v2/bin/Logic
+deploy/Logic/bin/Hello
+deploy/HelloWss/bin/Hello
+deploy/HelloWss/bin/HelloWs
+deploy/Interface/bin/Hello
+.gitkeep
+deploy/*/plugins/ModuleHello.so
+deploy/*/plugins/CmdHello.so
+deploy/*/plugins/ModuleShake.so
+deploy/*/plugins/CmdGetToken_v1.so
+deploy/HelloHttp/log/.gitkeep
+deploy/HelloHttp/plugins/echo.wasm
+deploy/HelloHttps/conf/certs/.gitkeep
+deploy/HelloHttps/log/.gitkeep
+deploy/HelloWs/log/.gitkeep
+deploy/HelloWss/log/.gitkeep
+*.wasm
+deploy/admin-web/admin-web
+deploy/admin-web/admin.db
+# 内部对比文档，不提交
+k8s/comparison-openim.md
