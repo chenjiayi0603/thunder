@@ -51,7 +51,7 @@ jobs:
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
             -DTHUNDER_BUILD_NODE_PLUGINS=ON \
             -DTHUNDER_DEPLOY_AUTO=OFF \
-            -DTHUNDER_IO_ASIO_URING=OFF
+            -DTHUNDER_IO_ASIO_URING=ON
 
       # ---- 编译 ----
       - name: CMake build

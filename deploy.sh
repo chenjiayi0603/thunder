@@ -283,6 +283,7 @@ cmd_build() {
         -DTHUNDER_BUILD_TESTS=ON \
         -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
         -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+        -DTHUNDER_IO_ASIO_URING=ON \
         ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
         "${CMAKE_OPENSSL_ARGS[@]}"
 
@@ -666,6 +667,7 @@ cmd_test_compose() {
         cmake -S "${PROJECT_DIR}" -B "${BUILD_DIR}" \
             -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
+            -DTHUNDER_IO_ASIO_URING=ON \
             "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
             err "cmake configure 失败"; return 1
         }
@@ -819,6 +821,7 @@ cmd_test_k8s() {
             -DTHUNDER_BUILD_TESTS=ON \
             -DTHUNDER_BUILD_HELLO_PLUGINS=ON \
             -DTHUNDER_BUILD_NODE_PLUGINS=ON \
+            -DTHUNDER_IO_ASIO_URING=ON \
             ${GTEST_SRC_DIR:+-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${GTEST_SRC_DIR}"} \
             "${CMAKE_OPENSSL_ARGS[@]}" >/dev/null || {
             err "cmake configure 失败"
