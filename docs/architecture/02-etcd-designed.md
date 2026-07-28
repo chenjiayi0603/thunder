@@ -520,6 +520,38 @@ revoke 优先于 cancelWatcher，确保 key 在 ~1s 内删除。
 
 ---
 
+## etcd 注册发现 vs CoreDNS 注册发现
+
+| 维度 | etcd | CoreDNS (K8s Service) |
+|------|------|------|
+| **原理** | KV 存储 + Watch 实时推送 | DNS 解析 + TTL 轮询 |
+| **变更延迟** | Watch 毫秒级 | TTL 默认 30s, 最短 1s |
+| **下线感知** | lease 过期 (~75s) → Watch 即时剔除 | DNS TTL 过期 → 下次解析才消失 |
+| **权重灰度** | ✅ canary/weights key | ❌ 不支持 |
+| **元数据** | ✅ node_id, version, worker_num | ❌ 只能 IP:Port |
+| **故障隔离** | 独立 etcd 集群, 不依赖 K8s | 依赖 K8s API Server + CoreDNS |
+| **跨集群** | 天然支持 (TCP 直连) | K8s 内建, 跨集群需额外配置 |
+| **运维** | 需维护 etcd 集群 (3 节点) | K8s 自带, 零运维 |
+| **一致性** | Raft 强一致 | 最终一致 (DNS 缓存) |
+
+### Thunder 为什么选 etcd
+
+1. **Watch 实时推送** — 路由变更毫秒级生效。CoreDNS 依赖 TTL 轮询, 最小 1s 但有缓存穿透
+2. **权重灰度** — `/thunder/canary/LOGIC/weights` 直接控制流量比例, DNS 做不到
+3. **元数据丰富** — node_id, version, worker_num 全部存 etcd, Worker 直接用
+4. **不绑定 K8s** — Docker Compose / 物理机 / K8s 同一套代码
+
+### 什么时候 CoreDNS 就够了
+
+- 只需要"服务名 → IP"的简单映射
+- 不关心权重、灰度、版本
+- 可以接受 30s 级别的下线延迟
+- 不想维护额外组件
+
+Thunder 的场景（游戏网关、IoT Broker）需要**秒级路由更新 + 权重分流**, etcd 是必需项, CoreDNS 无法替代。
+
+---
+
 ## 完整 etcd 数据流汇总
 
 ```
