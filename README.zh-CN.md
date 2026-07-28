@@ -208,8 +208,3 @@ tests/             pytest E2E · 混沌测试 · 冒烟测试
 | 闭源商业产品 | [Commercial](LICENSE.COMMERCIAL) | 付费 |
 | SaaS / 云服务 | [Commercial](LICENSE.COMMERCIAL) | 付费 |
 
----
-
-<p align="center">
-  <sub>C++20 · 14 万行代码 · 单核 235k RPS · 零停机热更新</sub>
-</p>
