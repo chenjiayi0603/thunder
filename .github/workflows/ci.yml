@@ -30,12 +30,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             cmake g++ make pkg-config \
+            linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
             protobuf-compiler libprotobuf-dev \
             python3 python3-pytest python3-requests
           # 可选: 若系统有则用系统库, 否则 submodule 自建
           sudo apt-get install -y -qq --no-install-recommends \
             libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev 2>/dev/null || true
+
+      # ---- Patch liburing (ubuntu-24.04 kernel 6.8 缺 BLOCK_URING_CMD_DISCARD) ----
+      - name: Patch liburing for kernel 6.8
+        run: |
+          sed -i 's/BLOCK_URING_CMD_DISCARD/(0)/g' code/3party/liburing/src/include/liburing.h
+          # 确保用 submodule libev 4.33 (系统 libev 4.31 缺 ev_signal_reset_after_fork)
+          sudo apt-get remove -y -qq libev-dev libev4 2>/dev/null || true
 
       # ---- CMake 配置 ----
       - name: CMake configure
