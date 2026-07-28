@@ -324,23 +324,19 @@ _validate_io_backend() {
         else
             # cmake 没开 asio_uring → 配置不能用 asio_uring
             if echo "$content" | grep -q '"io_backend": "asio_uring"'; then
-                mismatch+=("$file:$line 期望 ev 实际 asio_uring (二进制不支持)")
+                # 仅警告，不自动改 — 配置开发者控制
+                warn "$file:$line: io_backend=asio_uring 但二进制未编译 (忽略, 运行时 FALLBACK 到 ev)"
             fi
         fi
     done < <(grep -rn '"io_backend"' "${PROJECT_DIR}/deploy/" --include="*.json" 2>/dev/null)
     if [[ ${#mismatch[@]} -gt 0 ]]; then
+        # 不自动修正 — 配置由开发者控制，pre-commit hook 保证默认 asio_uring
         err "io_backend 配置与 cmake 编译选项不一致！"
         for m in "${mismatch[@]}"; do
             err "  $m"
         done
-        err "修复: deploy.sh build 会自动修正, 或手动改 deploy/*/conf/*.json"
-        # Auto-fix: align configs with cmake
-        if $asio_enabled; then
-            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "ev"/"io_backend": "asio_uring"/' {} \;
-        else
-            find "${PROJECT_DIR}/deploy/" -name "*.json" -exec sed -i 's/"io_backend": "asio_uring"/"io_backend": "ev"/' {} \;
-        fi
-        ok "io_backend 已自动修正"
+        err "修复: 手动改 deploy/*/conf/*.json 或 cmake 加 -DTHUNDER_IO_ASIO_URING=ON"
+        # 不自动修改文件 (避免 build 过程静默覆盖配置)
     fi
 }
 
