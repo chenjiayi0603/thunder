@@ -2314,7 +2314,9 @@ clangd 比 codegraph 类插件精度高得多（基于真实编译数据库而�
 
 ---
 
-## 🔵 #85 [质量工程] ASan 内存泄漏检测 — TLS 连接资源生命周期
+## ✅ #85 [质量工程] ASan 内存泄漏检测 — TLS 连接资源生命周期
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2404,7 +2406,9 @@ ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
 
 ---
 
-## 🔵 #86 [质量工程] TSan 并发安全测试 — Codec 多连接并发 Decode/RemoveConnection
+## ✅ #86 [质量工程] TSan 并发安全测试 — Codec 多连接并发 Decode/RemoveConnection
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2470,7 +2474,9 @@ TSAN_OPTIONS=abort_on_error=1 ./build_tsan/code/test/codec/test_codec_tsan
 
 ---
 
-## 🔵 #87 [质量工程] UBSan — Codec 未定义行为检测
+## ✅ #87 [质量工程] UBSan — Codec 未定义行为检测
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2537,7 +2543,9 @@ TEST(UbSan, LargeBodyLen)
 
 ---
 
-## 🔵 #88 [质量工程] WS/HTTP 帧解析模糊测试（libFuzzer）
+## ✅ #88 [质量工程] WS/HTTP 帧解析模糊测试（libFuzzer）
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2604,7 +2612,9 @@ cmake --build build_fuzz -j$(nproc)
 
 ---
 
-## 🔵 #89 [质量工程] TLS 长连接稳定性测试 — 握手状态机全路径覆盖
+## ✅ #89 [质量工程] TLS 长连接稳定性测试 — 握手状态机全路径覆盖
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2667,7 +2677,9 @@ TEST(WssStability, HttpUpgradeThenWsFrames)
 
 ---
 
-## 🔵 #90 [质量工程] Codec 代码覆盖率门 — lcov ≥ 80%
+## ✅ #90 [质量工程] Codec 代码覆盖率门 — lcov ≥ 80%
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 质量工程 | 状态: 🔵 待实现
 
@@ -2730,7 +2742,9 @@ python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 80.0 else 1)"
 
 ---
 
-## 🔵 #91 [分析] etcd 注册协议现状 + 跨服务兼容性 + SDK 模块化评估
+## ✅ #91 [分析] etcd 注册协议现状 + 跨服务兼容性 + SDK 模块化评估
+
+> 2026-07-28 | 状态: ✅ 已完成
 
 > 2026-06-14 | 分析 | 状态: 🔵 待决策
 
