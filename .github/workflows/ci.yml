@@ -37,12 +37,24 @@ jobs:
             cmake g++ make pkg-config \
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
-            protobuf-compiler \
             python3 python3-pytest python3-requests
           # 不用系统 libprotobuf-dev (ubuntu-24.04 只有 3.21, .pb.h 用 3.33 生成)
           # 从 Thunder submodule code/3party/protobuf 自建
           sudo apt-get install -y -qq --no-install-recommends \
             libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev libabsl-dev 2>/dev/null || true
+          # 备选包名
+          sudo apt-get install -y -qq --no-install-recommends \
+            default-libmysqlclient-dev libmysqlclient-dev 2>/dev/null || true
+
+      # ---- 用系统 protobuf 重新生成 .pb 文件 (submodule 3.33 需要 absl, CI 太慢) ----
+      - name: Regenerate protobuf with system protoc
+        run: |
+          sudo apt-get install -y -qq protobuf-compiler libprotobuf-dev 2>&1 | tail -1
+          cd code/Proto/src
+          for f in *.proto; do
+            protoc --cpp_out=. "$f" 2>/dev/null || true
+          done
+          echo "protobuf regenerated with system version"
 
       # ---- Patch liburing (ubuntu-24.04 kernel 6.8 缺 BLOCK_URING_CMD_DISCARD) ----
       - name: Patch liburing for kernel 6.8
