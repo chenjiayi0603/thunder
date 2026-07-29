@@ -50,9 +50,11 @@ jobs:
           # 重新生成 .pb 文件匹配系统版本
           cd code/Proto/src
           for f in *.proto; do protoc --cpp_out=. "$f" 2>/dev/null || true; done
-          # 删掉 submodule protobuf src, cmake 会 fallback 到系统 /usr/include
+          # 删掉 submodule protobuf src, 用系统路标
           rm -rf code/3party/protobuf/src
-          echo "protobuf: using system 3.21"
+          # 创建空目录避免 cmake 报错, Include 用系统路径
+          mkdir -p code/3party/protobuf/src/google
+          echo "protobuf: using system 3.21 headers"
 
       # ---- Patch liburing (ubuntu-24.04 kernel 6.8 缺 BLOCK_URING_CMD_DISCARD) ----
       - name: Patch liburing for kernel 6.8
