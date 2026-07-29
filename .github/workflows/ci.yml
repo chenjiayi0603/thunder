@@ -23,47 +23,38 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
 
-      # 确保所有 submodule 就位 (checkout@v4 的 recursive 可能漏)
       - name: Init submodules
         run: git submodule update --init --recursive
 
-      # ---- 依赖安装 (libev/liburing/hiredis 由 Thunder submodule 自建) ----
-      - name: Install system dependencies
+      # ============ 依赖安装 ============
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             cmake g++ make pkg-config \
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
-            python3 python3-pytest python3-requests \
-            default-libmysqlclient-dev
-          # 可选包 (装不上不阻塞)
+            protobuf-compiler libprotobuf-dev \
+            libmysqlclient-dev \
+            python3 python3-pytest python3-requests
           sudo apt-get install -y -qq --no-install-recommends \
-            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev libabsl-dev 2>/dev/null || true
+            libluajit-5.1-dev liblog4cplus-dev libabsl-dev 2>/dev/null || true
 
-      # ---- 用系统 protobuf (3.21) 替代 submodule (3.33 需 absl, CI 无) ----
-      - name: Use system protobuf
+      # ============ protobuf: 重生成 .pb 用系统版本 ============
+      - name: Regenerate protobuf
         run: |
-          sudo apt-get install -y -qq protobuf-compiler libprotobuf-dev libabsl-dev 2>&1 | tail -1
-          # 重新生成 .pb 文件匹配系统版本
           cd code/Proto/src
-          for f in *.proto; do protoc --cpp_out=. "$f" 2>/dev/null || true; done
-          # 删掉 submodule protobuf src, 用系统路标
-          rm -rf code/3party/protobuf/src
-          # 创建空目录避免 cmake 报错, Include 用系统路径
-          mkdir -p code/3party/protobuf/src/google
-          echo "protobuf: using system 3.21 headers"
+          protoc --cpp_out=. coor.proto
+          # 删掉 submodule headers, gcc 从 /usr/include 找
+          rm -rf ../../3party/protobuf/src/google/protobuf
+          echo "protobuf regenerated"
 
-      # ---- Patch liburing (ubuntu-24.04 kernel 6.8 缺 BLOCK_URING_CMD_DISCARD) ----
-      - name: Patch liburing for kernel 6.8
-        run: |
-          sed -i 's/BLOCK_URING_CMD_DISCARD/(0)/g' code/3party/liburing/src/include/liburing.h
-          # 确保用 submodule libev 4.33 (系统 libev 4.31 缺 ev_signal_reset_after_fork)
-          sudo apt-get remove -y -qq libev-dev libev4 2>/dev/null || true
+      # ============ liburing patch ============
+      - name: Patch liburing
+        run: sed -i 's/BLOCK_URING_CMD_DISCARD/(0)/g' code/3party/liburing/src/include/liburing.h
 
-      # ---- CMake 配置 ----
+      # ============ CMake ============
       - name: CMake configure
         run: |
           cmake -S . -B build \
@@ -74,14 +65,12 @@ jobs:
             -DTHUNDER_DEPLOY_AUTO=OFF \
             -DTHUNDER_IO_ASIO_URING=ON
 
-      # ---- 编译 ----
       - name: CMake build
         run: cmake --build build -j$(nproc)
 
-      # ---- C++ gtest (ctest) ----
+      # ============ 测试 ============
       - name: C++ unit tests (ctest)
         run: cd build/code/test && ctest --output-on-failure -j$(nproc)
 
-      # ---- Python pytest ----
       - name: Python unit tests (pytest)
         run: python3 -m pytest tests/unit/ -v --tb=short
