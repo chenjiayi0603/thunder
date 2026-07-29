@@ -23,6 +23,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
+
+      # 确保所有 submodule 就位 (checkout@v4 的 recursive 可能漏)
+      - name: Init submodules
+        run: git submodule update --init --recursive
 
       # ---- 依赖安装 (libev/liburing/hiredis 由 Thunder submodule 自建) ----
       - name: Install system dependencies
