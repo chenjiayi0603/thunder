@@ -37,12 +37,11 @@ jobs:
             cmake g++ make pkg-config \
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
-            python3 python3-pytest python3-requests
-          # 不用系统 libprotobuf-dev (ubuntu-24.04 只有 3.21, .pb.h 用 3.33 生成)
-          # 从 Thunder submodule code/3party/protobuf 自建
+            python3 python3-pytest python3-requests \
+            default-libmysqlclient-dev
+          # 可选包 (装不上不阻塞)
           sudo apt-get install -y -qq --no-install-recommends \
-            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev libabsl-dev \
-            default-libmysqlclient-dev 2>/dev/null || true
+            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev libabsl-dev 2>/dev/null || true
 
       # ---- 用系统 protobuf (3.21) 替代 submodule (3.33 需 absl, CI 无) ----
       - name: Use system protobuf
