@@ -37,11 +37,12 @@ jobs:
             cmake g++ make pkg-config \
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
-            protobuf-compiler libprotobuf-dev \
+            protobuf-compiler \
             python3 python3-pytest python3-requests
-          # 可选: 若系统有则用系统库, 否则 submodule 自建
+          # 不用系统 libprotobuf-dev (ubuntu-24.04 只有 3.21, .pb.h 用 3.33 生成)
+          # 从 Thunder submodule code/3party/protobuf 自建
           sudo apt-get install -y -qq --no-install-recommends \
-            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev 2>/dev/null || true
+            libev-dev liburing-dev libluajit-5.1-dev liblog4cplus-dev libmariadb-dev libabsl-dev 2>/dev/null || true
 
       # ---- Patch liburing (ubuntu-24.04 kernel 6.8 缺 BLOCK_URING_CMD_DISCARD) ----
       - name: Patch liburing for kernel 6.8
