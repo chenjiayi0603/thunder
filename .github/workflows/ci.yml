@@ -36,7 +36,7 @@ jobs:
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
             protobuf-compiler libprotobuf-dev \
-            libmysqlclient-dev \
+            libmariadb-dev \
             python3 python3-pytest python3-requests
           sudo apt-get install -y -qq --no-install-recommends \
             libluajit-5.1-dev liblog4cplus-dev libabsl-dev 2>/dev/null || true
@@ -44,10 +44,8 @@ jobs:
       # ============ protobuf: 重生成 .pb 用系统版本 ============
       - name: Regenerate protobuf
         run: |
-          cd code/Proto/src
-          protoc --cpp_out=. coor.proto
-          # 删掉 submodule headers, gcc 从 /usr/include 找
-          rm -rf ../../3party/protobuf/src/google/protobuf
+          protoc --cpp_out=code/Proto code/Proto/coor.proto
+          rm -rf code/3party/protobuf/src/google/protobuf
           echo "protobuf regenerated"
 
       # ============ liburing patch ============
