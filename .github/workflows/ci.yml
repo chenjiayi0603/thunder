@@ -36,17 +36,19 @@ jobs:
             linux-libc-dev \
             libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
             protobuf-compiler libprotobuf-dev \
-            libmariadb-dev \
+            libmariadb-dev libmariadb-dev-compat libluajit-5.1-dev \
             python3 python3-pytest python3-requests
           sudo apt-get install -y -qq --no-install-recommends \
             libluajit-5.1-dev liblog4cplus-dev libabsl-dev 2>/dev/null || true
 
-      # ============ protobuf: 重生成 .pb 用系统版本 ============
-      - name: Regenerate protobuf
+      # ============ protobuf: 重生成 .pb + 用系统库 ============
+      - name: Setup protobuf
         run: |
-          protoc --cpp_out=code/Proto code/Proto/coor.proto
+          protoc --cpp_out=code/Proto/src code/Proto/coor.proto
           rm -rf code/3party/protobuf/src/google/protobuf
-          echo "protobuf regenerated"
+          # 替换 cmake 里的 submodule protobuf 路径为系统路径
+          sed -i 's|code/3party/protobuf/build/libprotobuf.so|/usr/lib/x86_64-linux-gnu/libprotobuf.so|g' code/cmake/ThunderCommon.cmake code/CMakeLists.txt 2>/dev/null || true
+          echo "protobuf: regenerated + system lib"
 
       # ============ liburing patch ============
       - name: Patch liburing
