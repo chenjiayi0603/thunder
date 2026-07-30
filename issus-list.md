@@ -9008,3 +9008,62 @@ HTTP 接口无文档，调用方需读源码才能知道请求格式、参数、
 
 ### 预估
 - 工作量: 大 (~3 天)
+
+---
+
+## 🟡 #187 [Feature] DPDK I/O Backend — 基于 F-Stack 实现 DpdkIoBackend
+
+> 2026-07-30 | 状态: 🟡 待处理
+
+### 背景
+
+Thunder 当前有 3 个 IoBackend 实现——`EvIoBackend`（libev epoll）、`AsioUringIoBackend`（io_uring）、`NativeUringIoBackend`（原生 io_uring）。`IoBackend.hpp` 接口注释中已预留 `"dpdk"` 位置，`GetPeerName` 注释明确写了 `"dpdk 用缓存的地址返回"`。
+
+DPDK + F-Stack 方案可将网络吞吐从 ~235k RPS/core 提升到接近裸金属水平，P99 延迟进一步压缩到微秒级。阿里云 g7/c7/r7 ECS 弹性网卡已支持 DPDK PMD，无需专用网卡硬件。
+
+**选型：F-Stack**（非 Seastar）
+
+| 原因 | 说明 |
+|------|------|
+| F-Stack FF_API 兼容 POSIX socket | `SubmitRead`/`SubmitWrite` 代码与 `EvIoBackend` 基本一致，改动极小 |
+| 不改 Worker 层 | `IoBackend` 策略模式，上层零感知 |
+| Seastar 代价太高 | 要求重写整个事件循环 + 线程模型，与 Thunder 架构冲突 |
+
+### 依赖
+
+| 组件 | 说明 |
+|------|------|
+| DPDK 23.11 LTS | 已安装在 CI 环境（见 #1 的 dirent.h 历史） |
+| F-Stack | 腾讯开源，FreeBSD TCP/IP 用户态协议栈 |
+| 云 ECS 或裸金属 | 阿里云 g7/c7/r7、AWS ENA，或 Intel X520/X710/Mellanox CX-3 网卡 |
+
+### 实现内容
+
+1. **`DpdkIoBackend.hpp/.cpp`** — 实现 `IoBackend` 全部 12 个虚函数
+2. **F-Stack 初始化** — `ff_init(argc, argv)` 替代 dpdk eal_init，绑定网卡 + 大页内存
+3. **Accept/Connect 适配** — `ff_accept` / `ff_connect`，PeerAddr 在 Accept 时缓存
+4. **libev 集成** — F-Stack 的 `ff_epoll_wait` 包装为 libev `ev_io` watcher，保持 Worker 事件循环不变
+5. **编译开关** — `THUNDER_IO_DPDK=ON`，链接 `libfstack.a` + `libdpdk.a`
+6. **配置文件** — `"io_backend": "dpdk"` 一键切换
+
+### 关键问题
+
+| 问题 | 处理 |
+|------|------|
+| F-Stack 需 hugapage | 部署脚本自动 `hugeadm --pool-pages-min 2M:1024` |
+| 网卡绑 DPDK 驱动后内核不可见 | F-Stack 支持 KNI 虚拟网卡，SSH/管理流量走 KNI |
+| 无法和普通 socket 进程混用端口 | SO_REUSEPORT 语义不完全兼容，dpdk backend 独占端口 |
+| 调试困难（无 strace） | 保留 `EvIoBackend` 作为 fallback，出问题切回 epoll 对比 |
+
+### 预估
+
+- 工作量: 大 (~5 天)
+  - Day 1-2: F-Stack 环境搭建 + 大页/网卡驱动调试
+  - Day 3-4: `DpdkIoBackend` 实现 + libev 集成
+  - Day 5: 性能测试 + 对比 EvIoBackend/AsioUringIoBackend 基准
+
+### 预期收益
+
+- 单核 RPS: 235k → 800k+ (纯网络层面，业务逻辑瓶颈另计)
+- P99 延迟: 220μs → <100μs (内核旁路消除中断 + 拷贝开销)
+- 集群内节点通信延迟降低 50%+（对分布式一致性协议如 Raft 有显著增益）
