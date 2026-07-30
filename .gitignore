@@ -139,3 +139,4 @@ ci-build/
 docs/architecture/dpdk-fstack-backend.md
 docs/architecture/aliyun-dpdk-poc.md
 *.pem
+code/Proto/code/
