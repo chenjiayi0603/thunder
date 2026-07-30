@@ -24,25 +24,37 @@ jobs:
         with:
           submodules: recursive
 
-      # ---- 依赖安装 ----
-      - name: Install system dependencies
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      # ============ 依赖安装 ============
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             cmake g++ make pkg-config \
-            libev-dev \
-            libssl-dev \
-            libcurl4-openssl-dev \
-            liblog4cplus-dev \
-            libjemalloc-dev \
-            libluajit-5.1-dev \
-            libmariadb-dev \
-            libhiredis-dev \
-            zlib1g-dev \
+            linux-libc-dev \
+            libssl-dev libcurl4-openssl-dev libjemalloc-dev zlib1g-dev \
             protobuf-compiler libprotobuf-dev \
+            libmariadb-dev libmariadb-dev-compat libluajit-5.1-dev \
             python3 python3-pytest python3-requests
+          sudo apt-get install -y -qq --no-install-recommends \
+            libluajit-5.1-dev liblog4cplus-dev libabsl-dev 2>/dev/null || true
 
-      # ---- CMake 配置 ----
+      # ============ protobuf: 重生成 .pb + 用系统库 ============
+      - name: Setup protobuf
+        run: |
+          protoc --cpp_out=code/Proto/src code/Proto/coor.proto
+          rm -rf code/3party/protobuf/src/google/protobuf
+          # 替换 cmake 里的 submodule protobuf 路径为系统路径
+          sed -i 's|code/3party/protobuf/build/libprotobuf.so|/usr/lib/x86_64-linux-gnu/libprotobuf.so|g' code/cmake/ThunderCommon.cmake code/CMakeLists.txt 2>/dev/null || true
+          echo "protobuf: regenerated + system lib"
+
+      # ============ liburing patch ============
+      - name: Patch liburing
+        run: sed -i 's/BLOCK_URING_CMD_DISCARD/(0)/g' code/3party/liburing/src/include/liburing.h
+
+      # ============ CMake ============
       - name: CMake configure
         run: |
           cmake -S . -B build \
@@ -53,14 +65,12 @@ jobs:
             -DTHUNDER_DEPLOY_AUTO=OFF \
             -DTHUNDER_IO_ASIO_URING=ON
 
-      # ---- 编译 ----
       - name: CMake build
         run: cmake --build build -j$(nproc)
 
-      # ---- C++ gtest (ctest) ----
+      # ============ 测试 ============
       - name: C++ unit tests (ctest)
         run: cd build/code/test && ctest --output-on-failure -j$(nproc)
 
-      # ---- Python pytest ----
       - name: Python unit tests (pytest)
         run: python3 -m pytest tests/unit/ -v --tb=short

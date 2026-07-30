@@ -664,7 +664,9 @@ void Labor::StopAllSignals()
 	//    导致 !w->next == false 而跳过 sigaction 安装。
 	// 2. Unblock 父进程通过 signalfd 阻塞的信号，使 Worker 的 sigaction 能正常接收信号。
 	// 注意：不调用 ev_signal_stop，避免修改父子共享的 signalfd（否则破坏父进程 SIGCHLD 处理）。
+#if EV_VERSION_MAJOR > 4 || (EV_VERSION_MAJOR == 4 && EV_VERSION_MINOR >= 33)
 	ev_signal_reset_after_fork();
+#endif
 
 	sigset_t unblockSet;
 	sigemptyset(&unblockSet);
