@@ -2,8 +2,7 @@
 
 > ⚠ **本测试为 loopback (127.0.0.1) 回环数据。** 真实网卡数据见 [`20-real-nic-benchmark.md`](20-real-nic-benchmark.md)
 >
-> ⚠ **测试方法**：Thunder 实际使用 `wrk_echo_*.lua` (POST `/hello/hello` Echo, JSON 解析+构造)，
-> 与 Nginx `return 200` 固定响应 **不完全对等**。表格中"大小"为请求 body 中文案长度（非精确字节）。
+> ⚠ **测试方法**：GET `/hello/raw` (24B 固定响应) vs Nginx `return 200`。脚本 `wrk_64b.lua` 未入 git，不可完全复现。
 > 公平对比数据以 `20-real-nic-benchmark.md` 为准。
 >
 > 日期: 2026-06-12 | 环境: Ubuntu 26.04 LTS, Linux 7.0 | 工具: wrk 4.1.0
