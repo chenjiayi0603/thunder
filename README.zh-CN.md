@@ -95,41 +95,29 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 
 *i9-12900H, Ubuntu 26.04, 1GbE 真实网卡, `wrk -t4 -c100 -d10s`*
 
-### 场景对比
+公平对比 — POST 变长二进制 body (不解析) → 固定返回 `{"code":0,"msg":"ok"}` (24B)。
 
-| 场景 | Thunder | Nginx | 说明 |
-|------|:---:|:---:|------|
-| Echo 64B 小包 (JSON) | **191k RPS** (ev) | 167k RPS | Thunder 快 14%；Nginx 纯静态 serve，无 JSON 解析开销 |
-| Echo 4KB 中包 | 140k RPS | **162k RPS** | Nginx 反超 |
-| Echo 64KB 大包 (HTTP) | 24.8k RPS | **74.8k RPS** | Nginx sendfile 内核零用户拷贝 (SSL 不适用) |
-| 静态响应 (无解析) | 227k RPS | **254k RPS** | Nginx 快 12% |
-| **热更新业务逻辑** | ✅ dlopen .so 零停机 | ❌ 改配置 + reload | **核心差异** |
-| **多协议 (WS/MQTT/TCP)** | ✅ 同一框架 | 需额外模块/服务 | |
-| **灰度路由** | ✅ etcd 权重 canary | 需 Lua/外部服务 | |
-| **Work-Stealing 线程池** | ✅ 543ns/op (2.53x) | 单队列 | 多核利用率 |
+### HTTP
 
-### HTTP 静态响应 (`/hello/raw`, 24B 固定响应, GET)
+| Body | Thunder (asio_uring) | Nginx 1w | |
+|-----:|-----:|-----:|:--:|
+| 64 B | 193k RPS / 254μs | 246k RPS / 395μs | Nginx +27% |
+| 1 KB | 182k RPS / 289μs | 212k RPS / 447μs | Nginx +16% |
+| 4 KB | **221k RPS / 201μs** | 189k RPS / 492μs | Thunder +17% |
+| 16 KB | **116k RPS / 291μs** | 70k RPS / 1.4ms | Thunder +66% |
+| 64 KB | **53k RPS / 755μs** | 37k RPS / 2.7ms | Thunder +44% |
 
-| 后端 | RPS | P50 |
-|------|----:|----:|
-| asio_uring | 227k | 275μs |
-| native_uring | 217k | 340μs |
-| ev | 217k | 299μs |
-| Nginx 1w | 254k | 387μs |
+### HTTPS
 
-### HTTP Echo (`/hello/hello`, JSON 解析+构造)
+| Body | Thunder (asio_uring) | Nginx SSL 1w | |
+|-----:|-----:|-----:|:--:|
+| 64 B | 116k RPS / 366μs | 165k RPS / 574μs | Nginx +42% |
+| 1 KB | 95k RPS / 327μs | 156k RPS / 611μs | Nginx +64% |
+| 16 KB | 29k RPS / 1.9ms | 75k RPS / 1.3ms | Nginx +155% |
+| 64 KB | 8.9k RPS / 5.8ms | 25k RPS / 3.6ms | Nginx +180% |
 
-| 载荷 | ev | native_uring | asio_uring | Nginx |
-|-----:|:---:|:---:|:---:|:---:|
-| 64 B | 191k | 187k | 178k | 167k |
-| 1 KB | 163k | 167k | 164k | 164k |
-| 4 KB | 140k | 138k | 129k | 162k |
-| 64 KB | 24.8k | 24.5k | 24.7k | **74.8k** |
-
-> **Thunder 的优势不在 raw RPS，在于"不改代码能做的事"：** 热更新业务 .so 而不丢连接、一条请求链跨 HTTP/WS/MQTT 多协议、etcd 权重灰度切流、Work-Stealing 线程池多核线性扩展。
->
-> 静态响应比 Nginx 慢 12% 是网关框架的架构代价 — proto 序列化/反序列化 + 虚函数模块分发 — 换来了 Nginx 做不到的零停机热更新和业务逻辑嵌入能力。
->
+> HTTP 小包 Nginx 领先 (轻量状态机)，大包 Thunder 反超 +17-66% 且 P50 延迟 2-3x 优于 Nginx。
+> HTTPS Thunder SSL 路径衰减严重 (-40~-83% vs Nginx -30~-35%)，待 profiling。
 > 📖 完整报告：[`docs/performance/20-real-nic-benchmark.md`](docs/performance/20-real-nic-benchmark.md)
 
 ---
