@@ -183,15 +183,13 @@ bool ModuleHello::TestHttpRequestCo(const net::tagMsgShell& stMsgShell, const Ht
 bool ModuleHello::TestHelloPoolCpu(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[](net::StepCo20& s) -> net::AsyncTask { return HelloPoolCpuCo(s); });
+	return net::LaunchCo(stMsgShell, oInHttpMsg, HelloPoolCpuCo);
 }
 
 bool ModuleHello::TestHelloPoolBlock(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
 {
 	LOG4_TRACE("%s()", __FUNCTION__);
-	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[](net::StepCo20& s) -> net::AsyncTask { return HelloPoolBlockCo(s); });
+	return net::LaunchCo(stMsgShell, oInHttpMsg, HelloPoolBlockCo);
 }
 
 bool ModuleHello::TestHelloCoRedis(const net::tagMsgShell& stMsgShell,
@@ -201,10 +199,7 @@ bool ModuleHello::TestHelloCoRedis(const net::tagMsgShell& stMsgShell,
 	LOG4_TRACE("%s()", __FUNCTION__);
 	const std::string host = JsonStrOrDefault(obj, "redis_host", "127.0.0.1");
 	const int port = JsonIntOrDefault(obj, "redis_port", 6379);
-	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[host, port](net::StepCo20& step) -> net::AsyncTask {
-			return HelloCoRedisCo(step, host, port);
-		});
+	return net::LaunchCo(stMsgShell, oInHttpMsg, HelloCoRedisCo, host, port);
 }
 
 bool ModuleHello::TestHelloCoMysql(const net::tagMsgShell& stMsgShell,
@@ -219,10 +214,7 @@ bool ModuleHello::TestHelloCoMysql(const net::tagMsgShell& stMsgShell,
 	const std::string db = JsonStrOrDefault(obj, "mysql_db", "thunder_test");
 	const std::string charset = JsonStrOrDefault(obj, "mysql_charset", "utf8mb4");
 	const util::tagDbConnInfo dbConn = MakeTagDbConn(h, static_cast<unsigned int>(p), user, pwd, db, charset);
-	return net::LaunchCo(stMsgShell, oInHttpMsg,
-		[dbConn](net::StepCo20& step) -> net::AsyncTask {
-			return HelloCoMysqlCo(step, dbConn);
-		});
+	return net::LaunchCo(stMsgShell, oInHttpMsg, HelloCoMysqlCo, dbConn);
 }
 
 } /* namespace core */
