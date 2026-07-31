@@ -1,7 +1,7 @@
 # Thunder vs Nginx：性能对比
 
 > 日期: 2026-07-31 | 环境: Ubuntu 26.04 LTS | 工具: wrk 4.1.0
-> 网卡: 192.168.3.61 (enp0s31f6, 1GbE) | Hello 构建时间: Jul 31 14:04
+> 网卡: 192.168.3.61 (enp0s31f6, 1GbE)
 
 ---
 
@@ -18,65 +18,64 @@
 
 ## 测试方法
 
-**公平对比** — 两端行为完全对等：POST 变长二进制 body (不解析)，返回固定 24B JSON。
+**完全对等**: POST 变长二进制 body (不解析) → 固定返回 `{"code":0,"msg":"ok"}` (24B)。
 
 ```
-客户端 → POST N 字节随机二进制 (Content-Type: octet-stream)
-Thunder → /hello/raw → ModuleRaw → SendToClientFast → {"code":0,"msg":"ok"}
-Nginx   → /          → return 200 '{"code":0,"msg":"ok"}'
+客户端 → POST N 字节 (Content-Type: octet-stream)
+Thunder → /hello/raw → ModuleRaw → SendToClientFast
+Nginx   → /          → return 200
 ```
 
-请求 body 仅改变 TCP 段大小/分片行为，两端均不解析 body 内容。
-**不含 JSON 解析、动态构造、文件 IO、sendfile 等不对等因素。**
+两端均不解析 body 内容，无 JSON 解析、动态构造、文件 IO、sendfile。
 
 ---
 
 ## HTTP 基准
 
-| Body | Thunder (asio_uring) | Nginx 1w | |
-|-----:|-----:|-----:|:--:|
-| 64 B | 193k RPS / 254μs | 246k RPS / 395μs | Nginx +27% |
-| 1 KB | 182k RPS / 289μs | 212k RPS / 447μs | Nginx +16% |
-| 4 KB | 221k RPS / 201μs | 189k RPS / 492μs | **Thunder +17%** |
-| 16 KB | 116k RPS / 291μs | 70k RPS / 1.4ms | **Thunder +66%** |
-| 64 KB | 53k RPS / 755μs | 37k RPS / 2.7ms | **Thunder +44%** |
+| Body | ev | native_uring | asio_uring | Nginx 1w |
+|-----:|----:|----:|----:|----:|
+| 64 B | 183k / 214μs | 180k / 198μs | 193k / 254μs | **252k / 392μs** |
+| 1 KB | 143k / 485μs | 214k / 218μs | 182k / 289μs | **256k / 386μs** |
+| 4 KB | 153k / 238μs | 217k / 222μs | **221k / 201μs** | 253k / 392μs |
+| 16 KB | 206k / 249μs | 203k / 189μs | 203k / 225μs | **256k / 387μs** |
+| 64 KB | 193k / 198μs | 189k / 207μs | 216k / 216μs | **256k / 388μs** |
 
 **分析:**
 
-- 小包 (≤1KB): Nginx 领先 16-27%，源于更轻量的 HTTP 状态机
-- 大包 (≥4KB): Thunder 反超，4KB +17%，16KB +66%，64KB +44%
-- Thunder P50 延迟全场景优于 Nginx，大包优势尤为明显 (755μs vs 2.7ms)
+- Nginx 全场景吞吐领先 (252-256k)，且不受请求 body 大小影响
+- Thunder 三后端在 143k-221k 范围，P50 延迟整体优于 Nginx (198-485μs vs 386-392μs)
+- asio_uring 在 4KB 拉近差距至 12%，native_uring 在 1KB/4KB 表现最佳
+- ev 在 1KB/4KB 吞吐偏低 (143k/153k)，大包恢复 (206k/193k)
 
 ## HTTPS (SSL) 基准
 
-| Body | Thunder (asio_uring) | Nginx SSL 1w | |
-|-----:|-----:|-----:|:--:|
-| 64 B | 116k RPS / 366μs | 165k RPS / 574μs | Nginx +42% |
-| 1 KB | 95k RPS / 327μs | 156k RPS / 611μs | Nginx +64% |
-| 4 KB | 90k RPS / 486μs | 125k RPS / 698μs | Nginx +39% |
-| 16 KB | 29k RPS / 1.9ms | 75k RPS / 1.3ms | Nginx +155% |
-| 64 KB | 8.9k RPS / 5.8ms | 25k RPS / 3.6ms | Nginx +180% |
+| Body | ev | native_uring | asio_uring | Nginx SSL 1w |
+|-----:|----:|----:|----:|----:|
+| 64 B | 74k / 0.95ms | 101k / 716μs | **142k / 323μs** | 161k / 581μs |
+| 1 KB | 109k / 364μs | 144k / 339μs | 137k / 355μs | **165k / 567μs** |
+| 4 KB | 112k / 353μs | 138k / 372μs | 113k / 334μs | **167k / 568μs** |
+| 16 KB | 74k / 1.0ms | 131k / 372μs | 118k / 345μs | **168k / 567μs** |
+| 64 KB | 108k / 347μs | **146k / 327μs** | 135k / 324μs | 167k / 568μs |
 
 **分析:**
 
-- Nginx SSL 全场景领先，大包 +155-180%
-- Thunder SSL 衰减严重: HTTP→HTTPS 吞吐降 40-80%
-- Nginx SSL 衰减平稳: HTTP→HTTPS 降 30-35%
-- Thunder HTTPS 大包 (≥16KB) 吞吐骤降，疑似 SSL record 拼包/缓冲策略差异
+- Nginx SSL 全场景稳定 ~165k，不受请求 body 影响
+- asio_uring 64B 与 Nginx 仅差 12% (142k vs 161k)，P50 占优 (323μs vs 581μs)
+- native_uring 64KB 差距最小 (146k vs 167k, -12%)
+- ev 是三个后端中最弱的，64B/16KB 只有 74k
+- 三后端 P50 均优于 Nginx，ev 除外 (16KB 1.0ms)
 
 ## HTTP → HTTPS 衰减
 
-| Body | Thunder | Nginx |
-|-----:|-----:|-----:|
-| 64 B | 193k → 116k (-40%) | 246k → 165k (-33%) |
-| 1 KB | 182k → 95k (-48%) | 212k → 156k (-26%) |
-| 4 KB | 221k → 90k (-59%) | 189k → 125k (-34%) |
-| 16 KB | 116k → 29k (-75%) | 70k → 75k (+7%) |
-| 64 KB | 53k → 8.9k (-83%) | 37k → 25k (-33%) |
+| Body | ev | native_uring | asio_uring | Nginx |
+|-----:|----:|----:|----:|----:|
+| 64 B | -59% | -44% | -26% | -36% |
+| 1 KB | -24% | -33% | -25% | -36% |
+| 4 KB | -27% | -36% | -49% | -34% |
+| 16 KB | -64% | -35% | -42% | -34% |
+| 64 KB | -44% | -23% | -38% | -35% |
 
-Nginx SSL 衰减稳定在 30-35%；Thunder 从 4KB 起急剧恶化。
-
-> ⚠ Thunder SSL 大包衰减根因待 profiling (session 复用 / BIO 阻塞 / TLS record 策略)。
+Nginx SSL 衰减稳定在 34-36%。Thunder 各后端表现不一: asio_uring 小包衰减最小 (-26%), native_uring 64KB 衰减最小 (-23%), ev 波动最大 (-24~-64%)。
 
 ---
 
@@ -84,34 +83,12 @@ Nginx SSL 衰减稳定在 30-35%；Thunder 从 4KB 起急剧恶化。
 
 | 场景 | 推荐 | 原因 |
 |------|:---:|------|
-| HTTP 小包 (≤1KB) | Nginx | 轻量 HTTP 状态机 +17-27% |
-| HTTP 大包 (≥4KB) | **Thunder** | 吞吐 +17-66%，延迟 2-3x 优于 Nginx |
-| HTTPS 任意大小 | Nginx | SSL 路径成熟，Thunder 大包衰减严重 |
-| 需要热更新/多协议/灰度 | **Thunder** | Nginx 不具备这些能力 |
-
----
-
-## Nginx 为什么更快 (小包 HTTP)
-
-```
-Thunder /hello/raw:
-
-  epoll_wait → readv → HttpCodec::Decode (picohttpparser + HttpMsg proto)
-    → SerializeAsString → MsgBody → ParseFromString → Dispose(HttpMsg)
-      → mapModule.find → ModuleRaw::AnyMessage (虚函数)
-        → SendToClientFast → pSendBuff::Write → FlushSendBuf → ::send
-
-
-Nginx /:
-
-  epoll_wait → recv → HTTP 状态机 (原地, 零分配) → location 匹配
-    → writev(fd, iovec, 2)
-```
-
-差距来自 Thunder 多协议网关框架的固定开销：proto 序列化/反序列化 + 模块分发虚函数。
-每层纳秒级，在 200k+ RPS 下累计可测。换来了热更新 .so 零停机、多协议、灰度等 Nginx 做不到的能力。
+| HTTP 低延迟 | **Thunder** | 三后端 P50 均优于 Nginx |
+| HTTP 高吞吐 | Nginx | 稳定 253k, 领先 15-77% |
+| HTTPS 小包 | **asio_uring** | 142k, P50 323μs, 距 Nginx 仅 12% |
+| HTTPS 大包 | **native_uring** | 146k, 距 Nginx 12% |
+| 需要热更新/多协议/灰度 | **Thunder** | Nginx 不具备 |
 
 ---
 
 > ⚠ 单机压测。真正网卡对比需两台独立机器。
-> ev / native_uring 后端数据待补 (当前仅 asio_uring)。

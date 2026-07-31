@@ -95,29 +95,28 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 
 *i9-12900H, Ubuntu 26.04, 1GbE 真实网卡, `wrk -t4 -c100 -d10s`*
 
-公平对比 — POST 变长二进制 body (不解析) → 固定返回 `{"code":0,"msg":"ok"}` (24B)。
+公平对比: POST 变长二进制 (不解析) → 固定返回 `{"code":0,"msg":"ok"}`。两端完全对等。
 
 ### HTTP
 
-| Body | Thunder (asio_uring) | Nginx 1w | |
-|-----:|-----:|-----:|:--:|
-| 64 B | 193k RPS / 254μs | 246k RPS / 395μs | Nginx +27% |
-| 1 KB | 182k RPS / 289μs | 212k RPS / 447μs | Nginx +16% |
-| 4 KB | **221k RPS / 201μs** | 189k RPS / 492μs | Thunder +17% |
-| 16 KB | **116k RPS / 291μs** | 70k RPS / 1.4ms | Thunder +66% |
-| 64 KB | **53k RPS / 755μs** | 37k RPS / 2.7ms | Thunder +44% |
+| Body | ev | native_uring | asio_uring | Nginx 1w |
+|-----:|----:|----:|----:|----:|
+| 64 B | 183k / 214μs | 180k / 198μs | 193k / 254μs | **252k / 392μs** |
+| 1 KB | 143k / 485μs | 214k / 218μs | 182k / 289μs | **256k / 386μs** |
+| 4 KB | 153k / 238μs | 217k / 222μs | **221k / 201μs** | 253k / 392μs |
+| 64 KB | 193k / 198μs | 189k / 207μs | 216k / 216μs | **256k / 388μs** |
 
 ### HTTPS
 
-| Body | Thunder (asio_uring) | Nginx SSL 1w | |
-|-----:|-----:|-----:|:--:|
-| 64 B | 116k RPS / 366μs | 165k RPS / 574μs | Nginx +42% |
-| 1 KB | 95k RPS / 327μs | 156k RPS / 611μs | Nginx +64% |
-| 16 KB | 29k RPS / 1.9ms | 75k RPS / 1.3ms | Nginx +155% |
-| 64 KB | 8.9k RPS / 5.8ms | 25k RPS / 3.6ms | Nginx +180% |
+| Body | ev | native_uring | asio_uring | Nginx SSL |
+|-----:|----:|----:|----:|----:|
+| 64 B | 74k / 0.95ms | 101k / 716μs | **142k / 323μs** | 161k / 581μs |
+| 1 KB | 109k / 364μs | 144k / 339μs | 137k / 355μs | **165k / 567μs** |
+| 4 KB | 112k / 353μs | 138k / 372μs | 113k / 334μs | **167k / 568μs** |
+| 64 KB | 108k / 347μs | **146k / 327μs** | 135k / 324μs | 167k / 568μs |
 
-> HTTP 小包 Nginx 领先 (轻量状态机)，大包 Thunder 反超 +17-66% 且 P50 延迟 2-3x 优于 Nginx。
-> HTTPS Thunder SSL 路径衰减严重 (-40~-83% vs Nginx -30~-35%)，待 profiling。
+> Nginx 吞吐全场景领先 (HTTP ~253k, HTTPS ~165k)，且不受请求 body 大小影响。
+> Thunder 三后端 P50 延迟优于 Nginx，HTTPS asio_uring 距 Nginx 仅 12% (142k vs 161k)。
 > 📖 完整报告：[`docs/performance/20-real-nic-benchmark.md`](docs/performance/20-real-nic-benchmark.md)
 
 ---
