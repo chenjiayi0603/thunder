@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Thunder I/O Backend 真实网卡性能对比测试
+# 测试方法: POST 变长二进制 body (不解析) → 固定返回 24B JSON (公平对比)
 # 目标: 192.168.3.61 (物理网卡 enp0s31f6)
 # 对比: ev / native_uring / asio_uring / Nginx
 set -euo pipefail
@@ -25,12 +26,12 @@ log()  { echo -e "${GREEN}[$(date +%H:%M:%S)]${NC} $*" | tee -a "$RESULT_FILE"; 
 warn() { echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} $*" | tee -a "$RESULT_FILE"; }
 
 ensure_nginx() {
-    if ! curl -s http://127.0.0.1:$NGINX_PORT/echo > /dev/null 2>&1; then
+    if ! curl -s http://127.0.0.1:$NGINX_PORT/ > /dev/null 2>&1; then
         log "Starting Nginx on port $NGINX_PORT..."
         nginx -c /tmp/nginx_bench.conf 2>/dev/null || true
         sleep 1
     fi
-    log "Nginx OK: $(curl -s http://127.0.0.1:$NGINX_PORT/echo)"
+    log "Nginx OK: $(curl -s http://127.0.0.1:$NGINX_PORT/)"
 }
 
 start_thunder() {
@@ -99,17 +100,19 @@ run_thunder_tests() {
 
     # Warmup
     log "Warmup..."
-    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s "$base_url/hello/raw" > /dev/null 2>&1
+    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s -s "$BENCH_DIR/post_64.lua" "$base_url/hello/raw" > /dev/null 2>&1
 
-    # Test 1: Fast-path /hello/raw
-    run_wrk "$base_url/hello/raw" "/hello/raw (GET, 24B response)" "$BENCH_DIR/wrk_raw.lua"
+    # 公平对比: POST 变长二进制 body (不解析) → 固定 24B 响应
+    run_wrk "$base_url/hello/raw" "POST 64B binary"  "$BENCH_DIR/post_64.lua"
+    run_wrk "$base_url/hello/raw" "POST 1K binary"   "$BENCH_DIR/post_1k.lua"
+    run_wrk "$base_url/hello/raw" "POST 4K binary"   "$BENCH_DIR/post_4k.lua"
+    run_wrk "$base_url/hello/raw" "POST 16K binary"  "$BENCH_DIR/post_16k.lua"
+    run_wrk "$base_url/hello/raw" "POST 64K binary"  "$BENCH_DIR/post_64k.lua"
 
-    # Test 2-6: Echo at different sizes
-    run_wrk "$base_url/hello/hello" "/hello/hello Echo 64B"  "$BENCH_DIR/wrk_echo_64.lua"
-    run_wrk "$base_url/hello/hello" "/hello/hello Echo 256B" "$BENCH_DIR/wrk_echo_256.lua"
-    run_wrk "$base_url/hello/hello" "/hello/hello Echo 1K"   "$BENCH_DIR/wrk_echo_1k.lua"
-    run_wrk "$base_url/hello/hello" "/hello/hello Echo 4K"   "$BENCH_DIR/wrk_echo_4k.lua"
-    run_wrk "$base_url/hello/hello" "/hello/hello Echo 64K"  "$BENCH_DIR/wrk_echo_64k.lua"
+    # Thunder-only: Echo (JSON解析+动态构造)
+    run_wrk "$base_url/hello/hello" "Echo 64B"  "$BENCH_DIR/wrk_echo_64.lua"
+    run_wrk "$base_url/hello/hello" "Echo 4K"   "$BENCH_DIR/wrk_echo_4k.lua"
+    run_wrk "$base_url/hello/hello" "Echo 64K"  "$BENCH_DIR/wrk_echo_64k.lua"
 
     stop_thunder
 }
@@ -125,17 +128,14 @@ run_nginx_tests() {
     ensure_nginx
 
     # Warmup
-    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s "$base_url/echo" > /dev/null 2>&1
+    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s -s "$BENCH_DIR/post_64.lua" "$base_url/" > /dev/null 2>&1
 
-    # Fast-path
-    run_wrk "$base_url/echo" "/echo (GET, return 200, 24B JSON)"
-
-    # Variable-size static files
-    run_wrk "$base_url/echo/64"  "/echo/64  (64B static file)"
-    run_wrk "$base_url/echo/256" "/echo/256 (256B static file)"
-    run_wrk "$base_url/echo/1k"  "/echo/1k  (1KB static file)"
-    run_wrk "$base_url/echo/4k"  "/echo/4k  (4KB static file)"
-    run_wrk "$base_url/echo/64k" "/echo/64k (64KB static file)"
+    # 公平对比: POST 变长二进制 (不解析) → return 200 固定 24B JSON
+    run_wrk "$base_url/" "POST 64B binary"  "$BENCH_DIR/post_64.lua"
+    run_wrk "$base_url/" "POST 1K binary"   "$BENCH_DIR/post_1k.lua"
+    run_wrk "$base_url/" "POST 4K binary"   "$BENCH_DIR/post_4k.lua"
+    run_wrk "$base_url/" "POST 16K binary"  "$BENCH_DIR/post_16k.lua"
+    run_wrk "$base_url/" "POST 64K binary"  "$BENCH_DIR/post_64k.lua"
 }
 
 # =============================================================
