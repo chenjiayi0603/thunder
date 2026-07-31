@@ -37,14 +37,5 @@
         }
     ],
     "io_backend": "asio_uring",
-    "module": [
-        {
-            "load": true,
-            "md5": "25371d4145c60ff7081abf8ae3c485e6",
-            "size": 1692308,
-            "so_path": "plugins/CmdGetToken.so",
-            "so_url": "http://127.0.0.1:9000/artifacts/Logic/CmdGetToken.so",
-            "version": 3
-        }
-    ]
+    "module": []
 }

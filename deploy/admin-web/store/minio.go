@@ -96,10 +96,10 @@ func (m *MinIOClient) GetObjectURL(key string) string {
 		return fmt.Sprintf("http://%s/%s/%s", m.endpoint, m.bucket, key)
 	}
 	// #159: Fallback — admin-web serves artifacts directly via HTTP
-	// Use localhost:8090 as default; override via ADMIN_WEB_URL env for custom setups.
+	// Default uses K8s Service DNS; override via ADMIN_WEB_URL for Docker Compose (127.0.0.1:8090).
 	adminURL := os.Getenv("ADMIN_WEB_URL")
 	if adminURL == "" {
-		adminURL = "127.0.0.1:8090"
+		adminURL = "thunder-admin-web.thunder:8090"
 	}
 	return fmt.Sprintf("http://%s/api/artifacts/%s", adminURL, key)
 }
