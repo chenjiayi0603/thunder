@@ -19,6 +19,18 @@ Thunder 负责高性能 IO、分布式路由、零停机更新。
 
 对标：如果你用过 Nginx + OpenResty + Lua，Thunder 把这三者做成了一个 C++20 原生的统一框架。
 
+### 为什么选 Thunder 而不是 Nginx
+
+| | Nginx | Thunder |
+|---|---|---|
+| **热更新业务代码** | ❌ 改配置 reload，连接断开 | ✅ dlopen .so，连接不丢 |
+| **多协议** | HTTP/stream 分开 | ✅ HTTP/HTTPS/WS/WSS/MQTT/TCP 统一 |
+| **灰度路由** | 需要 Lua / 外部服务 | ✅ etcd 权重 canary，秒级回滚 |
+| **自定义协议** | 需要写 C 模块 | ✅ 写 .so 插件即可 |
+| **纯 HTTP 转发性能** | ~253k RPS | ~221k RPS (小包 Nginx 快 12%) |
+
+> 结论：只需要做 HTTP 反向代理 → 选 Nginx。需要写业务逻辑、多协议接入、热更新不丢连接 → 选 Thunder。
+
 ---
 
 ## 🚀 15 秒快速开始
