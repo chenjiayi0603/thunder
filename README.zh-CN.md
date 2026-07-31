@@ -163,11 +163,12 @@ cmake --build build && cmake --install build
 
 **热更新**：
 
-  修改代码 → 重编 .so (`cmake --install` → `deploy/HelloHttp/plugins/xxx.so`)
-  → 通过 admin-web (curl PUT 或 Web 界面) 上传，admin-web 自动存入 MinIO `artifacts` 桶
-  → etcd bump `so_url` + 版本
-  → 各节点 Manager HTTP Pull MinIO 下载
-  → Worker dlopen 加载新 .so，旧连接排空不丢。
+  1. 修改代码 → 重编 .so (`cmake --install` → `deploy/HelloHttp/plugins/xxx.so`)
+  2. 上传: 通过 admin-web (curl PUT 或 Web 界面) → MinIO `artifacts` 桶 + 本地 `/app/data/artifacts/`
+  3. 下发: 点击"下发" (或 POST `/api/plugins/{Type}/deploy`) → etcd 写入 `so_url` 和版本号
+     (不移动文件、不复制，只改 etcd 通知)
+  4. 各节点 Manager Watch 感知版本变化 → HTTP Pull MinIO 下载 .so
+  5. Worker dlopen 加载新 .so，旧连接排空不丢。
 
 ---
 
