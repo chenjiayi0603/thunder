@@ -1,5 +1,7 @@
-# Thunder vs Nginx 基准测试
+# Thunder vs Nginx 基准测试 (loopback)
 
+> ⚠ **本测试为 loopback (127.0.0.1) 回环数据，非真实网卡。** 真实网卡数据见 [`20-real-nic-benchmark.md`](20-real-nic-benchmark.md)
+>
 > 日期: 2026-06-12 | 环境: Ubuntu 26.04 LTS, Linux 7.0 | 工具: wrk 4.1.0
 > HTTP 解析器: picohttpparser (替换旧 http_parser, +49%)
 
