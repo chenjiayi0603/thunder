@@ -33,6 +33,7 @@ Thunder 负责高性能 IO、分布式路由、零停机更新。
 | **存储驱动** | 依赖外部模块 | ✅ 内置 Redis/MySQL/MongoDB Operator |
 | **Lua 脚本** | OpenResty 额外安装 | ✅ 内置 LuaJIT，热加载 <1ms，不重启进程 |
 | **纯 HTTP 转发性能** | ~253k RPS | ~221k RPS (小包 Nginx 快 12%) |
+| **P50 延迟** | 386-392μs | 198-254μs (低 35-49%) |
 
 > 结论：只需要做 HTTP 反向代理 → 选 Nginx。需要写业务逻辑、多协议接入、协程访问存储、热更新不丢连接 → 选 Thunder。
 
