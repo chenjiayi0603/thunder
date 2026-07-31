@@ -158,10 +158,10 @@ MUDULE_CREATE(core::ModuleHello);  // ← 自动导出 ABI 版本 + create()
 
 ```bash
 cmake --build build && cmake --install build
-# .so 已部署到 deploy/HelloHttp/plugins/
+# .so 输出到 deploy/HelloHttp/plugins/, 后续上传 MinIO 后由 Manager Pull 热加载
 ```
 
-**热更新**：修改代码 → 重编 `.so` → `curl PUT` 上传 → etcd 版本号 +1 → Worker 优雅重启 → 新连接用新 `.so`，旧连接排空不丢。
+**热更新**：修改代码 → 重编 `.so` → admin-web 上传至 MinIO → etcd bump so_url + 版本 → Manager HTTP Pull → Worker dlopen → 新连接用新 `.so`，旧连接排空不丢。
 
 ---
 
