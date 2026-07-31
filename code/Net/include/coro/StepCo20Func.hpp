@@ -60,6 +60,26 @@ bool LaunchCo(const tagMsgShell& stMsgShell,
 /** 自定义 StepCo20 子类走 `Launch(step)`，与 CoroFn 版相同默认超时。 */
 bool LaunchCo(std::unique_ptr<StepCo20> pStep);
 
+/**
+ * @brief 直接传协程函数 + 参数，自动包装为 CoroFn。用法:
+ *        `LaunchCo(shell, msg, GenKeyNotifyLogicCo, json, addr);`
+ *        等价于旧写法 `LaunchCo(shell, msg, [=](StepCo20& s) { return GenKeyNotifyLogicCo(s, json, addr); });`
+ */
+template <typename F, typename... Args>
+inline bool LaunchCo(const tagMsgShell& stMsgShell,
+                     const HttpMsg& oHttpMsg,
+                     F&& f, Args&&... args)
+{
+    auto fn = [f = std::forward<F>(f),
+               tup = std::make_tuple(std::forward<Args>(args)...)]
+              (StepCo20& step) mutable -> AsyncTask {
+        return std::apply([&](auto&&... captured) -> AsyncTask {
+            return f(step, std::forward<decltype(captured)>(captured)...);
+        }, std::move(tup));
+    };
+    return LaunchCo(stMsgShell, oHttpMsg, StepCo20Func::CoroFn(std::move(fn)));
+}
+
 } // namespace net
 
 #endif // SRC_StepCo20Func_HPP_
