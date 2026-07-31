@@ -14,6 +14,8 @@
 # - 卷挂载仓库根 ../ → /thunder，以便 deploy 与 code/3party 库路径与 start.sh 一致。
 # - 本地集成测试默认仅拉起单 Center（conf）；健康检查等待 27000。
 # - redis / mysql：供 Hello 模块 JSON option「TestHelloCoRedis」「TestHelloCoMysql」（默认 127.0.0.1:6379 / :3306，与 host 网络一致）。
+# - minio：制品存储 (SO/Lua)，#159 Pull 模式 — Worker Manager HTTP GET 下载 .so。
+# - admin-web：Go 编译二进制 (/thunder/deploy/admin-web/admin-web)，编译: deploy.sh build。
 # - start.sh 拉起守护进程后脚本会结束，故用 tail -f /dev/null 保持容器运行；已开启 init: true 便于回收子进程。
 #
 # 资源（与常见编排一致：limits 防拖垮宿主机 + 进程内上限与容器 memory 对齐）:
@@ -449,24 +451,59 @@ services:
       retries: 20
       start_period: 15s
 
-  # Admin Web — 管理后台 + Lua/SO 热更新 API
-  admin-web:
-    <<: *thunder-node
-    image: python:3.12-alpine
-    working_dir: /thunder/deploy/admin-web
+  # MinIO — 制品存储 (#159 Pull 模式: SO/Lua 文件存储底座)
+  minio:
+    image: minio/minio:latest
     network_mode: host
-    depends_on:
-      etcd1:
-        condition: service_healthy
-    stop_grace_period: 5s
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ./data/minio:/data
     command:
-      - sh
-      - -c
-      - |
-        pip install -q requests
-        exec python3 server.py --port 8090
+      - server
+      - /data
+      - --address
+      - ":9000"
+      - --console-address
+      - ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     deploy:
       resources:
         limits:
-          cpus: "0.25"
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # Admin Web — 管理后台 + Lua/SO 热更新 API (#159 Go 版)
+  # 前置: deploy.sh build 编译 Go 二进制 → deploy/admin-web/admin-web
+  admin-web:
+    image: ubuntu:26.04
+    working_dir: /thunder/deploy/admin-web
+    network_mode: host
+    environment:
+      ETCD_ENDPOINTS: "http://127.0.0.1:12379"
+      MINIO_ENDPOINT: "127.0.0.1:9000"
+    volumes:
+      - ../:/thunder:rw
+      - ./data/admin-web:/app/data
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    stop_grace_period: 5s
+    command:
+      - /thunder/deploy/admin-web/admin-web
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
           memory: 256M

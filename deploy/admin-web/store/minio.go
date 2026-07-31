@@ -20,8 +20,9 @@ const (
 // MinIOClient wraps minio-go for artifact storage operations.
 // If endpoint is empty, client is nil (local dev mode — fallback to PVC).
 type MinIOClient struct {
-	client *minio.Client
-	bucket string
+	client   *minio.Client
+	bucket   string
+	endpoint string // actual endpoint (for constructing download URLs)
 }
 
 // NewMinIOClient creates a MinIO client. Returns nil client if endpoint is empty.
@@ -46,10 +47,10 @@ func NewMinIOClient(endpoint, bucket string) (*MinIOClient, error) {
 	if err != nil {
 		// MinIO unreachable → return client=nil but non-nil MinIOClient for fallback URL
 		fmt.Printf("WARNING: MinIO unavailable (%v) — using admin-web self-serve artifacts\n", err)
-		return &MinIOClient{client: nil, bucket: bucket}, nil
+		return &MinIOClient{client: nil, bucket: bucket, endpoint: endpoint}, nil
 	}
 
-	mc := &MinIOClient{client: client, bucket: bucket}
+	mc := &MinIOClient{client: client, bucket: bucket, endpoint: endpoint}
 
 	// Ensure bucket exists on startup
 	ctx, cancel := context.WithTimeout(context.Background(), minIOConnectTimeout)
@@ -88,13 +89,19 @@ func (m *MinIOClient) PutObject(key string, reader io.Reader, size int64) error 
 
 // GetObjectURL returns the HTTP URL for downloading an artifact.
 // Priority: MinIO if available, else admin-web self-serve HTTP FileServer.
+// Uses the actual configured endpoint (not hardcoded K8s DNS) so both K8s and
+// Docker Compose (127.0.0.1) work correctly.
 func (m *MinIOClient) GetObjectURL(key string) string {
 	if m.IsAvailable() {
-		return fmt.Sprintf("http://%s/%s/%s", defaultMinIOEndpoint, m.bucket, key)
+		return fmt.Sprintf("http://%s/%s/%s", m.endpoint, m.bucket, key)
 	}
 	// #159: Fallback — admin-web serves artifacts directly via HTTP
-	// Manager GET: http://thunder-admin-web.thunder:8090/api/artifacts/{typeDir}/{filename}
-	return fmt.Sprintf("http://thunder-admin-web.thunder:8090/api/artifacts/%s", key)
+	// Use localhost:8090 as default; override via ADMIN_WEB_URL env for custom setups.
+	adminURL := os.Getenv("ADMIN_WEB_URL")
+	if adminURL == "" {
+		adminURL = "127.0.0.1:8090"
+	}
+	return fmt.Sprintf("http://%s/api/artifacts/%s", adminURL, key)
 }
 
 // ListObjects returns object keys under a prefix in the bucket.

@@ -1,6 +1,6 @@
 # Thunder 快速上手
 
-> 更新: 2026-07-14 | 🟢 = Docker Compose | 🔵 = K8s
+> 更新: 2026-07-31 | 🟢 = Docker Compose | 🔵 = K8s
 
 ---
 
@@ -23,13 +23,13 @@ git submodule update --init --recursive
 ### 🟢 Docker Compose
 
 ```bash
-./deploy.sh up          # 启动全部服务（etcd×3 + MySQL + Redis + 7 个 Thunder 节点）
+./deploy.sh up          # 启动全部服务（etcd×3 + MinIO + MySQL + Redis + 7 个 Thunder 节点 + admin-web）
 ./deploy.sh status      # 查看容器状态 + 监听端口
 ./deploy.sh restart     # 重启所有容器
 ./deploy.sh down        # 停止并清理
 ```
 
-等待约 15 秒，所有服务 healthy 后测试。
+等待约 20 秒，所有服务 healthy 后测试。
 
 ### 🔵 Kubernetes
 
@@ -159,9 +159,30 @@ admin-web → `📜 Lua` tab：在线编辑脚本 → 保存 → 自动热加载
 
 ### SO 热更新（#159 Pull 模式）
 
-admin-web → `📦 插件` tab：上传 .so → 点"下发" → 自动部署。
+> 🟢🔵 通用 — 同一套链路：上传 → MinIO → etcd bump → Manager HTTP Pull → Worker dlopen
 
-详见 [`k8s/README.md#so-热更新`](k8s/README.md#so-热更新)
+**Web 界面**：admin-web → `📦 插件` tab：上传 .so → 选版本 → 点"下发" → 自动部署。
+
+**API 方式**：
+
+```bash
+# 1. 上传 .so 到制品库（自动存入 MinIO + 本地 artifacts）
+curl -X PUT http://127.0.0.1:8090/api/plugins/Logic/CmdGetToken.so \
+  --data-binary @./CmdGetToken.so
+
+# 2. 下发到目标节点（etcd bump 版本号 → Manager Pull 下载 → Worker 热加载）
+curl -X POST http://127.0.0.1:8090/api/plugins/Logic/deploy \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"CmdGetToken.so"}'
+
+# 3. 查看已部署的 SO 列表及版本
+curl http://127.0.0.1:8090/api/plugins/Logic/deployed
+
+# 4. 🔵 K8s 下验证 SO 已到达 Pod
+kubectl exec -n thunder deploy/thunder-logic -- ls -la /app/plugins/
+```
+
+**全链路**: `PUT .so` → MinIO `artifacts/{Type}/{file}` → admin-web etcd bump `so_url` + `version++` → 各节点 Manager watch 感知 → `DownloadSoFile(so_url)` HTTP GET MinIO → 原子写入本地插件目录 → Worker `dlopen()` 加载 → 零停机热更新完成。
 
 ---
 
@@ -177,9 +198,9 @@ admin-web → `📦 插件` tab：上传 .so → 点"下发" → 自动部署。
 | Logic v1 | S2S | 16068 | `127.0.0.1` | ClusterIP (`10.244.x.x`) |
 | Logic v2 | S2S | 16069 | `127.0.0.1` | ClusterIP (`10.244.x.x`) |
 | etcd | gRPC | 12379/2379 | `127.0.0.1:12379` | `thunder-etcd.thunder:2379` |
-| Admin Web | HTTP | 8090 | `127.0.0.1:8090` | NodePort 30090 |
-| MinIO API | HTTP | 9000 | — | `thunder-minio.thunder:9000` |
-| MinIO Console | HTTP | 9001 | — | NodePort 30091 |
+| Admin Web (Go) | HTTP | 8090 | `127.0.0.1:8090` | NodePort 30090 |
+| MinIO API | HTTP | 9000 | `127.0.0.1:9000` | `thunder-minio.thunder:9000` |
+| MinIO Console | HTTP | 9001 | `127.0.0.1:9001` | NodePort 30091 |
 
 ---
 
