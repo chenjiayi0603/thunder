@@ -67,7 +67,7 @@ P50           299μs     340μs         275μs          387μs
 **分析:**
 
 - **静态响应**: Nginx 254k > asio_uring 227k > ev/native_uring 217k。Nginx 领先 12-17%
-- **64K 大包**: Nginx 碾压（75k vs 25k），3 倍差距。sendfile 零拷贝优势
+- **64K 大包**: Nginx 碾压（75k vs 25k），3 倍差距。sendfile(2) 内核态零用户拷贝 (仅 HTTP, SSL 不适用)
 - **小中包 (64B-1K)**: Thunder 三后端与 Nginx 基本持平或略优
 - **Echo 路径**: Thunder 有 JSON 解析/构造开销，Nginx 纯静态文件 serve，非完全对等
 
@@ -111,7 +111,7 @@ P50          0.95ms        552μs
 |------|:---:|------|
 | 小包 HTTP 代理 | ev/native_uring | 与 Nginx 持平 |
 | HTTPS 网关 | Nginx | 吞吐 3.4x 于 Thunder, 延迟更稳 |
-| 大包/静态资源 | Nginx | sendfile 零拷贝，64K 时 3 倍于 Thunder |
+| 大包/静态资源 (HTTP) | Nginx | sendfile 内核零用户拷贝, 64K 3x (SSL 不适用) |
 | 通用默认 | ev | 最稳定 |
 
 ---

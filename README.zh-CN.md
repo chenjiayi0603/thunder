@@ -101,7 +101,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 |------|:---:|:---:|------|
 | Echo 64B 小包 (JSON) | **191k RPS** (ev) | 167k RPS | Thunder 快 14%；Nginx 纯静态 serve，无 JSON 解析开销 |
 | Echo 4KB 中包 | 140k RPS | **162k RPS** | Nginx 反超 |
-| Echo 64KB 大包 | 24.8k RPS | **74.8k RPS** | Nginx sendfile 零拷贝 3x |
+| Echo 64KB 大包 (HTTP) | 24.8k RPS | **74.8k RPS** | Nginx sendfile 内核零用户拷贝 (SSL 不适用) |
 | 静态响应 (无解析) | 227k RPS | **254k RPS** | Nginx 快 12% |
 | **热更新业务逻辑** | ✅ dlopen .so 零停机 | ❌ 改配置 + reload | **核心差异** |
 | **多协议 (WS/MQTT/TCP)** | ✅ 同一框架 | 需额外模块/服务 | |
