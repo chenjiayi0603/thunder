@@ -158,10 +158,10 @@ MUDULE_CREATE(core::ModuleHello);  // ← 自动导出 ABI 版本 + create()
 
 ```bash
 cmake --build build && cmake --install build
-# 编译 .so, 后续上传 admin-web → MinIO → Manager Pull 热加载
+# .so 安装到 deploy/HelloHttp/plugins/
 ```
 
-**热更新**：修改代码 → 重编 `.so` → admin-web 上传至 MinIO → etcd bump so_url + 版本 → Manager HTTP Pull → Worker dlopen → 新连接用新 `.so`，旧连接排空不丢。
+**热更新**：修改代码 → 重编 `.so` (`cmake --install` → `deploy/HelloHttp/plugins/`) → admin-web 上传至 MinIO → etcd bump `so_url` + 版本 → 各节点 Manager HTTP Pull MinIO 下载 → Worker dlopen 加载新 `.so`，旧连接排空不丢。
 
 ---
 
