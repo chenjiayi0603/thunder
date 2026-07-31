@@ -27,9 +27,14 @@ Thunder 负责高性能 IO、分布式路由、零停机更新。
 | **多协议** | HTTP/stream 分开 | ✅ HTTP/HTTPS/WS/WSS/MQTT/TCP 统一 |
 | **灰度路由** | 需要 Lua / 外部服务 | ✅ etcd 权重 canary，秒级回滚 |
 | **自定义协议** | 需要写 C 模块 | ✅ 写 .so 插件即可 |
+| **协程** | ❌ | ✅ `co_await` Redis/MySQL/跨节点 RPC/线程池卸载 |
+| **线程池** | 多 worker 进程 | ✅ Work-Stealing 多核线性扩展 (2.53x) |
+| **共享内存 IPC** | ❌ | ✅ Manager ↔ Worker 零拷贝通信, fd 迁移 |
+| **存储驱动** | 依赖外部模块 | ✅ 内置 Redis/MySQL/MongoDB Operator |
+| **Lua 脚本** | OpenResty 额外安装 | ✅ 内置 LuaJIT，热加载 <1ms，不重启进程 |
 | **纯 HTTP 转发性能** | ~253k RPS | ~221k RPS (小包 Nginx 快 12%) |
 
-> 结论：只需要做 HTTP 反向代理 → 选 Nginx。需要写业务逻辑、多协议接入、热更新不丢连接 → 选 Thunder。
+> 结论：只需要做 HTTP 反向代理 → 选 Nginx。需要写业务逻辑、多协议接入、协程访问存储、热更新不丢连接 → 选 Thunder。
 
 ---
 
