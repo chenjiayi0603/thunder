@@ -1,6 +1,6 @@
 # Thunder ⚡
 
-**C++20 高性能异步网关框架 — 单核 235k RPS，P50 延迟 220μs，热更新不丢连接。**
+**C++20 高性能异步网关框架 — asio_uring 227k RPS，三后端可选 (ev / native_uring / asio_uring)，热更新不丢连接。**
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Commercial-blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-%2300599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
@@ -83,7 +83,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 | **单线程事件循环** | 零锁、零竞争、极简 | 单核 CPU（多进程补偿）|
 | **多进程 (1 Manager + N Worker)** | 利用多核 + 故障隔离（插件崩只崩一个 Worker）| 进程间需 IPC |
 | **C++20 协程 (`co_await`)** | 异步代码线性化，告别回调地狱 | 学习曲线 |
-| **io_uring 批量提交** | N 次 IO → 1 次 syscall，TLS 延迟砍半 | Linux 5.1+ |
+| **io_uring (asio + native)** | 批量提交 N 次 IO → 1 次 syscall，TLS 延迟砍半；native 直通内核无用户态事件循环 | Linux 5.1+ |
 | **hostNetwork (非 NodePort)** | 数据面零 K8s 组件 | Pod 不能漂移 |
 | **etcd (非 K8s DNS)** | 热配置推送 + 灰度权重 + 秒级回滚 | 需维护 etcd 集群 |
 | **dlopen SO 热更新** | 不重启进程，连接不断 | SO 需兼容 ABI |
@@ -93,35 +93,34 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 
 ## 📊 性能快照
 
-*i9-12900H, Linux 7.0, `wrk -t4 -c100 -d10s`, 单核绑 P-core*
+*i9-12900H, Ubuntu 26.04, Linux 7.0, 1GbE 真实网卡, `wrk -t4 -c100 -d10s`*
 
-### HTTP — Thunder vs Nginx
+### HTTP Fast-Path (`/hello/raw`, 24B 固定响应)
 
-| 载荷 | Thunder asio_uring | Nginx 1w | 提升 |
-|----:|:---:|:---:|:---:|
-| 64 B | **235k RPS** | 214k RPS | **+10%** |
-| 1 KB | **232k RPS** | 191k RPS | **+21%** |
-| 4 KB | **223k RPS** | 184k RPS | **+21%** |
+| 后端 | RPS | P50 延迟 |
+|------|----:|--------:|
+| Thunder ev | 217k | 299μs |
+| Thunder native_uring | 217k | 340μs |
+| Thunder asio_uring | 227k | 275μs |
+| Nginx 1 worker | **254k** | 387μs |
 
-| 载荷 | Thunder | Nginx |
-|----:|:---:|:---:|
-| 64 B | **220 μs** | 466 μs |
-| 4 KB | **332 μs** | 543 μs |
+### HTTP Echo (`/hello/hello`, 可变大小, JSON 解析+构造)
 
-### HTTPS (TLS + io_uring 批量提交)
+| 载荷 | ev | native_uring | asio_uring | Nginx (static) |
+|-----:|:---:|:---:|:---:|:---:|
+| 64 B | 191k | 187k | 178k | 167k |
+| 1 KB | 163k | 167k | 164k | 164k |
+| 4 KB | 140k | 138k | 129k | 162k |
+| 64 KB | 24.8k | 24.5k | 24.7k | **74.8k** |
 
-| 载荷 | Thunder uring | Nginx SSL |
-|----:|:---:|:---:|
-| 64 B | **402 μs** | 752 μs |
-| 4 KB | **247 μs** | 824 μs |
+| 载荷 | ev P50 | native_uring P50 | asio_uring P50 | Nginx P50 |
+|-----:|:---:|:---:|:---:|:---:|
+| 64 B | 385μs | 374μs | 306μs | 594μs |
+| 4 KB | 594μs | 566μs | 618μs | 611μs |
 
-### Work-Stealing 线程池
-
-| 配置 | 旧单队列 | Work-Stealing | 加速 |
-|:---|:---:|:---:|:--:|
-| 1P-4C (典型) | 1,373 ns/op | **543 ns/op** | **2.53x** |
-
-> 📖 完整报告：[`docs/performance/`](docs/performance/)
+> ⚠ Fast-path 上 Nginx 领先 12-17%，64KB 大包 Nginx sendfile 零拷贝 3 倍于 Thunder。
+> Thunder 作为多协议网关框架，每请求经过 proto 序列化/反序列化 + 模块分发虚函数，这是架构代价而非缺陷。
+> 📖 完整报告：[`docs/performance/20-real-nic-benchmark.md`](docs/performance/20-real-nic-benchmark.md)
 
 ---
 
