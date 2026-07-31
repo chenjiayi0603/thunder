@@ -102,13 +102,13 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 | Echo 64B 小包 (JSON) | **191k RPS** (ev) | 167k RPS | Thunder 快 14%；Nginx 纯静态 serve，无 JSON 解析开销 |
 | Echo 4KB 中包 | 140k RPS | **162k RPS** | Nginx 反超 |
 | Echo 64KB 大包 | 24.8k RPS | **74.8k RPS** | Nginx sendfile 零拷贝 3x |
-| Fast-path 直通 (无解析) | 227k RPS | **254k RPS** | Nginx 快 12% |
+| 静态响应 (无解析) | 227k RPS | **254k RPS** | Nginx 快 12% |
 | **热更新业务逻辑** | ✅ dlopen .so 零停机 | ❌ 改配置 + reload | **核心差异** |
 | **多协议 (WS/MQTT/TCP)** | ✅ 同一框架 | 需额外模块/服务 | |
 | **灰度路由** | ✅ etcd 权重 canary | 需 Lua/外部服务 | |
 | **Work-Stealing 线程池** | ✅ 543ns/op (2.53x) | 单队列 | 多核利用率 |
 
-### HTTP Fast-Path (`/hello/raw`, 24B 固定响应)
+### HTTP 静态响应 (`/hello/raw`, 24B 固定响应, GET)
 
 | 后端 | RPS | P50 |
 |------|----:|----:|
@@ -128,7 +128,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 
 > **Thunder 的优势不在 raw RPS，在于"不改代码能做的事"：** 热更新业务 .so 而不丢连接、一条请求链跨 HTTP/WS/MQTT 多协议、etcd 权重灰度切流、Work-Stealing 线程池多核线性扩展。
 >
-> Fast-path 比 Nginx 慢 12% 是网关框架的架构代价 — proto 序列化/反序列化 + 虚函数模块分发 — 换来了 Nginx 做不到的零停机热更新和业务逻辑嵌入能力。
+> 静态响应比 Nginx 慢 12% 是网关框架的架构代价 — proto 序列化/反序列化 + 虚函数模块分发 — 换来了 Nginx 做不到的零停机热更新和业务逻辑嵌入能力。
 >
 > 📖 完整报告：[`docs/performance/20-real-nic-benchmark.md`](docs/performance/20-real-nic-benchmark.md)
 

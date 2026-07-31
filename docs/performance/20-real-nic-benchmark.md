@@ -27,7 +27,9 @@ Nginx  /echo        →  return 200 '{"code":0,"msg":"ok"}'
 
 ## HTTP 基准
 
-> 端点 `/hello/raw` (Receive Fast-Path, 24B 响应, 无解析)
+### `/hello/raw` — 静态响应 (24B, GET, 无解析)
+
+> Thunder: 固定返回 `{"code":0,"msg":"ok"}`, Nginx: `return 200`
 > 每轮 10s, wrk -t4 -c100 --latency, 目标 192.168.3.61
 
 ```
@@ -64,7 +66,7 @@ P50           299μs     340μs         275μs          387μs
 
 **分析:**
 
-- **Fast-path**: Nginx 254k > asio_uring 227k > ev/native_uring 217k。Nginx 领先 12-17%
+- **静态响应**: Nginx 254k > asio_uring 227k > ev/native_uring 217k。Nginx 领先 12-17%
 - **64K 大包**: Nginx 碾压（75k vs 25k），3 倍差距。sendfile 零拷贝优势
 - **小中包 (64B-1K)**: Thunder 三后端与 Nginx 基本持平或略优
 - **Echo 路径**: Thunder 有 JSON 解析/构造开销，Nginx 纯静态文件 serve，非完全对等
@@ -96,7 +98,7 @@ P50          0.95ms        552μs
 
 **分析:**
 
-- Nginx SSL 吞吐 3.4x 于 Thunder (173k vs 50k Fast-path)，延迟也更优
+- Nginx SSL 吞吐 3.4x 于 Thunder (173k vs 50k)，延迟也更优
 - SSL 对 Thunder 冲击远大于 Nginx：HTTP→HTTPS 吞吐 -78% (227k→50k)，Nginx 仅 -32% (254k→173k)
 - 根因: Thunder SSL 路径疑似缺 session 复用 / 同步 BIO 阻塞 / 每请求独立 TLS record，待 profiling
 - ev / native_uring HTTPS 数据待补
