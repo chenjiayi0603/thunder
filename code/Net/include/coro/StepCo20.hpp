@@ -13,7 +13,7 @@ namespace net
 {
 
 template <class BodyT, class OutT, class WorkFn>
-struct PoolOffloadAwaiter;
+struct ThreadPoolAwaiter;
 class StepCo20;
 struct Context;
 
@@ -163,7 +163,7 @@ protected:
     friend class RedisAwaitable;
     friend class MySqlAwaitable;
     template <class BodyT, class OutT, class WorkFn>
-    friend struct PoolOffloadAwaiter;
+    friend struct ThreadPoolAwaiter;
 
 protected:
     std::string m_strStepDesc = "StepCo20";

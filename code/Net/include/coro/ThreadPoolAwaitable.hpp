@@ -39,7 +39,7 @@ namespace net
  *        await_resume 中 get() 取得 ResultT 并传播异常（ResultT 可为 void）
  */
 template <class BodyT, class OutT, class WorkFn>
-struct PoolOffloadAwaiter
+struct ThreadPoolAwaiter
 {
 	using ResultT = std::invoke_result_t<WorkFn, BodyT&&, std::shared_ptr<OutT>&>;
 
@@ -51,7 +51,7 @@ struct PoolOffloadAwaiter
 	uint32 stepSeq_ = 0;
 	std::future<ResultT> fut_{};
 
-	PoolOffloadAwaiter(StepCo20* s, util::WorkStealingPool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
+        ThreadPoolAwaiter(StepCo20* s, util::WorkStealingPool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn w)
 		: step_(s), pool_(&p), body_(std::move(b)), out_(std::move(o)), work_(std::move(w))
 	{
 		if (step_ != nullptr)
@@ -90,7 +90,7 @@ struct PoolOffloadAwaiter
 					}
 					if (!wk->IsRegisteredStep(seq, step))
 					{
-						LOG4_TRACE("PoolOffloadAwaiter: step seq=%u unregistered, skip resume", seq);
+						LOG4_TRACE("ThreadPoolAwaiter: step seq=%u unregistered, skip resume", seq);
 						return;
 					}
 					if (h && !h.done())
@@ -119,7 +119,7 @@ struct PoolOffloadAwaiter
 			});
 		if (!fut_.valid())
 		{
-			LOG4_ERROR("PoolOffloadAwaiter: threadpool commit failed (pool stopped)");
+			LOG4_ERROR("ThreadPoolAwaiter: threadpool commit failed (pool stopped)");
 			if (h && !h.done())
 			{
 				h.resume();
@@ -140,7 +140,7 @@ struct PoolOffloadAwaiter
 		{
 			if (!fut_.valid())
 			{
-				throw std::runtime_error("PoolOffloadAwaiter: invalid future");
+				throw std::runtime_error("ThreadPoolAwaiter: invalid future");
 			}
 			return fut_.get();
 		}
@@ -148,19 +148,19 @@ struct PoolOffloadAwaiter
 };
 
 template <class BodyT, class OutT, class WorkFn>
-PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
+ThreadPoolAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakeThreadPoolAwaiter(
 	StepCo20* s, util::WorkStealingPool& p, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
 {
-	return PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>>(
+	return ThreadPoolAwaiter<BodyT, OutT, std::decay_t<WorkFn>>(
 		s, p, std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
 }
 
 /** @brief 使用 Worker 全局线程池（ThunderWorkerThreadPool） */
 template <class BodyT, class OutT, class WorkFn>
-PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
+ThreadPoolAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakeThreadPoolAwaiter(
 	StepCo20* s, BodyT&& b, std::shared_ptr<OutT> o, WorkFn&& w)
 {
-	return MakePoolOffloadAwaiter(
+	return MakeThreadPoolAwaiter(
 		s, ThunderWorkerThreadPool(), std::forward<BodyT>(b), std::move(o), std::forward<WorkFn>(w));
 }
 
@@ -169,7 +169,7 @@ PoolOffloadAwaiter<BodyT, OutT, std::decay_t<WorkFn>> MakePoolOffloadAwaiter(
  */
 template <class WorkFn, class... BodyTs,
 	std::enable_if_t<std::is_invocable_v<std::decay_t<WorkFn>, BodyTs...>, int> = 0>
-auto MakePoolOffloadAwaiter(StepCo20* s, util::WorkStealingPool& p, WorkFn&& w, BodyTs&&... bodyArgs)
+auto MakeThreadPoolAwaiter(StepCo20* s, util::WorkStealingPool& p, WorkFn&& w, BodyTs&&... bodyArgs)
 {
 	using BodyPack = std::tuple<std::decay_t<BodyTs>...>;
 	// std::decay_t 是 C++ 标准库类型萃取工具，通常用于将类型参数变为它的“原始”形式（去除引用、const、volatile、数组等），常用于泛型编程以获得更适合实例化/存储的类型。
@@ -190,26 +190,26 @@ auto MakePoolOffloadAwaiter(StepCo20* s, util::WorkStealingPool& p, WorkFn&& w, 
 				std::move(body));
 		}
 	};
-	return PoolOffloadAwaiter<BodyPack, std::monostate, decltype(workAdapter)>(
+	return ThreadPoolAwaiter<BodyPack, std::monostate, decltype(workAdapter)>(
 		s, p, std::move(body), std::make_shared<std::monostate>(), std::move(workAdapter));
 }
 
 /** @brief 无 out：使用 Worker 全局线程池（ThunderWorkerThreadPool） */
 template <class WorkFn, class... BodyTs,
 	std::enable_if_t<std::is_invocable_v<std::decay_t<WorkFn>, BodyTs...>, int> = 0>
-auto MakePoolOffloadAwaiter(StepCo20* s, WorkFn&& w, BodyTs&&... bodyArgs)
+auto MakeThreadPoolAwaiter(StepCo20* s, WorkFn&& w, BodyTs&&... bodyArgs)
 {
-	return MakePoolOffloadAwaiter(
+	return MakeThreadPoolAwaiter(
 		s, ThunderWorkerThreadPool(), std::forward<WorkFn>(w), std::forward<BodyTs>(bodyArgs)...);
 }
 
-/** @brief 池内执行无参 lambda 并返回值（非 void）；等价于 MakePoolOffloadAwaiter(&step, pool, f) */
+/** @brief 池内执行无参 lambda 并返回值（非 void）；等价于 MakeThreadPoolAwaiter(&step, pool, f) */
 template <class F>
 auto RunOnThreadPool(StepCo20& step, util::WorkStealingPool& pool, F&& f)
 {
 	using R = std::invoke_result_t<std::decay_t<F>>;
-	static_assert(!std::is_void_v<R>, "RunOnThreadPool: return type must not be void; use MakePoolOffloadAwaiter (work may return void)");
-	return MakePoolOffloadAwaiter(&step, pool, std::forward<F>(f));
+	static_assert(!std::is_void_v<R>, "RunOnThreadPool: return type must not be void; use MakeThreadPoolAwaiter (work may return void)");
+	return MakeThreadPoolAwaiter(&step, pool, std::forward<F>(f));
 }
 
 } // namespace net
