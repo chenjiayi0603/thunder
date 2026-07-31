@@ -4,9 +4,8 @@
  * @brief    原生 liburing I/O 后端（单线程，libev 主循环驱动）
  * @note     Path B：自管 SQ/CQ，eventfd + ev_io 收割 CQE，ev_check 兜底。
  *           不 thread-per-op（io_engine_uring.cpp 反面教材）。SQPOLL env 门控。
- *           安全模型对齐 AsioUringIoBackend：PendingOp 由本后端持有，
+ *           安全模型：PendingOp 由本后端持有，
  *           CancelFd 后陈旧 CQE 只释放 PendingOp、绝不触碰已释放的连接缓冲。
- *           骨架仅普通 recv/send；send_zc 见 Path B-3。
  ******************************************************************************/
 #ifndef NATIVEURINGIOBACKEND_HPP_
 #define NATIVEURINGIOBACKEND_HPP_

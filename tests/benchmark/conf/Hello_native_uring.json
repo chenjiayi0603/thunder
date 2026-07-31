@@ -1,0 +1,51 @@
+{
+    "node_type": "HELLO_HTTP",
+    "access_host": "0.0.0.0",
+    "access_port": 28006,
+    "access_codec": 3,
+    "inner_host": "0.0.0.0",
+    "inner_port": 28007,
+    "center": {
+        "connector": "etcd-grpc",
+        "etcd_endpoints": "http://127.0.0.1:12379"
+    },
+    "server_name": "Hello_bench",
+    "process_num": 1,
+    "worker_capacity": 1000000,
+    "config_path": "conf/",
+    "log_path": "log/",
+    "max_log_file_num": 3,
+    "max_log_file_size": 10240000,
+    "permission": {
+        "addr_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500000
+        },
+        "uin_permit": {
+            "stat_interval": 1.0,
+            "permit_num": 500000
+        }
+    },
+    "io_timeout": 300.0,
+    "step_timeout": 5.0,
+    "log_level": "INFO",
+    "load_so_interval": 60.0,
+    "so": [],
+    "io_backend": "native_uring",
+    "module": [
+        {
+            "url_path": "/hello/raw",
+            "so_path": "plugins/HelloHttp_ModuleRaw.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 1
+        },
+        {
+            "url_path": "/hello/hello",
+            "so_path": "plugins/HelloHttp_ModuleHello.so",
+            "entrance_symbol": "create",
+            "load": true,
+            "version": 6
+        }
+    ]
+}
