@@ -84,22 +84,21 @@ RPS            50k          173k
 P50          0.95ms        552μs
 ```
 
-### Echo POST (asio_uring, JSON 解析+构造)
+### Echo (variable response size, Nginx = static file)
 
 ```
-大小      RPS         P50
-───────────────────────────
-64B        85k        531μs
-4K         77k        608μs
-64K        9.7k       752μs
+大小      Thunder RPS   Nginx RPS    Thunder P50   Nginx P50
+─────────────────────────────────────────────────────────────
+64B        42k          133k         1.21ms         684μs
+4K         78k          112k          600μs         0.85ms
+64K       10.5k         24.9k        4.44ms         3.86ms
 ```
 
 **分析:**
 
-- Nginx SSL 吞吐 3.4x 于 Thunder (173k vs 50k)，延迟也更优 (552μs vs 0.95ms)
-- SSL 加解密对 Thunder 冲击远大于 Nginx：HTTP→HTTPS 吞吐降 78% (227k→50k)
-- Nginx SSL 几乎无性能损失：HTTP 254k → HTTPS 173k (-32%)，Thunder 227k → 50k (-78%)
-- 64K Echo: 9.7k RPS vs HTTP 24.7k (-61%)
+- Nginx SSL 吞吐 3.4x 于 Thunder (173k vs 50k Fast-path)，延迟也更优
+- SSL 对 Thunder 冲击远大于 Nginx：HTTP→HTTPS 吞吐 -78% (227k→50k)，Nginx 仅 -32% (254k→173k)
+- 根因: Thunder SSL 路径疑似缺 session 复用 / 同步 BIO 阻塞 / 每请求独立 TLS record，待 profiling
 - ev / native_uring HTTPS 数据待补
 
 ---
