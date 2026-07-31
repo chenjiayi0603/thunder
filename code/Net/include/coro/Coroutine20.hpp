@@ -13,7 +13,12 @@ class StepCo20;
 void async_task_promise_notify_if(StepCo20* step) noexcept;
 
 /**
- * @brief C++20 协程任务类型。首参固定为 `StepCo20&`，后可接业务参数。用 `co_await` 挂起，`co_return` 结束。
+ * @brief C++20 协程任务类型。
+ *
+ * 角色: ① 函数返回 AsyncTask 才被编译器识别为协程
+ *       ② 内部持有协程帧 (堆分配), 析构时 destroy() 释放
+ *       ③ 创建即执行 (initial_suspend=suspend_never)
+ *       ④ 挂起/恢复由 StepCo20::m_context.handle 管理, AsyncTask 不管调度
  *
  * 用法:
  *   net::AsyncTask MyCo(net::StepCo20& step, int arg) {
