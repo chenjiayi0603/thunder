@@ -1,232 +1,162 @@
-#!/bin/bash
-# Thunder I/O Backend Benchmark: libev vs io_uring for HTTP/HTTPS
+#!/usr/bin/env bash
+# Thunder I/O Backend 真实网卡性能对比测试
+# 测试方法: POST 变长二进制 body (不解析) → 固定返回 24B JSON (公平对比)
+# 目标: 192.168.3.61 (物理网卡 enp0s31f6)
+# 对比: ev / native_uring / asio_uring / Nginx
 set -euo pipefail
 
-THUNDER_ROOT="/home/administrator/thunder"
-DEPLOY_ROOT="$THUNDER_ROOT/deploy"
-WRK="${WRK:-wrk}"
-WRK_POST_LUA="$DEPLOY_ROOT/tests/benchmark/wrk_post.lua"
-BENCHMARK_DIR="$DEPLOY_ROOT/tests/benchmark"
-RESULTS_DIR="$BENCHMARK_DIR/results"
-mkdir -p "$RESULTS_DIR"
+BENCH_DIR="$(cd "$(dirname "$0")" && pwd)"
+THUNDER_BIN="/home/tommychen/thunder/build/bin/Hello"
+REAL_IP="192.168.3.61"
+THUNDER_PORT=28006
+NGINX_PORT=18088
+RESULT_FILE="$BENCH_DIR/results_$(date +%Y%m%d_%H%M%S).txt"
+DURATION=10
+WRK_THREADS=4
+WRK_CONN=100
 
-HELLO_HTTP="$DEPLOY_ROOT/HelloHttp/bin/HelloHttp"
-HELLO_HTTPS="$DEPLOY_ROOT/HelloHttps/bin/HelloHttps"
-HTTP_CONF="$DEPLOY_ROOT/HelloHttp/conf/Hello.json"
-HTTPS_CONF="$DEPLOY_ROOT/HelloHttps/conf/HelloHttps.json"
+# CPU binding: Thunder on P-cores, wrk on E-cores (matches original methodology)
+THUNDER_CPUS="4-9"
+WRK_CPUS="12-19"
 
-HTTP_PORT=27006
-HTTPS_PORT=27443
-DURATION="30s"
-THREADS=4
-CONNECTIONS_LIST="10 100 500"
-
-# colors
+# Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
-# check wrk
-if ! command -v "$WRK" &>/dev/null; then
-    echo -e "${RED}wrk not found. Install: apt install wrk${NC}"
-    exit 1
-fi
+log()  { echo -e "${GREEN}[$(date +%H:%M:%S)]${NC} $*" | tee -a "$RESULT_FILE"; }
+warn() { echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} $*" | tee -a "$RESULT_FILE"; }
 
-# wrk HTTPS check
-WRK_HAS_SSL=$("$WRK" --help 2>&1 | grep -c -i "ssl\|--https" || true)
-
-usage() {
-    echo "Usage: $0 [--backend ev|asio_uring] [--backends ev,asio_uring]"
-    echo "Example: $0 --backends ev,asio_uring"
-    exit 1
-}
-
-BACKENDS=()
-TEST_HTTP=true
-TEST_HTTPS=true
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --backend) BACKENDS+=("$2"); shift 2;;
-        --backends)
-            IFS=',' read -ra BACKENDS <<< "$2"
-            shift 2;;
-        --http-only) TEST_HTTPS=false; shift;;
-        --https-only) TEST_HTTP=false; shift;;
-        *) usage;;
-    esac
-done
-
-if [[ ${#BACKENDS[@]} -eq 0 ]]; then
-    BACKENDS=("ev")
-fi
-
-echo "============================================================"
-echo " Thunder I/O Backend Benchmark"
-echo " Backends: ${BACKENDS[*]}"
-echo " HTTP: $TEST_HTTP, HTTPS: $TEST_HTTPS"
-echo " Duration: $DURATION, Threads: $THREADS"
-echo " Connections: $CONNECTIONS_LIST"
-echo "============================================================"
-
-set_backend_config() {
-    local conf="$1" backend="$2"
-    # Use python3 for reliable JSON editing
-    python3 -c "
-import json,sys
-with open('$conf') as f:
-    cfg=json.load(f)
-cfg['io_backend']='$backend'
-with open('$conf','w') as f:
-    json.dump(cfg,f,indent=4,ensure_ascii=False)
-"
-    echo "  Set io_backend='$backend' in $(basename "$conf")"
-}
-
-start_service() {
-    local bin="$1" name="$2"
-    echo -n "  Starting $name..."
-    cd "$(dirname "$bin")"
-    "./$(basename "$bin")" -c "$3" &
-    local pid=$!
-    sleep 2
-    if kill -0 "$pid" 2>/dev/null; then
-        echo -e " ${GREEN}OK${NC} (pid $pid)"
-    else
-        echo -e " ${RED}FAILED${NC}"
-        return 1
+ensure_nginx() {
+    if ! curl -s http://127.0.0.1:$NGINX_PORT/ > /dev/null 2>&1; then
+        log "Starting Nginx on port $NGINX_PORT..."
+        nginx -c /tmp/nginx_bench.conf 2>/dev/null || true
+        sleep 1
     fi
-    echo "$pid"
+    log "Nginx OK: $(curl -s http://127.0.0.1:$NGINX_PORT/)"
 }
 
-stop_service() {
-    local name="$1" pid="$2"
-    echo -n "  Stopping $name (pid $pid)..."
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+start_thunder() {
+    local backend=$1
+    local config_name
+    case $backend in
+        ev)            config_name="Hello_ev.json" ;;
+        native_uring)  config_name="Hello_native_uring.json" ;;
+        asio_uring)    config_name="Hello_asio_uring.json" ;;
+        *) echo "Unknown backend: $backend"; exit 1 ;;
+    esac
+
+    # Kill any existing Thunder on our port
+    kill $(lsof -ti :$THUNDER_PORT 2>/dev/null) 2>/dev/null || true
     sleep 1
-    echo -e " ${GREEN}done${NC}"
+
+    log "Starting Thunder ($backend) on :$THUNDER_PORT..."
+    cd "$BENCH_DIR"
+    rm -f log/*.log
+    taskset -c $THUNDER_CPUS "$THUNDER_BIN" "conf/$config_name" &
+    THUNDER_PID=$!
+    sleep 2
+
+    # Wait until responding
+    for i in $(seq 1 10); do
+        if curl -s http://127.0.0.1:$THUNDER_PORT/hello/raw > /dev/null 2>&1; then
+            log "Thunder ($backend) ready (PID $THUNDER_PID)"
+            return 0
+        fi
+        sleep 1
+    done
+    warn "Thunder ($backend) failed to start!"
+    return 1
+}
+
+stop_thunder() {
+    kill $THUNDER_PID 2>/dev/null || true
+    wait $THUNDER_PID 2>/dev/null || true
+    sleep 1
+    log "Thunder stopped."
 }
 
 run_wrk() {
-    local url="$1" name="$2" conn="$3"
-    local outfile="$RESULTS_DIR/${name}_c${conn}.txt"
-    local extra_args=""
-    if [[ "$url" == https://* ]]; then
-        if [[ "$WRK_HAS_SSL" -gt 0 ]]; then
-            extra_args="--no-check-certificate"
-        else
-            echo -e "    ${YELLOW}wrk without SSL, skipping HTTPS${NC}"
-            echo "SKIP: wrk without SSL support" > "$outfile"
-            return
-        fi
-    fi
-    echo "    wrk: $name c=$conn ..." >&2
-    if [[ -f "$WRK_POST_LUA" ]]; then
-        "$WRK" -t"$THREADS" -c"$conn" -d"$DURATION" -s "$WRK_POST_LUA" $extra_args "$url" > "$outfile" 2>&1 || true
-    else
-        "$WRK" -t"$THREADS" -c"$conn" -d"$DURATION" $extra_args "$url" > "$outfile" 2>&1 || true
-    fi
+    local url=$1
+    local label=$2
+    local wrk_script=${3:-}
+
+    local script_arg=""
+    [ -n "$wrk_script" ] && script_arg="-s $wrk_script"
+
+    log "  WRK: $label ($url)"
+    taskset -c $WRK_CPUS wrk -t$WRK_THREADS -c$WRK_CONN -d${DURATION}s --latency $script_arg "$url" 2>&1 | tee -a "$RESULT_FILE"
+    echo "" | tee -a "$RESULT_FILE"
 }
 
-parse_wrk() {
-    local file="$1"
-    if grep -q "SKIP" "$file" 2>/dev/null; then
-        echo "SKIP"
-        return
-    fi
-    local rps=$(grep "Requests/sec" "$file" | awk '{print $2}' 2>/dev/null || echo "0")
-    local lat=$(grep "Latency" "$file" | grep -v "Distribution" | awk '{print $2}' 2>/dev/null || echo "0")
-    echo "$rps $lat"
+run_thunder_tests() {
+    local backend=$1
+    local base_url="http://${REAL_IP}:${THUNDER_PORT}"
+
+    log ""
+    log "============================================================"
+    log "  Backend: $backend"
+    log "============================================================"
+
+    start_thunder "$backend" || return 1
+
+    # Warmup
+    log "Warmup..."
+    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s -s "$BENCH_DIR/post_64.lua" "$base_url/hello/raw" > /dev/null 2>&1
+
+    # 公平对比: POST 变长二进制 body (不解析) → 固定 24B 响应
+    run_wrk "$base_url/hello/raw" "POST 64B binary"  "$BENCH_DIR/post_64.lua"
+    run_wrk "$base_url/hello/raw" "POST 1K binary"   "$BENCH_DIR/post_1k.lua"
+    run_wrk "$base_url/hello/raw" "POST 4K binary"   "$BENCH_DIR/post_4k.lua"
+    run_wrk "$base_url/hello/raw" "POST 16K binary"  "$BENCH_DIR/post_16k.lua"
+    run_wrk "$base_url/hello/raw" "POST 64K binary"  "$BENCH_DIR/post_64k.lua"
+
+    # Thunder-only: Echo (JSON解析+动态构造)
+    run_wrk "$base_url/hello/hello" "Echo 64B"  "$BENCH_DIR/wrk_echo_64.lua"
+    run_wrk "$base_url/hello/hello" "Echo 4K"   "$BENCH_DIR/wrk_echo_4k.lua"
+    run_wrk "$base_url/hello/hello" "Echo 64K"  "$BENCH_DIR/wrk_echo_64k.lua"
+
+    stop_thunder
 }
+
+run_nginx_tests() {
+    local base_url="http://${REAL_IP}:${NGINX_PORT}"
+
+    log ""
+    log "============================================================"
+    log "  Nginx Baseline (1 worker, epoll, access_log off)"
+    log "============================================================"
+
+    ensure_nginx
+
+    # Warmup
+    taskset -c $WRK_CPUS wrk -t2 -c50 -d3s -s "$BENCH_DIR/post_64.lua" "$base_url/" > /dev/null 2>&1
+
+    # 公平对比: POST 变长二进制 (不解析) → return 200 固定 24B JSON
+    run_wrk "$base_url/" "POST 64B binary"  "$BENCH_DIR/post_64.lua"
+    run_wrk "$base_url/" "POST 1K binary"   "$BENCH_DIR/post_1k.lua"
+    run_wrk "$base_url/" "POST 4K binary"   "$BENCH_DIR/post_4k.lua"
+    run_wrk "$base_url/" "POST 16K binary"  "$BENCH_DIR/post_16k.lua"
+    run_wrk "$base_url/" "POST 64K binary"  "$BENCH_DIR/post_64k.lua"
+}
+
+# =============================================================
+# Main
+# =============================================================
+echo "Thunder I/O Backend Benchmark — Real NIC ($REAL_IP)" | tee "$RESULT_FILE"
+echo "Date: $(date)" | tee -a "$RESULT_FILE"
+echo "CPU: $(lscpu | grep 'Model name' | cut -d: -f2 | xargs)" | tee -a "$RESULT_FILE"
+echo "NIC: $(ethtool enp0s31f6 2>/dev/null | grep -E 'Speed|Duplex|Link' || echo 'Link: up')" | tee -a "$RESULT_FILE"
+echo "Governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)" | tee -a "$RESULT_FILE"
+echo "Thunder cores: $THUNDER_CPUS | wrk cores: $WRK_CPUS" | tee -a "$RESULT_FILE"
+echo "Duration: ${DURATION}s, Threads: $WRK_THREADS, Connections: $WRK_CONN" | tee -a "$RESULT_FILE"
+echo "" | tee -a "$RESULT_FILE"
 
 # Run tests
-declare -A RESULTS
-SUMMARY_CSV="$RESULTS_DIR/summary.csv"
-echo "backend,protocol,connections,rps,latency_ms" > "$SUMMARY_CSV"
+run_thunder_tests "ev"
+run_thunder_tests "native_uring"
+run_thunder_tests "asio_uring"
+run_nginx_tests
 
-for BACKEND in "${BACKENDS[@]}"; do
-    echo ""
-    echo "=== Backend: $BACKEND ==="
-    
-    # Build with appropriate flags
-    echo "  Building..."
-    BUILD_DIR="$THUNDER_ROOT/build_${BACKEND}"
-    mkdir -p "$BUILD_DIR"
-    cd "$BUILD_DIR"
-    if [[ "$BACKEND" == "asio_uring" ]]; then
-        cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHUNDER_IO_ASIO_URING=ON > /dev/null 2>&1
-    else
-        cmake "$THUNDER_ROOT" -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null 2>&1
-    fi
-    cmake --build . -j1 > /dev/null 2>&1
-    echo "  Build complete."
-    
-    # Configure for this backend
-    set_backend_config "$HTTP_CONF" "$BACKEND"
-    set_backend_config "$HTTPS_CONF" "$BACKEND"
-    
-    # Start services
-    HTTP_PID=""
-    HTTPS_PID=""
-    
-    if $TEST_HTTP; then
-        HTTP_PID=$(start_service "$HELLO_HTTP" "HelloHttp" "conf/Hello.json")
-    fi
-    if $TEST_HTTPS; then
-        HTTPS_PID=$(start_service "$HELLO_HTTPS" "HelloHttps" "conf/HelloHttps.json")
-    fi
-    
-    # Warm up
-    sleep 2
-    echo "  Warming up..."
-    $TEST_HTTP && curl -s -X POST http://127.0.0.1:$HTTP_PORT/hello/hello -H "Content-Type: application/json" -d '{"option":"Echo","data":"worm"}' > /dev/null 2>&1 || true
-    sleep 1
-    
-    # Run benchmarks
-    for CONN in $CONNECTIONS_LIST; do
-        if $TEST_HTTP; then
-            echo "  [HTTP c=$CONN]"
-            run_wrk "http://127.0.0.1:$HTTP_PORT/hello/hello" "http_${BACKEND}" "$CONN"
-        fi
-        if $TEST_HTTPS; then
-            echo "  [HTTPS c=$CONN]"
-            run_wrk "https://127.0.0.1:$HTTPS_PORT/hello/hello" "https_${BACKEND}" "$CONN"
-        fi
-    done
-    
-    # Stop services
-    echo ""
-    $TEST_HTTP && [[ -n "$HTTP_PID" ]] && stop_service "HelloHttp" "$HTTP_PID"
-    $TEST_HTTPS && [[ -n "$HTTPS_PID" ]] && stop_service "HelloHttps" "$HTTPS_PID"
-    
-    # Parse results
-    echo ""
-    echo "  Results for $BACKEND:"
-    echo "  ---------------------"
-    for CONN in $CONNECTIONS_LIST; do
-        if $TEST_HTTP; then
-            HTTP_R=$(parse_wrk "$RESULTS_DIR/http_${BACKEND}_c${CONN}.txt")
-            echo "  HTTP c=$CONN: $HTTP_R"
-            echo "$BACKEND,http,$CONN,$HTTP_R" >> "$SUMMARY_CSV"
-        fi
-        if $TEST_HTTPS; then
-            HTTPS_R=$(parse_wrk "$RESULTS_DIR/https_${BACKEND}_c${CONN}.txt")
-            echo "  HTTPS c=$CONN: $HTTPS_R"
-            echo "$BACKEND,https,$CONN,$HTTPS_R" >> "$SUMMARY_CSV"
-        fi
-    done
-done
-
-# Restore default config
-python3 -c "
-import json
-for conf in ['$HTTP_CONF','$HTTPS_CONF']:
-    with open(conf) as f: cfg=json.load(f)
-    cfg.pop('io_backend',None)
-    with open(conf,'w') as f: json.dump(cfg,f,indent=4,ensure_ascii=False)
-" 2>/dev/null || true
-
-echo ""
-echo "============================================================"
-echo " Benchmark Complete. Results: $RESULTS_DIR/"
-echo " Summary CSV: $SUMMARY_CSV"
-echo "============================================================"
+log ""
+log "============================================================"
+log "Benchmark complete. Results: $RESULT_FILE"
+log "============================================================"

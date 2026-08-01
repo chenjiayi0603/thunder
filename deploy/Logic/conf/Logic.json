@@ -36,6 +36,6 @@
             "version": 1
         }
     ],
-    "module": [],
-    "io_backend": "asio_uring"
+    "io_backend": "asio_uring",
+    "module": []
 }

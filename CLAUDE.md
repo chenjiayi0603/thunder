@@ -229,7 +229,7 @@ tests/test_smoke.sh     # 冒烟（需 Docker 集群已在线）
 | 项目 | 当前状态 | 说明 |
 |------|---------|------|
 | **Lua SendToNodeType** | ✅ 已覆盖 | 9/9 E2E 通过（2026-06-25）含 fire-forget/async/async_target 全模式；#113 端口冲突已修 |
-| **SO 热更新** | ✅ 已覆盖 | build-so → admin API list/extract/deploy → 文件系统部署 全链路；ReloadModule/版本变更触发 Worker 重载（2026-06-25） |
+| **SO 热更新** | ✅ 已覆盖 | admin-web PUT upload → POST deploy → etcd bump → Manager HTTP Pull (MinIO) 全链路；ReloadModule/版本变更触发 Worker 重载 (#159) |
 | **Lua 热更新** | ✅ 已覆盖 | etcd 版本触发 → Manager Watch → `CMD_REQ_RELOAD_LUA` → Worker `ReloadScript()`（不动 VM/SO/进程）；`lua_echo` 从 `"ok"` → `"V14_VM_ONLY"` 无停机（2026-06-29） |
 | **etcd 节点注册完整性** | ✅ 已覆盖 | S1 稳定性测试验证，5 node_type 全部注册 + lease 有效（2026-06-25） |
 | **多端点 failover** | ✅ 已覆盖 | chaos_etcd 17/17 通过：etcd1 停止→etcd2/3 续命→恢复；全集群重启；数据清空从零重建（2026-06-25） |
@@ -663,19 +663,23 @@ kubectl -n thunder rollout restart deployment thunder-admin-web
 
 **6. Admin 功能测试**（涉及 Admin 页面改动时）
 - 页面可访问: `curl http://127.0.0.1:30090/index.html` → HTTP 200
-- SO 镜像列表: `curl http://127.0.0.1:30090/api/so-images` → 返回 JSON
-- SO 文件列表: `curl http://IP:8090/api/so-files?image=xxx` → 返回 .so 列表
-- SO 提取: `curl -X POST http://IP:8090/api/so-extract ...` → 本地+NFS 双写验证
-- 页面功能: grep 检查 selectSoImage / extractAndRefresh / triggerUpdate 等函数存在
+- SO 制品上传: `PUT /api/plugins/{Type}/{filename}` → MinIO + 本地双写
+- SO 下发: `POST /api/plugins/{Type}/deploy` → etcd bump → Manager Pull 下载
+- MinIO Console: 代理 `/api/minio/` → 可浏览 artifacts bucket
+- 页面功能: grep 检查 uploadArtifact / deploySO / listDeployed 等函数存在
 - **必须真实请求，禁止 mock**
 
-**7. SO 镜像构建**（涉及 so-images 或 deploy.sh 改动时）
+**7. SO 热更新 (#159 Pull 模式)**（涉及 SO 下发链路改动时）
 ```bash
-./deploy.sh build-so all        # 全量构建
-./deploy.sh build-so HelloHttp_ModuleHello  # 单独构建
+# 1. 上传 .so 到 admin-web
+curl -X PUT http://127.0.0.1:8090/api/plugins/Logic/CmdGetToken.so --data-binary @xxx.so
+# 2. 通过 admin-web 下发 (etcd bump → Manager Pull)
+curl -X POST http://127.0.0.1:8090/api/plugins/Logic/deploy -d '{"filename":"CmdGetToken.so"}'
+# 3. 验证 Worker 已加载新版 (etcd 版本号递增)
 ```
-- 首次构建 → 全量通过
-- 二次构建 → 全部跳过(无变化)
+- MinIO bucket artifacts 中存在对应文件
+- etcd /thunder/config/module/ 版本号递增
+- Worker 日志出现 "SO downloaded" / "ABI 版本" 加载日志
 
 **8. 回归测试（影响范围内的旧功能）**
 - 分析改动影响范围，列出受影响的旧功能

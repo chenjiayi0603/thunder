@@ -9,7 +9,7 @@ net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
 {
 	const int delay_ms = 80;
 	const int delay_ms2 = delay_ms + 1;
-	const int result = co_await net::MakePoolOffloadAwaiter(
+	const int result = co_await net::MakeThreadPoolAwaiter(
 		&step,
 		[](int d1, int d2) -> int {
 			// 典型场景：在线程池子线程中调用无状态、会阻塞的外部 IO 同步 SDK 或函数（此处 sleep 仅作演示）。

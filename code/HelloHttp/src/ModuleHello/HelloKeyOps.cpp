@@ -69,10 +69,7 @@ void ModuleHello::GenKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInH
 	oJson.Add("address", address);
 	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
 
-	net::LaunchCo(stMsgShell, oInHttpMsg,
-		[oJson, address](net::StepCo20& step) -> net::AsyncTask {
-			return GenKeyNotifyLogicCo(step, oJson.ToString(), address);
-		});
+	net::LaunchCo(stMsgShell, oInHttpMsg, GenKeyNotifyLogicCo, oJson.ToString(), address);
 }
 
 void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& oInHttpMsg)
@@ -99,10 +96,7 @@ void ModuleHello::VerifyKey(const net::tagMsgShell& stMsgShell, const HttpMsg& o
 	LOG4_TRACE("oJson(%s)", oJson.ToString().c_str());
 
 	const std::string reqBody = oJson.ToString();
-	net::LaunchCo(stMsgShell, oInHttpMsg,
-		[reqBody, address](net::StepCo20& step) -> net::AsyncTask {
-			return VerifyKeyLogicCo(step, reqBody, address);
-		});
+	net::LaunchCo(stMsgShell, oInHttpMsg, VerifyKeyLogicCo, reqBody, address);
 }
 
 } // namespace core

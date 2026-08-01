@@ -189,7 +189,7 @@ net::AsyncTask HelloPoolMysqlCo(net::StepCo20& step, const util::CJsonObject& ob
 
 	struct MysqlResult { int createOk{0}; int insertOk{0}; int selectOk{0}; std::string errMsg; };
 
-	const MysqlResult res = co_await net::MakePoolOffloadAwaiter(
+	const MysqlResult res = co_await net::MakeThreadPoolAwaiter(
 	    &step,
 	    [h, p, user, pwd, dbName, charset,
 	     createSql, insertSql, selectSql]() -> MysqlResult {
@@ -382,7 +382,7 @@ namespace
 net::AsyncTask HelloPoolCpuCo(net::StepCo20& step)
 {
 	std::vector<uint8_t> buf(256 * 1024, static_cast<uint8_t>(3));
-	const uint64_t checksum = co_await net::MakePoolOffloadAwaiter(
+	const uint64_t checksum = co_await net::MakeThreadPoolAwaiter(
 		&step,
 		[](std::vector<uint8_t> b) -> uint64_t {
 			// 运行于线程池子线程（非 Worker/libev 线程）：勿用 GetLabor、ResponseToClient、
@@ -406,7 +406,7 @@ net::AsyncTask HelloPoolBlockCo(net::StepCo20& step)
 {
 	const int delay_ms = 80;
 	const int delay_ms2 = delay_ms + 1;
-	const int result = co_await net::MakePoolOffloadAwaiter(
+	const int result = co_await net::MakeThreadPoolAwaiter(
 		&step,
 		[](int d1, int d2) -> int {
 			// 典型场景：在线程池子线程中调用无状态、会阻塞的外部 IO 同步 SDK 或函数（此处 sleep 仅作演示）。

@@ -385,11 +385,19 @@ struct CenterEvent {
 ```
 admin-web / CLI
     │
-    ├─ ① PUT .so 文件 → MinIO (制品库)
+    ├─ ① PUT .so 文件 → 双写:
+    │      - MinIO: artifacts/{TYPE}/{filename}  (主存储)
+    │      - 本地:  /app/data/artifacts/{TYPE}/{filename}  (MinIO 不可用时的备份)
     │
-    └─ ② PUT /thunder/config/module/{TYPE}
-          { ..., "version": 42, "so_url": "http://minio/...", "load": true }
+    └─ ② POST deploy → 只写 etcd (不移动文件):
+           PUT /thunder/config/module/{TYPE}
+           { ..., "version": 42,
+             "so_url": "http://{minio_host}/{bucket}/{TYPE}/{filename}",
+             "so_path": "plugins/{filename}", "md5": "...", "load": true }
               │
+              ▼  so_url 由 MinIO.GetObjectURL() 构造:
+              │    优先: http://{endpoint}/artifacts/Logic/CmdGetToken.so
+              │    降级: http://{admin_host}:8090/api/artifacts/Logic/CmdGetToken.so
               ▼
           etcd ──── 5s 轮询 ────► Manager
                                       │

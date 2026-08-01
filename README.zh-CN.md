@@ -1,6 +1,6 @@
 # Thunder ⚡
 
-**C++20 高性能异步网关框架 — 单核 235k RPS，P50 延迟 220μs，热更新不丢连接。**
+**C++20 异步应用网关框架 — 热更新 .so 不丢连接，多协议 (HTTP/WS/MQTT/TCP)，灰度路由，三 IO 后端可选。**
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Commercial-blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-%2300599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
@@ -18,6 +18,24 @@ Thunder 负责高性能 IO、分布式路由、零停机更新。
 ```
 
 对标：如果你用过 Nginx + OpenResty + Lua，Thunder 把这三者做成了一个 C++20 原生的统一框架。
+
+### 为什么选 Thunder 而不是 Nginx
+
+| | Nginx | Thunder |
+|---|---|---|
+| **热更新业务代码** | ❌ 改配置 reload，连接断开 | ✅ dlopen .so，连接不丢 |
+| **多协议** | HTTP/stream 分开 | ✅ HTTP/HTTPS/WS/WSS/MQTT/TCP 统一 |
+| **灰度路由** | 需要 Lua / 外部服务 | ✅ etcd 权重 canary，秒级回滚 |
+| **自定义协议** | 需要写 C 模块 | ✅ 写 .so 插件即可 |
+| **协程** | ❌ | ✅ `co_await` Redis/MySQL/跨节点 RPC/线程池卸载 |
+| **线程池** | 多 worker 进程 | ✅ Work-Stealing 多核线性扩展 (2.53x) |
+| **共享内存 IPC** | ❌ | ✅ Manager ↔ Worker 零拷贝通信, fd 迁移 |
+| **存储驱动** | 依赖外部模块 | ✅ 内置 Redis/MySQL/MongoDB Operator |
+| **Lua 脚本** | OpenResty 额外安装 | ✅ 内置 LuaJIT，热加载 <1ms，不重启进程 |
+| **纯 HTTP 转发性能** | ~253k RPS | ~221k RPS (小包 Nginx 快 12%) |
+| **P50 延迟** | 386-392μs | 198-254μs (低 35-49%) |
+
+> 结论：只需要做 HTTP 反向代理 → 选 Nginx。需要写业务逻辑、多协议接入、协程访问存储、热更新不丢连接 → 选 Thunder。
 
 ---
 
@@ -83,7 +101,7 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 | **单线程事件循环** | 零锁、零竞争、极简 | 单核 CPU（多进程补偿）|
 | **多进程 (1 Manager + N Worker)** | 利用多核 + 故障隔离（插件崩只崩一个 Worker）| 进程间需 IPC |
 | **C++20 协程 (`co_await`)** | 异步代码线性化，告别回调地狱 | 学习曲线 |
-| **io_uring 批量提交** | N 次 IO → 1 次 syscall，TLS 延迟砍半 | Linux 5.1+ |
+| **io_uring (asio + native)** | 批量提交 N 次 IO → 1 次 syscall，TLS 延迟砍半；native 直通内核无用户态事件循环 | Linux 5.1+ |
 | **hostNetwork (非 NodePort)** | 数据面零 K8s 组件 | Pod 不能漂移 |
 | **etcd (非 K8s DNS)** | 热配置推送 + 灰度权重 + 秒级回滚 | 需维护 etcd 集群 |
 | **dlopen SO 热更新** | 不重启进程，连接不断 | SO 需兼容 ABI |
@@ -91,37 +109,33 @@ curl http://127.0.0.1:27006/hello/hello -d '{"option":"Echo"}'
 
 ---
 
-## 📊 性能快照
+## 📊 性能
 
-*i9-12900H, Linux 7.0, `wrk -t4 -c100 -d10s`, 单核绑 P-core*
+*i9-12900H, Ubuntu 26.04, 1GbE 真实网卡, `wrk -t4 -c100 -d10s`*
 
-### HTTP — Thunder vs Nginx
+公平对比: POST 变长二进制 (不解析) → 固定返回 `{"code":0,"msg":"ok"}`。两端完全对等。
 
-| 载荷 | Thunder asio_uring | Nginx 1w | 提升 |
-|----:|:---:|:---:|:---:|
-| 64 B | **235k RPS** | 214k RPS | **+10%** |
-| 1 KB | **232k RPS** | 191k RPS | **+21%** |
-| 4 KB | **223k RPS** | 184k RPS | **+21%** |
+### HTTP
 
-| 载荷 | Thunder | Nginx |
-|----:|:---:|:---:|
-| 64 B | **220 μs** | 466 μs |
-| 4 KB | **332 μs** | 543 μs |
+| Body | ev | native_uring | asio_uring | Nginx 1w |
+|-----:|----:|----:|----:|----:|
+| 64 B | 183k / 214μs | 180k / 198μs | 193k / 254μs | **252k / 392μs** |
+| 1 KB | 143k / 485μs | 214k / 218μs | 182k / 289μs | **256k / 386μs** |
+| 4 KB | 153k / 238μs | 217k / 222μs | **221k / 201μs** | 253k / 392μs |
+| 64 KB | 193k / 198μs | 189k / 207μs | 216k / 216μs | **256k / 388μs** |
 
-### HTTPS (TLS + io_uring 批量提交)
+### HTTPS
 
-| 载荷 | Thunder uring | Nginx SSL |
-|----:|:---:|:---:|
-| 64 B | **402 μs** | 752 μs |
-| 4 KB | **247 μs** | 824 μs |
+| Body | ev | native_uring | asio_uring | Nginx SSL |
+|-----:|----:|----:|----:|----:|
+| 64 B | 74k / 0.95ms | 101k / 716μs | **142k / 323μs** | 161k / 581μs |
+| 1 KB | 109k / 364μs | 144k / 339μs | 137k / 355μs | **165k / 567μs** |
+| 4 KB | 112k / 353μs | 138k / 372μs | 113k / 334μs | **167k / 568μs** |
+| 64 KB | 108k / 347μs | **146k / 327μs** | 135k / 324μs | 167k / 568μs |
 
-### Work-Stealing 线程池
-
-| 配置 | 旧单队列 | Work-Stealing | 加速 |
-|:---|:---:|:---:|:--:|
-| 1P-4C (典型) | 1,373 ns/op | **543 ns/op** | **2.53x** |
-
-> 📖 完整报告：[`docs/performance/`](docs/performance/)
+> Nginx 吞吐全场景领先 (HTTP ~253k, HTTPS ~165k)，且不受请求 body 大小影响。
+> Thunder 三后端 P50 延迟优于 Nginx，HTTPS asio_uring 距 Nginx 仅 12% (142k vs 161k)。
+> 📖 完整报告：[`docs/performance/20-real-nic-benchmark.md`](docs/performance/20-real-nic-benchmark.md)
 
 ---
 
@@ -162,10 +176,17 @@ MUDULE_CREATE(core::ModuleHello);  // ← 自动导出 ABI 版本 + create()
 
 ```bash
 cmake --build build && cmake --install build
-# .so 已部署到 deploy/HelloHttp/plugins/
+# .so 安装到 deploy/HelloHttp/plugins/
 ```
 
-**热更新**：修改代码 → 重编 `.so` → `curl PUT` 上传 → etcd 版本号 +1 → Worker 优雅重启 → 新连接用新 `.so`，旧连接排空不丢。
+**热更新**：
+
+  1. 修改代码 → 重编 .so (`cmake --install` → `deploy/HelloHttp/plugins/xxx.so`)
+  2. 上传: 通过 admin-web (curl PUT 或 Web 界面) → MinIO `artifacts` 桶 + 本地 `/app/data/artifacts/`
+  3. 下发: 点击"下发" (或 POST `/api/plugins/{Type}/deploy`) → etcd 写入 `so_url` 和版本号
+     (不移动文件、不复制，只改 etcd 通知)
+  4. 各节点 Manager Watch 感知版本变化 → HTTP Pull MinIO 下载 .so
+  5. Worker dlopen 加载新 .so，旧连接排空不丢。
 
 ---
 

@@ -36,6 +36,7 @@ var API = (function() {
 
   /* ---------- Endpoints ---------- */
   function overview()          { return get('/overview'); }
+  function storageStats()     { return get('/storage/stats'); }
   function getNodes(type)      { return get('/nodes?node_type=' + encodeURIComponent(type || '')); }
   function getCanary(service)  { return get('/canary/' + encodeURIComponent(service) + '/weights'); }
   function setCanary(svc, w)   { return post('/canary/' + encodeURIComponent(svc) + '/weights', { weights: w }); }
@@ -55,6 +56,7 @@ var API = (function() {
 
   return {
     overview: overview,
+    storageStats: storageStats,
     getNodes: getNodes,
     getCanary: getCanary,
     setCanary: setCanary,

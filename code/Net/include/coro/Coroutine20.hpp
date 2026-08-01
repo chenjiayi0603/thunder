@@ -13,10 +13,19 @@ class StepCo20;
 void async_task_promise_notify_if(StepCo20* step) noexcept;
 
 /**
- * @brief 异步任务类型（无 co_await），StepCo20 路径协程管理：首参须为 `StepCo20&`，可有更多形参。
- * @note 与 Task 不同：initial_suspend=suspend_never；final_suspend=suspend_always。
- *       `promise_type(StepCo20&, Extra...)` 仅从首参取 step，`return_void` 时 Notify。
- *       GCC 下 lambda 不宜直接作协程体，请用具名函数/静态成员协程，或非协程 lambda 仅 `return Body(step,...)`。
+ * @brief C++20 协程任务类型。
+ *
+ * 角色: ① 函数返回 AsyncTask 才被编译器识别为协程
+ *       ② 内部持有协程帧 (堆分配), 析构时 destroy() 释放
+ *       ③ 创建即执行 (initial_suspend=suspend_never)
+ *       ④ 挂起/恢复由 StepCo20::m_context.handle 管理, AsyncTask 不管调度
+ *
+ * 用法:
+ *   net::AsyncTask MyCo(net::StepCo20& step, int arg) {
+ *       bool ok = co_await step.HttpGetAsync("http://...");
+ *       step.ResponseToClient(ok ? 200 : 500, "...");
+ *       co_return;
+ *   }
  */
 struct AsyncTask
 {
