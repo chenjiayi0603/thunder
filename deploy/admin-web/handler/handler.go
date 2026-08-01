@@ -100,6 +100,20 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// StorageStats returns MinIO storage overview (capacity, health, objects).
+func (h *Handler) StorageOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeErr(w, "method not allowed")
+		return
+	}
+	if h.s.MinIO == nil {
+		writeErr(w, "minio not configured")
+		return
+	}
+	stats := h.s.MinIO.StorageStats()
+	writeOK(w, stats)
+}
+
 // Nodes returns node list, optional ?node_type filter
 func (h *Handler) Nodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" { writeErr(w, "method not allowed"); return }

@@ -28,6 +28,15 @@
 <main class="app-main">
 <section id="overview" class="panel active">
   <div id="overviewHints"></div>
+  <div class="card" id="storageCard" style="margin-bottom:var(--space);display:none"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>🗄 存储概况 (MinIO)</span><span class="badge" id="storageHealth"></span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--space-md);margin-top:var(--space-sm)">
+      <div><div class="text-sm text-muted">总容量</div><div class="num" id="storageTotal">-</div></div>
+      <div><div class="text-sm text-muted">已用</div><div class="num" id="storageUsed">-</div></div>
+      <div><div class="text-sm text-muted">剩余</div><div class="num" id="storageFree">-</div></div>
+      <div><div class="text-sm text-muted">制品数</div><div class="num" id="storageObjCount">-</div></div>
+      <div><div class="text-sm text-muted">用量</div><div style="height:6px;background:var(--border-light);border-radius:3px;margin-top:4px"><div id="storageBar" style="height:100%;background:var(--primary);border-radius:3px;transition:width .5s;width:0%"></div></div></div>
+    </div>
+  </div>
   <div class="card"><div class="card-header">服务分布 <span class="text-sm text-muted" id="overviewRefresh"></span></div>
     <div id="overviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--space)">
       <div class="loading-block"><span class="spinner"></span></div>
@@ -202,13 +211,57 @@
     var id=btn.getAttribute("data-panel");STORE.tab=id;
     document.querySelectorAll("#navTabs button").forEach(function(b){b.classList.toggle("active",b===btn)});
     document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("active",p.id===id)});
-    if(id==="overview")loadOverview();
+    if(id==="overview"){loadOverview();loadStorageStats();}
     if(id==="nodes")loadNodes();
     if(id==="canary")loadCanary();
     if(id==="lua")loadLua();
     if(id==="plugins")initPlugins();
     if(id==="audit")loadAudit();
   });
+
+  /* ========== Storage Overview ========== */
+  function loadStorageStats() {
+    API.storageStats().then(function(r) {
+      var card = document.getElementById("storageCard");
+      if (!r.ok || !r.data || !r.data.connected) {
+        card.style.display = "none";
+        return;
+      }
+      card.style.display = "";
+      var d = r.data;
+
+      function fmtBytes(b) {
+        if (b <= 0) return "0 B";
+        var units = ["B","KB","MB","GB","TB"];
+        var i = Math.floor(Math.log(b) / Math.log(1024));
+        i = Math.min(i, units.length - 1);
+        return (b / Math.pow(1024, i)).toFixed(1) + " " + units[i];
+      }
+
+      document.getElementById("storageTotal").textContent = fmtBytes(d.total_bytes);
+      document.getElementById("storageUsed").textContent = fmtBytes(d.used_bytes);
+      document.getElementById("storageFree").textContent = fmtBytes(d.free_bytes);
+      document.getElementById("storageObjCount").textContent = d.object_count + " 个 (" + fmtBytes(d.total_size) + ")";
+
+      var healthEl = document.getElementById("storageHealth");
+      if (d.healthy) {
+        healthEl.textContent = "正常";
+        healthEl.className = "badge badge-success";
+      } else {
+        healthEl.textContent = "异常";
+        healthEl.className = "badge badge-error";
+      }
+
+      var pct = d.total_bytes > 0 ? Math.round(d.used_bytes / d.total_bytes * 100) : 0;
+      var bar = document.getElementById("storageBar");
+      bar.style.width = Math.min(pct, 100) + "%";
+      if (pct > 80) bar.style.background = "var(--error)";
+      else if (pct > 60) bar.style.background = "var(--warning)";
+      else bar.style.background = "var(--primary)";
+    }).catch(function() {
+      document.getElementById("storageCard").style.display = "none";
+    });
+  }
 
   /* ========== Overview ========== */
   function loadOverview(){
@@ -881,8 +934,9 @@ function loadDeployed(type){
 
   /* ========== Init ========== */
   loadOverview();
+  loadStorageStats();
   setInterval(function(){
-    if(STORE.tab==="overview")loadOverview();
+    if(STORE.tab==="overview"){loadOverview();loadStorageStats();}
     if(STORE.tab==="nodes")loadNodes();
   },10000);
 

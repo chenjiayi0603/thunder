@@ -47,6 +47,7 @@ func main() {
 
 	// API routes
 	mux.HandleFunc("/api/overview", h.Overview)
+	mux.HandleFunc("/api/storage/stats", h.StorageOverview)
 	mux.HandleFunc("/api/nodes", h.Nodes)
 	mux.HandleFunc("/api/canary/", h.Canary)
 	mux.HandleFunc("/api/config/", h.Config)

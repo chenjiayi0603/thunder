@@ -1,0 +1,1 @@
+/home/tommychen/thunder/tools/admin-test/test.sh
